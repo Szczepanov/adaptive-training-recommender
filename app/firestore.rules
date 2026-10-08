@@ -78,16 +78,6 @@ service cloud.firestore {
         && hasValidAdherence(request.resource.data.adherence);
     }
 
-    function hasValidDose(dose) {
-      return dose is map;
-    }
-
-    function hasValidSubjectiveDriftAudit(drift) {
-      // Exact drift keys/ranges are validated by validateRecommendation. Rules keep
-      // only the top-level container contract on this hot path.
-      return drift is map;
-    }
-
     function hasMatchingIdentityReview(userId, identity) {
       let review = get(/databases/$(database)/documents/users/$(userId)/health_identity_review_events/$(identity.reviewEventId)).data;
       return review.assessmentId == identity.identityAssessmentId
@@ -621,39 +611,9 @@ service cloud.firestore {
         && scheduleWindowManifestAdjacentPairIsValid(windows, 6, 7);
     }
 
-    function scheduleWindowManifestIdsPairIsDistinct(windows, left, right) {
-      return windows.size() <= right || windows[left].id != windows[right].id;
-    }
 
     function hasDistinctScheduleWindowManifestIds(windows) {
-      return scheduleWindowManifestIdsPairIsDistinct(windows, 0, 1)
-        && scheduleWindowManifestIdsPairIsDistinct(windows, 0, 2)
-        && scheduleWindowManifestIdsPairIsDistinct(windows, 0, 3)
-        && scheduleWindowManifestIdsPairIsDistinct(windows, 0, 4)
-        && scheduleWindowManifestIdsPairIsDistinct(windows, 0, 5)
-        && scheduleWindowManifestIdsPairIsDistinct(windows, 0, 6)
-        && scheduleWindowManifestIdsPairIsDistinct(windows, 0, 7)
-        && scheduleWindowManifestIdsPairIsDistinct(windows, 1, 2)
-        && scheduleWindowManifestIdsPairIsDistinct(windows, 1, 3)
-        && scheduleWindowManifestIdsPairIsDistinct(windows, 1, 4)
-        && scheduleWindowManifestIdsPairIsDistinct(windows, 1, 5)
-        && scheduleWindowManifestIdsPairIsDistinct(windows, 1, 6)
-        && scheduleWindowManifestIdsPairIsDistinct(windows, 1, 7)
-        && scheduleWindowManifestIdsPairIsDistinct(windows, 2, 3)
-        && scheduleWindowManifestIdsPairIsDistinct(windows, 2, 4)
-        && scheduleWindowManifestIdsPairIsDistinct(windows, 2, 5)
-        && scheduleWindowManifestIdsPairIsDistinct(windows, 2, 6)
-        && scheduleWindowManifestIdsPairIsDistinct(windows, 2, 7)
-        && scheduleWindowManifestIdsPairIsDistinct(windows, 3, 4)
-        && scheduleWindowManifestIdsPairIsDistinct(windows, 3, 5)
-        && scheduleWindowManifestIdsPairIsDistinct(windows, 3, 6)
-        && scheduleWindowManifestIdsPairIsDistinct(windows, 3, 7)
-        && scheduleWindowManifestIdsPairIsDistinct(windows, 4, 5)
-        && scheduleWindowManifestIdsPairIsDistinct(windows, 4, 6)
-        && scheduleWindowManifestIdsPairIsDistinct(windows, 4, 7)
-        && scheduleWindowManifestIdsPairIsDistinct(windows, 5, 6)
-        && scheduleWindowManifestIdsPairIsDistinct(windows, 5, 7)
-        && scheduleWindowManifestIdsPairIsDistinct(windows, 6, 7);
+      return hasDistinctScheduleWindowManifestIdsUpToThree(windows);
     }
 
     // Per-window identity/revision transition validation (stable id/createdAt retained,
@@ -878,8 +838,8 @@ service cloud.firestore {
         && isValidActivityDate(data.effectiveFrom)
         && data.activatedAt is string
         && existsAfter(/databases/$(database)/documents/users/$(userId)/external_plans/$(planId)/revisions/$(revisionId))
-        && getAfter(/databases/$(database)/documents/users/$(userId)/external_plans/$(planId)/revisions/$(revisionId)).data.planId == planId
-        && getAfter(/databases/$(database)/documents/users/$(userId)/external_plans/$(planId)/revisions/$(revisionId)).data.revision == data.revision
+        && revision.planId == planId
+        && revision.revision == data.revision
         && ((existsAfter(/databases/$(database)/documents/users/$(userId)/external_plans/$(planId))
           && header.planId == planId
           && header.revision == data.revision
@@ -887,12 +847,7 @@ service cloud.firestore {
           && data.activatedAt == header.importedAt
           && (header.get('supersededFrom', null) == data.effectiveFrom
             || (header.get('supersededFrom', null) == null && revision.startDate == data.effectiveFrom)))
-          || (exists(/databases/$(database)/documents/users/$(userId)/external_plans/$(planId))
-            && get(/databases/$(database)/documents/users/$(userId)/external_plans/$(planId)).data.revision == data.revision
-            && get(/databases/$(database)/documents/users/$(userId)/external_plans/$(planId)).data.contentHash == data.contentHash
-            && data.activatedAt == get(/databases/$(database)/documents/users/$(userId)/external_plans/$(planId)).data.importedAt
-            && (get(/databases/$(database)/documents/users/$(userId)/external_plans/$(planId)).data.get('supersededFrom', null) == data.effectiveFrom
-              || (get(/databases/$(database)/documents/users/$(userId)/external_plans/$(planId)).data.get('supersededFrom', null) == null && revision.startDate == data.effectiveFrom))));
+);
     }
 
     match /users/{userId}/external_plans/{planId} {
@@ -1217,7 +1172,7 @@ service cloud.firestore {
       let data = request.resource.data;
       return hasOwnedUserId(userId)
         && isStrengthSessionDocument(sessionId)
-        && data.keys().hasOnly(['userId', 'sessionId', 'date', 'startedAt', 'completedAt', 'updatedAt', 'state', 'sourceRecommendationDate', 'exercises', 'sessionRpe', 'notes', 'schemaVersion'])
+        && data.keys().hasOnly(['userId', 'sessionId', 'date', 'startedAt', 'completedAt', 'updatedAt', 'state', 'sourceRecommendationDate', 'exercises', 'sessionRpe', 'notes', 'completionEvidence', 'schemaVersion'])
         && data.keys().hasAll(['userId', 'sessionId', 'date', 'startedAt', 'updatedAt', 'state', 'exercises', 'schemaVersion'])
         && data.sessionId is string && data.sessionId.size() > 0 && data.sessionId.size() <= 128
         && isValidActivityDate(data.date)
@@ -1236,7 +1191,12 @@ service cloud.firestore {
     match /users/{userId}/strength_sessions/{sessionId} {
       allow read: if isOwner(userId);
       allow create: if hasValidStrengthSession(userId, sessionId)
-        && request.resource.data.state == 'in_progress';
+        && request.resource.data.state == 'in_progress'
+        // Queued execution/lock batches must not launch a primary after replacement
+        // supersedes it. Legacy execution ids may still refer to an absent occurrence.
+        && (!('occurrenceId' in request.resource.data)
+          || !existsAfter(/databases/$(database)/documents/users/$(userId)/session_occurrences/$(request.resource.data.occurrenceId))
+          || getAfter(/databases/$(database)/documents/users/$(userId)/session_occurrences/$(request.resource.data.occurrenceId)).data.state != 'superseded');
       allow update: if hasValidStrengthSession(userId, sessionId)
         && keepsOwnership(userId)
         && resource.data.state == 'in_progress'
@@ -1399,7 +1359,6 @@ service cloud.firestore {
         && data.state == 'scheduled'
         && data.authority == 'external_plan'
         && data.externalPlanRef is map
-        && hasValidOccurrenceWindowBinding(binding)
         && binding.windowId.matches('^[A-Za-z0-9_-]{1,128}$')
         && data.placementOrder == binding.order
         && data.diff(resource.data).affectedKeys().hasOnly(['windowBinding', 'placementOrder', 'updatedAt'])
@@ -1465,38 +1424,23 @@ service cloud.firestore {
     function hasValidDisplayMetadata(meta) {
       return meta is map
         && meta.keys().hasOnly(['title', 'summary', 'intent', 'dominantModality', 'duration', 'movementComposition'])
-        && meta.keys().hasAll(['title', 'intent'])
         && meta.title is string
-        && meta.intent is string
-        && (!('summary' in meta) || meta.summary is string)
-        && (!('dominantModality' in meta) || meta.dominantModality is string)
-        && (!('duration' in meta) || (meta.duration is map && meta.duration.min is number && meta.duration.max is number))
-        && (!('movementComposition' in meta) || meta.movementComposition is list);
+        && meta.intent is string;
     }
 
     function hasValidDefinitionSnapshot(snapshot) {
       return snapshot is map
         && snapshot.keys().hasOnly(['schemaVersion', 'title', 'summary', 'intent', 'modalities', 'dominantModality', 'duration', 'sessionTargets', 'prohibitedAdditions', 'importWarnings', 'movementComposition', 'blocks'])
-        && snapshot.keys().hasAll(['schemaVersion', 'title', 'intent', 'blocks'])
         && snapshot.schemaVersion == 1
         && snapshot.title is string
         && snapshot.intent is string
-        && snapshot.blocks is list
-        && (!('summary' in snapshot) || snapshot.summary is string)
-        && (!('modalities' in snapshot) || snapshot.modalities is list)
-        && (!('dominantModality' in snapshot) || snapshot.dominantModality is string)
-        && (!('duration' in snapshot) || (snapshot.duration is map && snapshot.duration.min is number && snapshot.duration.max is number))
-        && (!('sessionTargets' in snapshot) || snapshot.sessionTargets is list)
-        && (!('prohibitedAdditions' in snapshot) || snapshot.prohibitedAdditions is list)
-        && (!('importWarnings' in snapshot) || snapshot.importWarnings is list)
-        && (!('movementComposition' in snapshot) || snapshot.movementComposition is list);
+        && snapshot.blocks is list;
     }
 
     function hasValidExecutionPrescription(userId, prescriptionHash) {
       let data = request.resource.data;
       return hasOwnedUserId(userId)
         && data.keys().hasOnly(['userId', 'schemaVersion', 'prescriptionHash', 'sessionSource', 'definitionHash', 'blocks', 'displayMetadata', 'definitionSnapshot', 'createdAt'])
-        && data.keys().hasAll(['userId', 'schemaVersion', 'prescriptionHash', 'sessionSource', 'definitionHash', 'blocks', 'createdAt'])
         && data.prescriptionHash == prescriptionHash
         && data.definitionHash is string
         && hasValidSessionSource(data.sessionSource)
@@ -1516,18 +1460,12 @@ service cloud.firestore {
     function hasValidCompletionEvidence(evidence) {
       return evidence is map
         && evidence.keys().hasOnly(['submittedAt', 'sessionRpe', 'completedFraction', 'unexpectedFatigue', 'note'])
-        && evidence.keys().hasAll(['submittedAt'])
-        && evidence.submittedAt is string
-        && (!('sessionRpe' in evidence) || (evidence.sessionRpe is number && evidence.sessionRpe >= 1 && evidence.sessionRpe <= 10))
-        && (!('completedFraction' in evidence) || (evidence.completedFraction is number && evidence.completedFraction >= 0 && evidence.completedFraction <= 1))
-        && (!('unexpectedFatigue' in evidence) || evidence.unexpectedFatigue is bool)
-        && (!('note' in evidence) || (evidence.note is string && evidence.note.size() <= 2000));
+        && evidence.submittedAt is string;
     }
-
     function hasValidSessionExecution(userId, executionId) {
       let data = request.resource.data;
       return hasOwnedUserId(userId)
-        && data.keys().hasOnly(['userId', 'executionId', 'occurrenceId', 'sessionSource', 'prescriptionHash', 'fitWorkoutFingerprint', 'fitWorkoutFingerprintKind', 'date', 'startedAt', 'completedAt', 'updatedAt', 'state', 'sessionRpe', 'notes', 'completionEvidence', 'schemaVersion'])
+        && data.keys().hasOnly(['userId', 'executionId', 'occurrenceId', 'sessionSource', 'prescriptionHash', 'fitWorkoutFingerprint', 'fitWorkoutFingerprintKind', 'date', 'startedAt', 'completedAt', 'updatedAt', 'state', 'sessionRpe', 'notes', 'schemaVersion'])
         && data.keys().hasAll(['userId', 'executionId', 'sessionSource', 'date', 'startedAt', 'updatedAt', 'state', 'schemaVersion'])
         && data.executionId == executionId
         && isValidActivityDate(data.date)
@@ -1539,10 +1477,7 @@ service cloud.firestore {
         && (!('fitWorkoutFingerprintKind' in data) || data.fitWorkoutFingerprintKind in ['semantic_definition', 'index_fallback'])
         && (!('sessionRpe' in data) || (data.sessionRpe is number && data.sessionRpe >= 1 && data.sessionRpe <= 10))
         && (!('notes' in data) || (data.notes is string && data.notes.size() <= 4000))
-        && (!('completionEvidence' in data) || hasValidCompletionEvidence(data.completionEvidence))
-        && (data.state == 'completed' || !('completionEvidence' in data))
-        && data.state in ['in_progress', 'completed', 'abandoned']
-        && ((data.state == 'completed') == ('completedAt' in data))
+        && data.state == 'in_progress'
         && data.startedAt is string
         && data.updatedAt is string
         && data.schemaVersion == 1;
@@ -1552,7 +1487,6 @@ service cloud.firestore {
       return source is map && (
         (source.kind == 'catalog'
           && source.keys().hasOnly(['kind', 'workoutId', 'catalogVersion'])
-          && source.keys().hasAll(['kind', 'workoutId', 'catalogVersion'])
           && source.workoutId is string && source.catalogVersion is string)
         || (source.kind == 'external_plan'
           && source.keys().hasOnly(['kind', 'planId', 'revision', 'sessionId', 'contentHash'])
@@ -1871,40 +1805,36 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
       allow delete: if false;
     }
 
+    function isValidSessionExecutionUpdate(userId, executionId) {
+      let data = request.resource.data;
+      let diffKeys = data.diff(resource.data).affectedKeys();
+      return keepsOwnership(userId)
+        && resource.data.state == 'in_progress'
+        && data.executionId == executionId
+        && data.schemaVersion == 1
+        && (
+          (data.state == 'in_progress' && diffKeys.hasOnly(['updatedAt']))
+          ||
+          (data.state in ['completed', 'abandoned']
+            && diffKeys.hasOnly(['state', 'updatedAt', 'completedAt', 'sessionRpe', 'notes', 'completionEvidence'])
+            && (!('sessionRpe' in data) || (data.sessionRpe is number && data.sessionRpe >= 1 && data.sessionRpe <= 10))
+            && (!('notes' in data) || (data.notes is string && data.notes.size() <= 4000))
+            && (!('completionEvidence' in data) || hasValidCompletionEvidence(data.completionEvidence))
+            && ((data.state == 'completed'
+                  && data.completedAt is string
+                  && data.completedAt == data.updatedAt)
+                || (data.state == 'abandoned'
+                  && !('completedAt' in data)
+                  && !('completionEvidence' in data))))
+        );
+    }
     match /users/{userId}/session_executions/{executionId} {
       allow read: if isOwner(userId);
       allow create: if hasValidSessionExecution(userId, executionId)
-        && request.resource.data.state == 'in_progress'
-        // Queued execution/lock batches must not launch a primary after replacement
-        // supersedes it. Legacy execution ids may still refer to an absent occurrence.
         && (!('occurrenceId' in request.resource.data)
           || !existsAfter(/databases/$(database)/documents/users/$(userId)/session_occurrences/$(request.resource.data.occurrenceId))
           || getAfter(/databases/$(database)/documents/users/$(userId)/session_occurrences/$(request.resource.data.occurrenceId)).data.state != 'superseded');
-      allow update: if hasValidSessionExecution(userId, executionId)
-        && keepsOwnership(userId)
-        && resource.data.state == 'in_progress'
-        && request.resource.data.date == resource.data.date
-        && request.resource.data.startedAt == resource.data.startedAt
-        && request.resource.data.sessionSource == resource.data.sessionSource
-        && (!('occurrenceId' in resource.data) ? !('occurrenceId' in request.resource.data) : request.resource.data.occurrenceId == resource.data.occurrenceId)
-        && (!('prescriptionHash' in resource.data) ? !('prescriptionHash' in request.resource.data) : request.resource.data.prescriptionHash == resource.data.prescriptionHash)
-        && (!('fitWorkoutFingerprint' in resource.data) ? !('fitWorkoutFingerprint' in request.resource.data) : request.resource.data.fitWorkoutFingerprint == resource.data.fitWorkoutFingerprint)
-        && (!('fitWorkoutFingerprintKind' in resource.data) ? !('fitWorkoutFingerprintKind' in request.resource.data) : request.resource.data.fitWorkoutFingerprintKind == resource.data.fitWorkoutFingerprintKind)
-        && (
-          // Diary batches retain the existing parent updatedAt touch while the session is live.
-          (request.resource.data.state == 'in_progress'
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['updatedAt']))
-          ||
-          // Terminal state is one-way/final: the previous state must be in_progress and only
-          // canonical completion/abandon fields may change in the winning request.
-          (request.resource.data.state in ['completed', 'abandoned']
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['state', 'updatedAt', 'completedAt', 'sessionRpe', 'notes', 'completionEvidence'])
-            && ((request.resource.data.state == 'completed'
-                  && request.resource.data.completedAt == request.resource.data.updatedAt)
-                || (request.resource.data.state == 'abandoned'
-                  && !('completedAt' in request.resource.data)
-                  && !('completionEvidence' in request.resource.data))))
-        );
+      allow update: if isValidSessionExecutionUpdate(userId, executionId);
       allow delete: if isOwner(userId) && resource.data.state == 'in_progress';
 
       match /entries/{entryId} {
@@ -2402,8 +2332,7 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
         && data.planSnapshot.weekCount is int && data.planSnapshot.weekCount >= 1 && data.planSnapshot.weekCount <= 52
         && data.planSnapshot.sessions is list && data.planSnapshot.sessions.size() > 0 && data.planSnapshot.sessions.size() <= 120
         && data.planSnapshot.restDays is list && data.planSnapshot.restDays.size() <= 64
-        && (!('intentBlocks' in data.planSnapshot)
-          || (data.planSnapshot.intentBlocks is list && data.planSnapshot.intentBlocks.size() <= 26))
+        && (!('intentBlocks' in data.planSnapshot) || (data.planSnapshot.intentBlocks is list && data.planSnapshot.intentBlocks.size() <= 26))
         && data.bundleId is string && data.bundleId.size() > 0 && data.bundleId.size() <= 128
         && data.scheduleWindows is list && data.scheduleWindows.size() <= 8
         && data.fixedActivities is list && data.fixedActivities.size() <= 32
@@ -3035,7 +2964,7 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
         && (data.source == 'manual' || ('sourceRef' in data && data.sourceRef is string && data.sourceRef.size() > 0 && data.sourceRef.size() <= 512))
         && (!('sourceRef' in data) || (data.sourceRef is string && data.sourceRef.size() > 0 && data.sourceRef.size() <= 512))
         && (!('evaluationRef' in data) || hasValidCompetitionOutcomeEvaluationRef(userId, data.evaluationRef))
-        && (!('evaluationRef' in data) || competitionOutcomeEventMatchesEvaluation(userId, data.evaluationRef, ('eventRef' in data ? data.eventRef : null)))
+        && (!('evaluationRef' in data) || competitionOutcomeEventMatchesEvaluation(userId, data.evaluationRef, ('eventRef' in data ? data.eventRef : '')))
         && result is map
         && result.keys().hasOnly(['completed', 'placing', 'fieldSize', 'elapsedSeconds', 'distanceM', 'courseId', 'summary'])
         && result.keys().hasAll(['completed'])
