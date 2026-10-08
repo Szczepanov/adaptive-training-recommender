@@ -7,8 +7,11 @@ vi.mock('../../services/sessionDefinitionService', () => ({ sessionDefinitionSer
 vi.mock('../../services/sessionAuthoringService', () => ({ prepareUnplannedSessionLaunch: vi.fn() }));
 vi.mock('../../services/sessionOccurrenceService', () => ({
     sessionOccurrenceService: {
-        scheduleOccurrence: vi.fn(), replaceRecommendationOccurrence: vi.fn(), addAdditionalSessionOccurrence: vi.fn(),
+        scheduleOccurrence: vi.fn(), addAdditionalSessionOccurrence: vi.fn(),
     },
+}));
+vi.mock('../../services/manualRecommendationReplacementService', () => ({
+    manualRecommendationReplacementService: { replaceRecommendationOccurrence: vi.fn() },
 }));
 
 const definition: SessionDefinition = {

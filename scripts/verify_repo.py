@@ -169,6 +169,7 @@ def build_plan(mode: VerificationMode, base_sha: str) -> list[VerificationPhase]
                 VerificationStep("pytest", ("uv", "run", "pytest")),
             ),
             (
+                VerificationStep("frontend dependency audit", _npm("audit")),
                 VerificationStep("frontend typecheck", _npm("typecheck")),
                 VerificationStep("frontend lint", _npm("lint")),
                 VerificationStep("knowledge registry", _npm("validate:knowledge")),

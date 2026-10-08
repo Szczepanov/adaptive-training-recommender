@@ -8,7 +8,9 @@ import type {
 } from '../engine/models';
 import type { BundlePlacementProposal } from '../engine/intradayBundlePlacement';
 import type { LedgerCeilings } from '../engine/dailyLedger';
-import { EXTERNAL_PLAN_SCHEMA_V4, type ExternalPlanSessionV4, type ExternalTrainingPlanV4 } from '../sessions/externalPlanV4';
+import type { ExternalPlanSessionV4, ExternalTrainingPlanV4 } from '../sessions/externalPlanV4';
+import type { ExternalTrainingPlanV5 } from '../sessions/externalPlanV5';
+import type { ExternalTrainingPlanV6 } from '../sessions/externalPlanV6';
 import type { SessionDefinition } from '../sessions/models';
 import fixture01 from '../sessions/fixtures/01-full-body-maintenance.json';
 import type { ActiveExternalPlan } from './activeExternalPlanService';
@@ -34,6 +36,7 @@ import {
 } from './intradayBundleMemberAdjudication';
 import type {
     ExternalPlanSessionOccurrence,
+    OccurrenceWindowBinding,
 } from '../sessions/models';
 import type { SessionResponse } from '../responses/models';
 import type { IntradayDecisionRecord } from '../engine/intradayDecision';
@@ -174,7 +177,7 @@ const mockAvailability: import('../engine/schedule').ResolvedAvailability = {
     environmentOverride: null,
 };
 
-function createPlan(amSessionOverrides: Partial<ExternalPlanSessionV4> = {}, pmSessionOverrides: Partial<ExternalPlanSessionV4> = {}): ActiveExternalPlan {
+function createPlan(amSessionOverrides: Partial<ExternalPlanSessionV4> = {}, pmSessionOverrides: Partial<ExternalPlanSessionV4> = {}, version: 4 | 5 | 6 = 4): ActiveExternalPlan {
     const am: ExternalPlanSessionV4 = {
         id: 'am-run',
         title: 'Morning Easy Run',
@@ -201,8 +204,8 @@ function createPlan(amSessionOverrides: Partial<ExternalPlanSessionV4> = {}, pmS
         },
         ...pmSessionOverrides,
     };
-    const plan: ExternalTrainingPlanV4 = {
-        schema: EXTERNAL_PLAN_SCHEMA_V4,
+    const plan: ExternalTrainingPlanV4 | ExternalTrainingPlanV5 | ExternalTrainingPlanV6 = {
+        schema: `adaptive-training-recommender/external-plan@${version}`,
         planId: 'p-v4',
         revision: 1,
         title: 'Intraday Double Plan',
@@ -290,14 +293,74 @@ function createMockExecution(amOccId: string): NormalizedExecutionRecord {
     };
 }
 
+function createPrimaryWindowBinding(): OccurrenceWindowBinding {
+    const binding = createBundlePlacement().bindings![0];
+    return {
+        windowId: binding.windowId, bundleId: 'b-double', order: 0,
+        boundStartLocal: binding.boundStartLocal, boundEndLocal: binding.boundEndLocal,
+        startInstant: binding.startInstant, endInstant: binding.endInstant,
+    };
+}
+
+function seedOccurrences(...occurrences: ExternalPlanSessionOccurrence[]): void {
+    for (const occurrence of occurrences) {
+        store.set(`users/${USER_ID}/session_occurrences/${occurrence.occurrenceId}`, structuredClone(occurrence));
+    }
+}
+
 describe('adjudicateIntradayBundleMembers', () => {
     beforeEach(() => {
         store.clear();
         vi.restoreAllMocks();
+        vi.spyOn(sessionOccurrenceService, 'getOccurrencesForDate').mockImplementation(async (userId, date) => {
+            const prefix = `users/${userId}/session_occurrences/`;
+            return [...store.entries()]
+                .filter(([path, value]) => path.startsWith(prefix) && (value as ExternalPlanSessionOccurrence).date === date)
+                .map(([, value]) => structuredClone(value) as ExternalPlanSessionOccurrence);
+        });
     });
 
-    it('adjudicates an admitted member with completed predecessor & immediate response (proceed + binding + decision record)', async () => {
-        const active = createPlan();
+    it.each(['disappeared', 'conflicting binding', 'conflicting window owner', 'active without binding', 'completed without binding'])(
+        'fails closed without writes when the prepared primary has %s', async failure => {
+            const occurrence: ExternalPlanSessionOccurrence = {
+                userId: USER_ID, occurrenceId: 'occ-am-guard', date: DATE, authority: 'external_plan',
+                externalPlanRef: { planId: 'p-v4', revision: 1, sessionId: 'am-run', contentHash: 'hash-bundle-v4' },
+                state: failure === 'active without binding' ? 'active' : failure === 'completed without binding' ? 'completed' : 'scheduled',
+                placementOrder: 0, createdAt: '2026-09-07T05:00:00.000Z', updatedAt: '2026-09-07T05:00:00.000Z',
+                ...(failure === 'conflicting binding' ? { windowBinding: { ...createPrimaryWindowBinding(), windowId: 'another-window' } } : {}),
+            };
+            seedOccurrences(occurrence);
+            if (failure === 'disappeared') {
+                vi.spyOn(sessionOccurrenceService, 'getOccurrencesForDate').mockImplementationOnce(async () => {
+                    store.delete(`users/${USER_ID}/session_occurrences/${occurrence.occurrenceId}`);
+                    return [occurrence];
+                });
+            }
+            if (failure === 'conflicting window owner') {
+                store.set(`users/${USER_ID}/session_occurrence_windows/${windowReservationId(DATE, 'w-am')}`, {
+                    userId: USER_ID, date: DATE, windowId: 'w-am', occurrenceId: 'another-occurrence',
+                    createdAt: '2026-09-07T05:00:00.000Z',
+                });
+            }
+            const before = structuredClone([...store.entries()]);
+            const error = failure === 'disappeared' ? 'disappeared before binding'
+                : failure === 'conflicting binding' ? 'conflicting window binding'
+                    : failure === 'conflicting window owner' ? 'already bound'
+                        : 'missing its exact binding';
+            await expect(adjudicateIntradayBundleMembers({
+                userId: USER_ID, date: DATE, activePlan: createPlan(), bundlePlacement: createBundlePlacement(),
+                subjective: mockSubjective, objective: mockObjective, userContext: mockUserContext,
+                availability: mockAvailability, ceilings, evaluationInstant: '2026-09-07T12:00:00.000Z',
+                services: { occurrenceService: sessionOccurrenceService },
+            })).rejects.toThrow(error);
+            const expected = failure === 'disappeared' ? [] : before;
+            expect([...store.entries()]).toEqual(expected);
+            expect(occurrence.windowBinding?.windowId).toBe(failure === 'conflicting binding' ? 'another-window' : undefined);
+        },
+    );
+
+    it.each([4, 5, 6] as const)('adjudicates an admitted member with completed predecessor & immediate response (proceed + binding + decision record) for external-plan@%i', async version => {
+        const active = createPlan({}, {}, version);
         const bundlePlacement = createBundlePlacement();
 
         // Setup AM predecessor occurrence and completed execution
@@ -332,7 +395,7 @@ describe('adjudicateIntradayBundleMembers', () => {
 
         const amResp = createMockSessionResponse(amOccId);
 
-        vi.spyOn(sessionOccurrenceService, 'getOccurrencesForDate').mockResolvedValue([amOcc]);
+        seedOccurrences(amOcc);
         vi.spyOn(sessionExecutionService, 'getExecutionsInRange').mockResolvedValue({
             executions: [amExec],
             invalidRecords: 0,
@@ -391,8 +454,8 @@ describe('adjudicateIntradayBundleMembers', () => {
         expect(decData.predecessorOccurrenceId).toBe(amOccId);
     });
 
-    it('handles uncompleted predecessor (pending status, occurrence and reservation created, no binding)', async () => {
-        const active = createPlan();
+    it.each([4, 5, 6] as const)('seals the scheduled primary and handles an uncompleted predecessor (pending status, occurrence and reservation created, no binding) for external-plan@%i', async version => {
+        const active = createPlan({}, {}, version);
         const bundlePlacement = createBundlePlacement();
 
         // AM predecessor occurrence is only scheduled
@@ -409,7 +472,7 @@ describe('adjudicateIntradayBundleMembers', () => {
             updatedAt: '2026-09-07T05:00:00.000Z',
         };
 
-        vi.spyOn(sessionOccurrenceService, 'getOccurrencesForDate').mockResolvedValue([amOcc]);
+        seedOccurrences(amOcc);
         vi.spyOn(sessionExecutionService, 'getExecutionsInRange').mockResolvedValue({ executions: [], invalidRecords: 0 });
         vi.spyOn(sessionResponseService, 'getResponseForWindow').mockResolvedValue(null);
 
@@ -430,6 +493,11 @@ describe('adjudicateIntradayBundleMembers', () => {
         expect(result.statuses).toHaveLength(1);
         expect(result.statuses[0].status).toBe('pending');
         expect(result.statuses[0].reason).toContain('has not completed');
+        expect(amOcc.windowBinding).toBeUndefined();
+        const persistedPrimary = store.get(`users/${USER_ID}/session_occurrences/${amOccId}`) as ExternalPlanSessionOccurrence;
+        expect(persistedPrimary.windowBinding).toEqual(createPrimaryWindowBinding());
+        expect(store.get(`users/${USER_ID}/session_occurrence_windows/${windowReservationId(DATE, 'w-am')}`))
+            .toMatchObject({ occurrenceId: amOccId });
 
         // Occurrence and reservation were still created atomically
         const pmOccId = result.statuses[0].occurrenceId!;
@@ -456,13 +524,14 @@ describe('adjudicateIntradayBundleMembers', () => {
             externalPlanRef: { planId: 'p-v4', revision: 1, sessionId: 'am-run', contentHash: 'hash-bundle-v4' },
             state: 'completed',
             placementOrder: 0,
+            windowBinding: createPrimaryWindowBinding(),
             createdAt: '2026-09-07T05:00:00.000Z',
             updatedAt: '2026-09-07T06:00:00.000Z',
         };
 
         const amExec = createMockExecution(amOccId);
 
-        vi.spyOn(sessionOccurrenceService, 'getOccurrencesForDate').mockResolvedValue([amOcc]);
+        seedOccurrences(amOcc);
         vi.spyOn(sessionExecutionService, 'getExecutionsInRange').mockResolvedValue({ executions: [amExec], invalidRecords: 0 });
         vi.spyOn(sessionResponseService, 'getResponseForWindow').mockResolvedValue(null);
 
@@ -498,6 +567,7 @@ describe('adjudicateIntradayBundleMembers', () => {
             externalPlanRef: { planId: 'p-v4', revision: 1, sessionId: 'am-run', contentHash: 'hash-bundle-v4' },
             state: 'completed',
             placementOrder: 0,
+            windowBinding: createPrimaryWindowBinding(),
             createdAt: '2026-09-07T05:00:00.000Z',
             updatedAt: '2026-09-07T06:00:00.000Z',
         };
@@ -509,7 +579,7 @@ describe('adjudicateIntradayBundleMembers', () => {
         });
 
         // First pass: creates PM occurrence and reservation
-        vi.spyOn(sessionOccurrenceService, 'getOccurrencesForDate').mockResolvedValue([amOcc]);
+        seedOccurrences(amOcc);
         vi.spyOn(sessionExecutionService, 'getExecutionsInRange').mockResolvedValue({ executions: [amExec], invalidRecords: 0 });
         vi.spyOn(sessionResponseService, 'getResponseForWindow').mockResolvedValue(amResp);
 
@@ -532,7 +602,7 @@ describe('adjudicateIntradayBundleMembers', () => {
         expect(pmOcc).toBeDefined();
 
         // Second pass: mock returns BOTH AM and PM occurrences
-        vi.spyOn(sessionOccurrenceService, 'getOccurrencesForDate').mockResolvedValue([amOcc, pmOcc]);
+        seedOccurrences(amOcc, pmOcc);
 
         const secondResult = await adjudicateIntradayBundleMembers({
             userId: USER_ID,
@@ -619,13 +689,14 @@ describe('adjudicateIntradayBundleMembers', () => {
             externalPlanRef: { planId: 'p-v4', revision: 1, sessionId: 'am-run', contentHash: 'hash-bundle-v4' },
             state: 'completed',
             placementOrder: 0,
+            windowBinding: createPrimaryWindowBinding(),
             createdAt: '2026-09-07T05:00:00.000Z',
             updatedAt: '2026-09-07T06:00:00.000Z',
         };
         const amExec = createMockExecution(amOccId);
         const amResp = createMockSessionResponse(amOccId);
 
-        vi.spyOn(sessionOccurrenceService, 'getOccurrencesForDate').mockResolvedValue([amOcc, existingOcc]);
+        seedOccurrences(amOcc, existingOcc);
         vi.spyOn(sessionExecutionService, 'getExecutionsInRange').mockResolvedValue({ executions: [amExec], invalidRecords: 0 });
         vi.spyOn(sessionResponseService, 'getResponseForWindow').mockResolvedValue(amResp);
 
@@ -710,13 +781,14 @@ describe('adjudicateIntradayBundleMembers', () => {
             externalPlanRef: { planId: 'p-v4', revision: 1, sessionId: 'am-run', contentHash: 'hash-bundle-v4' },
             state: 'completed',
             placementOrder: 0,
+            windowBinding: createPrimaryWindowBinding(),
             createdAt: '2026-09-07T05:00:00.000Z',
             updatedAt: '2026-09-07T06:00:00.000Z',
         };
         const amExec = createMockExecution(amOccId);
         const amResp = createMockSessionResponse(amOccId);
 
-        vi.spyOn(sessionOccurrenceService, 'getOccurrencesForDate').mockResolvedValue([amOcc, skippedOcc]);
+        seedOccurrences(amOcc, skippedOcc);
         vi.spyOn(sessionExecutionService, 'getExecutionsInRange').mockResolvedValue({ executions: [amExec], invalidRecords: 0 });
         vi.spyOn(sessionResponseService, 'getResponseForWindow').mockResolvedValue(amResp);
 
@@ -764,13 +836,14 @@ describe('adjudicateIntradayBundleMembers', () => {
             externalPlanRef: { planId: 'p-v4', revision: 1, sessionId: 'am-run', contentHash: 'hash-bundle-v4' },
             state: 'completed',
             placementOrder: 0,
+            windowBinding: createPrimaryWindowBinding(),
             createdAt: '2026-09-07T05:00:00.000Z',
             updatedAt: '2026-09-07T06:00:00.000Z',
         };
         const amExec = createMockExecution(amOccId);
         const amResp = createMockSessionResponse(amOccId);
 
-        vi.spyOn(sessionOccurrenceService, 'getOccurrencesForDate').mockResolvedValue([amOcc]);
+        seedOccurrences(amOcc);
         vi.spyOn(sessionExecutionService, 'getExecutionsInRange').mockResolvedValue({ executions: [amExec], invalidRecords: 0 });
         vi.spyOn(sessionResponseService, 'getResponseForWindow').mockResolvedValue(amResp);
 
@@ -817,13 +890,14 @@ describe('adjudicateIntradayBundleMembers', () => {
             externalPlanRef: { planId: 'p-v4', revision: 1, sessionId: 'am-run', contentHash: 'hash-bundle-v4' },
             state: 'completed',
             placementOrder: 0,
+            windowBinding: createPrimaryWindowBinding(),
             createdAt: '2026-09-07T05:00:00.000Z',
             updatedAt: '2026-09-07T06:00:00.000Z',
         };
         const amExec = createMockExecution(amOccId);
         const amResp = createMockSessionResponse(amOccId);
 
-        vi.spyOn(sessionOccurrenceService, 'getOccurrencesForDate').mockResolvedValue([amOcc]);
+        seedOccurrences(amOcc);
         vi.spyOn(sessionExecutionService, 'getExecutionsInRange').mockResolvedValue({ executions: [amExec], invalidRecords: 0 });
         vi.spyOn(sessionResponseService, 'getResponseForWindow').mockResolvedValue(amResp);
 
@@ -861,13 +935,14 @@ describe('adjudicateIntradayBundleMembers', () => {
             externalPlanRef: { planId: 'p-v4', revision: 1, sessionId: 'am-run', contentHash: 'hash-bundle-v4' },
             state: 'completed',
             placementOrder: 0,
+            windowBinding: createPrimaryWindowBinding(),
             createdAt: '2026-09-07T05:00:00.000Z',
             updatedAt: '2026-09-07T06:00:00.000Z',
         };
         const amExec = createMockExecution(amOccId);
         const amResp = createMockSessionResponse(amOccId);
 
-        vi.spyOn(sessionOccurrenceService, 'getOccurrencesForDate').mockResolvedValue([amOcc]);
+        seedOccurrences(amOcc);
         vi.spyOn(sessionExecutionService, 'getExecutionsInRange').mockResolvedValue({ executions: [amExec], invalidRecords: 0 });
         vi.spyOn(sessionResponseService, 'getResponseForWindow').mockResolvedValue(amResp);
 
@@ -911,13 +986,14 @@ describe('adjudicateIntradayBundleMembers', () => {
             externalPlanRef: { planId: 'p-v4', revision: 1, sessionId: 'am-run', contentHash: 'hash-bundle-v4' },
             state: 'completed',
             placementOrder: 0,
+            windowBinding: createPrimaryWindowBinding(),
             createdAt: '2026-09-07T05:00:00.000Z',
             updatedAt: '2026-09-07T06:00:00.000Z',
         };
         const amExec = createMockExecution(amOccId);
         const amResp = createMockSessionResponse(amOccId);
 
-        vi.spyOn(sessionOccurrenceService, 'getOccurrencesForDate').mockResolvedValue([amOcc]);
+        seedOccurrences(amOcc);
         vi.spyOn(sessionExecutionService, 'getExecutionsInRange').mockResolvedValue({ executions: [amExec], invalidRecords: 0 });
         vi.spyOn(sessionResponseService, 'getResponseForWindow').mockResolvedValue(amResp);
 

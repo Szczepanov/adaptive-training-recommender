@@ -1,4 +1,4 @@
-import { collection, deleteField, doc, getDoc, getDocs, limit, orderBy, query, setDoc, where, writeBatch } from 'firebase/firestore';
+import { collection, deleteField, doc, getDoc, getDocs, limit, orderBy, query, runTransaction, setDoc, where, writeBatch } from 'firebase/firestore';
 import { getDb } from '../firebase';
 import type { DailyRecommendation, DailyRecommendationWithVerdict, Recommendation } from '../engine/models';
 import { resolveEngineShadowVerdict } from '../engine/shadowAgreement';
@@ -9,6 +9,9 @@ import { isPermissionDeniedError } from '../utils/errors';
 import { deepEqual } from '../utils/deepEqual';
 import { createDecisionContext, validateDecisionContext, type CreateDecisionContextInput, type DecisionContextRecord } from '../engine/decisionContext';
 import type { MinimumSafetyCheckinStatus } from '../engine/safetyCheckin';
+import { parseSessionOccurrenceDocument } from '../persistence/parsers/sessionDefinition';
+import { isManualOccurrence } from '../sessions/models';
+import { manualRecommendationReplacementService } from './manualRecommendationReplacementService';
 
 type DecisionContextCapture = Omit<CreateDecisionContextInput, 'userId' | 'date' | 'recommendationRevision'>;
 
@@ -95,6 +98,20 @@ export class RecommendationService {
             const docRef = doc(getDb(), 'users', userId, this.collectionPath, date);
             const existingSnap = await getDoc(docRef);
             const existing = existingSnap.exists() ? existingSnap.data() as DailyRecommendationWithVerdict : undefined;
+
+            // A stale ordinary dashboard save cannot revoke a committed manual
+            // authority. Finished work also retains its original decision/snapshot.
+            const committedReplacementId = existing?.recommendationAudit?.authoredOccurrence?.occurrenceId;
+            if (committedReplacementId) {
+                const occurrenceRef = doc(getDb(), 'users', userId, 'session_occurrences', committedReplacementId);
+                const occurrenceSnap = await getDoc(occurrenceRef);
+                const parsed = occurrenceSnap.exists() ? parseSessionOccurrenceDocument(occurrenceSnap.data(), occurrenceRef.path) : null;
+                if (parsed?.status !== 'AVAILABLE' || !isManualOccurrence(parsed.data)
+                    || parsed.data.authority !== 'replace_recommendation' || parsed.data.date !== date
+                    || parsed.data.userId !== userId) return null;
+                if (parsed.data.state === 'completed' || parsed.data.state === 'abandoned'
+                    || (['scheduled', 'active'].includes(parsed.data.state) && !rec.recommendationAudit?.authoredOccurrence)) return existing!;
+            }
 
             const isNewDoc = !existing;
             priorRevision = existing ? (existing.revision ?? 1) : 1;
@@ -228,10 +245,12 @@ export class RecommendationService {
                 if (!rec.primarySession && existing?.primarySession) writeData.primarySession = deleteField();
                 if (!rec.additionalSessions && existing?.additionalSessions) writeData.additionalSessions = deleteField();
 
+                const archiveRef = decisionChangedThisSave
+                    ? doc(getDb(), 'users', userId, this.collectionPath, date, 'revisions', String(priorRevision))
+                    : undefined;
+                let archiveData: Record<string, unknown> | undefined;
                 if (decisionChangedThisSave) {
-                    const batch = writeBatch(getDb());
-                    const archiveRef = doc(getDb(), 'users', userId, this.collectionPath, date, 'revisions', String(priorRevision));
-                    const archiveData: Record<string, unknown> = {
+                    archiveData = {
                         revision: priorRevision,
                         templateId: existing.templateId,
                         templateTitle: existing.templateTitle,
@@ -246,14 +265,25 @@ export class RecommendationService {
                     if (existing.additionalSessions) archiveData.additionalSessions = existing.additionalSessions;
                     if (existing.recommendationAudit) archiveData.recommendationAudit = existing.recommendationAudit;
 
-                    batch.set(archiveRef, archiveData);
+                }
+                if (validated.recommendationAudit?.authoredOccurrence) {
+                    await runTransaction(getDb(), async transaction => {
+                        const current = await transaction.get(docRef);
+                        if (!deepEqual(current.exists() ? current.data() : undefined, existing)) {
+                            throw new Error('Recommendation changed before replacement authority could be committed.');
+                        }
+                        await manualRecommendationReplacementService.transferAuthorityInTransaction(
+                            transaction, userId, date, existing, validated,
+                        );
+                        if (archiveRef && archiveData) transaction.set(archiveRef, archiveData);
+                        transaction.set(docRef, writeData, { mergeFields: Object.keys(writeData) });
+                        if (boundContext && contextRef) transaction.set(contextRef, boundContext);
+                    });
+                } else if (archiveRef || (boundContext && contextRef)) {
+                    const batch = writeBatch(getDb());
+                    if (archiveRef && archiveData) batch.set(archiveRef, archiveData);
                     batch.set(docRef, writeData, { mergeFields: Object.keys(writeData) });
                     if (boundContext && contextRef) batch.set(contextRef, boundContext);
-                    await batch.commit();
-                } else if (boundContext && contextRef) {
-                    const batch = writeBatch(getDb());
-                    batch.set(docRef, writeData, { mergeFields: Object.keys(writeData) });
-                    batch.set(contextRef, boundContext);
                     await batch.commit();
                 } else {
                     await setDoc(docRef, writeData, { mergeFields: Object.keys(writeData) });

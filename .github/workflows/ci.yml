@@ -180,10 +180,10 @@ jobs:
         run: |
           # Audit high/critical vulnerabilities immediately after install while the tree is pristine.
           # Include a single retry with backoff in case the npm registry security endpoint times out.
-          npm audit --audit-level=high || {
+          npm run audit || {
             echo "npm audit returned an error or registry timeout; retrying once..." >&2
             sleep 5
-            npm audit --audit-level=high
+            npm run audit
           }
 
       - name: Type check frontend

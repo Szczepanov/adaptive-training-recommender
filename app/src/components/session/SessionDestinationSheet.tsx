@@ -7,6 +7,7 @@ import { validateSessionDefinition } from '../../sessions/validation';
 import { sessionDefinitionService } from '../../services/sessionDefinitionService';
 import { prepareUnplannedSessionLaunch } from '../../services/sessionAuthoringService';
 import { sessionOccurrenceService } from '../../services/sessionOccurrenceService';
+import { manualRecommendationReplacementService } from '../../services/manualRecommendationReplacementService';
 import { getLocalDateString } from '../../utils/localDate';
 import { isValidDate } from '../../engine/validation';
 import './SessionDestinationSheet.css';
@@ -96,7 +97,11 @@ export const SessionDestinationSheet: React.FC<SessionDestinationSheetProps> = (
             const definitionRef = { definitionId: definition.id, revision: definition.revision, contentHash };
             let occurrence: SessionOccurrence;
             if (selectedDestination === 'replace_recommendation') {
-                occurrence = await sessionOccurrenceService.replaceRecommendationOccurrence(userId, occurrenceDate, definitionRef);
+                occurrence = await manualRecommendationReplacementService.replaceRecommendationOccurrence(
+                    userId,
+                    occurrenceDate,
+                    definitionRef,
+                );
             } else if (selectedDestination === 'additional_session') {
                 occurrence = await sessionOccurrenceService.addAdditionalSessionOccurrence(userId, occurrenceDate, definitionRef);
             } else {
