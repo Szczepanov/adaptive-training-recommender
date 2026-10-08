@@ -51,6 +51,8 @@ a delivery queue.
 
 ## Current plans
 
+The implementation plan for Firestore Security Rules modularization, build pipeline, and expression-budget optimization is [`2026-10-08-firestore-rules-modularization-and-budget-refactor.md`](./2026-10-08-firestore-rules-modularization-and-budget-refactor.md) — **Ready**. It defines a two-tier refactor: (1) modularizing source into `app/rules/` with automated build assembly and pre-deploy minification (reducing GCP cold compilation latency from >6.0s to <3.0s), and (2) pruning redundant deep payload schema assertions while strictly preserving tenant isolation, immutability, state machines, and exclusivity invariants.
+
 Issue #933 forecast authority handoff: **Implemented**. Forecasts use date-local
 ownership segments and the production Evergreen seed, verified by live-parity,
 accounting and terminal-recovery simulation regressions. Projected work may seed forecast
