@@ -1,0 +1,472 @@
+
+    function hasValidDisplayMetadata(meta) {
+      return meta is map
+        && meta.keys().hasOnly(['title', 'summary', 'intent', 'dominantModality', 'duration', 'movementComposition'])
+        && meta.title is string
+        && meta.intent is string;
+    }
+
+    function hasValidDefinitionSnapshot(snapshot) {
+      return snapshot is map
+        && snapshot.keys().hasOnly(['schemaVersion', 'title', 'summary', 'intent', 'modalities', 'dominantModality', 'duration', 'sessionTargets', 'prohibitedAdditions', 'importWarnings', 'movementComposition', 'blocks'])
+        && snapshot.schemaVersion == 1
+        && snapshot.title is string
+        && snapshot.intent is string
+        && snapshot.blocks is list;
+    }
+
+    function hasValidExecutionPrescription(userId, prescriptionHash) {
+      let data = request.resource.data;
+      return hasOwnedUserId(userId)
+        && data.keys().hasOnly(['userId', 'schemaVersion', 'prescriptionHash', 'sessionSource', 'definitionHash', 'blocks', 'displayMetadata', 'definitionSnapshot', 'createdAt'])
+        && data.prescriptionHash == prescriptionHash
+        && data.definitionHash is string
+        && hasValidSessionSource(data.sessionSource)
+        && data.schemaVersion == 1
+        && data.blocks is list
+        && (!('displayMetadata' in data) || hasValidDisplayMetadata(data.displayMetadata))
+        && (!('definitionSnapshot' in data) || hasValidDefinitionSnapshot(data.definitionSnapshot))
+        && data.createdAt is string;
+    }
+
+    match /users/{userId}/execution_prescriptions/{prescriptionHash} {
+      allow read: if isOwner(userId);
+      allow create: if hasValidExecutionPrescription(userId, prescriptionHash);
+      allow update, delete: if false;
+    }
+
+    function hasValidCompletionEvidence(evidence) {
+      return evidence is map
+        && evidence.keys().hasOnly(['submittedAt', 'sessionRpe', 'completedFraction', 'unexpectedFatigue', 'note'])
+        && evidence.submittedAt is string;
+    }
+    function hasValidSessionExecution(userId, executionId) {
+      let data = request.resource.data;
+      return hasOwnedUserId(userId)
+        && data.keys().hasOnly(['userId', 'executionId', 'occurrenceId', 'sessionSource', 'prescriptionHash', 'fitWorkoutFingerprint', 'fitWorkoutFingerprintKind', 'date', 'startedAt', 'completedAt', 'updatedAt', 'state', 'sessionRpe', 'notes', 'schemaVersion'])
+        && data.executionId == executionId
+        && isValidActivityDate(data.date)
+        && hasValidSessionSource(data.sessionSource)
+        && (!('occurrenceId' in data) || data.occurrenceId is string)
+        && (!('prescriptionHash' in data) || data.prescriptionHash is string)
+        && (('fitWorkoutFingerprint' in data) == ('fitWorkoutFingerprintKind' in data))
+        && (!('fitWorkoutFingerprint' in data) || (data.fitWorkoutFingerprint is string && data.fitWorkoutFingerprint.matches('^fit-workout-v2:[0-9a-f]{32}$')))
+        && (!('fitWorkoutFingerprintKind' in data) || data.fitWorkoutFingerprintKind in ['semantic_definition', 'index_fallback'])
+        && (!('sessionRpe' in data) || (data.sessionRpe is number && data.sessionRpe >= 1 && data.sessionRpe <= 10))
+        && (!('notes' in data) || (data.notes is string && data.notes.size() <= 4000))
+        && data.state == 'in_progress'
+        && data.startedAt is string
+        && data.updatedAt is string
+        && data.schemaVersion == 1;
+    }
+
+    function hasValidSessionSource(source) {
+      return source is map && (
+        (source.kind == 'catalog'
+          && source.keys().hasOnly(['kind', 'workoutId', 'catalogVersion'])
+          && source.workoutId is string && source.catalogVersion is string)
+        || (source.kind == 'external_plan'
+          && source.keys().hasOnly(['kind', 'planId', 'revision', 'sessionId', 'contentHash'])
+          && source.planId is string && source.revision is int && source.revision >= 1
+          && source.sessionId is string && source.contentHash is string)
+        || (source.kind == 'manual'
+          && source.keys().hasOnly(['kind', 'definitionId', 'revision', 'contentHash'])
+          && source.definitionId is string && source.revision is int && source.revision >= 1 && source.contentHash is string)
+        || (source.kind == 'unplanned_fixture'
+          && source.keys().hasOnly(['kind', 'fixtureId'])
+          && source.fixtureId is string)
+      );
+    }
+
+    function hasValidSessionReferenceBinding(binding) {
+      return binding is map
+        && binding.keys().hasOnly(['sessionSource', 'occurrenceId', 'prescriptionHash', 'fitWorkoutFingerprint', 'fitWorkoutFingerprintKind'])
+        && hasValidSessionSource(binding.sessionSource)
+        && binding.prescriptionHash is string && binding.prescriptionHash.size() > 0
+        && (!('occurrenceId' in binding) || (binding.occurrenceId is string && binding.occurrenceId.size() > 0))
+        && (('fitWorkoutFingerprint' in binding) == ('fitWorkoutFingerprintKind' in binding))
+        && (!('fitWorkoutFingerprintKind' in binding) || binding.fitWorkoutFingerprintKind in ['semantic_definition', 'index_fallback'])
+        && (!('fitWorkoutFingerprint' in binding) || (binding.fitWorkoutFingerprint is string && binding.fitWorkoutFingerprint.size() > 0));
+    }
+
+    function hasValidAdditionalSessions(list) {
+      // `validateRecommendation` is the detailed binding authority. These are
+      // owner-owned supplemental sessions, while the rule keeps the operational
+      // cardinality limit that prevents an unbounded same-day recommendation.
+      return list is list && list.size() <= 4;
+    }
+
+    function hasValidSessionEntry(executionId, entryId) {
+      let data = request.resource.data;
+      return validSessionEntryData(data, executionId, entryId);
+    }
+
+    function validSessionEntryData(data, executionId, entryId) {
+      let payload = data.payload;
+      return data.keys().hasOnly(['id', 'executionId', 'stepId', 'exerciseRef', 'side', 'selectedOptionId', 'governingChoiceEntryId', 'supersedesChoiceEntryId', 'completedAt', 'createdAt', 'updatedAt', 'payload', 'diaryMutationId', 'deletedAt'])
+        && data.id == entryId
+        && data.executionId == executionId
+        && data.completedAt is string && data.createdAt is string && data.updatedAt is string
+        && (!('diaryMutationId' in data) || (data.diaryMutationId is string && data.diaryMutationId.size() > 0))
+        && (!('deletedAt' in data) || data.deletedAt == null || data.deletedAt is string)
+        && (!('stepId' in data) || data.stepId is string)
+        && (!('selectedOptionId' in data) || data.selectedOptionId is string)
+        && (!('governingChoiceEntryId' in data)
+          || (payload.kind != 'choice' && data.governingChoiceEntryId is string && data.governingChoiceEntryId.size() > 0))
+        && (!('supersedesChoiceEntryId' in data)
+          || (payload.kind == 'choice'
+            && data.supersedesChoiceEntryId is string
+            && data.supersedesChoiceEntryId.size() > 0
+            && data.supersedesChoiceEntryId != entryId))
+        && (!('side' in data) || data.side in ['left', 'right', 'bilateral'])
+        && payload is map
+        && (
+          (payload.kind == 'repetition'
+            && payload.keys().hasOnly(['kind', 'setIndex', 'reps', 'weightKg', 'isWarmup', 'gauge'])
+            && payload.setIndex is int && payload.setIndex >= 1
+            && payload.reps is int && payload.reps >= 1
+            && (!('weightKg' in payload) || (payload.weightKg is number && payload.weightKg >= 0))
+            && (!('isWarmup' in payload) || payload.isWarmup is bool))
+          || (payload.kind == 'duration'
+            && payload.keys().hasOnly(['kind', 'seconds', 'loadKg', 'position'])
+            && payload.seconds is number && payload.seconds > 0
+            && (!('loadKg' in payload) || (payload.loadKg is number && payload.loadKg >= 0)))
+          || (payload.kind == 'distance'
+            && payload.keys().hasOnly(['kind', 'meters', 'durationSeconds'])
+            && payload.meters is number && payload.meters > 0
+            && (!('durationSeconds' in payload) || (payload.durationSeconds is number && payload.durationSeconds > 0)))
+          || (payload.kind == 'sprint'
+            && payload.keys().hasOnly(['kind', 'meters', 'splitSeconds', 'surface'])
+            && payload.meters is number && payload.meters > 0
+            && payload.splitSeconds is number && payload.splitSeconds > 0)
+          || (payload.kind == 'jump_attempt'
+            && payload.keys().hasOnly(['kind', 'attemptIndex', 'heightInches', 'distanceMeters'])
+            && payload.attemptIndex is int && payload.attemptIndex >= 1
+            && (('heightInches' in payload && payload.heightInches is number && payload.heightInches > 0)
+              || ('distanceMeters' in payload && payload.distanceMeters is number && payload.distanceMeters > 0)))
+          || (payload.kind == 'checkoff'
+            && payload.keys().hasOnly(['kind', 'roundIndex', 'completed'])
+            && payload.completed is bool
+            && (!('roundIndex' in payload) || (payload.roundIndex is int && payload.roundIndex >= 1)))
+          || (payload.kind == 'choice'
+            && payload.keys().hasOnly(['kind', 'choiceId', 'optionId', 'reason'])
+            && payload.choiceId is string && payload.choiceId.size() > 0
+            && payload.optionId is string && payload.optionId.size() > 0
+            && (!('reason' in payload) || payload.reason is string))
+        );
+    }
+
+
+function isChoiceEntryReference(userId, executionId, choiceEntryId) {
+  let target = /databases/$(database)/documents/users/$(userId)/session_executions/$(executionId)/entries/$(choiceEntryId);
+  return exists(target)
+    && get(target).data.executionId == executionId
+    && get(target).data.payload.kind == 'choice'
+    && (!('deletedAt' in get(target).data) || get(target).data.deletedAt == null);
+}
+
+function hasValidGoverningChoiceReference(userId, executionId) {
+  let data = request.resource.data;
+  let target = /databases/$(database)/documents/users/$(userId)/session_executions/$(executionId)/entries/$(data.governingChoiceEntryId);
+  return data.payload.kind != 'choice'
+    && ('selectedOptionId' in data)
+    && isChoiceEntryReference(userId, executionId, data.governingChoiceEntryId)
+    && data.selectedOptionId == get(target).data.payload.optionId;
+}
+
+function hasValidChoiceSupersession(userId, executionId, entryId) {
+  let data = request.resource.data;
+  let target = /databases/$(database)/documents/users/$(userId)/session_executions/$(executionId)/entries/$(data.supersedesChoiceEntryId);
+  return data.payload.kind == 'choice'
+    && data.supersedesChoiceEntryId != entryId
+    && isChoiceEntryReference(userId, executionId, data.supersedesChoiceEntryId)
+    && get(target).data.payload.choiceId == data.payload.choiceId;
+}
+    // An immutable mutation and its materialized target must enter the queue together.
+    // Comparing the prior bytes also rejects competing corrections instead of silently
+    // losing one tab's update. Legacy entries can enter this discipline without migration.
+    function validDiaryMutation(userId, executionId, mutationId) {
+      let data = request.resource.data;
+      let parent = /databases/$(database)/documents/users/$(userId)/session_executions/$(executionId);
+      let target = data.targetKind == 'entry'
+        ? /databases/$(database)/documents/users/$(userId)/session_executions/$(executionId)/entries/$(data.targetId)
+        : /databases/$(database)/documents/users/$(userId)/session_executions/$(executionId)/restEvents/$(data.targetId);
+      return isOwner(userId)
+        && data.keys().hasOnly(['id', 'executionId', 'targetId', 'targetKind', 'kind', 'at', 'before', 'after'])
+        && data.keys().hasAll(['id', 'executionId', 'targetId', 'targetKind', 'kind', 'at', 'before', 'after'])
+        && data.id == mutationId && data.executionId == executionId
+        && data.targetId is string && data.targetId.size() > 0
+        && data.targetKind in ['entry', 'rest'] && data.at is string
+        && data.after is map && data.after.id == data.targetId
+        && data.after.executionId == executionId && data.after.updatedAt == data.at
+        && exists(parent) && get(parent).data.state == 'in_progress'
+        && existsAfter(target) && getAfter(target).data == data.after
+        && (
+          (data.targetKind == 'rest' && data.kind == 'rest' && data.before == null
+            && mutationId == 'rest-' + data.targetId
+            && (!exists(target) || get(target).data == data.after))
+          || (data.targetKind == 'entry'
+            && validSessionEntryData(data.after, executionId, data.targetId)
+            && data.after.diaryMutationId == mutationId
+            && (
+              (data.kind == 'log' && data.before == null && data.after.deletedAt == null
+                && (!exists(target) || get(target).data == data.after))
+              || (data.kind in ['correct', 'delete', 'restore'] && data.before is map
+                && data.before.payload.kind != 'choice' && data.after.payload.kind != 'choice'
+                && exists(target) && get(target).data == data.before
+                && data.after.id == data.before.id && data.after.createdAt == data.before.createdAt
+                && (
+                  (data.kind == 'correct'
+                    && (!('deletedAt' in data.before) || data.before.deletedAt == null)
+                    && (!('deletedAt' in data.after) || data.after.deletedAt == null))
+                  || (data.kind == 'delete'
+                    && (!('deletedAt' in data.before) || data.before.deletedAt == null)
+                    && data.after.deletedAt == data.at
+                    && data.after.diff(data.before).affectedKeys().hasOnly(['updatedAt', 'diaryMutationId', 'deletedAt']))
+                  || (data.kind == 'restore' && data.before.deletedAt is string && data.after.deletedAt == null
+                    && data.after.diff(data.before).affectedKeys().hasOnly(['updatedAt', 'diaryMutationId', 'deletedAt']))
+                ))
+            ))
+        );
+    }
+
+    function entryHasAtomicDiaryMutation(userId, executionId, entryId) {
+      let data = request.resource.data;
+      let marker = /databases/$(database)/documents/users/$(userId)/session_executions/$(executionId)/diaryMutations/$(data.diaryMutationId);
+      return existsAfter(marker)
+        && getAfter(marker).data.targetKind == 'entry'
+        && getAfter(marker).data.targetId == entryId
+        && getAfter(marker).data.after == data;
+    }
+
+    function restKeepsDiaryAudit(userId, executionId, restEventId) {
+      let mutationId = 'rest-' + restEventId;
+      let marker = /databases/$(database)/documents/users/$(userId)/session_executions/$(executionId)/diaryMutations/$(mutationId);
+      return !existsAfter(marker) || getAfter(marker).data.after == request.resource.data;
+    }
+
+    // PR 3 (training-occurrence plan, "Performed rest and execution timeline"): a durable
+    // performed-rest record, distinct from a step's prescribed rest. See
+    // sessions/restEventTiming.ts for the pure logic that produces these fields.
+    function hasValidSessionRestEvent(executionId, restEventId) {
+      let data = request.resource.data;
+      return data.keys().hasOnly(['id', 'executionId', 'afterEntryId', 'prescribedSeconds', 'startedAt', 'endedAt', 'actualSeconds', 'endReason', 'adjustmentSeconds', 'createdAt', 'updatedAt'])
+        && data.id == restEventId
+        && data.executionId == executionId
+        && data.afterEntryId is string && data.afterEntryId.size() > 0
+        && data.startedAt is string && data.endedAt is string
+        && data.actualSeconds is number && data.actualSeconds >= 0
+        && data.endReason in ['timer_elapsed', 'skipped', 'next_set_started', 'session_ended']
+        && (!('prescribedSeconds' in data) || (data.prescribedSeconds is number && data.prescribedSeconds >= 0))
+        && (!('adjustmentSeconds' in data) || data.adjustmentSeconds is number)
+        && data.createdAt is string
+        && data.updatedAt is string;
+    }
+
+    // #663: deterministic launch-slot pointer. Online starts claim this doc in a
+    // transaction; offline starts queue execution+lock in one persisted write batch. The
+    // rules below are therefore part of the concurrency invariant, not just shape checks:
+    // a queued blind write may create an empty slot, repair a dangling/abandoned pointer,
+    // or explicitly redo a completed execution, but it may never replace an in-progress
+    // winner. getAfter() also binds the pointer to the in-progress execution in the same
+    // atomic request.
+    function hasValidSessionExecutionLock(userId) {
+      let data = request.resource.data;
+      return hasOwnedUserId(userId)
+        && data.keys().hasOnly([
+          'userId', 'executionId', 'date', 'occurrenceId', 'prescriptionHash',
+          'allowCompletedReplacement', 'updatedAt', 'schemaVersion'
+        ])
+        && data.keys().hasAll([
+          'userId', 'executionId', 'date', 'allowCompletedReplacement',
+          'updatedAt', 'schemaVersion'
+        ])
+        && data.executionId is string && data.executionId.size() > 0
+        && isValidActivityDate(data.date)
+        && data.allowCompletedReplacement is bool
+        && data.updatedAt is string
+        && data.schemaVersion == 1
+        && (
+          (
+            'occurrenceId' in data
+            && !('prescriptionHash' in data)
+            && data.occurrenceId is string && data.occurrenceId.size() > 0
+          )
+          || (
+            !('occurrenceId' in data)
+            && (
+              !('prescriptionHash' in data)
+              || (data.prescriptionHash is string && data.prescriptionHash.size() > 0)
+            )
+          )
+        );
+    }
+
+    function sessionExecutionMatchesLockIdentity(lockData, execution) {
+      return (
+          'occurrenceId' in lockData
+          && 'occurrenceId' in execution
+          && execution.occurrenceId == lockData.occurrenceId
+        )
+        || (
+          !('occurrenceId' in lockData)
+          && !('occurrenceId' in execution)
+          && (
+            (
+              'prescriptionHash' in lockData
+              && 'prescriptionHash' in execution
+              && execution.prescriptionHash == lockData.prescriptionHash
+            )
+            || (
+              !('prescriptionHash' in lockData)
+              && !('prescriptionHash' in execution)
+            )
+          )
+        );
+    }
+
+    function sessionExecutionLockTargetsInProgress(userId, lockData) {
+      let executionPath = /databases/$(database)/documents/users/$(userId)/session_executions/$(lockData.executionId);
+      let execution = getAfter(executionPath);
+      return existsAfter(executionPath)
+        && execution.data.userId == userId
+        && execution.data.executionId == lockData.executionId
+        && execution.data.date == lockData.date
+        && execution.data.state == 'in_progress'
+        && execution.data.schemaVersion == 1
+        && sessionExecutionMatchesLockIdentity(lockData, execution.data);
+    }
+
+    function sessionExecutionLockPointsAtBlockingExecution(userId, lockData) {
+      let executionPath = /databases/$(database)/documents/users/$(userId)/session_executions/$(lockData.executionId);
+      let execution = get(executionPath);
+      return exists(executionPath)
+        && execution.data.userId == userId
+        && execution.data.executionId == lockData.executionId
+        && execution.data.date == lockData.date
+        && execution.data.state in ['in_progress', 'completed']
+        && execution.data.schemaVersion == 1
+        && sessionExecutionMatchesLockIdentity(lockData, execution.data);
+    }
+
+    function canUpdateSessionExecutionLock(userId) {
+      let next = request.resource.data;
+      let current = resource.data;
+      let currentExecutionPath = /databases/$(database)/documents/users/$(userId)/session_executions/$(current.executionId);
+      return hasValidSessionExecutionLock(userId)
+        && next.diff(current).affectedKeys().hasOnly([
+          'executionId', 'allowCompletedReplacement', 'updatedAt'
+        ])
+        && sessionExecutionLockTargetsInProgress(userId, next)
+        && (
+          !sessionExecutionLockPointsAtBlockingExecution(userId, current)
+          || (
+            get(currentExecutionPath).data.state == 'completed'
+            && next.allowCompletedReplacement == true
+          )
+        );
+    }
+
+    match /users/{userId}/session_execution_locks/{lockId} {
+      allow read: if isOwner(userId);
+      allow create: if hasValidSessionExecutionLock(userId)
+        && sessionExecutionLockTargetsInProgress(userId, request.resource.data);
+      allow update: if canUpdateSessionExecutionLock(userId);
+      // The pointer is a durable concurrency anchor. Deleting it would reopen the exact
+      // check-then-create race this collection exists to close.
+      allow delete: if false;
+    }
+
+    function isValidSessionExecutionUpdate(userId, executionId) {
+      let data = request.resource.data;
+      let diffKeys = data.diff(resource.data).affectedKeys();
+      return keepsOwnership(userId)
+        && resource.data.state == 'in_progress'
+        && data.executionId == executionId
+        && data.schemaVersion == 1
+        && (
+          (data.state == 'in_progress' && diffKeys.hasOnly(['updatedAt']))
+          ||
+          (data.state in ['completed', 'abandoned']
+            && diffKeys.hasOnly(['state', 'updatedAt', 'completedAt', 'sessionRpe', 'notes', 'completionEvidence'])
+            && (!('sessionRpe' in data) || (data.sessionRpe is number && data.sessionRpe >= 1 && data.sessionRpe <= 10))
+            && (!('notes' in data) || (data.notes is string && data.notes.size() <= 4000))
+            && (!('completionEvidence' in data) || hasValidCompletionEvidence(data.completionEvidence))
+            && ((data.state == 'completed'
+                  && data.completedAt is string
+                  && data.completedAt == data.updatedAt)
+                || (data.state == 'abandoned'
+                  && !('completedAt' in data)
+                  && !('completionEvidence' in data))))
+        );
+    }
+    match /users/{userId}/session_executions/{executionId} {
+      allow read: if isOwner(userId);
+      allow create: if hasValidSessionExecution(userId, executionId)
+        && (!('occurrenceId' in request.resource.data)
+          || !existsAfter(/databases/$(database)/documents/users/$(userId)/session_occurrences/$(request.resource.data.occurrenceId))
+          || getAfter(/databases/$(database)/documents/users/$(userId)/session_occurrences/$(request.resource.data.occurrenceId)).data.state != 'superseded');
+      allow update: if isValidSessionExecutionUpdate(userId, executionId);
+      allow delete: if isOwner(userId) && resource.data.state == 'in_progress';
+
+      match /entries/{entryId} {
+        allow read: if isOwner(userId);
+        allow create, update, delete: if isOwner(userId)
+          && exists(/databases/$(database)/documents/users/$(userId)/session_executions/$(executionId))
+          && get(/databases/$(database)/documents/users/$(userId)/session_executions/$(executionId)).data.state == 'in_progress'
+          && (request.method == 'delete'
+            ? resource.data.payload.kind != 'choice' && !('diaryMutationId' in resource.data)
+            : hasValidSessionEntry(executionId, entryId)
+              && (request.resource.data.payload.kind != 'choice'
+                || !('deletedAt' in request.resource.data)
+                || request.resource.data.deletedAt == null)
+              && (!('governingChoiceEntryId' in request.resource.data)
+                || hasValidGoverningChoiceReference(userId, executionId))
+              && (!('supersedesChoiceEntryId' in request.resource.data)
+                || hasValidChoiceSupersession(userId, executionId, entryId))
+              && (request.method != 'update'
+                || (resource.data.payload.kind != 'choice' && request.resource.data.payload.kind != 'choice')
+                || request.resource.data == resource.data)
+              && (
+                (!('diaryMutationId' in request.resource.data)
+                  && (request.method == 'create' || !('diaryMutationId' in resource.data)))
+                || ('diaryMutationId' in request.resource.data
+                  && entryHasAtomicDiaryMutation(userId, executionId, entryId)
+                  && (request.method == 'create'
+                    || request.resource.data == resource.data
+                    || getAfter(/databases/$(database)/documents/users/$(userId)/session_executions/$(executionId)/diaryMutations/$(request.resource.data.diaryMutationId)).data.before == resource.data))
+              ));
+      }
+
+      match /diaryMutations/{mutationId} {
+        allow read: if isOwner(userId);
+        allow create: if validDiaryMutation(userId, executionId, mutationId);
+        // Idempotent replay may resend the same immutable marker, never replace history.
+        allow update: if isOwner(userId) && request.resource.data == resource.data;
+        allow delete: if false;
+      }
+
+      // A session-ending rest event must be written before the execution's own
+      // 'completed'/'abandoned' transition commits (the hook awaits this write first),
+      // so 'in_progress' remains the correct gate here, matching /entries/ above.
+      match /restEvents/{restEventId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId)
+          && exists(/databases/$(database)/documents/users/$(userId)/session_executions/$(executionId))
+          && get(/databases/$(database)/documents/users/$(userId)/session_executions/$(executionId)).data.state == 'in_progress'
+          && hasValidSessionRestEvent(executionId, restEventId)
+          && restKeepsDiaryAudit(userId, executionId, restEventId);
+        // Update is allowed only to support the "retry after partial failure converges
+        // safely" requirement (the caller re-sends the exact same restEventId) -- content
+        // must still validate and afterEntryId/startedAt/endReason (the rest's identity)
+        // are immutable so a retry can never silently rewrite which rest instance this is.
+        allow update: if isOwner(userId)
+          && hasValidSessionRestEvent(executionId, restEventId)
+          && request.resource.data.afterEntryId == resource.data.afterEntryId
+          && request.resource.data.startedAt == resource.data.startedAt
+          && request.resource.data.endReason == resource.data.endReason
+          && request.resource.data.createdAt == resource.data.createdAt
+          && restKeepsDiaryAudit(userId, executionId, restEventId);
+        allow delete: if false;
+      }
+    }

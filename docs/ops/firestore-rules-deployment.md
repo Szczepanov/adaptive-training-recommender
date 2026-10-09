@@ -10,8 +10,31 @@ narrowly-scoped Workload Identity Federation identity, no local machine needed).
 stays a local-only, deliberate operation either way** -- see [Rollback](#rollback) below;
 `frontend-deployment.md` explains how to retrieve the backup file from a CI-driven deploy.
 
-Only `app/firestore.rules` is deployed. Hosting, functions, data, and indexes are outside
+The generated `app/firestore.rules` is minified for upload. Hosting, functions, data, and indexes are outside
 this procedure.
+
+## Authoring and local verification
+
+Edit the numbered domain modules under `app/rules/`, then run from `app/`:
+
+```powershell
+npm run rules:build
+npm run rules:check-sync
+npm run test:rules
+```
+
+`rules:build` assembles modules in lexical order into readable, committed
+`app/firestore.rules`. The header opens the shared scope; the footer closes it. Functions
+remain in that scope, so cross-domain calls retain their visibility. Do not edit the generated
+file directly. Missing required modules and stale output fail the sync check, which also runs
+in CI, `npm run check`, and `make verify`.
+
+The guarded rules deployment checks sync before reading production. It creates a temporary
+config beside `firebase.json` and a separate minified rules file, preserving the original
+config's relative paths. Both temporary artifacts are removed after success or failure;
+tracked source and configuration remain readable. The minifier preserves quoted strings,
+escapes, and syntax-sensitive token boundaries. Emulator coverage compiles the minified
+source and exercises ownership, immutable prescriptions, and transaction path bindings.
 
 ## Prerequisites
 
@@ -44,9 +67,14 @@ deployment. The deployment command then:
 1. saves the currently active release and ruleset identity under
    `app/artifacts/firestore-rules-rollbacks/` (ignored by Git);
 2. reruns the mandatory local `npm run test:rules` emulator suite;
-3. deploys exactly `firestore:rules` to `adaptive-training-recommender`;
-4. reads the deployed source again and fails unless its SHA-256 matches
+3. deploys minified `firestore:rules` to `adaptive-training-recommender`;
+4. reads the deployed source again and fails unless its normalized SHA-256 matches
    `app/firestore.rules`.
+
+Drift comparison applies the same minifier to both sources. Comments, line endings, and
+formatting do not create drift; changed rule tokens and string contents do. This is lexical
+normalization, not a claim that different expressions are semantically equivalent. The
+rollback backup retains the original deployed source and ruleset identity.
 
 Record the command output, commit, deployment time, and resulting ruleset name in the
 change review. Firebase Rules releases can take several minutes to propagate, so do not

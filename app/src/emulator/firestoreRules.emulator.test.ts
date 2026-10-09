@@ -2554,6 +2554,49 @@ emulatorDescribe('Firestore security rules', () => {
         }))).resolves.toBeUndefined();
     });
 
+    it.each([
+        { kind: 'catalog', workoutId: 'workout-1', catalogVersion: 'v1' },
+        { kind: 'external_plan', planId: 'plan-1', revision: 1, sessionId: 'session-1', contentHash: 'hash-1' },
+        { kind: 'manual', definitionId: 'definition-1', revision: 1, contentHash: 'hash-1' },
+        { kind: 'unplanned_fixture', fixtureId: 'fixture-1' },
+    ])('requires every identity field in a $kind session source', async sessionSource => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertSucceeds(setDoc(doc(ownerDb, sessionExecPath), { ...validSessionExecution(), sessionSource }));
+        for (const key of Object.keys(sessionSource)) {
+            const incomplete: Record<string, unknown> = { ...sessionSource };
+            delete incomplete[key];
+            const executionId = `missing-${key}`;
+            await assertFails(setDoc(doc(ownerDb, `users/${ownerId}/session_executions/${executionId}`), {
+                ...validSessionExecution(), executionId, sessionSource: incomplete,
+            }));
+        }
+    });
+
+    it.each(['definitionRef', 'externalPlanRef'] as const)('requires every field in an occurrence %s', async refKey => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        const occurrence = refKey === 'definitionRef' ? validSessionOccurrence() : validExternalPlanSessionOccurrence();
+        const reference: Record<string, unknown> = refKey === 'definitionRef'
+            ? validSessionOccurrence().definitionRef : validExternalPlanSessionOccurrence().externalPlanRef;
+        for (const key of Object.keys(reference)) {
+            const incomplete = { ...reference };
+            delete incomplete[key];
+            const occurrenceId = `missing-${key}`;
+            await assertFails(setDoc(doc(ownerDb, `users/${ownerId}/session_occurrences/${occurrenceId}`), {
+                ...occurrence, occurrenceId, [refKey]: incomplete,
+            }));
+        }
+    });
+
+    it('requires every external plan placement field', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        const placement = validExternalPlacement();
+        for (const key of Object.keys(placement)) {
+            const incomplete: Record<string, unknown> = { ...placement };
+            delete incomplete[key];
+            await assertFails(setDoc(doc(ownerDb, externalPlacementPath), incomplete));
+        }
+    });
+
     it('allows execution lifecycle with entry subcollection mutability while in_progress, and terminal immutability', async () => {
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
 
