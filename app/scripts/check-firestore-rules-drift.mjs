@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { minifyRules } from './minify-firestore-rules.mjs';
 
 const scriptsDirectory = path.dirname(fileURLToPath(import.meta.url));
 export const appDirectory = path.resolve(scriptsDirectory, '..');
@@ -86,7 +87,7 @@ export async function inspectDeployedFirestoreRules(project) {
 }
 
 export function normalizeRulesSource(source) {
-  return typeof source === 'string' ? source.replace(/\r\n/g, '\n') : '';
+  return minifyRules(source);
 }
 
 export async function compareLocalFirestoreRules(project) {

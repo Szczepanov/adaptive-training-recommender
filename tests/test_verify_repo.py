@@ -46,6 +46,7 @@ def test_code_contract_contains_ci_critical_local_gates() -> None:
         "pytest",
         "frontend typecheck",
         "frontend lint",
+        "Firestore rules source sync",
         "frontend unit tests",
         "frontend latency gates",
         "knowledge registry",
@@ -68,6 +69,9 @@ def test_code_contract_contains_ci_critical_local_gates() -> None:
     )
     assert semantic_diff.required is False
     assert semantic_diff.argv == ("npm", "--prefix", "app", "run", "simulate:diff")
+
+    rules_sync = next(step for step in plan if step.name == "Firestore rules source sync")
+    assert rules_sync.argv == ("npm", "--prefix", "app", "run", "rules:check-sync")
 
 
 def _lane_of(

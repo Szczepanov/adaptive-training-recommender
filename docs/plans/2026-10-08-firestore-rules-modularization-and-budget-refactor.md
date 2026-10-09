@@ -1,165 +1,136 @@
-# Implementation Plan: Firestore Security Rules Modularization & Budget Refactoring
+# Firestore Security Rules Modularization & Budget Refactoring
 
-**Status**: `Ready`
-**Blocked by**: None (PR #1009 provides immediate stability baseline)
-**Unlocks**: Sustainable feature delivery for session execution, external plans, and multi-sport modules without AST exhaustion or 503 deployment timeouts
+**Status**: `In Progress` — local implementation verified; production acceptance pending
+**Base**: `89a24a6e` on fetched `origin/main`
 **Target Date**: 2026-10-09
 
----
+## Purpose and evidence boundary
 
-## 1. Executive Summary & Problem Statement
+The original proposal addressed a roughly 190 KB monolithic ruleset and deployment failures
+reported around PR #1009. Its 6-second gateway explanation, global AST-budget hypothesis,
+30–45% AST savings estimate, and sub-3-second cold compilation target were not established
+by a reproducible benchmark in this plan. They must not be treated as verified platform limits
+or delivered results.
 
-At ~3,000 lines and ~191 KB, `app/firestore.rules` is operating near the limits of the Firebase Security Rules engine:
+Firebase documents a 256 KB source limit, a 250 KB compiled ruleset limit, and 1,000 evaluated
+expressions per request. Rules functions cannot loop or recurse. See the official
+[security rules limits](https://firebase.google.com/docs/firestore/quotas#security_rules) and
+[custom function constraints](https://firebase.google.com/docs/firestore/security/rules-conditions#custom_functions).
+Minification reduces uploaded source bytes; modularization improves ownership. Neither alone
+proves a reduction in compiled size or remote compilation time.
 
-1. **Compilation Timeout (Gateway HTTP 503)**:
-   - Google Cloud API Gateway enforces a strict 6.00-second timeout on `POST /v1/projects/{project}/rulesets`.
-   - When comments and AST structures are parsed from cold cache, compilation takes 5.8s–6.2s, triggering deployment failures.
-2. **Global AST Expression Budget (Release Update HTTP 400 & 409)**:
-   - Firestore security rules compile into an AST evaluated against an undocumented global ruleset expression budget.
-   - Recent features (PR #1003 execution resume, PR #998 external plan binding) pushed AST complexity over this limit, causing `PATCH /v1/projects/{project}/releases/cloud.firestore` to fail with `400 INVALID_ARGUMENT`, which `firebase-tools` then masked as `409 Requested entity already exists`.
-3. **Developer Friction & Bloat**:
-   - Monolithic single-file architecture with zero modularization.
-   - Dual-role confusion: security rules are acting as an exhaustive JSON Schema validator for deep client payloads, duplicating TypeScript domain schemas across ~30 collections.
+## Required security boundaries
 
-This plan delivers a two-tier solution:
-- **Tier 1 (Infrastructure & Pipeline)**: Modular source structure (`app/rules/`) with a deterministic build assembler and pre-deploy minifier (stripping comments and redundant whitespace for deployment).
-- **Tier 2 (Architectural Schema Pruning)**: Refocusing Firestore rules on security invariants (tenant isolation, immutability, state machines, exclusivity) and delegating deep payload schema validation to application-layer TypeScript/Zod schemas.
+- Every client path retains its owner authorization and embedded user identity guards (ADR-0002).
+- Immutable recommendation audits, prescriptions, history revisions, and terminal execution
+  records retain their existing write lifecycle (ADR-0010).
+- Window reservations and execution locks retain transaction bindings, exclusivity, and
+  anti-resurrection checks.
+- Occurrence and execution state transitions retain their current allowed transitions.
+- Existing emulator rejection expectations remain unchanged, including malformed snapshots,
+  execution-entry payloads, and bounded collections.
 
----
+This is a rules/tooling refactor. It changes no recommendation-authority constants, app domain
+schemas, or `POLICY_VERSION`.
 
-## 2. Invariants & Security Boundaries (Non-Negotiable)
+## Local implementation
 
-Any refactoring must preserve 100% of the following guarantees:
-1. **User Isolation (ADR-0002)**: Strict `isOwner(userId)` checks on every path. Direct cross-user reads and writes remain denied.
-2. **Audit Immutability**: Historical records, frozen recommendation audits, and execution logs must enforce `allow update, delete: if false` (or exact one-way final state transitions).
-3. **Exclusivity & Concurrency**: Window leases (`session_occurrence_windows`) and execution locks (`session_execution_locks`) must retain exact concurrency and anti-resurrection guarantees.
-4. **State Machine Integrity**: Valid state transitions (`isValidOccurrenceStateTransition`, `isValidSessionExecutionUpdate`) must reject invalid state rollback or terminal overwrites.
-5. **Emulator Test Suite Parity**: All 32 emulator test suites (391 tests in `app/src/emulator/`) must continue to pass without regression.
+### Modular authoring and assembly
 
----
+The 196 top-level declarations were mechanically extracted without loss and grouped under
+`app/rules/`:
 
-## 3. Architecture & Target State
+| Module | Owns |
+|---|---|
+| `00-header.rules` | Service/shared scope, ownership, calendar, and shared stimulus/cost helpers |
+| `01-users-core.rules` | Goals, journal, settings, fixed activities, provider queues, and core user collections |
+| `02-schedule-windows.rules` | Schedule manifests and legacy window rules |
+| `03-external-plans.rules` | Imported plans, activation/placement, intent blocks, progression, and overlays |
+| `04-session-occurrences.rules` | Definitions, occurrences, state transitions, and window reservations |
+| `05-session-executions.rules` | Prescriptions, executions, entries, diary mutations, rest events, and launch locks |
+| `06-recommendations.rules` | Recommendations, audits, decision contexts, intraday decisions, and ledgers |
+| `07-health-anomalies.rules` | Check-ins, anomaly assessments/outcomes, identity, and health observation rules |
+| `08-outcomes-trials.rules` | Performed occurrences, responses, protocols, observations, trials, and outcomes |
+| `09-nutrition-anthropometry.rules` | Server-owned nutrition and anthropometry write denials |
+| `99-footer.rules` | Closing scopes; unmatched paths remain implicitly denied |
 
-### 3.1 Modular Source Directory Structure
-Instead of editing a 3,000-line monolithic file, source rules will be authored in modular files under `app/rules/`:
+`build-firestore-rules.mjs` assembles numeric modules in lexical order into readable, committed
+`app/firestore.rules`. Modules remain in the original shared scope; function visibility and
+matching path hierarchy are unchanged. Required-module validation prevents accidental slice
+omission. `rules:check-sync` checks the artifact without modifying it, normalizing CRLF/LF
+for platform portability. CI, `npm run check`, guarded deployment, and `make verify` run it.
 
-```text
-app/rules/
-├── 00-header.rules                # Service definition, global helper functions (isOwner, isValidActivityDate)
-├── 01-users-core.rules            # User profile, settings, athlete preferences
-├── 02-schedule-windows.rules      # Schedule windows, manifests, and reservation leases
-├── 03-external-plans.rules        # External plan headers, revisions, placements, and activations
-├── 04-session-occurrences.rules   # Session occurrences, state transitions, window bindings
-├── 05-session-executions.rules    # Session executions, entry diary, execution locks, prescriptions
-├── 06-recommendations.rules       # Recommendations, intraday decisions, audits, and bundles
-├── 07-health-anomalies.rules      # Health anomalies, subjective check-ins, assessment revisions
-├── 08-outcomes-trials.rules       # Performance outcomes, assessment trials, derivations
-├── 09-nutrition-anthropometry.rules # Nutrition days, body metrics, direct-write denials
-└── 99-footer.rules                # Default deny rules, closing blocks
-```
+### Minification, deployment, and drift
 
-### 3.2 Build & Deployment Pipeline
-```mermaid
-flowchart LR
-    subgraph Authoring
-        A["app/rules/*.rules"] --> B["scripts/build-firestore-rules.mjs"]
-    end
-    subgraph Local Development
-        B --> C["app/firestore.rules (Source of Truth)"]
-        C --> D["npm run test:rules (Emulators)"]
-    end
-    subgraph Deployment Pipeline
-        C --> E["deploy-firestore-rules.mjs"]
-        E --> F["Minifier (Strip comments & normalize whitespace)"]
-        F --> G["POST /v1/projects/.../rulesets (<3s compile time)"]
-        G --> H["PATCH /v1/projects/.../releases"]
-    end
-```
+`minify-firestore-rules.mjs` exposes deterministic `minifyRules`. It removes comments outside
+quoted strings, preserves string spelling and escapes, and preserves Rules syntax. Focused
+unit tests cover token boundaries, malformed lexical input, repeatability, sync failure, and
+temporary-config cleanup. A separate emulator test compiles the upload representation and
+exercises owner checks, immutable prescriptions, and interpolated transaction paths.
 
----
+`deploy-firestore-rules.mjs` checks source sync, retains the explicit confirmation guard,
+rollback backup, emulator gate, retries, and post-deploy verification, and deploys an isolated
+minified copy through a temporary config. Tracked files are not rewritten during deployment.
+`check-firestore-rules-drift.mjs` normalizes both sources with the same minifier; comment or
+formatting changes do not cause false drift. Raw source remains in rollback backups.
 
-## 4. Phased Implementation Steps
+The existing broad `deploy:all` command gains a sync guard; its existing Firebase behavior
+is otherwise unchanged. Production CI uses the guarded rules-only deployment wrapper.
 
-### Phase 1: Build Pipeline & Comment Stripping (Tooling Foundation)
-**Goal**: Make rules deployment resilient to 503 timeouts and enable modular authoring without altering any security logic.
+### Behavior-preserving budget pruning
 
-1. **Implement `app/scripts/minify-firestore-rules.mjs`**:
-   - Provide `minifyRules(source: string): string` utility that:
-     - Strips single-line comments (`// ...`) outside strings.
-     - Preserves necessary newlines and structural tokens.
-     - Trims excess indentation and blank lines.
-   - Unit test the minifier to verify AST semantic equivalence.
+Removed 21 redundant `hasAll` checks from selected plan, source, occurrence, entry, rest-event,
+and audit validators. Each removed key remains required by a direct field access, comparison,
+type check, or called validator. Missing fields still fail closed. Removed duplicate snapshot
+plan-ID type/size checks already guaranteed by equality with the validated plan ID, and the
+duplicate revision lower bound; the snapshot revision integer check remains explicit.
 
-2. **Update `app/scripts/deploy-firestore-rules.mjs` & `check-firestore-rules-drift.mjs`**:
-   - When preparing rules for `firebase deploy` / API upload, pass the minified content.
-   - For drift checking (`compareLocalFirestoreRules`), normalize both local and deployed source through the same minifier so comments in local files do not cause false drift.
-   - Verify deployment compiles in < 3.2 seconds.
+Deep pruning in the proposal would conflict with existing malformed-snapshot and entry tests.
+Those checks remain. Current snapshots already use shallow container/identity validation;
+application validators remain authoritative for deep domain semantics. Bounded array checks
+remain because Rules cannot iterate and reducing caps would break supported schedules. The
+plan's security invariants and unchanged test expectations take precedence over its savings
+estimate. No compiled AST percentage is claimed.
 
-3. **Implement Modular Source Assembly (`app/scripts/build-firestore-rules.mjs`)**:
-   - Extract domain chunks from `app/firestore.rules` into `app/rules/*.rules`.
-   - Script concatenates modules in order and generates `app/firestore.rules`.
-   - Add verification check in CI: `npm run rules:check-sync` ensuring `app/firestore.rules` matches `npm run rules:build`.
+## Verification record
 
----
+- Baseline: all 32 emulator files and 391 tests passed before changes.
+- Added missing-field coverage for all four session-source identities, both occurrence
+  references, and every external placement field; the expanded baseline passed 398 tests.
+- The local verification contract test failed when the sync gate was absent and passed after
+  wiring the gate; all 18 verification-contract tests passed.
+- Final rules gate: both emulator shards passed, totaling 33 files and 400 tests, including
+  the minified-source compilation/transaction tests. The 391 original assertions remain.
+- Focused tooling: 22 tests passed. Independent comparison confirmed all 196 declarations
+  and every match body were retained; only 14 validator functions changed. Review caught a
+  Windows path-with-spaces issue in the temporary config argument, corrected by passing its
+  basename from the existing app working directory.
+- Uploaded source: 136,343 bytes versus the 190,350-byte baseline, a 28.4% reduction.
+- Firebase CLI 15.32.1 remote `deploy --only firestore:rules --dry-run` passed for both
+  baseline-readable and candidate-minified source with zero rules compilation warnings or
+  errors. Total CLI durations were 38,764 ms and 8,636 ms, respectively. These sequential
+  runs include authentication, API checks, network time, and potentially warm caches;
+  they do not establish isolated cold compiler latency or the under-3-second target.
+- Read-only drift inspection confirmed production matches normalized baseline source.
+  Candidate drift is the intended refactor; no rules release was changed.
+- Canonical `make verify` passed in 331 seconds: 1,289 Python tests (one platform skip),
+  8,191 frontend unit tests (400 emulator tests run separately), all 400 rules tests,
+  48 browser tests, and both performance tests. Hygiene, dependency audit, sync, typecheck,
+  lint, registry/catalog validation, build, simulations, and policy drift passed.
+- Independent security/code review approved the final implementation with no remaining
+  blocking findings after the Windows config-path repair.
 
-### Phase 2: Schema Pruning & AST Headroom Reclamation (Architectural Refactor)
-**Goal**: Reclaim 30–45% of the ruleset AST budget by eliminating redundant schema assertions and combinatorics.
+## Remaining release acceptance
 
-1. **Prune Redundant `hasAll` Clauses**:
-   - Where a function asserts `data.keys().hasOnly(['a', 'b'])` followed immediately by `data.a is string && data.b is int`, the additional `data.keys().hasAll(['a', 'b'])` check is completely redundant AST overhead.
-   - Target functions:
-     - `hasValidSessionSource` (catalog, external_plan, manual, unplanned_fixture)
-     - `hasValidExternalPlanPlacement`
-     - `hasValidOccurrenceWindowBinding`
-     - `hasValidSessionOccurrence` (definitionRef, externalPlanRef)
-   - *Estimated AST budget reclaimed: ~80–120 nodes.*
+Local code is reviewable before production changes. Production deployment remains a separate
+operator action under the [deployment runbook](../ops/firestore-rules-deployment.md).
 
-2. **Streamline Deep Nested Payload Validation**:
-   - Firestore rules should validate the container document and top-level identity keys, leaving deep multi-level sub-map validation to TypeScript/Zod client parsers:
-     - `execution_prescriptions`: Validate `schemaVersion`, `userId`, `prescriptionHash`, `definitionHash`, `blocks is list`. Prune deep field-by-field verification of `definitionSnapshot` (e.g. `movementComposition`, `dominantModality`, `sessionTargets`).
-     - `hasValidIntradayBundlePlacementAudit`: Validate audit identity, `planSnapshot.planId`, `revision`, `schemaVersion`. Prune detailed assertions on internal `planSnapshot.sessions` and `intentBlocks` structures.
-     - `session_executions.entries`: Keep entry identity, state, and timestamp guards; delegate granular exercise parameter payload checks to app validators.
-   - *Estimated AST budget reclaimed: ~150–200 nodes.*
+- [x] Complete `make verify` and independent security/code review.
+- [ ] Measure remote compilation diagnostics and timing against the same baseline and candidate;
+  distinguish emulator timings from live service timings and source bytes from compiled bytes.
+- [x] Check deployed-source drift with an explicit project and review the difference.
+- [ ] After deployment authorization, run the guarded rules-only deploy and verify normalized
+  post-deploy identity and first-attempt CI success.
 
-3. **Simplify Pairwise Combinatorics**:
-   - Replace manual unrolled pairwise comparisons in array bounds with capped iterative helpers or bounded cardinality limits.
-
----
-
-### Phase 3: Comprehensive Verification & Gate Alignment
-
-1. **Local Security Rules Emulator Gate**:
-   - Run full 32-file suite: `npm run test:rules`.
-   - Verify 391/391 tests pass without modification to test expectations.
-2. **Compiler Latency & AST Benchmarking**:
-   - Benchmark live GCP compilation duration:
-     - Baseline (pre-refactor): ~6.1s (timeouts).
-     - Target (post-refactor): **<= 2.5s** (safe margin under the 6s threshold).
-   - Run `firebase deploy --only firestore:rules --dry-run` to ensure zero compilation warnings.
-3. **Frontend Full Suite Validation**:
-   - Run `npm run check` (`tsc -b`, `eslint`, `vitest` 8,179 tests, latency performance tests, knowledge validation, workouts validation).
-4. **CI & Drift Verification**:
-   - Run `npm run firestore:rules:drift -- --project adaptive-training-recommender`.
-   - Verify `Deploy Production E2E` workflow deploys cleanly on attempt 1 without retries.
-
----
-
-## 5. Risk Assessment & Mitigation
-
-| Risk | Impact | Mitigation Strategy |
-|---|---|---|
-| **Accidental Security Leak during Schema Pruning** | High | Every collection maintains strict `isOwner(userId)` and immutability checks (`allow update, delete: if false`). Pruning targets only non-security payload subfields. |
-| **Emulator Test Failure on Strict Checks** | Medium | The existing 32 emulator test suites specifically test rejection of bad inputs. Any pruned check that breaks an emulator expectation will be preserved or adjusted in consultation with test invariants. |
-| **Drift Mismatch during Deployment** | Medium | Normalize both local and deployed comparisons using AST/token normalization in `check-firestore-rules-drift.mjs`. |
-| **Build Script Desynchronization** | Low | Add CI static check `git diff --exit-code app/firestore.rules` after running `npm run rules:build`. |
-
----
-
-## 6. Success Criteria
-
-- [ ] `app/firestore.rules` is modularized into cleanly separated files under `app/rules/`.
-- [ ] Automated build and minification pipeline integrated into `deploy-firestore-rules.mjs`.
-- [ ] GCP cold compilation latency reduced from >6.0s to **<3.0s**.
-- [ ] Compiler dry-run produces **0 warnings and 0 errors**.
-- [ ] All 32 emulator test files (391 tests) pass with zero failures.
-- [ ] Production rules deploy succeeds cleanly on Attempt 1/3 in CI/CD.
+A local test pass cannot establish production cold-compilation latency or first-attempt release
+success. The original under-3-second target remains an acceptance target pending measurement.
