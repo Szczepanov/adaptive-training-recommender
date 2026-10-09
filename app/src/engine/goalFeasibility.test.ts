@@ -51,6 +51,7 @@ describe('assessGoalFeasibility', () => {
                 comparisonCanonicalizationVersion: 'comparison-series-v1', assessmentAttemptId: 'a1',
                 validity: 'valid', context: {}, createdAt: '2026-09-01T00:05:00.000Z',
             }],
+            assessmentAttempts: [{ id: 'a1', protocolRef: { id: 'sprint-10m-standing', revision: 1 }, state: 'completed', purpose: 'baseline' }],
         });
         const result = assessGoalFeasibility(target, progress, { targetDate: '2026-10-31', today: '2026-09-19' });
         expect(result.plausibility).toBe('already_achieved');
@@ -151,6 +152,7 @@ describe('assessGoalFeasibility', () => {
                 comparisonCanonicalizationVersion: 'comparison-series-v1', assessmentAttemptId: 'a1',
                 validity: 'valid', context: {}, createdAt: '2026-09-01T00:05:00.000Z',
             }],
+            assessmentAttempts: [{ id: 'a1', protocolRef: { id: 'cycling-5s-peak-power', revision: 1 }, state: 'completed', purpose: 'baseline' }],
         });
         const result = assessGoalFeasibility(target, progress, { targetDate: '2026-12-01', today: '2026-09-19' });
         expect(result.plausibility).toBe('insufficient_evidence');

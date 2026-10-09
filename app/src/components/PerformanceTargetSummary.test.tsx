@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { PerformanceTargetSummary } from './Goals';
 import type { GoalPerformanceTarget } from '../engine/performanceTargetPolicy';
 import type { AthletePerformanceProfile } from '../workouts/models';
-import type { MetricObservationRevision } from '../observations/models';
+import type { AssessmentAttempt, MetricObservationRevision } from '../observations/models';
 
 function strengthTarget(): GoalPerformanceTarget {
   return {
@@ -12,6 +12,10 @@ function strengthTarget(): GoalPerformanceTarget {
     subjectRef: { kind: 'exercise', exerciseId: 'conventional_deadlift' },
     targetValue: 220,
   };
+}
+
+function attempt(id: string, purpose: AssessmentAttempt['purpose']): AssessmentAttempt {
+  return { id, protocolRef: { id: 'sprint-10m-standing', revision: 1 }, state: 'completed', purpose };
 }
 
 describe('PerformanceTargetSummary (ADR-0041/PG3-PG4.5)', () => {
@@ -67,10 +71,47 @@ describe('PerformanceTargetSummary (ADR-0041/PG3-PG4.5)', () => {
         targetDate={null}
         performanceProfile={null}
         comparableObservations={[observation]}
+        assessmentAttempts={[attempt('attempt-1', 'baseline')]}
       />,
     );
     expect(html).toContain('Current result: 1.90 s');
     expect(html).toContain('gap 0.15 s');
+  });
+
+  it('does not present a familiarization-attempt result as the current result (#897 WP8)', () => {
+    const target: GoalPerformanceTarget = {
+      kind: 'performance_metric',
+      metricId: 'sprint_elapsed_time_s',
+      subjectRef: { kind: 'performance_test', performanceTestId: 'sprint_10m_standing-r1' },
+      targetValue: 1.75,
+    };
+    const observation: MetricObservationRevision = {
+      observationKey: 'attempt-famil:sprint_elapsed_time_s',
+      revision: 1,
+      metricId: 'sprint_elapsed_time_s',
+      value: 1.7,
+      unit: 's',
+      observedAt: '2026-09-18T06:00:00.000Z',
+      source: 'manual',
+      protocolRef: { id: 'sprint-10m-standing', revision: 1 },
+      comparisonSeriesKey: 'sprint-series',
+      comparisonCanonicalizationVersion: 'comparison-series-v1',
+      assessmentAttemptId: 'attempt-famil',
+      validity: 'valid',
+      context: {},
+      createdAt: '2026-09-18T06:05:00.000Z',
+    };
+    const html = renderToStaticMarkup(
+      <PerformanceTargetSummary
+        target={target}
+        targetDate={null}
+        performanceProfile={null}
+        comparableObservations={[observation]}
+        assessmentAttempts={[attempt('attempt-famil', 'familiarization')]}
+      />,
+    );
+    expect(html).not.toContain('Current result: 1.70 s');
+    expect(html).toContain('No comparable logged result yet');
   });
 
   it('does not mislabel an observation read failure as no logged result', () => {

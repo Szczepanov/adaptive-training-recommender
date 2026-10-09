@@ -1,4 +1,5 @@
-import type { MetricDefinition, MetricObservationRevision } from '../observations/models';
+import type { AssessmentAttempt, MetricDefinition, MetricObservationRevision } from '../observations/models';
+import { benchmarkEligibleAttemptIds } from '../observations/assessmentEvidenceEligibility';
 import { getMetricDefinition } from '../observations/registry';
 import { getPerformanceTestDefinition } from '../observations/performanceTestingCatalog';
 import type { AthletePerformanceProfile, TargetSource } from '../workouts/models';
@@ -9,6 +10,12 @@ import { computeRequiredChange } from './goalMetricMath';
  * PG4/ADR-0041: family-specific current evidence projected through one honest UI
  * contract. This module is a pure evaluator -- it never reaches Firestore itself; callers
  * resolve `AthletePerformanceProfile` and any candidate observations first.
+ *
+ * Issue #897 WP8: for `performance_test` targets, only observations from a completed,
+ * non-familiarization assessment attempt may become the current value (the same rule the
+ * History read model uses, `isBenchmarkEligibleAttempt`). Callers supply the attempts; an
+ * observation whose attempt is not supplied fails closed and is not eligible -- attempts are
+ * always created by the testing workflow, so an unknown attempt is a read gap, not evidence.
  */
 export type GoalCurrentEvidenceKind = 'estimated_1rm' | 'measured_observation';
 
@@ -43,16 +50,20 @@ function resolveStrengthCurrentValue(
  * protocol identity. Matching on protocol id + revision (rather than the full
  * comparisonSeriesKey) keeps results from a superseded protocol revision from satisfying
  * a target bound to a different locked test definition. Full comparison-series trend
- * analysis remains deferred to PG8's formal outcome evaluation.
+ * analysis remains deferred to PG8's formal outcome evaluation. Observations from
+ * familiarization, abandoned or unknown attempts are never candidates (#897 WP8).
  */
 function resolveTestCurrentObservation(
     metricId: string,
     performanceTestId: string,
     observations: readonly MetricObservationRevision[],
+    attempts: readonly AssessmentAttempt[],
 ): MetricObservationRevision | null {
     const protocol = getPerformanceTestDefinition(performanceTestId).protocol;
+    const eligibleAttemptIds = benchmarkEligibleAttemptIds(attempts);
     const candidates = observations
         .filter(observation => observation.validity === 'valid')
+        .filter(observation => eligibleAttemptIds.has(observation.assessmentAttemptId))
         .filter(observation => observation.metricId === metricId)
         .filter(observation =>
             observation.protocolRef.id === protocol.id
@@ -62,11 +73,31 @@ function resolveTestCurrentObservation(
     return candidates.at(-1) ?? null;
 }
 
+/**
+ * Ids a loader must fetch so `resolveGoalProgress` can resolve `performance_test` targets:
+ * observation metric ids and the protocol ids whose attempts back those observations.
+ * Exercise (e1RM) targets need neither. Results are sorted and de-duplicated.
+ */
+export function goalProgressEvidenceQuery(
+    targets: readonly GoalPerformanceTarget[],
+): { metricIds: string[]; protocolIds: string[] } {
+    const metricIds = new Set<string>();
+    const protocolIds = new Set<string>();
+    for (const target of targets) {
+        if (target.subjectRef.kind !== 'performance_test') continue;
+        metricIds.add(target.metricId);
+        protocolIds.add(getPerformanceTestDefinition(target.subjectRef.performanceTestId).protocol.id);
+    }
+    return { metricIds: Array.from(metricIds).sort(), protocolIds: Array.from(protocolIds).sort() };
+}
+
 export function resolveGoalProgress(
     target: GoalPerformanceTarget,
     options: {
         athletePerformanceProfile?: AthletePerformanceProfile | null;
         comparableObservations?: readonly MetricObservationRevision[];
+        /** Attempts backing `comparableObservations`; unknown attempts fail closed. */
+        assessmentAttempts?: readonly AssessmentAttempt[];
     } = {},
 ): GoalProgressResult {
     const metric = getMetricDefinition(target.metricId);
@@ -94,6 +125,7 @@ export function resolveGoalProgress(
             target.metricId,
             target.subjectRef.performanceTestId,
             options.comparableObservations ?? [],
+            options.assessmentAttempts ?? [],
         );
         if (observation) {
             currentValue = observation.value;

@@ -935,6 +935,14 @@ If added, label it explicitly as a convenience pivot, not the canonical export.
 
 This work should reuse existing OV and PG contracts.
 
+## WP8.0 Benchmark-evidence eligibility for existing consumers
+
+**Status:** Implemented on the #897 PR D branch.
+
+Canonical observations do not carry their attempt's purpose or state, so a `valid` observation from a familiarization or abandoned attempt could reach consumers that read observations without the attempt. The History read model already excluded them; typed-goal current-value resolution (`goalProgress.ts` `resolveGoalProgress`) and the OV5 block-report composition boundary (`blockOutcomeReportService.ts` `BlockOutcomeReportService.buildReport`) did not.
+
+All three now share `assessmentEvidenceEligibility.ts` `isBenchmarkEligibleAttempt`: only observations from a completed, non-familiarization attempt are benchmark candidates. The two new consumers fail closed — an observation whose attempt is not supplied is excluded — and the generic `deriveProgress` contract is unchanged. `BlockOutcomeReportService.buildReport` has no production caller yet, so that half is a boundary contract for WP8.2 rather than live behaviour. The Goals screen loads attempts through `assessmentAttemptService.listAttemptsForProtocolWithDiagnostics` (ids from `goalProgress.ts` `goalProgressEvidenceQuery`) and treats any unreadable attempt as unavailable evidence rather than "no comparable result". Evidence-only; no recommendation-selection authority and no `POLICY_VERSION` impact.
+
 ## WP8.1 Typed performance goals
 
 **Blocked by:** WP6.4, ADR-0041 and an explicit reviewed exercise-mapping/resolver bridge for measured squat/bench 1RM.
