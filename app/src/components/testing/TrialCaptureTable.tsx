@@ -131,6 +131,18 @@ export const TrialCaptureTable: React.FC<TrialCaptureTableProps> = ({
     const [rows, setRows] = useState<TrialCaptureRow[]>(initializeRows);
     const [missingConfirmationRequired, setMissingConfirmationRequired] = useState(false);
     const [clientError, setClientError] = useState<string | null>(null);
+    const importedMethod = useMemo(() => {
+        if (!isFixedLoad) return undefined;
+        const importedEvidence = rows.filter(row => row.validity === 'valid'
+            && row.values.mean_concentric_velocity_mps !== undefined
+            && ('wl_parser_version' in (row.context ?? {}) || 'openbar_parser_version' in (row.context ?? {})));
+        try {
+            const methods = new Set(importedEvidence.map(row => velocityMeasurementMethodId(row.device, row.context)));
+            return methods.size === 1 ? [...methods][0] : undefined;
+        } catch {
+            return undefined;
+        }
+    }, [isFixedLoad, rows]);
 
     const wlImportAllowed = canImportVelocityFile(protocol, attempt);
     const existingSourceRefs = useMemo(() => {
@@ -374,7 +386,9 @@ export const TrialCaptureTable: React.FC<TrialCaptureTableProps> = ({
                                     type={definition.valueKind === 'number' ? 'number' : 'text'}
                                     step={definition.valueKind === 'number' ? 'any' : undefined}
                                     value={contextValues[dimension] ?? ''}
-                                    readOnly={isFixedLoad && ((dimension === 'measurement_method_id' && !!contextValues[dimension]) || storedOrdinals.size > 0)}
+                                    readOnly={isFixedLoad && (storedOrdinals.size > 0
+                                        || (dimension === 'measurement_method_id' && importedMethod !== undefined
+                                            && contextValues[dimension] === importedMethod))}
                                     disabled={saving}
                                     onChange={e =>
                                         onContextChange({

@@ -58,6 +58,12 @@ test('fixed-load velocity: import, reload, offline retry, history and exports pr
   await page.getByRole('button', { name: /Finish Session \(/ }).click();
   await page.getByRole('button', { name: 'Finish & Save Session', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Record assessment trials' })).toBeVisible();
+  const methodInput = page.locator('.attempt-setup-details').getByLabel(/measurement_method_id/);
+  await expect(methodInput).toBeEditable();
+  await methodInput.fill('');
+  await methodInput.pressSequentially('manual');
+  await expect(methodInput).toHaveValue('manual');
+  await expect(methodInput).toBeEditable();
   await page.locator('.wl-file-input').setInputFiles([
     { name: 'bench-1.csv', mimeType: 'text/csv', buffer: Buffer.from(wlSingleRepCsv(60, 'bench press attempt 1', 0.6, 0.75)) },
     { name: 'bench-2.csv', mimeType: 'text/csv', buffer: Buffer.from(wlSingleRepCsv(60, 'bench press attempt 2', 0.8, 0.95)) },
@@ -69,6 +75,7 @@ test('fixed-load velocity: import, reload, offline retry, history and exports pr
   await page.locator('.trial-row-card').first().getByRole('checkbox', { name: 'Load is kilograms' }).check();
   const method = await setup.getByLabel(/measurement_method_id/).inputValue();
   expect(method).toContain('wl');
+  await expect(setup.getByLabel(/measurement_method_id/)).toHaveAttribute('readonly', '');
   await page.reload();
   await expect(page.getByRole('heading', { name: 'Record assessment trials' })).toBeVisible();
   await expect(setup.getByLabel(/test_load_kg/)).toHaveValue('60');
@@ -77,6 +84,26 @@ test('fixed-load velocity: import, reload, offline retry, history and exports pr
   await expect(setup.getByLabel('Provider', { exact: true })).toHaveValue('WL Analysis');
   const rows = page.locator('.trial-row-card');
   await expect(rows).toHaveCount(2);
+
+  const attemptId = await page.locator('.trial-capture-header code').textContent();
+  if (!attemptId) throw new Error('Fixed-load attempt id was not rendered.');
+  await page.evaluate(({ userId, id }) => {
+    const key = `assessment_draft_${encodeURIComponent(userId)}::${encodeURIComponent(id)}`;
+    const draft = JSON.parse(localStorage.getItem(key) ?? '{}') as { setup?: unknown };
+    delete draft.setup;
+    localStorage.setItem(key, JSON.stringify(draft));
+  }, { userId: athlete.userId, id: attemptId });
+  await page.reload();
+  await expect(page.getByText('The local test setup could not be recovered.', { exact: false })).toBeVisible();
+  await expect(methodInput).toBeEditable();
+  await methodInput.fill('');
+  await methodInput.pressSequentially(method);
+  await expect(methodInput).toHaveValue(method);
+  await expect(methodInput).toHaveAttribute('readonly', '');
+  await setup.getByLabel(/test_load_kg/).fill('60');
+  await setup.getByLabel(/equipment_setup_id/).fill('bench-a-camera-a');
+  await setup.getByLabel('Provider', { exact: true }).fill('WL Analysis');
+
   await expect(rows.first().getByRole('checkbox', { name: 'Load is kilograms' })).toBeChecked();
   await expect(rows.first().getByRole('checkbox', { name: 'Technical validity is correct' })).not.toBeChecked();
   for (const row of await rows.all()) {
