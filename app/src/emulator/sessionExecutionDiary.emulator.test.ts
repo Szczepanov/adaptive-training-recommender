@@ -68,6 +68,48 @@ emulatorDescribe('SessionExecutionService diary harness (#895 WP0)', () => {
         expect(entries.map(e => e.id).sort()).toEqual(['entry-1', 'entry-2']);
     });
 
+    it('persists sets carrying movement composition patterns and degraded composition', async () => {
+        const service = new SessionExecutionService(db);
+        const execution = await startInProgress(db, 'exec-diary-comp', 'occ-diary-comp');
+
+        const entryWithComposition: SessionEntry = {
+            ...entry('entry-comp-1', execution.executionId, 5, '2026-09-29T06:00:00.000Z'),
+            stepId: 'squat-step-1',
+            exerciseRef: { kind: 'catalog', exerciseId: 'back_squat' },
+            compositionPatterns: ['knee_dominant_bilateral'],
+            degradedComposition: {
+                pattern: 'unilateral_lower_body',
+                reason: 'Pain-free substitute chosen',
+            },
+        };
+
+        await service.logEntry(USER_ID, execution.executionId, entryWithComposition);
+
+        const entries = await service.getEntries(USER_ID, execution.executionId);
+        expect(entries.length).toBe(1);
+        expect(entries[0]?.compositionPatterns).toEqual(['knee_dominant_bilateral']);
+        expect(entries[0]?.degradedComposition).toEqual({
+            pattern: 'unilateral_lower_body',
+            reason: 'Pain-free substitute chosen',
+        });
+
+        // Malformed composition structures fail closed at rules
+        const badCompositionDoc = doc(db, 'users', USER_ID, 'session_executions', execution.executionId, 'entries', 'entry-bad-comp');
+        await assertFails(setDoc(badCompositionDoc, {
+            ...entry('entry-bad-comp', execution.executionId, 5, '2026-09-29T06:05:00.000Z'),
+            compositionPatterns: 'not-a-list',
+        }));
+
+        const badDegradedDoc = doc(db, 'users', USER_ID, 'session_executions', execution.executionId, 'entries', 'entry-bad-deg');
+        await assertFails(setDoc(badDegradedDoc, {
+            ...entry('entry-bad-deg', execution.executionId, 5, '2026-09-29T06:10:00.000Z'),
+            degradedComposition: {
+                pattern: '',
+                reason: '',
+            },
+        }));
+    });
+
     it('reuses the same entry id on retry so the write converges (acceptance: retry never duplicates)', async () => {
         const service = new SessionExecutionService(db);
         const execution = await startInProgress(db, 'exec-diary-retry', 'occ-diary-retry');
