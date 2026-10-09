@@ -433,3 +433,34 @@ def test_log_message_redacts_query_parameters(monkeypatch: Any) -> None:
     log = captured_logs[0]
     assert "/api/garmin/login" in log
     assert "secret123" not in log
+
+
+def test_do_post_generic_exception_returns_internal_server_error(monkeypatch: Any) -> None:
+    handler = object.__new__(GarminAccountLinkHandler)
+    handler.path = "/api/garmin/login"
+    handler.request_id = "req-123"
+
+    def fail_unexpectedly() -> None:
+        raise RuntimeError("Unexpected error")
+
+    handler._handle_login = fail_unexpectedly  # type: ignore[method-assign]  # noqa: SLF001
+    monkeypatch.setattr(
+        account_link_api,
+        "log_exception",
+        lambda *_args, **_kwargs: SimpleNamespace(code="garmin_link.unexpected", retryable=False),
+    )
+    captured: list[dict[str, Any]] = []
+    handler._error_response = lambda status, **kwargs: captured.append(  # type: ignore[method-assign]  # noqa: SLF001
+        {"status": status, **kwargs}
+    )
+
+    handler.do_POST()
+
+    assert captured == [
+        {
+            "status": HTTPStatus.INTERNAL_SERVER_ERROR,
+            "message": "Garmin linking failed unexpectedly.",
+            "error_code": "garmin_link.unexpected",
+            "retryable": False,
+        }
+    ]
