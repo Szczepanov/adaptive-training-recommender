@@ -80,3 +80,7 @@
 ## 2026-10-08 - Pre-compute session ID Map for intraday bundle member adjudication
 **Learning:** Performing repeated `v4Plan.sessions.find(s => s.id === ...)` array searches inside both `allOccurrences.map()` and `nonPrimaryBindings` loop in `adjudicateIntradayBundleMembersCore` causes O(N * M) linear scan overhead as plan session count and bundle bindings scale. Pre-indexing `v4Plan.sessions` into a `sessionsById` Map via a direct `for...of` loop reduces lookups to O(1) constant time, yielding a ~12x speedup for session lookup operations.
 **Action:** When iterating over bundle bindings or occurrences that reference sessions from an active training plan, pre-build a `Map<string, ExternalPlanSessionV4>` using a `for...of` loop before entering iteration loops rather than calling `.find()` on `plan.sessions`.
+
+## 2026-10-15 - Preserve sequential Garmin activity detail fetching for rate-limit safety
+**Learning:** Parallelizing Garmin activity detail fetching (`_fetch_activity_details` and backfill activity detail loop) with `ThreadPoolExecutor` causes concurrent API requests that cannot be halted when a rate-limit (HTTP 429) occurs, triggering redundant throttled requests and upstream blockades.
+**Action:** Always maintain sequential execution for Garmin activity detail loops in `src/garmin_sync/service.py` to ensure an immediate halt on HTTP 429 response or rate-limited status flag.
