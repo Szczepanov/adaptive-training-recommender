@@ -7,6 +7,7 @@ import {
     type Firestore,
 } from 'firebase/firestore';
 import { getDb } from '../firebase';
+import { assertFixedLoadComparisonContext, assertFixedLoadObservationEvidence, FIXED_LOAD_VELOCITY_METRIC_ID, isFixedLoadVelocityProtocol } from '../observations/fixedLoadVelocity';
 import {
     assertAssessmentTrialWriteAllowed,
     assertValidAssessmentTrial,
@@ -90,6 +91,7 @@ export class AssessmentTrialService {
             if (ids.has(trial.id)) throw new Error(`Duplicate trial id in write: ${trial.id}`);
             ids.add(trial.id);
         }
+        assertFixedLoadComparisonContext(protocol, trials, trials[0].context);
         const supersededOutsideWrite = [...new Set(trials
             .flatMap(trial => trial.supersedesTrialId ?? [])
             .filter(trialId => !ids.has(trialId)))];
@@ -190,6 +192,16 @@ export class AssessmentTrialService {
 
             if (!supersededSnapshot.exists()) {
                 throw new Error(`Superseded trial ${trial.supersedesTrialId} does not exist`);
+            }
+            if (isFixedLoadVelocityProtocol(protocol)) {
+                assertFixedLoadComparisonContext(protocol, [trial], (supersededSnapshot.data() as AssessmentTrial).context);
+                for (const { revision } of observationSnapshots) {
+                    if (revision.metricId !== FIXED_LOAD_VELOCITY_METRIC_ID) continue;
+                    const sourceId = revision.derivedFromEvidenceRefs![0].trialId;
+                    const source = sourceId === trial.id ? trial : (await transaction.get(this.trialRef(userId, trial.assessmentAttemptId, sourceId))).data() as AssessmentTrial | undefined;
+                    if (!source) throw new Error('Fixed-load source trial does not exist');
+                    assertFixedLoadObservationEvidence(revision, source);
+                }
             }
 
             let shouldWriteTrial = true;

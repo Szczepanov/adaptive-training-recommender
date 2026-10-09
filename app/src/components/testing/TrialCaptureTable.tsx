@@ -12,6 +12,8 @@ import type { PerformanceTestPresentationHints } from '../../observations/perfor
 import { getComparisonDimensionDefinition } from '../../observations/protocols';
 import { buildComparisonContextFromStrings } from '../../observations/testingWorkflow';
 import { canImportVelocityFile } from '../../observations/velocityFileImport';
+import { isFixedLoadVelocityProtocol } from '../../observations/fixedLoadVelocity';
+import { velocityMeasurementMethodId } from '../../observations/openBarAnalysisImport';
 import {
     clearAssessmentDraft,
     loadAssessmentDraft,
@@ -71,7 +73,8 @@ export const TrialCaptureTable: React.FC<TrialCaptureTableProps> = ({
     initialTrials,
 }) => {
     const capture = protocol.capture!;
-    const isStrength = protocol.metricIds.includes('strength_1rm_kg');
+    const isFixedLoad = isFixedLoadVelocityProtocol(protocol);
+    const isStrength = protocol.metricIds.includes('strength_1rm_kg') || isFixedLoad;
 
     // Trials already persisted by an interrupted save are immutable evidence: they win over any
     // local draft for their ordinal and render read-only, so a resubmission cannot diverge.
@@ -153,6 +156,23 @@ export const TrialCaptureTable: React.FC<TrialCaptureTableProps> = ({
 
     const handleImportApply = (imported: DraftTrialRow[]) => {
         setClientError(null);
+        if (isFixedLoad) {
+            try {
+                const existingEvidence = rows.filter(row => row.validity === 'valid' && row.values.mean_concentric_velocity_mps !== undefined);
+                const importedEvidence = imported.filter(row => row.validity === 'valid');
+                const methods = new Set([...existingEvidence, ...importedEvidence].map(row => velocityMeasurementMethodId(row.device, row.context)));
+                if (methods.size > 1) throw new Error('These repetitions use different velocity methods. Use a separate fixed-load attempt, or mark the other-method rows as practice before importing.');
+                const method = [...methods][0];
+                if (method && storedOrdinals.size === 0 && existingEvidence.length === 0) {
+                    onContextChange({ ...contextValues, measurement_method_id: method });
+                } else if (method && method !== contextValues.measurement_method_id) {
+                    throw new Error('Imported velocity differs from the locked measurement method. Use a separate fixed-load attempt.');
+                }
+            } catch (reason) {
+                setClientError(reason instanceof Error ? reason.message : 'Could not identify imported velocity method.');
+                return;
+            }
+        }
         setRows(current => {
             let nextClientSequence = current.reduce((maxSequence, row) => {
                 const match = row.clientId.match(/-(\d+)$/);
@@ -179,8 +199,8 @@ export const TrialCaptureTable: React.FC<TrialCaptureTableProps> = ({
 
     // Persist draft on changes
     useEffect(() => {
-        saveAssessmentDraft(userId, attempt.id, rows.map(persistedDraftRow));
-    }, [attempt.id, rows, userId]);
+        saveAssessmentDraft(userId, attempt.id, rows.map(persistedDraftRow), { contextValues, defaultDevice });
+    }, [attempt.id, contextValues, defaultDevice, rows, userId]);
 
     // Handle carry-forward hints (e.g. standing_reach_cm for CMJ)
     const updateRowWithCarryForward = (index: number, updated: DraftTrialRow) => {
@@ -246,11 +266,18 @@ export const TrialCaptureTable: React.FC<TrialCaptureTableProps> = ({
         setRows(current => current.filter((_, idx) => idx !== index));
     };
 
-    // Live preview only: the reducers read trial values and validity, not context or provenance.
+    // Fixed-load previews use the same typed context and provenance gates as persistence.
     const [previewCreatedAt] = useState(() => new Date().toISOString());
     const previewTrials: AssessmentTrial[] = useMemo(
-        () => draftRowsToTrials(rows, attempt.id, {}, { provider: '' }, previewCreatedAt),
-        [rows, attempt.id, previewCreatedAt],
+        () => {
+            try {
+                const context = isFixedLoad ? buildComparisonContextFromStrings(protocol, contextValues) : {};
+                return draftRowsToTrials(rows, attempt.id, context, defaultDevice, previewCreatedAt);
+            } catch {
+                return [];
+            }
+        },
+        [rows, attempt.id, previewCreatedAt, isFixedLoad, protocol, contextValues, defaultDevice],
     );
 
     // Build the persisted trial records: typed comparison context (same parsing as the derived
@@ -334,7 +361,8 @@ export const TrialCaptureTable: React.FC<TrialCaptureTableProps> = ({
                 </p>
             )}
 
-            <details className="testing-card attempt-setup-details">
+            {isFixedLoad && <p>Use the same exact load and equipment/camera setup for every benchmark repetition. Imported files lock their actual measurement method. Failed or off-load repetitions must be practice or invalid.</p>}
+            <details className="testing-card attempt-setup-details" open={isFixedLoad ? true : undefined}>
                 <summary>Attempt context & device setup (shared across trials)</summary>
                 <div className="testing-grid">
                     {protocol.comparisonContext.required.map(dimension => {
@@ -343,8 +371,11 @@ export const TrialCaptureTable: React.FC<TrialCaptureTableProps> = ({
                             <label key={dimension}>
                                 {dimension} <small>({definition.description})</small>
                                 <input
-                                    type="text"
+                                    type={definition.valueKind === 'number' ? 'number' : 'text'}
+                                    step={definition.valueKind === 'number' ? 'any' : undefined}
                                     value={contextValues[dimension] ?? ''}
+                                    readOnly={isFixedLoad && ((dimension === 'measurement_method_id' && !!contextValues[dimension]) || storedOrdinals.size > 0)}
+                                    disabled={saving}
                                     onChange={e =>
                                         onContextChange({
                                             ...contextValues,

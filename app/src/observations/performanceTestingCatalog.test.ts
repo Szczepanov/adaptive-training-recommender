@@ -28,6 +28,8 @@ describe('performance testing catalog', () => {
             'field-wall-touch-cmj-r2',
             'field-seated-medball-chest-throw-3kg-r2',
             'cycling_6s_seated_sprint-r2',
+            'strength-bench-press-fixed-load-velocity-r1',
+            'strength-back-squat-fixed-load-velocity-r1',
         ]);
     });
 
@@ -58,6 +60,8 @@ describe('performance testing catalog', () => {
             { id: 'field-wall-touch-cmj-r2', family: 'field' },
             { id: 'field-seated-medball-chest-throw-3kg-r2', family: 'field' },
             { id: 'cycling_6s_seated_sprint-r2', family: 'cycling' },
+            { id: 'strength-bench-press-fixed-load-velocity-r1', family: 'strength' },
+            { id: 'strength-back-squat-fixed-load-velocity-r1', family: 'strength' },
         ]);
     });
 

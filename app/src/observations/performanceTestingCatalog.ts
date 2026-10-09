@@ -4,6 +4,8 @@ import type { TestingSessionDefinition } from './testingWorkflow';
 import {
     BACK_SQUAT_1RM_PROTOCOL_V2,
     BENCH_PRESS_1RM_PROTOCOL_V2,
+    BENCH_PRESS_FIXED_LOAD_VELOCITY_PROTOCOL,
+    BACK_SQUAT_FIXED_LOAD_VELOCITY_PROTOCOL,
     CYCLING_6S_SEATED_SPRINT_PROTOCOL_V2,
     SEATED_MEDBALL_THROW_PROTOCOL_V2,
     STANDING_BROAD_JUMP_PROTOCOL_V2,
@@ -981,6 +983,30 @@ export const PERFORMANCE_TEST_DEFINITIONS: readonly PerformanceTestDefinition[] 
         },
         expectedSource: 'Manual entry of 1 s peak and 5 s mean power from calibrated power meter.',
     },
+    ...[BENCH_PRESS_FIXED_LOAD_VELOCITY_PROTOCOL, BACK_SQUAT_FIXED_LOAD_VELOCITY_PROTOCOL].map((protocol): PerformanceTestDefinition => ({
+        id: `${protocol.id}-r1`, family: 'strength', protocol,
+        sessionDefinition: {
+            schemaVersion: 1, id: `ov-${protocol.id}`, revision: 1, title: protocol.title, intent: 'testing',
+            summary: 'A brief dedicated fixed-load check: 2-3 maximal-intent singles after a progressive warm-up. Keep the exact load, method and equipment/camera setup unchanged.',
+            modalities: ['strength'], dominantModality: 'strength', duration: { min: 15, max: 25 },
+            prohibitedAdditions: ['Maximal 1RM attempts or fatiguing work before the velocity check'],
+            blocks: [
+                { id: 'warmup', title: 'Progressive warm-up', role: 'warmup', executionMode: 'sequential', steps: [
+                    { id: 'warmup-ramp', kind: 'exercise', title: 'Three progressive warm-up sets',
+                        exerciseRef: { kind: 'unresolved_free_text', name: protocol.title }, dose: { kind: 'checkoff' },
+                        notes: protocol.instructions.find(i => i.id === 'warmup')!.text },
+                ] },
+                { id: 'test', title: 'Fixed-load repetitions', role: 'test', executionMode: 'sequential', steps: [
+                    { id: 'velocity-singles', kind: 'exercise', title: '2-3 maximal-intent singles at the locked load',
+                        exerciseRef: { kind: 'unresolved_free_text', name: protocol.title }, dose: { kind: 'repetition', sets: 3, reps: 1 }, rest: 180,
+                        notes: protocol.instructions.find(i => i.id === 'standard')!.text,
+                        stopConditions: [...protocol.invalidationRules, protocol.instructions.find(i => i.id === 'safety')!.text] },
+                ] },
+            ],
+        },
+        defaultContext: { measurement_method_id: 'manual' },
+        expectedSource: 'Enter mean concentric velocity manually, or import WL Analysis / OpenBar files. Imported method identity is locked from the actual parser and configuration; use a separate attempt for a different method.',
+    })),
 ];
 
 export const PERFORMANCE_TEST_DEFINITIONS_BY_ID: ReadonlyMap<string, PerformanceTestDefinition> = new Map(

@@ -99,7 +99,7 @@ export function VisualReviewApp({ scenario }: VisualReviewAppProps) {
       <main className="app-content">
         {screen === 'home' && <Home userId={VISUAL_USER_ID} onNavigate={handleAppNavigate} onViewData={() => navigate('data')} />}
         {screen === 'morning-card' && <MorningDecisionAdjustedLaunchHarness />}
-        {screen === 'assessment-capture' && <AssessmentVelocityImportHarness />}
+        {screen === 'assessment-capture' && <AssessmentVelocityImportHarness fixedLoad={scenario.id === 'assessment-fixed-load-velocity'} />}
         {screen === 'plan' && <PlanView userId={VISUAL_USER_ID} onNavigate={handleAppNavigate} />}
         {screen === 'checkin' && <DailyCheckin userId={VISUAL_USER_ID} onNavigate={handleAppNavigate} onBack={() => navigate('home')} />}
         {screen === 'goals' && <Goals userId={VISUAL_USER_ID} />}

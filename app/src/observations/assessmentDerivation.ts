@@ -1,4 +1,5 @@
 import { reduceAssessmentTrials } from './assessmentReducers';
+import { assertFixedLoadComparisonContext } from './fixedLoadVelocity';
 import { buildComparisonSeries } from './comparability';
 import type { ObservationRevisionIdentity } from './manualAdapter';
 import type {
@@ -50,6 +51,7 @@ export async function deriveTrialObservationRevisions(
 ): Promise<TrialDerivedObservations> {
     const { protocol, attempt } = input;
     assertDerivableAttempt(protocol, attempt);
+    assertFixedLoadComparisonContext(protocol, input.trials, input.context);
     const outcomes = reduceAssessmentTrials(protocol, attempt.id, input.trials);
     const trialsById = new Map(input.trials.map(trial => [trial.id, trial] as const));
 
