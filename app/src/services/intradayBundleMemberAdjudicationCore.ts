@@ -360,10 +360,11 @@ export async function adjudicateIntradayBundleMembers(
         // Reconcile currentLedgerInputs against the refreshed aggregate reservations
         // so capacity evaluation includes any reservations committed concurrently
         if (aggregate?.reservations) {
+            const existingOccurrenceIds = new Set(currentLedgerInputs.map(inp => inp.occurrenceId));
             for (const [resOccId, res] of Object.entries(aggregate.reservations)) {
-                const existingIdx = currentLedgerInputs.findIndex(inp => inp.occurrenceId === resOccId);
                 if (res.state === 'reserved' || res.state === 'in_progress') {
-                    if (existingIdx < 0) {
+                    if (!existingOccurrenceIds.has(resOccId)) {
+                        existingOccurrenceIds.add(resOccId);
                         currentLedgerInputs.push({
                             occurrenceId: resOccId,
                             occurrenceState: res.state === 'in_progress' ? 'active' : 'scheduled',
