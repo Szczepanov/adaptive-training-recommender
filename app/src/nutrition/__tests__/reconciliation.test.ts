@@ -255,4 +255,8 @@ describe('Nutrition Reconciliation', () => {
         expect(result?.primaryIntakeSource).toBeNull();
     });
 
+    it('returns an empty array when reconciling an empty nutrition history', () => {
+        const history = reconcileNutritionHistory([]);
+        expect(history).toEqual([]);
+    });
 });
