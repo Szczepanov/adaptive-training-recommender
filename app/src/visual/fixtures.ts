@@ -561,6 +561,11 @@ export const VISUAL_SCENARIOS: VisualScenario[] = [
     expectedFocus: ['Both velocity import cards remain readable on a phone.', 'Load units, exclusions, errors and confirmation actions remain clear.'],
     fixture: standardFixture,
   })),
+    {
+      id: 'assessment-fixed-load-velocity', title: 'Assessment — fixed-load velocity capture', screen: 'assessment-capture',
+      expectedFocus: ['Exact test load, method and setup remain visible.', 'Best mean velocity and off-load errors remain readable on mobile.'],
+      fixture: standardFixture,
+    },
   {
     id: 'plan-recovery-authority-exit',
     title: 'Plan — recovery authority ends inside the forecast',

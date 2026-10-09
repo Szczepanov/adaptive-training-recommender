@@ -4,6 +4,7 @@ import type { AssessmentAttempt, AssessmentTrial, ComparisonContext, MetricObser
 import {
     CYCLING_6S_SEATED_SPRINT_PROTOCOL,
     STANDING_BROAD_JUMP_PROTOCOL,
+    BENCH_PRESS_FIXED_LOAD_VELOCITY_PROTOCOL,
 } from '../observations/physicalCapitalProtocols';
 import type { AssessmentTrialService } from './assessmentTrialService';
 import type { AssessmentAttemptService } from './assessmentAttemptService';
@@ -68,6 +69,56 @@ describe('AssessmentCaptureService', () => {
         } as unknown as MetricObservationService;
 
         service = new AssessmentCaptureService(mockTrialService, mockAttemptService, mockObservationService);
+    });
+
+    const fixedProtocol = BENCH_PRESS_FIXED_LOAD_VELOCITY_PROTOCOL;
+    const fixedContext = { test_load_kg: 60, measurement_method_id: 'manual', equipment_setup_id: 'bench-a' };
+    const fixedTrial = (overrides: Partial<AssessmentTrial> = {}) => makeTrial(1, 0, {
+        context: fixedContext, values: { load_kg: 60, successful: true, mean_concentric_velocity_mps: 0.8 }, ...overrides,
+    });
+    const fixedAttempt = () => makeAttempt({ protocolRef: { id: fixedProtocol.id, revision: 1 } });
+
+    it.each([
+        { values: { load_kg: 65, successful: true, mean_concentric_velocity_mps: 0.8 } },
+        { values: { load_kg: 60, successful: false, mean_concentric_velocity_mps: 0.8 } },
+        { sourceRef: `wl-analysis-csv:sha256:${'a'.repeat(64)}` },
+        { context: { ...fixedContext, equipment_setup_id: 'bench-b' } },
+    ])('rejects malformed or relabeled fixed-load submissions before any raw write: %j', async overrides => {
+        const attempt = fixedAttempt();
+        vi.mocked(mockAttemptService.getAttempt).mockResolvedValue(attempt);
+        await expect(service.saveTrialAssessment({ userId: 'user-1', protocol: fixedProtocol, attempt, trials: [fixedTrial(overrides)], context: fixedContext,
+            observedAt: '2026-10-20T10:15:00.000Z' })).rejects.toThrow();
+        expect(mockTrialService.createTrials).not.toHaveBeenCalled();
+        expect(mockObservationService.createInitialRevision).not.toHaveBeenCalled();
+        expect(mockAttemptService.completeAttempt).not.toHaveBeenCalled();
+    });
+
+    it('retries a fixed-load transaction failure without false completion or extra canonical evidence', async () => {
+        const attempt = fixedAttempt();
+        const row = fixedTrial();
+        vi.mocked(mockAttemptService.getAttempt).mockResolvedValue(attempt);
+        vi.mocked(mockTrialService.createTrials).mockRejectedValueOnce(new Error('Client is offline'));
+        vi.mocked(mockTrialService.listTrialsForAttempt).mockResolvedValue([row]);
+        const input = { userId: 'user-1', protocol: fixedProtocol, attempt, trials: [row], context: fixedContext, observedAt: '2026-10-20T10:15:00.000Z' };
+        await expect(service.saveTrialAssessment(input)).rejects.toThrow(/offline/);
+        expect(mockAttemptService.completeAttempt).not.toHaveBeenCalled();
+        expect(mockObservationService.createInitialRevision).not.toHaveBeenCalled();
+        const saved = await service.saveTrialAssessment(input);
+        expect(saved.observations).toHaveLength(1);
+        expect(mockObservationService.createInitialRevision).toHaveBeenCalledTimes(1);
+        expect(mockAttemptService.completeAttempt).toHaveBeenCalledTimes(1);
+    });
+
+    it('rejects fixed-load correction relabeling and failed valid corrections before the atomic commit', async () => {
+        const attempt = { ...fixedAttempt(), state: 'completed' as const, completedAt: '2026-10-20T10:15:00.000Z' };
+        vi.mocked(mockAttemptService.getAttempt).mockResolvedValue(attempt);
+        vi.mocked(mockTrialService.listTrialsForAttempt).mockResolvedValue([fixedTrial()]);
+        const correction = fixedTrial({ id: 'trial-1-c1', correctionIndex: 1, supersedesTrialId: 'trial-1', correctionReason: 'Corrected velocity' });
+        await expect(service.correctTrial({ userId: 'user-1', protocol: fixedProtocol, attempt, trial: correction,
+            context: { ...fixedContext, test_load_kg: 70 }, observedAt: attempt.completedAt })).rejects.toThrow();
+        await expect(service.correctTrial({ userId: 'user-1', protocol: fixedProtocol, attempt,
+            trial: { ...correction, values: { ...correction.values, successful: false } }, context: fixedContext, observedAt: attempt.completedAt })).rejects.toThrow();
+        expect(mockTrialService.commitCorrection).not.toHaveBeenCalled();
     });
 
     it('orchestrates save in strict order: trials -> list -> derive -> initial observations -> complete attempt', async () => {

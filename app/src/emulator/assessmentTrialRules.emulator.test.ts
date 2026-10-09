@@ -10,6 +10,11 @@ import {
 import { deleteDoc, doc, getDoc, setDoc, updateDoc, writeBatch, type Firestore } from 'firebase/firestore';
 import { AssessmentTrialService } from '../services/assessmentTrialService';
 import type { AssessmentTrial, MeasurementProtocol, MetricObservationRevision } from '../observations/models';
+import { BENCH_PRESS_FIXED_LOAD_VELOCITY_PROTOCOL } from '../observations/physicalCapitalProtocols';
+import { buildOpenBarAnalysis } from '../observations/fixtures/openBarAnalysisFixtures';
+import { parseOpenBarAnalysis } from '../observations/openBarAnalysis';
+import { CONCENTRIC_SEGMENTATION_V2 } from '../observations/concentricSegmentation';
+import { proposeOpenBarTrial, velocityMeasurementMethodId } from '../observations/openBarAnalysisImport';
 
 const emulatorDescribe = process.env.FIRESTORE_EMULATOR_HOST ? describe : describe.skip;
 let testEnvironment: RulesTestEnvironment;
@@ -168,6 +173,158 @@ emulatorDescribe('Assessment trial and derivation Firestore rules (ADR-0046)', (
         await assertSucceeds(setDoc(doc(ownerDb, attemptPath), validAttempt(attemptState)));
         return ownerDb;
     }
+
+    const fixedProtocol = BENCH_PRESS_FIXED_LOAD_VELOCITY_PROTOCOL;
+    const fixedMetric = 'strength_fixed_load_mean_velocity_mps';
+    const fixedKey = `${attemptId}:${fixedMetric}`;
+    const fixedObservationPath = `users/${ownerId}/metric_observations/${fixedKey}`;
+    const fixedContext = { test_load_kg: 60, measurement_method_id: 'manual', equipment_setup_id: 'bench-a-camera-a' };
+    const fixedTrial = (overrides: Record<string, unknown> = {}) => validTrial(1, 0, {
+        values: { load_kg: 60, successful: true, mean_concentric_velocity_mps: 0.8 }, context: fixedContext, ...overrides,
+    });
+    const fixedRevision = (overrides: Record<string, unknown> = {}) => validDerivedRevision({
+        observationKey: fixedKey, metricId: fixedMetric, unit: 'm/s', value: 0.8,
+        protocolRef: { id: fixedProtocol.id, revision: 1 }, context: fixedContext, ...overrides,
+    });
+    async function seedFixedLoad() {
+        const db = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertSucceeds(setDoc(doc(db, `users/${ownerId}/measurement_protocols/${fixedProtocol.id}/revisions/1`), fixedProtocol));
+        await assertSucceeds(setDoc(doc(db, attemptPath), { ...validAttempt(), protocolRef: { id: fixedProtocol.id, revision: 1 } }));
+        return db;
+    }
+    function fixedObservationBatch(db: TestFirestore, revision = fixedRevision()) {
+        const batch = writeBatch(db);
+        batch.set(doc(db, fixedObservationPath), { ...validHead(revision.revision), observationKey: fixedKey, metricId: fixedMetric });
+        batch.set(doc(db, `${fixedObservationPath}/revisions/${revision.revision}`), revision);
+        return batch;
+    }
+
+    it('persists a fixed-load benchmark with exact trial/value/context binding and owner isolation', async () => {
+        const db = await seedFixedLoad();
+        await assertSucceeds(setDoc(doc(db, `${attemptPath}/trials/trial-1`), fixedTrial()));
+        await assertSucceeds(fixedObservationBatch(db).commit());
+        await assertFails(getDoc(doc(testEnvironment.authenticatedContext(otherUserId).firestore(), fixedObservationPath)));
+    });
+
+    it.each([
+        { load_kg: 61, successful: true, mean_concentric_velocity_mps: 0.8 },
+        { load_kg: 60, successful: false, mean_concentric_velocity_mps: 0.8 },
+    ])('rejects valid fixed-load raw evidence with ineligible values: %j', async values => {
+        const db = await seedFixedLoad();
+        await assertFails(setDoc(doc(db, `${attemptPath}/trials/trial-1`), fixedTrial({ values })));
+        await assertSucceeds(setDoc(doc(db, `${attemptPath}/trials/trial-1`), fixedTrial({ values, validity: 'practice' })));
+        await assertFails(fixedObservationBatch(db).commit());
+    });
+
+    it.each(['wl-analysis-csv', 'openbar-analysis'])('rejects an imported %s sourceRef without parser provenance', async prefix => {
+        const db = await seedFixedLoad();
+        await assertFails(setDoc(doc(db, `${attemptPath}/trials/trial-1`), fixedTrial({ sourceRef: `${prefix}:sha256:${'a'.repeat(64)}` })));
+    });
+
+    it.each(['manual', 'wl-analysis-csv-v1'])('rejects relabeled WL v2 as %s at the raw boundary', async method => {
+        const db = await seedFixedLoad();
+        await assertFails(setDoc(doc(db, `${attemptPath}/trials/trial-1`), fixedTrial({
+            sourceRef: `wl-analysis-csv:sha256:${'a'.repeat(64)}`, device: { provider: 'WL Analysis' }, context: { ...fixedContext, wl_parser_version: 'wl-analysis-csv-v2', measurement_method_id: method },
+        })));
+    });
+
+    it.each([undefined, 'execution:manual', 'wl-analysis-csv:sha256:bad', `openbar-analysis:sha256:${'a'.repeat(64)}`])('rejects parser-tagged WL without matching SHA-256 source: %s', async sourceRef => {
+        const db = await seedFixedLoad();
+        const row = fixedTrial({ device: { provider: 'WL Analysis' }, context: { ...fixedContext, wl_parser_version: 'wl-analysis-csv-v2', measurement_method_id: 'wl-analysis-csv-v2' }, ...(sourceRef === undefined ? {} : { sourceRef }) });
+        await assertFails(setDoc(doc(db, `${attemptPath}/trials/trial-1`), row));
+        await assertFails(setDoc(doc(db, `${attemptPath}/trials/trial-1`), { ...row, validity: 'practice' }));
+    });
+
+    it('accepts a WL parser only with its exact SHA-256 source identity', async () => {
+        const db = await seedFixedLoad();
+        const context = { ...fixedContext, measurement_method_id: 'wl-analysis-csv-v2' };
+        await assertSucceeds(setDoc(doc(db, `${attemptPath}/trials/trial-1`), fixedTrial({ sourceRef: `wl-analysis-csv:sha256:${'a'.repeat(64)}`, device: { provider: 'WL Analysis' }, context: { ...context, wl_parser_version: 'wl-analysis-csv-v2' } })));
+        await assertSucceeds(fixedObservationBatch(db, fixedRevision({ context, device: { provider: 'WL Analysis' } })).commit());
+    });
+
+    it.each([
+        { ...fixedContext, test_load_kg: 70 }, { ...fixedContext, measurement_method_id: 'wl-analysis-csv-v2' },
+        { ...fixedContext, equipment_setup_id: 'bench-b' },
+    ])('rejects false attribution of a valid winning trial to changed context: %j', async context => {
+        const db = await seedFixedLoad();
+        await assertSucceeds(setDoc(doc(db, `${attemptPath}/trials/trial-1`), fixedTrial()));
+        await assertFails(fixedObservationBatch(db, fixedRevision({ context })).commit());
+    });
+
+    it('rejects changed result values and missing source trial evidence', async () => {
+        const db = await seedFixedLoad();
+        await assertFails(fixedObservationBatch(db).commit());
+        await assertSucceeds(setDoc(doc(db, `${attemptPath}/trials/trial-1`), fixedTrial()));
+        await assertFails(fixedObservationBatch(db, fixedRevision({ value: 1.5 })).commit());
+    });
+
+    it.each([true, false])('supports full OpenBar provenance within the rule budget (filtered=%s) and refuses malformed/relabelled methods', async filtered => {
+        const db = await seedFixedLoad();
+        const parsed = parseOpenBarAnalysis(JSON.stringify(buildOpenBarAnalysis(undefined, { filtered })), CONCENTRIC_SEGMENTATION_V2);
+        const result = proposeOpenBarTrial({ fileName: 'rep.json', fileHash: 'a'.repeat(64), parsed }, new Set(), new Set());
+        expect(result.status).toBe('proposed');
+        if (result.status !== 'proposed') return;
+        const p = result.proposal;
+        const context = { ...fixedContext, ...p.context, measurement_method_id: velocityMeasurementMethodId(p.device, p.context) };
+        const row = fixedTrial({ context, device: p.device, sourceRef: p.sourceRef });
+        for (const method of ['manual', 'wl-analysis-csv-v2']) {
+            await assertFails(setDoc(doc(db, `${attemptPath}/trials/trial-1`), { ...row, context: { ...context, measurement_method_id: method } }));
+        }
+        await assertFails(setDoc(doc(db, `${attemptPath}/trials/trial-1`), { ...row, context: omit(context, 'openbar_tracker_version') }));
+        await assertFails(setDoc(doc(db, `${attemptPath}/trials/trial-1`), { ...row, device: { provider: 'WL Analysis' } }));
+        for (const sourceRef of [undefined, 'execution:manual', `wl-analysis-csv:sha256:${'a'.repeat(64)}`, 'openbar-analysis:sha256:bad']) {
+            await assertFails(setDoc(doc(db, `${attemptPath}/trials/trial-1`), { ...omit(row, 'sourceRef'), ...(sourceRef === undefined ? {} : { sourceRef }) }));
+        }
+        for (const change of [
+            { openbar_tracker_version: null }, { openbar_tracker_implementation: ' ' },
+            { openbar_filter_parameters: 3 }, { openbar_kinematics_parameters: null },
+            { openbar_kinematics_max_gap_s: 0 }, { openbar_kinematics_min_confidence: 2 },
+            { openbar_calibration_method: null }, { openbar_filter_implementation: null, openbar_filter_version: null },
+            { measurement_method_id: 'openbar-analysis-v1/concentric-segmentation-v2/arbitrary' },
+            { openbar_kinematics_parameters: 'arbitrary' },
+            { openbar_tracker_version: 'other' }, { openbar_kinematics_version: 'other' },
+            { openbar_kinematics_parameters: 'max_gap_s=n%3A0.3&min_confidence=n%3A0.5' },
+            { openbar_kinematics_max_gap_s: 0.3 }, { openbar_kinematics_min_confidence: 0.9 },
+            { openbar_calibration_method: 'other@1' }, { openbar_tracker_implementation: 'other tracker' },
+            { measurement_method_id: context.measurement_method_id.replace('max-gap=0.2', 'max-gap=0.3') },
+            { measurement_method_id: context.measurement_method_id.replace('min-confidence=0.5', 'min-confidence=0.9') },
+            { measurement_method_id: context.measurement_method_id.replace('plate_diameter%401', 'other%401') },
+            { measurement_method_id: context.measurement_method_id.replace('opencv-csrt@1', 'other%20tracker@1'), openbar_tracker_implementation: 'other tracker' },
+            { measurement_method_id: context.measurement_method_id.replace('max-gap=0.2', 'max-gap=1e309'), openbar_kinematics_max_gap_s: Infinity },
+        ]) {
+            if (!filtered && 'openbar_filter_implementation' in change) continue;
+            await assertFails(setDoc(doc(db, `${attemptPath}/trials/trial-1`), { ...row, context: { ...context, ...change } }));
+        }
+        await assertSucceeds(setDoc(doc(db, `${attemptPath}/trials/trial-1`), row));
+        await assertSucceeds(fixedObservationBatch(db, fixedRevision({ context: { ...fixedContext, measurement_method_id: context.measurement_method_id }, device: p.device })).commit());
+        await assertSucceeds(updateDoc(doc(db, attemptPath), { state: 'completed', completedAt: '2026-10-19T08:00:00.000Z' }));
+        const corrected = { ...row, id: 'trial-1-c1', correctionIndex: 1, supersedesTrialId: 'trial-1', correctionReason: 'Corrected imported velocity',
+            values: { load_kg: 60, successful: true, mean_concentric_velocity_mps: 0.7 } };
+        await assertFails(setDoc(doc(db, `${attemptPath}/trials/trial-1-c1`), corrected));
+        const correction = fixedObservationBatch(db, fixedRevision({ revision: 2, supersedesRevision: 1, correctionReason: 'Corrected imported velocity', value: 0.7,
+            context: { ...fixedContext, measurement_method_id: context.measurement_method_id }, device: p.device,
+            derivedFromEvidenceRefs: [{ kind: 'assessment_trial', assessmentAttemptId: attemptId, trialId: 'trial-1-c1' }] }));
+        correction.set(doc(db, `${attemptPath}/trials/trial-1-c1`), corrected);
+        await assertSucceeds(correction.commit());
+    });
+
+    it('requires atomic correction of a winning trial and preserves fixed-load series identity', async () => {
+        const db = await seedFixedLoad();
+        await assertSucceeds(setDoc(doc(db, `${attemptPath}/trials/trial-1`), fixedTrial()));
+        await assertSucceeds(fixedObservationBatch(db).commit());
+        await assertSucceeds(updateDoc(doc(db, attemptPath), { state: 'completed', completedAt: '2026-10-19T08:00:00.000Z' }));
+        const corrected = { ...fixedTrial(), id: 'trial-1-c1', correctionIndex: 1, supersedesTrialId: 'trial-1', correctionReason: 'Corrected velocity',
+            values: { load_kg: 60, successful: true, mean_concentric_velocity_mps: 0.7 } };
+        await assertFails(setDoc(doc(db, `${attemptPath}/trials/trial-1-c1`), corrected));
+        const revision = fixedRevision({ revision: 2, supersedesRevision: 1, correctionReason: 'Corrected velocity', value: 0.7,
+            derivedFromEvidenceRefs: [{ kind: 'assessment_trial', assessmentAttemptId: attemptId, trialId: 'trial-1-c1' }] });
+        const relabel = fixedObservationBatch(db, { ...revision, context: { ...fixedContext, equipment_setup_id: 'bench-b' } });
+        relabel.set(doc(db, `${attemptPath}/trials/trial-1-c1`), { ...corrected, context: { ...fixedContext, equipment_setup_id: 'bench-b' } });
+        await assertFails(relabel.commit());
+        const batch = fixedObservationBatch(db, revision);
+        batch.set(doc(db, `${attemptPath}/trials/trial-1-c1`), corrected);
+        await assertSucceeds(batch.commit());
+    });
 
     /** Seeds a summary-only protocol + completed attempt; returns paths for a revision-1 write. */
     async function seedSummaryAttempt(suffix: string, metric = metricId) {

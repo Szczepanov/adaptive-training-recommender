@@ -1,5 +1,6 @@
 import { deriveTrialObservationRevisions } from '../observations/assessmentDerivation';
 import { assertValidAssessmentTrialSet } from '../observations/assessmentTrials';
+import { assertFixedLoadComparisonContext, isFixedLoadVelocityProtocol } from '../observations/fixedLoadVelocity';
 import type {
     AssessmentAttempt,
     AssessmentTrial,
@@ -111,6 +112,8 @@ export class AssessmentCaptureService {
 
         // 1. Create trials if in_progress and not already stored
         if (currentAttempt.state === 'in_progress') {
+            assertFixedLoadComparisonContext(protocol, trials, context);
+            if (isFixedLoadVelocityProtocol(protocol)) assertValidAssessmentTrialSet(trials, protocol, attempt.id);
             await this.trialService.createTrials(userId, protocol, attempt.id, trials);
         }
 
@@ -213,6 +216,11 @@ export class AssessmentCaptureService {
                 observationKeyFor(attempt.id, metricId),
             );
             if (current) currentObservationsByMetric.set(metricId, current);
+        }
+        if (isFixedLoadVelocityProtocol(protocol)) {
+            for (const current of currentObservationsByMetric.values()) {
+                assertFixedLoadComparisonContext(protocol, allTrials, current.context);
+            }
         }
 
         // 4. Build identityByMetric

@@ -2,6 +2,15 @@ import type { MetricDefinition, OutcomeRole } from './models';
 
 const METRICS = [
     {
+        id: 'strength_fixed_load_mean_velocity_mps',
+        displayName: 'Fixed-load mean concentric velocity',
+        domain: 'strength',
+        unit: 'm/s',
+        direction: 'higher_is_better',
+        valueKind: 'scalar',
+        description: 'Best valid mean concentric velocity from a dedicated assessment at an exact fixed load, method and equipment setup. Separate from 1RM trial telemetry.',
+    },
+    {
         id: 'cycling_tt_20m_mean_power_w',
         displayName: '20-minute TT mean power',
         domain: 'cycling',

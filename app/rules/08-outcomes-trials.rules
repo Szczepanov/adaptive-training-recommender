@@ -167,6 +167,7 @@
         'cycling_submax_mean_hr_bpm': 'bpm',
         'cycling_submax_rpe': 'rpe',
         'strength_1rm_kg': 'kg',
+        'strength_fixed_load_mean_velocity_mps': 'm/s',
         'sprint_elapsed_time_s': 's',
         'cycling_5s_peak_power_w': 'W',
         'standing_broad_jump_distance_cm': 'cm',
@@ -179,7 +180,7 @@
 
     // Mirrors ComparisonDimension / protocols.ts DIMENSIONS; checked by firestoreRulesParity.test.ts.
     function comparisonDimensionIds() {
-      return ['power_source_id', 'bike_setup_id', 'test_environment', 'course_or_trainer_id', 'duration_seconds', 'start_mode', 'warmup_revision', 'feedback_rule', 'weather_note', 'timing_method', 'measurement_method_id', 'equipment_setup_id'];
+      return ['power_source_id', 'bike_setup_id', 'test_environment', 'course_or_trainer_id', 'duration_seconds', 'start_mode', 'warmup_revision', 'feedback_rule', 'weather_note', 'timing_method', 'measurement_method_id', 'equipment_setup_id', 'test_load_kg'];
     }
 
     function hasKnownOutcomeMetric(metricId) {
@@ -341,12 +342,134 @@
     function hasValidObservationProtocolBinding(userId, data) {
       let protocolPath = /databases/$(database)/documents/users/$(userId)/measurement_protocols/$(data.protocolRef.id)/revisions/$(string(data.protocolRef.revision));
       let attemptPath = /databases/$(database)/documents/users/$(userId)/assessment_attempts/$(data.assessmentAttemptId);
+      let protocol = get(protocolPath).data;
+      let attempt = get(attemptPath).data;
       return hasValidProtocolRef(userId, data.protocolRef)
         && exists(attemptPath)
-        && get(attemptPath).data.protocolRef == data.protocolRef
-        && get(protocolPath).data.metricIds.hasAny([data.metricId])
-        && get(protocolPath).data.comparisonContext.canonicalizationVersion == data.comparisonCanonicalizationVersion
-        && hasValidTrialCaptureBinding(data, get(protocolPath).data, get(attemptPath).data);
+        && attempt.protocolRef == data.protocolRef
+        && protocol.metricIds.hasAny([data.metricId])
+        && protocol.comparisonContext.canonicalizationVersion == data.comparisonCanonicalizationVersion
+        && hasValidTrialCaptureBinding(data, protocol, attempt)
+        && (data.metricId != 'strength_fixed_load_mean_velocity_mps' || hasFixedLoadObservationBinding(userId, data));
+    }
+
+    function isFixedLoadProtocol(protocolRef) {
+      return protocolRef.id in ['strength-bench-press-fixed-load-velocity', 'strength-back-squat-fixed-load-velocity']
+        && protocolRef.revision == 1;
+    }
+
+    function hasFixedLoadContext(context) {
+      return context.keys().hasAll(['test_load_kg', 'measurement_method_id', 'equipment_setup_id'])
+        && context.test_load_kg is number && context.test_load_kg >= 1 && context.test_load_kg <= 500
+        && context.measurement_method_id is string && context.measurement_method_id.size() > 0
+        && context.equipment_setup_id is string && context.equipment_setup_id.size() > 0;
+    }
+
+    function sameFixedLoadContext(a, b) {
+      return !a.diff(b).affectedKeys().hasAny(['test_load_kg', 'measurement_method_id', 'equipment_setup_id']);
+    }
+
+    function hasFixedLoadVelocityMethod(data) {
+      let c = data.context;
+      let wl = 'wl_parser_version' in c;
+      return wl ? (data.device.provider == 'WL Analysis'
+          && c.wl_parser_version in ['wl-analysis-csv-v1', 'wl-analysis-csv-v2']
+          && c.measurement_method_id == c.wl_parser_version)
+        : 'openbar_parser_version' in c ? (data.device.provider == 'OpenBar' && hasFixedLoadOpenBarMethod(c))
+        : c.measurement_method_id == 'manual';
+    }
+
+    function hasFixedLoadSourceProvenance(data) {
+      let wl = 'wl_parser_version' in data.context;
+      let openbar = 'openbar_parser_version' in data.context;
+      let source = data.get('sourceRef', '');
+      return wl ? (!openbar && source.matches('^wl-analysis-csv:sha256:[a-f0-9]{64}$'))
+        : openbar ? source.matches('^openbar-analysis:sha256:[a-f0-9]{64}$')
+        : !source.matches('^(wl-analysis-csv|openbar-analysis):.*');
+    }
+
+    function hasOpenBarParameterSignature(value) {
+      return value is string && value.matches('^[^=&\\[\\];\\s]+=[nbs]%3A[^&\\[\\];\\s]*(&[^=&\\[\\];\\s]+=[nbs]%3A[^&\\[\\];\\s]*)*$');
+    }
+
+    // Fixed-load OpenBar uses URI-unreserved ASCII identifiers so Rules can reconstruct
+    // the entire method. Numeric suffixes are parsed, avoiding JS/Rules formatting differences.
+    function hasFixedLoadOpenBarMethod(c) {
+      let parts = c.measurement_method_id.split('/');
+      let limits = parts[5].split(';max-gap=')[1].split(';min-confidence=');
+      let confidence = limits[1].replace('\\]$', '');
+      let tracker = c.openbar_tracker_implementation.trim().lower() + '@' + c.openbar_tracker_version.trim().lower();
+      let kinematics = c.openbar_kinematics_implementation.trim().lower() + '@' + c.openbar_kinematics_version.trim().lower();
+      let filtered = c.openbar_kinematics_input == 'filtered';
+      let filter = filtered ? c.openbar_filter_implementation.trim().lower() + '@' + c.openbar_filter_version.trim().lower() : '';
+      let identities = tracker + '/' + kinematics + (filtered ? '/' + filter : '');
+      let calibration = c.openbar_calibration_method.trim().lower();
+      return c.openbar_parser_version == 'openbar-analysis-v1'
+        && c.openbar_segmentation_rule in ['concentric-segmentation-v1', 'concentric-segmentation-v2']
+        && c.openbar_kinematics_input in ['calibrated', 'filtered']
+        && identities.matches("^[a-z0-9_.!~*'()-]+@[a-z0-9_.!~*'()-]+(/[a-z0-9_.!~*'()-]+@[a-z0-9_.!~*'()-]+){1,2}$")
+        && calibration.matches("^[a-z0-9_.!~*'()-]+@-?[0-9]+([.][0-9]+)?(e[+-]?[0-9]+)?$")
+        && hasOpenBarParameterSignature(c.openbar_kinematics_parameters)
+        && (filtered ? (c.openbar_filter_parameters == null || hasOpenBarParameterSignature(c.openbar_filter_parameters))
+          : (c.openbar_filter_implementation == null && c.openbar_filter_version == null && c.openbar_filter_parameters == null))
+        && c.openbar_kinematics_max_gap_s is number && c.openbar_kinematics_max_gap_s > 0
+        && c.openbar_kinematics_max_gap_s - c.openbar_kinematics_max_gap_s == 0
+        && c.openbar_kinematics_min_confidence is number && c.openbar_kinematics_min_confidence >= 0 && c.openbar_kinematics_min_confidence <= 1
+        && parts.size() == 7 && limits.size() == 2
+        && float(limits[0]) == c.openbar_kinematics_max_gap_s && float(confidence) == c.openbar_kinematics_min_confidence
+        && c.measurement_method_id == c.openbar_parser_version + '/' + c.openbar_segmentation_rule + '/' + tracker + '/'
+          + (filtered ? filter + '[' + (c.openbar_filter_parameters == null ? 'default' : c.openbar_filter_parameters.trim()) + ']' : 'raw')
+          + '/' + c.openbar_kinematics_input + '/' + kinematics + '[' + c.openbar_kinematics_parameters.trim()
+          + ';max-gap=' + limits[0] + ';min-confidence=' + confidence + ']/' + calibration.replace('@', '%40').replace('[+]', '%2B');
+    }
+
+    function hasEligibleFixedLoadTrial(data, old) {
+      return hasFixedLoadContext(data.context) && hasFixedLoadSourceProvenance(data)
+        && (data.validity != 'valid' || (data.values.load_kg == data.context.test_load_kg && data.values.successful == true
+          && data.values.mean_concentric_velocity_mps is number && data.values.mean_concentric_velocity_mps >= 0
+          && data.values.mean_concentric_velocity_mps <= 5
+          // Immutable valid source trials already passed full method validation. A correction
+          // can reuse it only when every context and device field is unchanged.
+          && (data.correctionIndex > 0 && old.validity == 'valid'
+            ? (data.context == old.context && data.get('device', null) == old.get('device', null))
+            : hasFixedLoadVelocityMethod(data))));
+    }
+
+    function hasFixedLoadObservationBinding(userId, data) {
+      let refs = data.derivedFromEvidenceRefs;
+      let ref = refs[0];
+      let trialPath = /databases/$(database)/documents/users/$(userId)/assessment_attempts/$(data.assessmentAttemptId)/trials/$(ref.trialId);
+      let trial = getAfter(trialPath).data;
+      let nextId = assessmentTrialIdFor(trial.ordinal, trial.correctionIndex + 1);
+      let nextPath = /databases/$(database)/documents/users/$(userId)/assessment_attempts/$(data.assessmentAttemptId)/trials/$(nextId);
+      return isFixedLoadProtocol(data.protocolRef) && data.source == 'derived' && data.validity == 'valid'
+        && !('derivedFromObservationIds' in data) && refs.size() == 1
+        && ref.keys().hasOnly(['kind', 'assessmentAttemptId', 'trialId']) && ref.kind == 'assessment_trial'
+        && ref.assessmentAttemptId == data.assessmentAttemptId && !existsAfter(nextPath)
+        && trial.validity == 'valid' && trial.values.successful == true && trial.values.load_kg == data.context.test_load_kg
+        && sameFixedLoadContext(data.context, trial.context) && data.value == trial.values.mean_concentric_velocity_mps
+        && (data.revision == 1 || sameFixedLoadContext(data.context,
+          get(/databases/$(database)/documents/users/$(userId)/metric_observations/$(data.observationKey)/revisions/$(string(data.revision - 1))).data.context));
+    }
+
+    function hasFixedLoadCorrectionIntegrity(userId, attempt, data) {
+      let oldPath = /databases/$(database)/documents/users/$(userId)/assessment_attempts/$(data.assessmentAttemptId)/trials/$(data.supersedesTrialId);
+      let old = get(oldPath).data;
+      let key = data.assessmentAttemptId + ':strength_fixed_load_mean_velocity_mps';
+      let headPath = /databases/$(database)/documents/users/$(userId)/metric_observations/$(key);
+      return sameFixedLoadContext(data.context, old.context)
+        && (('sourceRef' in data) == ('sourceRef' in old)) && (!('sourceRef' in old) || data.sourceRef == old.sourceRef)
+        && (attempt.state != 'completed' || !exists(headPath)
+          || hasFixedLoadCorrectionHead(userId, key, headPath, data.supersedesTrialId));
+    }
+
+    function hasFixedLoadCorrectionHead(userId, key, headPath, supersedesTrialId) {
+      let head = get(headPath).data;
+      let current = get(/databases/$(database)/documents/users/$(userId)/metric_observations/$(key)/revisions/$(string(head.headRevision))).data;
+      // Advancing a winner's head requires a sibling immutable revision; that revision's own
+      // create rule checks full eligible source/value/context binding. Avoid evaluating it twice.
+      return current.derivedFromEvidenceRefs[0].trialId != supersedesTrialId
+        || getAfter(headPath).data.headRevision == head.headRevision + 1;
     }
 
     // ADR-0046 D-AT-REDUCE / D-AT-CORRECTION: a trial-capture protocol's canonical values are
@@ -363,6 +486,7 @@
 
     function hasValidMetricObservationRevision(userId, observationKey, revisionId) {
       let data = request.resource.data;
+      let units = outcomeMetricUnits();
       return isOwner(userId)
         && data.keys().hasOnly(['observationKey', 'revision', 'supersedesRevision', 'metricId', 'value', 'unit', 'observedAt', 'source', 'sourceRef', 'device', 'protocolRef', 'comparisonSeriesKey', 'comparisonCanonicalizationVersion', 'assessmentAttemptId', 'validity', 'invalidReason', 'context', 'derivedFromObservationIds', 'derivedFromEvidenceRefs', 'algorithmVersion', 'correctionReason', 'createdAt'])
         && data.keys().hasAll(['observationKey', 'revision', 'metricId', 'value', 'unit', 'observedAt', 'source', 'protocolRef', 'comparisonSeriesKey', 'comparisonCanonicalizationVersion', 'assessmentAttemptId', 'validity', 'context', 'createdAt'])
@@ -374,9 +498,9 @@
           || (data.revision > 1
             && data.supersedesRevision is int && data.supersedesRevision == data.revision - 1
             && data.correctionReason is string && data.correctionReason.size() > 0 && data.correctionReason.size() <= 2000))
-        && hasKnownOutcomeMetric(data.metricId)
+        && data.metricId is string && data.metricId in units
         && data.value is number
-        && hasValidOutcomeMetricUnit(data.metricId, data.unit)
+        && data.unit == units[data.metricId]
         && data.observedAt is string && data.observedAt.size() > 0
         && data.source in ['manual', 'garmin_activity', 'garmin_lap', 'derived']
         && (!('sourceRef' in data) || (data.sourceRef is string && data.sourceRef.size() > 0 && data.sourceRef.size() <= 512))
@@ -449,6 +573,8 @@
       let attemptPath = /databases/$(database)/documents/users/$(userId)/assessment_attempts/$(attemptId);
       let attempt = get(attemptPath).data;
       let protocolPath = /databases/$(database)/documents/users/$(userId)/measurement_protocols/$(attempt.protocolRef.id)/revisions/$(string(attempt.protocolRef.revision));
+      let old = data.correctionIndex > 0
+        ? get(/databases/$(database)/documents/users/$(userId)/assessment_attempts/$(attemptId)/trials/$(data.supersedesTrialId)).data : null;
       return isOwner(userId)
         && data.keys().hasOnly(['id', 'assessmentAttemptId', 'ordinal', 'correctionIndex', 'supersedesTrialId', 'correctionReason', 'performedAt', 'validity', 'invalidReason', 'values', 'context', 'sourceRef', 'device', 'notes', 'createdAt'])
         && data.keys().hasAll(['id', 'assessmentAttemptId', 'ordinal', 'correctionIndex', 'validity', 'values', 'context', 'createdAt'])
@@ -473,6 +599,8 @@
         && (!('performedAt' in data) || (data.performedAt is string && data.performedAt.size() > 0 && data.performedAt.size() <= 64))
         && data.values is map && data.values.size() <= 16
         && data.context is map && data.context.size() <= 32
+        && (!isFixedLoadProtocol(attempt.protocolRef) || (hasEligibleFixedLoadTrial(data, old)
+          && (data.correctionIndex == 0 || hasFixedLoadCorrectionIntegrity(userId, attempt, data))))
         && (!('sourceRef' in data) || (data.sourceRef is string && data.sourceRef.size() > 0 && data.sourceRef.size() <= 512))
         && (!('device' in data) || hasValidObservationDevice(data.device))
         && (!('notes' in data) || (data.notes is string && data.notes.size() <= 4000))

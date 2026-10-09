@@ -7,6 +7,7 @@ import {
     runTransaction,
     where,
     type Firestore,
+    type Transaction,
 } from 'firebase/firestore';
 import { getDb } from '../firebase';
 import type { MetricObservationHead, MetricObservationRevision } from '../observations/models';
@@ -15,6 +16,8 @@ import {
     assertValidMetricObservationRevision,
 } from '../observations/validation';
 import { sameCanonicalObservationRevision } from '../observations/observationCanonical';
+import { assertFixedLoadObservationEvidence, FIXED_LOAD_VELOCITY_METRIC_ID, FIXED_LOAD_VELOCITY_DIMENSIONS } from '../observations/fixedLoadVelocity';
+import type { AssessmentTrial } from '../observations/models';
 
 export class MetricObservationService {
     private readonly db: Firestore;
@@ -31,6 +34,14 @@ export class MetricObservationService {
         return doc(this.db, 'users', userId, 'metric_observations', observationKey, 'revisions', String(revision));
     }
 
+    private async assertFixedLoadEvidence(transaction: Transaction, userId: string, revision: MetricObservationRevision): Promise<void> {
+        if (revision.metricId !== FIXED_LOAD_VELOCITY_METRIC_ID) return;
+        const trialRef = doc(this.db, 'users', userId, 'assessment_attempts', revision.assessmentAttemptId, 'trials', revision.derivedFromEvidenceRefs![0].trialId);
+        const snapshot = await transaction.get(trialRef);
+        if (!snapshot.exists()) throw new Error('Fixed-load source trial does not exist');
+        assertFixedLoadObservationEvidence(revision, snapshot.data() as AssessmentTrial);
+    }
+
     async createInitialRevision(userId: string, revision: MetricObservationRevision): Promise<MetricObservationRevision> {
         assertValidMetricObservationRevision(revision);
         if (revision.revision !== 1 || revision.supersedesRevision !== undefined) {
@@ -45,6 +56,7 @@ export class MetricObservationService {
                 transaction.get(headRef),
                 transaction.get(revisionRef),
             ]);
+            await this.assertFixedLoadEvidence(transaction, userId, revision);
 
             if (headSnapshot.exists() || revisionSnapshot.exists()) {
                 if (!headSnapshot.exists() || !revisionSnapshot.exists()) {
@@ -114,6 +126,15 @@ export class MetricObservationService {
 
             const existingNext = await transaction.get(nextRevisionRef);
             if (existingNext.exists()) throw new Error(`Observation revision ${revision.revision} already exists`);
+            await this.assertFixedLoadEvidence(transaction, userId, revision);
+            if (revision.metricId === FIXED_LOAD_VELOCITY_METRIC_ID) {
+                const currentSnapshot = await transaction.get(this.revisionRef(userId, revision.observationKey, head.headRevision));
+                if (!currentSnapshot.exists()) throw new Error('Fixed-load observation head points to a missing revision');
+                const current = currentSnapshot.data() as MetricObservationRevision;
+                for (const dimension of FIXED_LOAD_VELOCITY_DIMENSIONS) {
+                    if (current.context[dimension] !== revision.context[dimension]) throw new Error('Correction cannot change fixed-load series identity');
+                }
+            }
 
             transaction.set(nextRevisionRef, revision);
             transaction.update(headRef, {

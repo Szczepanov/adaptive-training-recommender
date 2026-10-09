@@ -38,7 +38,8 @@ export type ComparisonDimension =
     | 'weather_note'
     | 'timing_method'
     | 'measurement_method_id'
-    | 'equipment_setup_id';
+    | 'equipment_setup_id'
+    | 'test_load_kg';
 
 export type ComparisonContextValue = string | number | boolean;
 

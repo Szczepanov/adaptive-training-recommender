@@ -91,6 +91,7 @@ export const TrialCorrectionPanel: React.FC<TrialCorrectionPanelProps> = ({
             values: fieldValues,
             // A correction fixes a recorded trial; it never re-locks the attempt's context.
             context: editingTrial.context,
+            ...(editingTrial.sourceRef ? { sourceRef: editingTrial.sourceRef } : {}),
             createdAt: new Date().toISOString(),
             ...(notes.trim() ? { notes: notes.trim() } : {}),
             ...(editingTrial.device ? { device: editingTrial.device } : device ? { device } : {}),
