@@ -433,3 +433,14 @@ def test_log_message_redacts_query_parameters(monkeypatch: Any) -> None:
     log = captured_logs[0]
     assert "/api/garmin/login" in log
     assert "secret123" not in log
+
+
+def test_read_json_raises_value_error_on_invalid_json() -> None:
+    import io
+
+    handler = object.__new__(GarminAccountLinkHandler)
+    handler.headers = {"Content-Length": "8"}  # type: ignore[assignment]
+    handler.rfile = io.BytesIO(b"not json")
+
+    with pytest.raises(ValueError, match="Request body must be valid JSON."):
+        handler._read_json()  # noqa: SLF001
