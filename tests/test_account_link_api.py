@@ -12,8 +12,10 @@ from garmin_sync.account_link import GarminAccountLinkService, PendingLoginStore
 from garmin_sync.account_link_api import (
     GarminAccountLinkHandler,
     GarminConnectAuthenticationError,
+    GarminConnectConnectionError,
     LoginRateLimiter,
 )
+from garmin_sync.login_rate_limit import FirestoreLoginRateLimiter
 
 
 def _handler_with_forwarded_for(value: str) -> GarminAccountLinkHandler:
@@ -433,3 +435,134 @@ def test_log_message_redacts_query_parameters(monkeypatch: Any) -> None:
     log = captured_logs[0]
     assert "/api/garmin/login" in log
     assert "secret123" not in log
+
+
+def test_rate_limit_persistence_exception_logged_during_too_many_requests(monkeypatch: Any) -> None:
+    limiter = object.__new__(FirestoreLoginRateLimiter)
+
+    def mock_record(_account_key: str) -> int:
+        raise RuntimeError("Firestore connection failed")
+
+    monkeypatch.setattr(limiter, "record_upstream_rate_limit", mock_record)
+    monkeypatch.setattr(account_link_api, "RATE_LIMITER", limiter)
+
+    logged_exceptions: list[dict[str, Any]] = []
+
+    def mock_log_exception(
+        logger_obj: Any,
+        message: str,
+        exc: Exception,
+        *,
+        context: dict[str, Any] | None = None,
+        level: int = account_link_api.logging.ERROR,
+    ) -> SimpleNamespace:
+        logged_exceptions.append(
+            {
+                "message": message,
+                "exc": exc,
+                "context": context,
+                "level": level,
+            }
+        )
+        return SimpleNamespace(code="garmin_link.rate_limited", retryable=True)
+
+    monkeypatch.setattr(account_link_api, "log_exception", mock_log_exception)
+
+    handler = object.__new__(GarminAccountLinkHandler)
+    handler.path = "/api/garmin/mfa"
+    handler.request_id = "req-123"
+    handler._rate_limit_account_key = "account:user@example.com"  # noqa: SLF001
+    handler._handle_mfa = lambda: (_ for _ in ()).throw(  # type: ignore[method-assign]  # noqa: SLF001
+        account_link_api.GarminConnectTooManyRequestsError("rate limited")
+    )
+
+    captured_responses: list[dict[str, Any]] = []
+    handler._error_response = lambda status, **kwargs: captured_responses.append(  # type: ignore[method-assign]  # noqa: SLF001
+        {"status": status, **kwargs}
+    )
+
+    handler.do_POST()
+
+    assert len(logged_exceptions) == 2
+    # First call is for garmin link primary exception
+    assert logged_exceptions[0]["message"] == "garmin link"
+    # Second call is for persistence failure
+    assert logged_exceptions[1]["message"] == "garmin link rate-limit persistence"
+    assert str(logged_exceptions[1]["exc"]) == "Firestore connection failed"
+    assert logged_exceptions[1]["context"] == {"request_id": handler.request_id}
+
+    assert captured_responses == [
+        {
+            "status": HTTPStatus.TOO_MANY_REQUESTS,
+            "message": "Garmin is rate limiting login attempts. Try again later.",
+            "error_code": "garmin_link.rate_limited",
+            "retryable": True,
+            "retry_after_seconds": account_link_api.UPSTREAM_RETRY_AFTER_SECONDS,
+        }
+    ]
+
+
+def test_rate_limit_persistence_exception_logged_during_waf_connection_error(
+    monkeypatch: Any,
+) -> None:
+    limiter = object.__new__(FirestoreLoginRateLimiter)
+
+    def mock_record(_account_key: str) -> int:
+        raise RuntimeError("Firestore timeout")
+
+    monkeypatch.setattr(limiter, "record_upstream_rate_limit", mock_record)
+    monkeypatch.setattr(account_link_api, "RATE_LIMITER", limiter)
+
+    logged_exceptions: list[dict[str, Any]] = []
+
+    def mock_log_exception(
+        logger_obj: Any,
+        message: str,
+        exc: Exception,
+        *,
+        context: dict[str, Any] | None = None,
+        level: int = account_link_api.logging.ERROR,
+    ) -> SimpleNamespace:
+        logged_exceptions.append(
+            {
+                "message": message,
+                "exc": exc,
+                "context": context,
+                "level": level,
+            }
+        )
+        return SimpleNamespace(code="garmin_link.connection", retryable=True)
+
+    monkeypatch.setattr(account_link_api, "log_exception", mock_log_exception)
+    monkeypatch.setattr(account_link_api, "_is_upstream_waf_signal", lambda _exc: True)
+
+    handler = object.__new__(GarminAccountLinkHandler)
+    handler.path = "/api/garmin/mfa"
+    handler.request_id = "req-456"
+    handler._rate_limit_account_key = "account:user@example.com"  # noqa: SLF001
+    handler._handle_mfa = lambda: (_ for _ in ()).throw(  # type: ignore[method-assign]  # noqa: SLF001
+        GarminConnectConnectionError("Access Denied WAF")
+    )
+
+    captured_responses: list[dict[str, Any]] = []
+    handler._error_response = lambda status, **kwargs: captured_responses.append(  # type: ignore[method-assign]  # noqa: SLF001
+        {"status": status, **kwargs}
+    )
+
+    handler.do_POST()
+
+    assert len(logged_exceptions) == 2
+    assert logged_exceptions[0]["message"] == "garmin link"
+    assert logged_exceptions[1]["message"] == "garmin link rate-limit persistence"
+    assert str(logged_exceptions[1]["exc"]) == "Firestore timeout"
+    assert logged_exceptions[1]["context"] == {"request_id": handler.request_id}
+
+    assert captured_responses == [
+        {
+            "status": HTTPStatus.TOO_MANY_REQUESTS,
+            "message": "Garmin is rate limiting login attempts. Try again later.",
+            "error_code": "garmin_link.rate_limited",
+            "retryable": True,
+            "retry_after_seconds": account_link_api.UPSTREAM_RETRY_AFTER_SECONDS,
+        }
+    ]
