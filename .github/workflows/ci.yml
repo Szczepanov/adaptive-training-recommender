@@ -186,6 +186,9 @@ jobs:
             npm run audit
           }
 
+      - name: Check generated Firestore rules source
+        run: npm run rules:check-sync
+
       - name: Type check frontend
         run: npm run typecheck
 

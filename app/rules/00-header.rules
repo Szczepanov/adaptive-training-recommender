@@ -1,0 +1,67 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isOwner(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+
+    function hasOwnedUserId(userId) {
+      return isOwner(userId) && request.resource.data.userId == userId;
+    }
+
+    function keepsOwnership(userId) {
+      return hasOwnedUserId(userId)
+        && resource.data.userId == userId
+        && request.resource.data.userId == resource.data.userId;
+    }
+
+    function isDateDocument(date) {
+      return request.resource.data.date == date
+        && date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$');
+    }
+
+    function isValidActivityDate(date) {
+      return date is string && date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$') && isRealCalendarDate(date.split('-'));
+    }
+
+    function isRealCalendarDate(parts) {
+      let year = int(parts[0]);
+      let month = int(parts[1]);
+      let day = int(parts[2]);
+      let isLeapYear = (year % 4 == 0 && year % 100 != 0) || year % 400 == 0;
+      let daysInMonth = month == 2 ? (isLeapYear ? 29 : 28)
+        : (month == 4 || month == 6 || month == 9 || month == 11) ? 30
+        : 31;
+      return month >= 1 && month <= 12 && day >= 1 && day <= daysInMonth;
+    }
+
+    function hasValidAxisValue(m, key) {
+      return !(key in m) || (m[key] is number && m[key] >= 0 && m[key] <= 1);
+    }
+
+    function hasValidExpectedStimulus(m) {
+      return m is map
+        && m.keys().hasOnly(['aerobicEndurance', 'thresholdPower', 'vo2MaxPower', 'repeatedSurges', 'sprintPower', 'fatigueResistance', 'maxStrength', 'hypertrophy'])
+        && m.size() <= 8
+        && hasValidAxisValue(m, 'aerobicEndurance')
+        && hasValidAxisValue(m, 'thresholdPower')
+        && hasValidAxisValue(m, 'vo2MaxPower')
+        && hasValidAxisValue(m, 'repeatedSurges')
+        && hasValidAxisValue(m, 'sprintPower')
+        && hasValidAxisValue(m, 'fatigueResistance')
+        && hasValidAxisValue(m, 'maxStrength')
+        && hasValidAxisValue(m, 'hypertrophy');
+    }
+
+    function hasValidExpectedCost(m) {
+      return m is map
+        && m.keys().hasOnly(['systemic', 'cardiovascular', 'lowerBody', 'upperBody', 'impactTissue', 'neuromuscular'])
+        && m.size() <= 6
+        && hasValidAxisValue(m, 'systemic')
+        && hasValidAxisValue(m, 'cardiovascular')
+        && hasValidAxisValue(m, 'lowerBody')
+        && hasValidAxisValue(m, 'upperBody')
+        && hasValidAxisValue(m, 'impactTissue')
+        && hasValidAxisValue(m, 'neuromuscular');
+    }

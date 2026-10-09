@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -9,6 +9,31 @@ import {
   printComparison,
   projectFromArgs,
 } from './check-firestore-rules-drift.mjs';
+import { buildRules } from './build-firestore-rules.mjs';
+import { minifyRules } from './minify-firestore-rules.mjs';
+
+export async function withMinifiedRulesConfig(deploy, directory = appDirectory) {
+  const temporaryDirectory = await mkdtemp(path.join(directory, '.firestore-rules-deploy-'));
+  // Firebase resolves every relative reference from the config's directory.
+  const configPath = `${temporaryDirectory}.json`;
+  try {
+    const config = JSON.parse(await readFile(path.join(directory, 'firebase.json'), 'utf8'));
+    if (!config.firestore || Array.isArray(config.firestore) || config.firestore.rules !== 'firestore.rules') {
+      throw new Error('Expected firebase.json firestore.rules to reference the generated firestore.rules.');
+    }
+    const rulesPath = path.join(temporaryDirectory, 'firestore.rules');
+    const source = await readFile(path.join(directory, 'firestore.rules'), 'utf8');
+    await writeFile(rulesPath, minifyRules(source), { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+    config.firestore.rules = path.relative(directory, rulesPath).split(path.sep).join('/');
+    await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+    return await deploy(configPath);
+  } finally {
+    await Promise.all([
+      rm(configPath, { force: true }),
+      rm(temporaryDirectory, { recursive: true, force: true }),
+    ]);
+  }
+}
 
 function run(command, args) {
   execFileSync(command, args, {
@@ -57,6 +82,7 @@ async function deployRulesWithRetry(command, args) {
 }
 
 async function main() {
+  await buildRules({ check: true });
   const args = process.argv.slice(2);
   const project = projectFromArgs(args);
   if (!args.includes('--confirm')) {
@@ -83,10 +109,10 @@ async function main() {
   printComparison(await compareLocalFirestoreRules(project));
 
   console.log('Deploying only Cloud Firestore Security Rules.');
-  await deployRulesWithRetry(
+  await withMinifiedRulesConfig((configPath) => deployRulesWithRetry(
     process.platform === 'win32' ? 'firebase.cmd' : 'firebase',
-    ['deploy', '--only', 'firestore:rules', '--project', project, '--non-interactive'],
-  );
+    ['deploy', '--only', 'firestore:rules', '--project', project, '--non-interactive', '--config', path.basename(configPath)],
+  ));
 
   console.log('Post-deployment deployed-rules identity:');
   const after = await compareLocalFirestoreRules(project);
@@ -96,4 +122,6 @@ async function main() {
   }
 }
 
-await main();
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  await main();
+}

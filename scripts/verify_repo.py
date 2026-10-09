@@ -170,6 +170,7 @@ def build_plan(mode: VerificationMode, base_sha: str) -> list[VerificationPhase]
             ),
             (
                 VerificationStep("frontend dependency audit", _npm("audit")),
+                VerificationStep("Firestore rules source sync", _npm("rules:check-sync")),
                 VerificationStep("frontend typecheck", _npm("typecheck")),
                 VerificationStep("frontend lint", _npm("lint")),
                 VerificationStep("knowledge registry", _npm("validate:knowledge")),

@@ -1,0 +1,186 @@
+
+    function hasValidSessionDefinitionHeader(userId, definitionId) {
+      let data = request.resource.data;
+      return hasOwnedUserId(userId)
+        && data.keys().hasOnly(['userId', 'definitionId', 'title', 'latestRevision', 'dominantModality', 'status', 'archivedAt', 'createdAt', 'updatedAt'])
+        && data.definitionId == definitionId
+        && data.title is string && data.title.size() > 0 && data.title.size() <= 200
+        && data.latestRevision is int && data.latestRevision >= 1
+        && (!('dominantModality' in data) || data.dominantModality is string)
+        && (!('status' in data) || data.status in ['active', 'archived'])
+        && (!('archivedAt' in data) || data.archivedAt is string)
+        && (!('archivedAt' in data) || 'status' in data)
+        && (!('status' in data) || data.status != 'archived' || data.archivedAt is string)
+        && (!('status' in data) || data.status != 'active' || !('archivedAt' in data))
+        && data.createdAt is string && data.updatedAt is string;
+    }
+
+    function hasValidSessionDefinitionRevision(userId, definitionId, revId) {
+      let data = request.resource.data;
+      return hasOwnedUserId(userId)
+        && data.keys().hasOnly(['userId', 'definitionId', 'schemaVersion', 'id', 'revision', 'title', 'summary', 'intent', 'modalities', 'dominantModality', 'duration', 'defaultScheduledDate', 'sessionTargets', 'prohibitedAdditions', 'importWarnings', 'companionSessions', 'blocks', 'contentHash', 'createdAt'])
+        && data.keys().hasAll(['userId', 'definitionId', 'id', 'revision', 'schemaVersion', 'title', 'intent', 'contentHash', 'blocks', 'createdAt'])
+        && data.definitionId == definitionId
+        && data.id == definitionId
+        && data.revision is int && string(data.revision) == revId
+        && data.schemaVersion == 1
+        && data.contentHash is string && data.contentHash.size() > 0
+        && data.intent in ['training', 'testing', 'competition', 'rehab_return', 'recovery', 'skill_technical']
+        && (!('companionSessions' in data) || data.companionSessions is list)
+        && data.blocks is list;
+    }
+
+    match /users/{userId}/session_definitions/{definitionId} {
+      allow read: if isOwner(userId);
+      allow create: if hasValidSessionDefinitionHeader(userId, definitionId);
+      allow update: if hasValidSessionDefinitionHeader(userId, definitionId)
+        && keepsOwnership(userId)
+        && request.resource.data.latestRevision >= resource.data.latestRevision
+        && request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if isOwner(userId);
+
+      match /revisions/{revId} {
+        allow read: if isOwner(userId);
+        allow create: if hasValidSessionDefinitionRevision(userId, definitionId, revId);
+        allow update, delete: if false;
+      }
+    }
+
+    function hasValidOccurrenceWindowBinding(binding) {
+      return binding is map
+        && binding.keys().hasOnly(['windowId', 'bundleId', 'order', 'boundStartLocal', 'boundEndLocal', 'startInstant', 'endInstant'])
+        && binding.windowId is string && binding.windowId.size() > 0 && binding.windowId.size() <= 128
+        && binding.bundleId is string && binding.bundleId.size() > 0 && binding.bundleId.size() <= 128
+        && binding.order is int && binding.order >= 0
+        && binding.boundStartLocal is string && binding.boundStartLocal.size() > 0
+        && binding.boundEndLocal is string && binding.boundEndLocal.size() > 0
+        && binding.startInstant is string && binding.startInstant.size() > 0
+        && binding.endInstant is string && binding.endInstant.size() > 0;
+    }
+
+    // H4 (#434) PR 3 / ADR-0036 D-WINDOW: `windowBinding` on its own records the resolved
+    // window an intraday member sits in but enforces nothing across documents -- real
+    // exclusivity comes from `session_occurrence_windows` below, whose document id *is*
+    // `(date, windowId)`.
+    function hasValidSessionOccurrence(userId, occurrenceId) {
+      let data = request.resource.data;
+      return hasOwnedUserId(userId)
+        && data.keys().hasOnly(['userId', 'occurrenceId', 'date', 'authority', 'definitionRef', 'externalPlanRef', 'windowBinding', 'state', 'placementOrder', 'createdAt', 'updatedAt'])
+        && (!('windowBinding' in data) || ('externalPlanRef' in data && hasValidOccurrenceWindowBinding(data.windowBinding)))
+        && (('definitionRef' in data) != ('externalPlanRef' in data))
+        && data.occurrenceId == occurrenceId
+        && isValidActivityDate(data.date)
+        && data.state in ['scheduled', 'active', 'superseded', 'completed', 'abandoned', 'missed', 'skipped']
+        && (
+          ('externalPlanRef' in data && data.authority == 'external_plan')
+          || ('definitionRef' in data && data.authority in ['unplanned_log', 'schedule', 'replace_recommendation', 'additional_session'])
+        )
+        && (!('definitionRef' in data) || (
+          data.definitionRef is map
+          && data.definitionRef.keys().hasOnly(['definitionId', 'revision', 'contentHash'])
+          && data.definitionRef.definitionId is string && data.definitionRef.definitionId.size() > 0
+          && data.definitionRef.revision is int && data.definitionRef.revision >= 1
+          && data.definitionRef.contentHash is string && data.definitionRef.contentHash.size() > 0
+        ))
+        && (!('externalPlanRef' in data) || (
+          data.externalPlanRef is map
+          && data.externalPlanRef.keys().hasOnly(['planId', 'revision', 'sessionId', 'contentHash'])
+          && data.externalPlanRef.planId is string && data.externalPlanRef.planId.size() > 0 && data.externalPlanRef.planId.size() <= 64
+          && data.externalPlanRef.revision is int && data.externalPlanRef.revision >= 1
+          && data.externalPlanRef.sessionId is string && data.externalPlanRef.sessionId.size() > 0 && data.externalPlanRef.sessionId.size() <= 64
+          && data.externalPlanRef.contentHash is string && data.externalPlanRef.contentHash.size() > 0 && data.externalPlanRef.contentHash.size() <= 128
+        ))
+        && (!('placementOrder' in data) || (data.placementOrder is int && data.placementOrder >= 0))
+        && data.createdAt is string && data.updatedAt is string;
+    }
+
+    function isValidOccurrenceStateTransition(fromState, toState) {
+      return fromState == toState
+        || (fromState == 'scheduled' && toState in ['active', 'completed', 'abandoned', 'skipped', 'superseded', 'missed'])
+        // H4 (#434) PR 3 Phase 4 step 11: `active -> scheduled` is the launch-claim rollback.
+        // A claim commits before the session definition is resolved and the runner starts; if
+        // that fails afterwards, the occurrence would otherwise be stranded `active` with no
+        // execution and its minutes debited for the rest of the day.
+        //
+        // The rules cannot express the condition that makes this safe -- "no execution
+        // references this occurrence" needs a query, which rules cannot run -- so it is
+        // enforced in `releaseOccurrenceClaim`/`releaseIntradayMemberClaim`, which check for a
+        // referencing execution and refuse to reverse a ledger row that has already been
+        // reconciled by one. This clause is therefore deliberately wider than the guarded path
+        // that uses it, and is the reason `VALID_OCCURRENCE_TRANSITIONS` in
+        // `sessionOccurrenceService.ts` still omits it: the general
+        // `transitionOccurrenceState` must not be able to un-claim a genuinely running session.
+        || (fromState == 'active' && toState in ['completed', 'abandoned', 'superseded', 'scheduled']);
+    }
+
+    function bindsPreparedExternalOccurrence(userId, occurrenceId) {
+      let data = request.resource.data;
+      let binding = data.windowBinding;
+      let reservationId = 'win-' + data.date + '-' + binding.windowId;
+      let reservation = getAfter(/databases/$(database)/documents/users/$(userId)/session_occurrence_windows/$(reservationId));
+      return resource.data.state == 'scheduled'
+        && !('windowBinding' in resource.data)
+        && !('placementOrder' in resource.data)
+        && data.state == 'scheduled'
+        && data.authority == 'external_plan'
+        && data.externalPlanRef is map
+        && binding.windowId.matches('^[A-Za-z0-9_-]{1,128}$')
+        && data.placementOrder == binding.order
+        && data.diff(resource.data).affectedKeys().hasOnly(['windowBinding', 'placementOrder', 'updatedAt'])
+        && reservation.data.userId == userId
+        && reservation.data.date == data.date
+        && reservation.data.windowId == binding.windowId
+        && reservation.data.occurrenceId == occurrenceId;
+    }
+
+    match /users/{userId}/session_occurrences/{occurrenceId} {
+      allow read: if isOwner(userId);
+      allow create: if hasValidSessionOccurrence(userId, occurrenceId);
+      allow update: if hasValidSessionOccurrence(userId, occurrenceId)
+        && keepsOwnership(userId)
+        && request.resource.data.date == resource.data.date
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.authority == resource.data.authority
+        && isValidOccurrenceStateTransition(resource.data.state, request.resource.data.state)
+        && (
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['state', 'updatedAt'])
+          || bindsPreparedExternalOccurrence(userId, occurrenceId)
+        );
+      allow delete: if isOwner(userId);
+    }
+
+    // H4 (#434) PR 3 / ADR-0036 D-WINDOW: transactional exclusivity for "at most one
+    // occurrence per resolved window". Document id is deterministic from (date, windowId)
+    // (see `windowReservationId` in `sessionOccurrenceService.ts`), so a create-if-absent
+    // write inside the same transaction that creates the occurrence is what makes a
+    // duplicate binding to one window impossible -- `windowBinding` on the occurrence
+    // itself is a snapshot, not an enforcement mechanism. Released by deletion in the same
+    // transaction that supersedes/skips the occurrence holding it and binds a *different*
+    // window, or handed to a same-window successor via the constrained update below.
+    function hasValidWindowReservation(userId) {
+      let data = request.resource.data;
+      return hasOwnedUserId(userId)
+        && data.keys().hasOnly(['userId', 'date', 'windowId', 'occurrenceId', 'createdAt'])
+        && isValidActivityDate(data.date)
+        && data.windowId is string && data.windowId.size() > 0 && data.windowId.size() <= 128
+        && data.occurrenceId is string && data.occurrenceId.size() > 0 && data.occurrenceId.size() <= 128
+        && data.createdAt is string;
+    }
+
+    match /users/{userId}/session_occurrence_windows/{reservationId} {
+      allow read: if isOwner(userId);
+      allow create: if hasValidWindowReservation(userId);
+      // A re-import that keeps the same resolved window (`getOrCreateExternalPlanOccurrence`
+      // superseding a stale-revision predecessor) hands this reservation to the successor
+      // occurrence in place, rather than deleting and recreating it -- Firestore evaluates a
+      // `set()` on an existing document as `update`, so the reservation-claiming write for
+      // exactly that case needs an update rule, not just create. Everything the reservation's
+      // *identity* is keyed on (`date`, `windowId`, ownership) stays immutable; only the
+      // occurrence it points at (and the timestamp) may change.
+      allow update: if hasValidWindowReservation(userId)
+        && keepsOwnership(userId)
+        && request.resource.data.date == resource.data.date
+        && request.resource.data.windowId == resource.data.windowId
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['occurrenceId', 'createdAt']);
+      allow delete: if isOwner(userId);
+    }

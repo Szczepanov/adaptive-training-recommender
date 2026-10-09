@@ -1,0 +1,267 @@
+
+    function hasValidHealthSymptoms(symptoms) {
+      return symptoms is map
+        && symptoms.keys().hasOnly(['present', 'onset', 'severity', 'types', 'suspectedCause'])
+        && symptoms.keys().hasAll(['present'])
+        && symptoms.present is bool
+        && (!('onset' in symptoms)
+          || (symptoms.present && (symptoms.onset == null || symptoms.onset in ['today', 'yesterday', '2_3_days', 'earlier']))
+          || (!symptoms.present && symptoms.onset == null))
+        && (!('severity' in symptoms)
+          || (symptoms.present && (symptoms.severity == null || symptoms.severity in ['mild', 'moderate', 'severe']))
+          || (!symptoms.present && symptoms.severity == null))
+        && (!('suspectedCause' in symptoms)
+          || (symptoms.present && (symptoms.suspectedCause == null || symptoms.suspectedCause in ['infectious', 'allergy', 'unsure']))
+          || (!symptoms.present && symptoms.suspectedCause == null))
+        && (!('types' in symptoms)
+          || (symptoms.present && (symptoms.types == null || (
+            symptoms.types is list
+            && symptoms.types.size() <= 10
+            && symptoms.types.hasOnly(['sore_throat', 'congestion', 'runny_nose', 'sneezing', 'cough', 'fever_or_chills', 'headache_or_body_aches', 'gastrointestinal', 'unusual_fatigue', 'other'])
+          )))
+          || (!symptoms.present && symptoms.types == null));
+    }
+
+    function hasValidHealthContext(context) {
+      return context is map
+        && context.keys().hasOnly(['alcoholDrinksLast24h', 'travelDisruption', 'timezoneShiftHours', 'unusualHeatOrSauna', 'dehydrationOrFluidLoss', 'recentVaccination', 'medicationChange', 'closeSickContact', 'otherDisruption', 'symptoms'])
+        && (!('alcoholDrinksLast24h' in context) || (context.alcoholDrinksLast24h is int && context.alcoholDrinksLast24h >= 0 && context.alcoholDrinksLast24h <= 3))
+        && (!('travelDisruption' in context) || context.travelDisruption in ['none', 'local_or_no_timezone', 'timezone_shift', 'late_arrival_or_disrupted_sleep'])
+        && (!('timezoneShiftHours' in context) || context.timezoneShiftHours == null || (context.timezoneShiftHours is number && context.timezoneShiftHours >= -14 && context.timezoneShiftHours <= 14))
+        && (!('unusualHeatOrSauna' in context) || context.unusualHeatOrSauna == null || context.unusualHeatOrSauna is bool)
+        && (!('dehydrationOrFluidLoss' in context) || context.dehydrationOrFluidLoss == null || context.dehydrationOrFluidLoss is bool)
+        && (!('recentVaccination' in context) || context.recentVaccination == null || context.recentVaccination is bool)
+        && (!('medicationChange' in context) || context.medicationChange == null || context.medicationChange is bool)
+        && (!('closeSickContact' in context) || context.closeSickContact == null || context.closeSickContact is bool)
+        && (!('otherDisruption' in context) || context.otherDisruption == null || (context.otherDisruption is string && context.otherDisruption.size() <= 500))
+        && (!('symptoms' in context) || hasValidHealthSymptoms(context.symptoms));
+    }
+
+    function hasValidSubjectiveHealthFields(data) {
+      return (('illnessSymptoms' in data)
+          ? data.illnessSymptoms is bool
+          : (('healthContext' in data) && (data.healthContext is map) && ('symptoms' in data.healthContext)))
+        && (!('healthContext' in data) || hasValidHealthContext(data.healthContext));
+    }
+
+    function hasValidHunger(data) {
+      let hasHunger = 'hunger1To10' in data && data.hunger1To10 != null;
+      let hasTiming = 'hungerTiming' in data && data.hungerTiming != null;
+      return (!('hunger1To10' in data) || data.hunger1To10 == null || (data.hunger1To10 is int && data.hunger1To10 >= 1 && data.hunger1To10 <= 10))
+        && (!('hungerTiming' in data) || data.hungerTiming == null || data.hungerTiming in ['morning_pre_breakfast', 'other'])
+        && (hasHunger == hasTiming);
+    }
+
+    function hasValidNutritionAdherence(data) {
+      return !('nutritionAdherenceYesterday' in data)
+        || data.nutritionAdherenceYesterday == null
+        || data.nutritionAdherenceYesterday in ['fully_tracked', 'mostly_tracked', 'minimal', 'untracked', 'fasted'];
+    }
+
+    match /daily_recovery_snapshot/{date} { allow read, write: if false; }
+    match /daily_subjective_checkin/{document=**} { allow read, write: if false; }
+
+    match /users/{userId}/daily_subjective_checkins/{date} {
+      allow read: if isOwner(userId);
+      allow create: if hasOwnedUserId(userId) && isDateDocument(date)
+        && hasValidSubjectiveHealthFields(request.resource.data)
+        && hasValidHunger(request.resource.data)
+        && hasValidNutritionAdherence(request.resource.data);
+      allow update: if keepsOwnership(userId) && isDateDocument(date) && request.resource.data.createdAt == resource.data.createdAt
+        && hasValidSubjectiveHealthFields(request.resource.data)
+        && hasValidHunger(request.resource.data)
+        && hasValidNutritionAdherence(request.resource.data);
+      allow delete: if isOwner(userId);
+    }
+
+    function hasValidHealthAnomalyThresholdPolicy(policy) {
+      return policy is map
+        && policy.keys().hasOnly(['policyVersion', 'moderateDeviation', 'strongDeviation', 'minimumCoreSignalsForMultiSignal', 'persistenceDaysForEscalation', 'minimumHistoryCount', 'minimumRecentDayCoverage', 'maxBaselineAgeDays', 'estimatorBySignal'])
+        && policy.policyVersion is string && policy.policyVersion.size() > 0 && policy.policyVersion.size() <= 128
+        && policy.moderateDeviation is number && policy.moderateDeviation > 0 && policy.moderateDeviation <= 20
+        && policy.strongDeviation is number && policy.strongDeviation > policy.moderateDeviation && policy.strongDeviation <= 20
+        && policy.minimumCoreSignalsForMultiSignal is int && policy.minimumCoreSignalsForMultiSignal >= 2 && policy.minimumCoreSignalsForMultiSignal <= 3
+        && policy.persistenceDaysForEscalation is int && policy.persistenceDaysForEscalation >= 1 && policy.persistenceDaysForEscalation <= 30
+        && policy.minimumHistoryCount is int && policy.minimumHistoryCount >= 1 && policy.minimumHistoryCount <= 28
+        && policy.minimumRecentDayCoverage is number && policy.minimumRecentDayCoverage >= 0 && policy.minimumRecentDayCoverage <= 1
+        && policy.maxBaselineAgeDays is int && policy.maxBaselineAgeDays >= 0 && policy.maxBaselineAgeDays <= 30
+        && policy.estimatorBySignal is map
+        && policy.estimatorBySignal.keys().hasOnly(['rhr', 'respiration', 'hrv'])
+        && policy.estimatorBySignal.keys().hasAll(['rhr', 'respiration', 'hrv'])
+        && policy.estimatorBySignal.rhr in ['mean-stdev-28d', 'median-mad-28d', 'log-mean-stdev-28d']
+        && policy.estimatorBySignal.respiration in ['mean-stdev-28d', 'median-mad-28d', 'log-mean-stdev-28d']
+        && policy.estimatorBySignal.hrv in ['mean-stdev-28d', 'median-mad-28d', 'log-mean-stdev-28d'];
+    }
+
+    function hasValidHealthAnomalyRevision(userId, date, revisionId) {
+      let data = request.resource.data;
+      let source = data.source;
+      let assessment = data.assessment;
+      return isOwner(userId)
+        && data.keys().hasOnly(['userId', 'date', 'revisionId', 'idempotencyKey', 'computedAt', 'policyVersion', 'thresholdPolicy', 'mode', 'source', 'assessment', 'schemaVersion'])
+        && data.userId == userId
+        && data.date == date
+        && isValidActivityDate(data.date)
+        && data.revisionId == revisionId
+        && data.revisionId is string && data.revisionId.matches('^ha-[0-9a-f]{16}$')
+        && data.idempotencyKey is string && data.idempotencyKey.size() > 0 && data.idempotencyKey.size() <= 160
+        && data.computedAt is string && data.computedAt.size() > 0
+        && data.policyVersion is string && data.policyVersion.size() > 0 && data.policyVersion.size() <= 128
+        && data.mode in ['shadow-v1', 'visible-v1', 'tighten-v1']
+        && data.schemaVersion == 1
+        && hasValidHealthAnomalyThresholdPolicy(data.thresholdPolicy)
+        && source is map
+        && source.keys().hasOnly(['timezone', 'recoverySnapshotRevision', 'checkinRevision', 'historyWindowStart', 'historyWindowEndExclusive', 'historySnapshotRevisions', 'travelContextRevision', 'persistenceLookbackStart'])
+        && source.keys().hasAll(['timezone', 'recoverySnapshotRevision', 'checkinRevision', 'historyWindowStart', 'historyWindowEndExclusive', 'historySnapshotRevisions', 'travelContextRevision', 'persistenceLookbackStart'])
+        && source.timezone == 'Europe/Warsaw'
+        && (source.recoverySnapshotRevision == null || source.recoverySnapshotRevision is string)
+        && (source.checkinRevision == null || source.checkinRevision is string)
+        && isValidActivityDate(source.historyWindowStart)
+        && source.historyWindowEndExclusive == date
+        && source.historySnapshotRevisions is list && source.historySnapshotRevisions.size() <= 28
+        && (source.travelContextRevision == null || source.travelContextRevision is string)
+        && isValidActivityDate(source.persistenceLookbackStart)
+        && assessment is map
+        && assessment.keys().hasOnly(['state', 'evidenceLevel', 'coreSignals', 'supportingSignals', 'explanations', 'unexplainedEvidence', 'persistenceDays', 'episodeId', 'episodeDay', 'dataQuality', 'rationale', 'respirationElevation', 'policyVersion', 'thresholdPolicyVersion', 'mode'])
+        && assessment.keys().hasAll(['state', 'evidenceLevel', 'coreSignals', 'supportingSignals', 'explanations', 'unexplainedEvidence', 'persistenceDays', 'episodeId', 'episodeDay', 'dataQuality', 'rationale', 'policyVersion', 'thresholdPolicyVersion', 'mode'])
+        && assessment.state in ['normal', 'explained_recovery_strain', 'watch_unexplained', 'possible_illness_or_systemic_stress', 'symptoms_reported']
+        && assessment.evidenceLevel in ['none', 'low', 'moderate', 'high']
+        && assessment.coreSignals is list && assessment.coreSignals.size() == 3
+        && assessment.supportingSignals is list && assessment.supportingSignals.size() <= 32
+        && assessment.explanations is list && assessment.explanations.size() <= 32
+        && assessment.unexplainedEvidence is list && assessment.unexplainedEvidence.size() <= 3
+        && assessment.persistenceDays is int && assessment.persistenceDays >= 0 && assessment.persistenceDays <= 365
+        && (assessment.episodeId == null || (assessment.episodeId is string && assessment.episodeId.size() <= 160))
+        && (assessment.episodeDay == null || (assessment.episodeDay is int && assessment.episodeDay >= 1 && assessment.episodeDay <= 365))
+        && assessment.dataQuality is list && assessment.dataQuality.size() <= 3
+        && assessment.rationale is map
+        // The parent assessment rule is close to Firestore's 1,000-expression ceiling.
+        // Keep the server boundary bounded; the application parser validates every scalar.
+        && (!('respirationElevation' in assessment)
+          || (assessment.respirationElevation is map && assessment.respirationElevation.size() <= 11))
+        && assessment.policyVersion == data.policyVersion
+        && assessment.thresholdPolicyVersion == data.thresholdPolicy.policyVersion
+        && assessment.mode == data.mode;
+    }
+
+    match /users/{userId}/health_anomaly_assessments/{date}/revisions/{revisionId} {
+      allow read: if isOwner(userId);
+      allow create: if hasValidHealthAnomalyRevision(userId, date, revisionId);
+      allow update, delete: if false;
+    }
+
+    function hasValidHealthAnomalyOutcome(userId, episodeId) {
+      let data = request.resource.data;
+      let sourceAssessment = data.sourceAssessment;
+      let symptomOnset = data.symptomOnset;
+      let respiratoryTest = data.respiratoryTest;
+      let assessmentPath = /databases/$(database)/documents/users/$(userId)/health_anomaly_assessments/$(sourceAssessment.date)/revisions/$(sourceAssessment.revisionId);
+      return hasOwnedUserId(userId)
+        && data.keys().hasOnly(['userId', 'episodeId', 'sourceAssessment', 'explanation', 'symptomOnset', 'respiratoryTest', 'note', 'createdAt', 'updatedAt', 'schemaVersion'])
+        && data.keys().hasAll(['userId', 'episodeId', 'sourceAssessment', 'explanation', 'symptomOnset', 'respiratoryTest', 'note', 'createdAt', 'updatedAt', 'schemaVersion'])
+        && data.episodeId == episodeId
+        && data.episodeId is string && data.episodeId.size() > 0 && data.episodeId.size() <= 160
+        && sourceAssessment is map
+        && sourceAssessment.keys().hasOnly(['date', 'revisionId'])
+        && sourceAssessment.keys().hasAll(['date', 'revisionId'])
+        && isValidActivityDate(sourceAssessment.date)
+        && sourceAssessment.revisionId is string && sourceAssessment.revisionId.matches('^ha-[0-9a-f]{16}$')
+        && exists(assessmentPath)
+        && get(assessmentPath).data.assessment.episodeId == episodeId
+        && data.explanation in ['illness_symptoms', 'allergy_or_hay_fever', 'hard_training_recovery', 'poor_sleep', 'alcohol', 'travel_jetlag', 'stress', 'heat_dehydration', 'vaccination_medication', 'nothing_obvious', 'other_not_sure']
+        && (symptomOnset == null || (
+          symptomOnset is map
+          && symptomOnset.keys().hasOnly(['date', 'precision'])
+          && symptomOnset.keys().hasAll(['date', 'precision'])
+          && isValidActivityDate(symptomOnset.date)
+          && symptomOnset.precision == 'day'
+        ))
+        && (respiratoryTest == null || (
+          respiratoryTest is map
+          && respiratoryTest.keys().hasOnly(['result', 'testedOn', 'source'])
+          && respiratoryTest.keys().hasAll(['result', 'testedOn', 'source'])
+          && respiratoryTest.result in ['positive', 'negative']
+          && isValidActivityDate(respiratoryTest.testedOn)
+          && respiratoryTest.source == 'user_reported'
+        ))
+        && (data.note == null || (data.note is string && data.note.size() <= 2000))
+        && data.createdAt is string && data.createdAt.size() > 0
+        && data.updatedAt is string && data.updatedAt.size() > 0
+        && data.schemaVersion == 1;
+    }
+
+    match /users/{userId}/health_anomaly_outcomes/{episodeId} {
+      allow read: if isOwner(userId);
+      allow create: if hasValidHealthAnomalyOutcome(userId, episodeId);
+      allow update: if hasValidHealthAnomalyOutcome(userId, episodeId)
+        && keepsOwnership(userId)
+        && request.resource.data.episodeId == resource.data.episodeId
+        && request.resource.data.sourceAssessment == resource.data.sourceAssessment
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.schemaVersion == resource.data.schemaVersion;
+      allow delete: if false;
+    }
+
+    // --- PI6/ADR-0028: physiological identity passports and immutable assessments are
+    // server-managed. Clients may read their own evidence but cannot forge model output.
+    match /users/{userId}/physiological_identity_passports/{passportId} {
+      allow read: if isOwner(userId) && passportId == 'current';
+      allow write: if false;
+    }
+
+    match /users/{userId}/physiological_identity_passport_versions/{versionId} {
+      allow read: if isOwner(userId);
+      allow write: if false;
+    }
+
+    match /users/{userId}/health_identity_assessments/{assessmentId} {
+      allow read: if isOwner(userId);
+      allow write: if false;
+    }
+
+    function hasValidIdentityReviewEvent(userId, eventId) {
+      let data = request.resource.data;
+      let assessmentPath = /databases/$(database)/documents/users/$(userId)/health_identity_assessments/$(data.assessmentId);
+      let supersededPath = /databases/$(database)/documents/users/$(userId)/health_identity_review_events/$(data.supersedesReviewEventId);
+      return isOwner(userId)
+        && data.keys().hasOnly(['id', 'assessmentId', 'schemaVersion', 'label', 'occupancyAttestation', 'supersedesReviewEventId', 'recordedAt', 'source'])
+        && data.keys().hasAll(['id', 'assessmentId', 'schemaVersion', 'label', 'occupancyAttestation', 'supersedesReviewEventId', 'recordedAt', 'source'])
+        && data.id == eventId
+        && data.id is string && data.id.size() > 0 && data.id.size() <= 160
+        && data.assessmentId is string && data.assessmentId.size() > 0 && data.assessmentId.size() <= 160
+        && data.schemaVersion == 1
+        && data.label in ['USER', 'NOT_USER', 'UNCERTAIN']
+        && data.occupancyAttestation in ['EXCLUSIVE', 'MIXED', 'UNKNOWN']
+        && data.recordedAt is timestamp
+        && data.recordedAt == request.time
+        && data.source == 'user_ui'
+        && exists(assessmentPath)
+        && (
+          (data.label == 'USER' && data.occupancyAttestation == 'EXCLUSIVE')
+          || (data.label == 'NOT_USER' && data.occupancyAttestation == 'UNKNOWN')
+          || (data.label == 'UNCERTAIN' && data.occupancyAttestation in ['MIXED', 'UNKNOWN'])
+        )
+        && (
+          data.supersedesReviewEventId == null
+          || (
+            data.supersedesReviewEventId is string
+            && data.supersedesReviewEventId.size() > 0
+            && data.supersedesReviewEventId != eventId
+            && exists(supersededPath)
+            && get(supersededPath).data.assessmentId == data.assessmentId
+            && data.recordedAt >= get(supersededPath).data.recordedAt
+          )
+        );
+    }
+
+    match /users/{userId}/health_identity_review_events/{eventId} {
+      allow read: if isOwner(userId);
+      allow create: if hasValidIdentityReviewEvent(userId, eventId);
+      allow update, delete: if false;
+    }
+
+    // --- MS2/ADR-0027: server-owned multisource health observation day bundles.
+    match /users/{userId}/health_observation_days/{daySourceId} {
+      allow read: if isOwner(userId);
+      allow write: if false; // Server-managed only
+    }
