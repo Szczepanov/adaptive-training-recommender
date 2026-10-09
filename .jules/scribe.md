@@ -17,3 +17,7 @@
 ## 2026-09-15 - Missing Root Documentation for ADR-0040
 **Learning:** Accepted ADRs need to be documented not only in the main README's feature list but also indexed properly in the central documentation hub (`docs/README.md`) under both the Decision Log and Implementation Plans if applicable.
 **Action:** When adding or auditing ADRs, ensure they are represented in the root `README.md` Technical Features section and correctly indexed in `docs/README.md`.
+
+## 2026-10-25 - Proposed ADRs in Technical Features
+**Learning:** The main `README.md`'s Technical Features list incorrectly included 'Proposed' and unimplemented ADRs (e.g., ADR-0030, ADR-0034, ADR-0037, ADR-0038). Documentation must describe the system that actually exists, not an imagined future version.
+**Action:** When updating documentation (especially as the 'Scribe' persona), never list 'Proposed' or unimplemented Architectural Decision Records (ADRs) as existing technical features in the main `README.md`. Only 'Accepted' and fully implemented ADRs belong in the current reality feature list, to prevent documenting unimplemented behavior.

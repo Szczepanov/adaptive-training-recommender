@@ -84,12 +84,11 @@ Adaptive Training Recommendations & Native Session Execution
 20. **Externally-Authored Plans & Adjudication (ADR-0019)**: First-class support for imported third-party plans where the plan owns selection and the engine owns daily safety, dose, and weekly critique.
 21. **Subjective Baselines & Cause-Aware Symptom Gating (ADR-0020, ADR-0032)**: Self-normalising subjective drift tightening and structured symptom check-ins differentiating ambient fatigue from illness risk.
 22. **Strength Session Logging (ADR-0021)**: Durable raw strength-session logging, gauge semantics, and safe estimated-1RM write-back.
-23. **Source-Aware Multisource Health (ADR-0027, ADR-0030)**: Provenance-separated Google Health and Eight Sleep ingestion, source-specific baselines, and evidence-gated fusion without arithmetic cross-sensor averaging.
+23. **Source-Aware Multisource Health (ADR-0027)**: Provenance-separated Google Health and Eight Sleep ingestion, source-specific baselines, and evidence-gated fusion without arithmetic cross-sensor averaging.
 24. **Physiological Identity Passport (ADR-0028)**: Provider-neutral identity-attribution and measurement-trust layer evaluating multi-source cross-night concordance.
 25. **Sports Knowledge Registry (ADR-0033)**: Versioned, claim-level evidence lineage separating sports science from athlete observations.
-26. **Canonical Performed Training Occurrence (ADR-0034)**: Reconciles structured executions and vendor (Garmin) evidence into a single training record distinct from planning authority.
-27. **Advanced Execution Scheduling (ADR-0035, ADR-0036, ADR-0037, ADR-0038)**: Explicit rest-day authoring in external plans, intraday training windows, block intent progression, and engine-generated recovery placement.
-28. **Longitudinal Body-Composition and Fueling Observations (ADR-0039)**: Provider-agnostic body mass, home tape measurements, device body-composition estimates, and subjective fueling context without recommendation authority.
+26. **Advanced Execution Scheduling (ADR-0035, ADR-0036)**: Explicit rest-day authoring in external plans and intraday training windows.
+27. **Longitudinal Body-Composition and Fueling Observations (ADR-0039)**: Provider-agnostic body mass, home tape measurements, device body-composition estimates, and subjective fueling context without recommendation authority.
 
 29. **Server-Authoritative Anthropometry Writes (ADR-0040)**: Dedicated Python Cloud Run API that validates protocol, bounds, and identity for anthropometry observations before persisting them, superseding direct client Firestore writes.
 30. **Typed Strength, Speed and Power Performance Goals (ADR-0041)**: Explicit non-authoritative typed targets and shared deterministic multi-target comparator for performance goals.
