@@ -180,6 +180,25 @@ def test_get_snapshots_batch_propagates_chunk_failure() -> None:
     assert sorted(len(call.args[0]) for call in mock_db.get_all.call_args_list) == [1, 400]
 
 
+def test_get_snapshots_batch_single_chunk_logs_warning_and_re_raises_exception(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    mock_db = MagicMock()
+    repo = FirestoreRecoveryRepository(user_id="real_uid_456", db=mock_db)
+    date_isos = ["2024-01-01", "2024-01-02"]
+    repo._get_doc_ref = MagicMock(side_effect=lambda date_iso: SimpleNamespace(id=date_iso))
+    mock_db.get_all.side_effect = RuntimeError("Firestore batch error")
+
+    with caplog.at_level("WARNING"):
+        with pytest.raises(RuntimeError, match="Firestore batch error"):
+            repo.get_snapshots_batch(date_isos)
+
+    assert (
+        "Error reading batch of Firestore snapshots for user real_uid_456: Firestore batch error"
+        in caplog.text
+    )
+
+
 def test_is_snapshot_complete_all_metrics_present():
     from garmin_sync.firestore_repository import is_snapshot_complete
 
