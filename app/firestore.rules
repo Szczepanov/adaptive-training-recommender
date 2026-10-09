@@ -2798,7 +2798,10 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
       let filter = filtered ? c.openbar_filter_implementation.trim().lower() + '@' + c.openbar_filter_version.trim().lower() : '';
       let identities = tracker + '/' + kinematics + (filtered ? '/' + filter : '');
       let calibration = c.openbar_calibration_method.trim().lower();
-      return c.openbar_parser_version == 'openbar-analysis-v1'
+      return c.openbar_parser_version in ['openbar-analysis-v1', 'openbar-analysis-v2']
+        && (c.openbar_parser_version == 'openbar-analysis-v2'
+          ? (c.openbar_tracker_method_parameters_sha256 is string && c.openbar_tracker_method_parameters_sha256.matches('^[a-f0-9]{64}$'))
+          : !('openbar_tracker_method_parameters_sha256' in c))
         && c.openbar_segmentation_rule in ['concentric-segmentation-v1', 'concentric-segmentation-v2']
         && c.openbar_kinematics_input in ['calibrated', 'filtered']
         && identities.matches("^[a-z0-9_.!~*'()-]+@[a-z0-9_.!~*'()-]+(/[a-z0-9_.!~*'()-]+@[a-z0-9_.!~*'()-]+){1,2}$")
@@ -2811,7 +2814,8 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
         && c.openbar_kinematics_min_confidence is number && c.openbar_kinematics_min_confidence >= 0 && c.openbar_kinematics_min_confidence <= 1
         && parts.size() == 7 && limits.size() == 2
         && float(limits[0]) == c.openbar_kinematics_max_gap_s && float(confidence) == c.openbar_kinematics_min_confidence
-        && c.measurement_method_id == c.openbar_parser_version + '/' + c.openbar_segmentation_rule + '/' + tracker + '/'
+        && c.measurement_method_id == c.openbar_parser_version + '/' + c.openbar_segmentation_rule + '/' + tracker
+          + (c.openbar_parser_version == 'openbar-analysis-v2' ? '[sha256:' + c.openbar_tracker_method_parameters_sha256 + ']' : '') + '/'
           + (filtered ? filter + '[' + (c.openbar_filter_parameters == null ? 'default' : c.openbar_filter_parameters.trim()) + ']' : 'raw')
           + '/' + c.openbar_kinematics_input + '/' + kinematics + '[' + c.openbar_kinematics_parameters.trim()
           + ';max-gap=' + limits[0] + ';min-confidence=' + confidence + ']/' + calibration.replace('@', '%40').replace('[+]', '%2B');

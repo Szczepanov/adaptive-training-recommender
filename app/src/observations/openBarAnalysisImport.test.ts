@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildComparisonSeries } from './comparability';
 import { CONCENTRIC_SEGMENTATION_V2 } from './concentricSegmentation';
-import { buildOpenBarAnalysis, openBarSingleRepProfile } from './fixtures/openBarAnalysisFixtures';
+import { buildOpenBarAnalysis, openBarCsrtParameters, openBarSingleRepProfile } from './fixtures/openBarAnalysisFixtures';
 import { parseOpenBarAnalysis } from './openBarAnalysis';
 import {
     assignOpenBarOrdinals, OPENBAR_CONTEXT_KEYS, OPENBAR_DEVICE_PROVIDER, openBarProposalToDraftRow,
@@ -29,7 +29,7 @@ describe('OpenBar trial mapping (#981)', () => {
         expect(p.validity).toBe('valid');
         expect(p.successful).toBe(true);
         expect(p.sourceRef).toBe(openBarSourceRefFor(hash));
-        expect(Object.keys(p.context).sort()).toEqual(Object.values(OPENBAR_CONTEXT_KEYS).sort());
+        expect(Object.keys(p.context).sort()).toEqual(Object.values(OPENBAR_CONTEXT_KEYS).filter(key => key !== OPENBAR_CONTEXT_KEYS.trackerMethodParametersSha256).sort());
         expect(Object.keys(p.context).length).toBeLessThanOrEqual(32);
         expect(() => assertObservationContext(p.context, 'context')).not.toThrow();
         expect(Object.values(p.context).every(value => typeof value !== 'string' || value.length <= 128)).toBe(true);
@@ -92,6 +92,32 @@ describe('OpenBar trial mapping (#981)', () => {
 });
 
 describe('Velocity measurement-method identity (ADR-0047, #981)', () => {
+    it('stores a bounded parameterized method identity without mixing configurations or legacy imports', () => {
+        const a = buildOpenBarAnalysis();
+        a.provenance.tracker.implementation.parameters = openBarCsrtParameters();
+        const first = proposal(a);
+        const method = velocityMeasurementMethodId(first.device, first.context);
+        expect(method).toMatch(/^openbar-analysis-v2\/concentric-segmentation-v2\/opencv-csrt@1\[sha256:[a-f0-9]{64}\]/);
+        expect(first.context.openbar_tracker_method_parameters_sha256).toMatch(/^[a-f0-9]{64}$/);
+        expect(Object.keys(first.context).length + 3).toBeLessThanOrEqual(32);
+        expect(Object.values(first.context).every(value => typeof value !== 'string' || value.length <= 128)).toBe(true);
+        a.provenance.tracker.implementation.parameters = { ...openBarCsrtParameters(), prediction_sha256: 'd'.repeat(64), seed_timestamp_s: 0.5, end_s: 3 };
+        const otherClip = proposal(a, 'e'.repeat(64));
+        expect(otherClip.sourceRef).not.toBe(first.sourceRef);
+        expect(velocityMeasurementMethodId(otherClip.device, otherClip.context)).toBe(method);
+        a.provenance.tracker.implementation.parameters = { ...openBarCsrtParameters(), threads: 2 };
+        const changed = proposal(a);
+        expect(velocityMeasurementMethodId(changed.device, changed.context)).not.toBe(method);
+        const legacy = proposal();
+        expect(velocityMeasurementMethodId(legacy.device, legacy.context)).not.toBe(method);
+        for (const invalid of [null, 'bad', 'A'.repeat(64)]) {
+            expect(() => velocityMeasurementMethodId(first.device, { ...first.context, openbar_tracker_method_parameters_sha256: invalid })).toThrow(/tracker method parameters/);
+        }
+        const { openbar_tracker_method_parameters_sha256: _hash, ...incomplete } = first.context;
+        expect(_hash).toBeDefined();
+        expect(() => velocityMeasurementMethodId(first.device, incomplete)).toThrow(/tracker method parameters/);
+        expect(() => velocityMeasurementMethodId(legacy.device, { ...legacy.context, openbar_tracker_method_parameters_sha256: 'a'.repeat(64) })).toThrow(/tracker method parameters/);
+    });
     it('separates WL, OpenBar and manual derivations', () => {
         const p = proposal();
         const openBar = velocityMeasurementMethodId(p.device, p.context);
@@ -121,7 +147,7 @@ describe('Velocity measurement-method identity (ADR-0047, #981)', () => {
     });
     it('fails closed on unsupported OpenBar parser/rule/input or mismatched provider', () => {
         const p = proposal();
-        expect(() => velocityMeasurementMethodId(p.device, { ...p.context, openbar_parser_version: 'openbar-analysis-v2' })).toThrow(/unsupported OpenBar parser/);
+        expect(() => velocityMeasurementMethodId(p.device, { ...p.context, openbar_parser_version: 'openbar-analysis-v3' })).toThrow(/unsupported OpenBar parser/);
         expect(() => velocityMeasurementMethodId(p.device, { ...p.context, openbar_segmentation_rule: 'other-rule' })).toThrow(/unsupported concentric segmentation/);
         expect(() => velocityMeasurementMethodId(p.device, { ...p.context, openbar_kinematics_input: 'other-input' })).toThrow(/unsupported OpenBar kinematics input/);
         expect(() => velocityMeasurementMethodId({ provider: 'WL Analysis' }, p.context)).toThrow(/provider OpenBar/);

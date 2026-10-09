@@ -97,3 +97,13 @@ export function openBarProfileToWlCsv(profile: readonly number[], dt = 1 / 30): 
     }
     return lines.join('\n') + '\n';
 }
+
+/** Real-shaped scalar research configuration with synthetic clip identities only. */
+export function openBarCsrtParameters(): Record<string, string | number | boolean> {
+    return {
+        opencv_version: '4.13.0', numpy_version: '2.4.0', tracker: 'opencv-csrt', base_tracker: 'csrt',
+        init_box: '[300,300,200,200]', threads: 1, seed_timestamp_s: 0, end_s: 2,
+        decode_validation: 'presentation_timestamps', confidence: 'algorithm_specific',
+        license: 'Apache-2.0', prediction_sha256: 'c'.repeat(64),
+    };
+}
