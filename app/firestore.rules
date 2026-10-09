@@ -1232,7 +1232,12 @@ service cloud.firestore {
 
     function validSessionEntryData(data, executionId, entryId) {
       let payload = data.payload;
-      return data.keys().hasOnly(['id', 'executionId', 'stepId', 'exerciseRef', 'side', 'selectedOptionId', 'governingChoiceEntryId', 'supersedesChoiceEntryId', 'completedAt', 'createdAt', 'updatedAt', 'payload', 'diaryMutationId', 'deletedAt'])
+      return data.keys().hasOnly([
+          'id', 'executionId', 'stepId', 'exerciseRef', 'compositionPatterns',
+          'degradedComposition', 'side', 'selectedOptionId', 'governingChoiceEntryId',
+          'supersedesChoiceEntryId', 'completedAt', 'createdAt', 'updatedAt',
+          'payload', 'diaryMutationId', 'deletedAt'
+        ])
         && data.id == entryId
         && data.executionId == executionId
         && data.completedAt is string && data.createdAt is string && data.updatedAt is string
@@ -1240,6 +1245,12 @@ service cloud.firestore {
         && (!('deletedAt' in data) || data.deletedAt == null || data.deletedAt is string)
         && (!('stepId' in data) || data.stepId is string)
         && (!('selectedOptionId' in data) || data.selectedOptionId is string)
+        && (!('compositionPatterns' in data) || (data.compositionPatterns is list && data.compositionPatterns.size() <= 8))
+        && (!('degradedComposition' in data) || (data.degradedComposition is map
+          && data.degradedComposition.keys().hasOnly(['pattern', 'reason'])
+          && data.degradedComposition.keys().hasAll(['pattern', 'reason'])
+          && data.degradedComposition.pattern is string && data.degradedComposition.pattern.size() > 0
+          && data.degradedComposition.reason is string && data.degradedComposition.reason.size() > 0))
         && (!('governingChoiceEntryId' in data)
           || (payload.kind != 'choice' && data.governingChoiceEntryId is string && data.governingChoiceEntryId.size() > 0))
         && (!('supersedesChoiceEntryId' in data)

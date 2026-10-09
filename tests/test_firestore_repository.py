@@ -180,6 +180,25 @@ def test_get_snapshots_batch_propagates_chunk_failure() -> None:
     assert sorted(len(call.args[0]) for call in mock_db.get_all.call_args_list) == [1, 400]
 
 
+def test_get_snapshots_batch_single_chunk_logs_warning_and_re_raises_exception(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    mock_db = MagicMock()
+    repo = FirestoreRecoveryRepository(user_id="real_uid_456", db=mock_db)
+    date_isos = ["2024-01-01", "2024-01-02"]
+    repo._get_doc_ref = MagicMock(side_effect=lambda date_iso: SimpleNamespace(id=date_iso))
+    mock_db.get_all.side_effect = RuntimeError("Firestore batch error")
+
+    with caplog.at_level("WARNING"):
+        with pytest.raises(RuntimeError, match="Firestore batch error"):
+            repo.get_snapshots_batch(date_isos)
+
+    assert (
+        "Error reading batch of Firestore snapshots for user real_uid_456: Firestore batch error"
+        in caplog.text
+    )
+
+
 def test_is_snapshot_complete_all_metrics_present():
     from garmin_sync.firestore_repository import is_snapshot_complete
 
@@ -364,6 +383,36 @@ def test_is_fresh_invalid_synced_at_timestamp():
     }
     repo.get_snapshot = MagicMock(return_value=doc_invalid_timestamp)
     assert repo.is_fresh("2026-08-19") is False
+
+
+def test_is_fresh_exception_during_synced_at_parsing(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    import logging
+    from unittest.mock import MagicMock
+
+    repo = FirestoreRecoveryRepository(user_id="real_uid_456")
+    doc_valid_str_trigger_exception = {
+        "source": {"garminSyncedAt": "2026-08-19T06:30:00+00:00"},
+        "raw": {},
+    }
+    repo.get_snapshot = MagicMock(return_value=doc_valid_str_trigger_exception)
+
+    def mock_fromisoformat(_: str) -> None:
+        raise RuntimeError("Unexpected datetime parsing error")
+
+    monkeypatch.setattr(
+        "garmin_sync.firestore_repository.datetime",
+        MagicMock(fromisoformat=mock_fromisoformat),
+    )
+
+    with caplog.at_level(logging.WARNING):
+        assert repo.is_fresh("2026-08-19") is False
+
+    assert (
+        "Failed to parse synced_at timestamp '2026-08-19T06:30:00+00:00': Unexpected datetime parsing error"
+        in caplog.text
+    )
 
 
 def test_is_fresh_updated_at_fallback_and_naive_timestamp(monkeypatch):

@@ -122,3 +122,40 @@ def test_sync_date_isolates_one_provider_persistence_failure() -> None:
     assert result["successful_provider"]["status"] == "success"
     assert result["successful_provider"]["totalObservations"] == 1
     assert "garmin_google_health" in result["successful_provider"]["sources"]
+
+
+def test_sync_repair_zero_lookback_override() -> None:
+    mock_repo = MagicMock(spec=FirestoreRecoveryRepository)
+    mock_repo.save_health_observation_day_bundles_batch.return_value = [(True, 1)]
+    mock_repo.get_health_observation_bundles_in_range.return_value = []
+
+    mock_provider = MagicMock(spec=RecoveryObservationProvider)
+    mock_provider.fetch_observations.return_value = ObservationBatch(
+        logical_date="2026-08-27",
+        observations=[],
+        source_payload_hash="sha256:empty",
+    )
+
+    service = HealthObservationService(
+        user_id="test_uid",
+        repository=mock_repo,
+        archive_store=NullArchiveStore(),
+        providers={"google_health": mock_provider},
+    )
+
+    summary = service.sync_repair("2026-08-27", days_lookback=0)
+    assert len(summary) == 1
+    assert summary[0]["date"] == "2026-08-27"
+    assert mock_provider.fetch_observations.call_count == 1
+
+
+def test_sync_repair_invalid_target_date_raises_value_error() -> None:
+    mock_repo = MagicMock(spec=FirestoreRecoveryRepository)
+    service = HealthObservationService(
+        user_id="test_uid",
+        repository=mock_repo,
+        archive_store=NullArchiveStore(),
+    )
+
+    with pytest.raises(ValueError):
+        service.sync_repair("invalid-date-format")
