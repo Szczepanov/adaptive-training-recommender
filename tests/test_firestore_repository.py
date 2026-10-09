@@ -366,6 +366,36 @@ def test_is_fresh_invalid_synced_at_timestamp():
     assert repo.is_fresh("2026-08-19") is False
 
 
+def test_is_fresh_exception_during_synced_at_parsing(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    import logging
+    from unittest.mock import MagicMock
+
+    repo = FirestoreRecoveryRepository(user_id="real_uid_456")
+    doc_valid_str_trigger_exception = {
+        "source": {"garminSyncedAt": "2026-08-19T06:30:00+00:00"},
+        "raw": {},
+    }
+    repo.get_snapshot = MagicMock(return_value=doc_valid_str_trigger_exception)
+
+    def mock_fromisoformat(_: str) -> None:
+        raise RuntimeError("Unexpected datetime parsing error")
+
+    monkeypatch.setattr(
+        "garmin_sync.firestore_repository.datetime",
+        MagicMock(fromisoformat=mock_fromisoformat),
+    )
+
+    with caplog.at_level(logging.WARNING):
+        assert repo.is_fresh("2026-08-19") is False
+
+    assert (
+        "Failed to parse synced_at timestamp '2026-08-19T06:30:00+00:00': Unexpected datetime parsing error"
+        in caplog.text
+    )
+
+
 def test_is_fresh_updated_at_fallback_and_naive_timestamp(monkeypatch):
     from datetime import datetime
 
