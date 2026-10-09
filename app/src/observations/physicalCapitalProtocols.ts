@@ -429,8 +429,56 @@ export const PHYSICAL_CAPITAL_PROTOCOLS: readonly MeasurementProtocol[] = [
     CYCLING_6S_SEATED_SPRINT_PROTOCOL,
 ];
 
+const fixedLoadComparison = {
+    required: ['test_load_kg', 'measurement_method_id', 'equipment_setup_id'],
+    seriesDefining: ['test_load_kg', 'measurement_method_id', 'equipment_setup_id'],
+    contextOnly: [],
+    canonicalizationVersion: COMPARISON_CANONICALIZATION_V1,
+} as const satisfies MeasurementProtocol['comparisonContext'];
+
+const fixedLoadCapture = {
+    plannedTrials: 3,
+    maxTrials: 6,
+    fields: strengthTrialFields.map(field => field.id === 'mean_concentric_velocity_mps' ? { ...field, required: true } : { ...field }),
+    reducers: [{ kind: 'max_valid', metricId: 'strength_fixed_load_mean_velocity_mps', fieldId: 'mean_concentric_velocity_mps' }],
+    reducerVersion: ASSESSMENT_REDUCER_VERSION_V1,
+} as const satisfies MeasurementProtocol['capture'];
+
+export const BENCH_PRESS_FIXED_LOAD_VELOCITY_PROTOCOL: MeasurementProtocol = {
+    id: 'strength-bench-press-fixed-load-velocity', revision: 1, title: 'Bench press fixed-load velocity', intent: 'testing',
+    metricIds: ['strength_fixed_load_mean_velocity_mps'],
+    comparisonContext: fixedLoadComparison, capture: fixedLoadCapture,
+    familiarization: { required: false, minimumExposures: 0 }, burden: 'low', expectedRecoveryHours: 24,
+    instructions: [
+        { id: 'safety', text: 'Bench inside a rack with safety arms just below chest height or with a competent spotter. Stop for pain, chest symptoms, near-syncope or unusual breathlessness.' },
+        { id: 'warmup', text: 'Complete three progressive warm-up sets without fatigue. Choose a comfortable submaximal absolute load and lock that exact load for this test; log warm-ups as practice.' },
+        { id: 'standard', text: 'Keep the same grip, arch, planted feet and chest touch point; pause approximately one second, then press with maximal concentric intent to full lockout. Do not bounce or lift the hips.' },
+        { id: 'attempts', text: 'Perform 2-3 single repetitions at the locked load, resting 2-3 minutes between repetitions. Record successful execution and mean concentric velocity; peak velocity is optional. Mark failed or off-load repetitions as practice or invalid.' },
+        { id: 'method', text: 'Keep the measurement method, parser and rack/camera setup identical. Imported velocity uses its actual method; changing the load, method or setup starts a separate comparison series.' },
+        RAW_VIDEO_INSTRUCTION,
+    ],
+    invalidationRules: ['Spotter contact, bounce, missing pause, lifted hips or incomplete lockout.', 'A failed repetition or a repetition at a different load is not benchmark evidence.', 'Pain, illness or a material equipment/camera change affected the repetition.'],
+    createdAt: '2026-10-08T00:00:00.000Z',
+};
+
+export const BACK_SQUAT_FIXED_LOAD_VELOCITY_PROTOCOL: MeasurementProtocol = {
+    ...BENCH_PRESS_FIXED_LOAD_VELOCITY_PROTOCOL,
+    id: 'strength-back-squat-fixed-load-velocity', title: 'Back squat fixed-load velocity',
+    instructions: [
+        { id: 'safety', text: 'Squat inside a rack with safety pins just below the bottom position or with competent spotters. Stop for pain, chest symptoms, near-syncope or unusual breathlessness.' },
+        { id: 'warmup', text: 'Complete three progressive warm-up sets without fatigue. Choose a comfortable submaximal absolute load and lock that exact load for this test; log warm-ups as practice.' },
+        { id: 'standard', text: 'Keep footwear, stance, bar position and belt/sleeve policy identical. Reach depth with the hip crease below the top of the knee, then stand fully with maximal concentric intent and no spotter contact.' },
+        { id: 'attempts', text: 'Perform 2-3 single repetitions at the locked load, resting 2-3 minutes between repetitions. Record successful execution and mean concentric velocity; peak velocity is optional. Mark failed or off-load repetitions as practice or invalid.' },
+        { id: 'method', text: 'Keep the measurement method, parser and rack/camera setup identical. Imported velocity uses its actual method; changing the load, method or setup starts a separate comparison series.' },
+        RAW_VIDEO_INSTRUCTION,
+    ],
+    invalidationRules: ['Missing declared depth, incomplete standing, spotter contact or bar resting on the safety pins.', 'A failed repetition or a repetition at a different load is not benchmark evidence.', 'Pain, illness or a material equipment/camera change affected the repetition.'],
+};
+
 /** All immutable revisions that diagnostic export must continue to understand. */
 export const PHYSICAL_CAPITAL_PROTOCOL_REVISIONS: readonly MeasurementProtocol[] = [
     ...PHYSICAL_CAPITAL_PROTOCOLS,
     ...PHYSICAL_CAPITAL_PROTOCOLS_V2,
+    BENCH_PRESS_FIXED_LOAD_VELOCITY_PROTOCOL,
+    BACK_SQUAT_FIXED_LOAD_VELOCITY_PROTOCOL,
 ];

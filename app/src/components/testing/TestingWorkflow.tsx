@@ -37,7 +37,8 @@ import type { SessionExecution } from '../../sessions/models';
 import { getLocalDateString } from '../../utils/localDate';
 import { SessionRunner } from '../session/SessionRunner';
 import { TrialCaptureTable } from './TrialCaptureTable';
-import { clearAssessmentDraft } from '../../utils/assessmentDraftStorage';
+import { clearAssessmentDraft, loadAssessmentDraftSetup, saveAssessmentDraftSetup } from '../../utils/assessmentDraftStorage';
+import { isFixedLoadVelocityProtocol } from '../../observations/fixedLoadVelocity';
 import { TrialCorrectionPanel } from './TrialCorrectionPanel';
 import { TestingCatalogPanel } from './TestingCatalogPanel';
 import { AssessmentHistory } from './AssessmentHistory';
@@ -146,6 +147,9 @@ export const TestingWorkflow: React.FC<TestingWorkflowProps> = ({ userId, onClos
         if (loadedProtocol.capture) {
             const loadedTrials = await assessmentTrialService.listTrialsForAttempt(userId, loadedProtocol, assessmentAttemptId);
             setTrials(loadedTrials);
+            if (isFixedLoadVelocityProtocol(loadedProtocol) && loadedTrials.length > 0) {
+                setContextValues(Object.fromEntries(loadedProtocol.comparisonContext.required.map(dimension => [dimension, String(loadedTrials[0].context[dimension])])));
+            }
         } else {
             setTrials([]);
         }
@@ -167,6 +171,15 @@ export const TestingWorkflow: React.FC<TestingWorkflowProps> = ({ userId, onClos
                 );
                 if (cancelled || !loadedProtocol) return;
                 populateProtocol(loadedProtocol);
+                const draftSetup = loadAssessmentDraftSetup(userId, openAttempt.id);
+                if (draftSetup) {
+                    setContextValues(draftSetup.contextValues);
+                    setDeviceProvider(draftSetup.defaultDevice.provider);
+                    setDeviceModel(draftSetup.defaultDevice.model ?? '');
+                    setDeviceId(draftSetup.defaultDevice.deviceId ?? '');
+                } else if (isFixedLoadVelocityProtocol(loadedProtocol)) {
+                    setError('The local test setup could not be recovered. Re-enter the original load, measurement method and equipment/camera setup before saving; saved trials keep their original identity.');
+                }
                 setCatalogDefinitionId(null);
                 setAttempt(openAttempt);
                 setPurpose(openAttempt.purpose);
@@ -217,6 +230,12 @@ export const TestingWorkflow: React.FC<TestingWorkflowProps> = ({ userId, onClos
             });
         return () => { cancelled = true; };
     }, [populateProtocol, refreshSaved, refreshTrials, userId]);
+
+    useEffect(() => {
+        if (!recovering && attempt && (stage === 'running' || stage === 'capture')) {
+            saveAssessmentDraftSetup(userId, attempt.id, { contextValues, defaultDevice: { provider: deviceProvider, model: deviceModel, deviceId } });
+        }
+    }, [attempt, contextValues, deviceId, deviceModel, deviceProvider, recovering, stage, userId]);
 
     const loadBundledTest = async (definitionId: string) => {
         setBusy(true);
@@ -275,6 +294,7 @@ export const TestingWorkflow: React.FC<TestingWorkflowProps> = ({ userId, onClos
                 sourceSessionRef: `occurrence:${prepared.binding.occurrenceId}`,
             };
             await assessmentAttemptService.createAttempt(userId, assessment);
+            saveAssessmentDraftSetup(userId, assessment.id, { contextValues, defaultDevice: { provider: deviceProvider, model: deviceModel, deviceId } });
             setAttempt(assessment);
             setLaunch(prepared);
             setStage('running');
@@ -630,7 +650,7 @@ export const TestingWorkflow: React.FC<TestingWorkflowProps> = ({ userId, onClos
                             {protocol.comparisonContext.required.map(dimension => {
                                 const definition = getComparisonDimensionDefinition(dimension);
                                 const seriesDefining = protocol.comparisonContext.seriesDefining.includes(dimension);
-                                return <label key={dimension}>{dimension} <small>{seriesDefining ? 'series-defining' : 'context-only'} · {definition.description}</small><input value={contextValues[dimension] ?? ''} onChange={event => setContextValues(current => ({ ...current, [dimension]: event.target.value }))} /></label>;
+                                return <label key={dimension}>{dimension} <small>{seriesDefining ? 'series-defining' : 'context-only'} · {definition.description}</small><input type={definition.valueKind === 'number' ? 'number' : 'text'} step={definition.valueKind === 'number' ? 'any' : undefined} value={contextValues[dimension] ?? ''} onChange={event => setContextValues(current => ({ ...current, [dimension]: event.target.value }))} /></label>;
                             })}
                         </div>
                         <label>Attempt purpose<select value={purpose} onChange={event => setPurpose(event.target.value as AssessmentAttemptPurpose)}>{PURPOSES.map(item => <option key={item} value={item}>{item}</option>)}</select></label>

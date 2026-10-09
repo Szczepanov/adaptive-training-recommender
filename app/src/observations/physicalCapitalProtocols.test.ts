@@ -125,7 +125,7 @@ describe('v2 October execution protocols', () => {
             'field-seated-medball-chest-throw-3kg@2',
             'cycling-6s-seated-sprint@2',
         ]);
-        expect(PHYSICAL_CAPITAL_PROTOCOL_REVISIONS).toHaveLength(12);
+        expect(PHYSICAL_CAPITAL_PROTOCOL_REVISIONS).toHaveLength(14);
         expect(PHYSICAL_CAPITAL_PROTOCOLS.every(protocol => protocol.revision === 1)).toBe(true);
         for (const protocol of PHYSICAL_CAPITAL_PROTOCOLS_V2) {
             expect(() => assertValidMeasurementProtocol(protocol)).not.toThrow();

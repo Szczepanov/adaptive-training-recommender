@@ -27,6 +27,7 @@ const DIMENSIONS = [
     { id: 'timing_method', valueKind: 'identifier', description: 'Timing method used to capture an elapsed-time result (e.g. timing gates, radar/laser, handheld stopwatch); method materially affects comparability.' },
     { id: 'measurement_method_id', valueKind: 'identifier', description: 'Measurement method identity when it materially changes the result (e.g. wall-touch vs contact-mat jump height, bar-velocity app/camera method).' },
     { id: 'equipment_setup_id', valueKind: 'identifier', description: 'Test station or equipment setup identity when material to the protocol (e.g. rack/bench setup, throw station).' },
+    { id: 'test_load_kg', valueKind: 'number', description: 'Exact fixed test load in kilograms; use the same absolute load on every benchmark repetition.' },
 ] as const satisfies readonly ComparisonDimensionDefinition[];
 
 const DIMENSION_BY_ID = new Map<ComparisonDimension, ComparisonDimensionDefinition>(
@@ -55,6 +56,9 @@ export function assertComparisonDimensionValue(id: ComparisonDimension, value: C
         case 'number':
             if (typeof value !== 'number' || !Number.isFinite(value)) {
                 throw new Error(`Comparison dimension ${id} requires a finite number`);
+            }
+            if (id === 'test_load_kg' && (value < 1 || value > 500)) {
+                throw new Error('Fixed test load must be within 1-500 kg');
             }
             return;
         case 'boolean':

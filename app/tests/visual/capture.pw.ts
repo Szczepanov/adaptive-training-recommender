@@ -93,6 +93,24 @@ for (const scenario of VISUAL_SCENARIOS) {
         }
       }
     }
+    if (scenario.id === 'assessment-fixed-load-velocity') {
+      await expect(page.getByLabel(/test_load_kg/)).toHaveValue('60');
+      await expect(page.getByLabel(/measurement_method_id/)).toHaveValue('manual');
+      const rows = page.locator('.trial-row-card');
+      for (let index = 0; index < 2; index += 1) {
+        await rows.nth(index).getByLabel(/^Load/).fill('60');
+        await rows.nth(index).getByLabel(/Lift successful/).selectOption('true');
+        await rows.nth(index).getByLabel(/Mean concentric velocity/).fill(index === 0 ? '0.7' : '0.8');
+      }
+      await rows.nth(2).getByRole('radio', { name: 'practice', exact: true }).check();
+      await expect(page.locator('.canonical-preview-container')).toContainText('0.8 m/s');
+      if (test.info().project.name.includes('mobile')) {
+        for (const control of await page.locator('.trial-capture-section :is(button, input[type="number"], select):visible').all()) {
+          const box = await control.boundingBox();
+          expect(box?.height).toBeGreaterThanOrEqual(44);
+        }
+      }
+    }
     if (scenario.id === 'plan-recovery-authority-exit') {
       await expect(page.getByRole('region', { name: 'Roles planned beyond this forecast' })).toBeVisible();
     }

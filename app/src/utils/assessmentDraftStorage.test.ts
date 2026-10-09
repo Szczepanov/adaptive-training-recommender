@@ -3,6 +3,8 @@ import {
     clearAllAssessmentDrafts,
     clearAssessmentDraft,
     loadAssessmentDraft,
+    loadAssessmentDraftSetup,
+    saveAssessmentDraftSetup,
     saveAssessmentDraft,
     type DraftTrialRow,
 } from './assessmentDraftStorage';
@@ -35,6 +37,19 @@ describe('assessmentDraftStorage', () => {
         expect(loadAssessmentDraft('user-1', 'att-1')).toEqual([row]);
         clearAssessmentDraft('user-1', 'att-1');
         expect(loadAssessmentDraft('user-1', 'att-1')).toBeNull();
+    });
+
+    it('preserves locked comparison setup and device alongside row updates, scoped to the attempt', () => {
+        const setup = { contextValues: { test_load_kg: '60', measurement_method_id: 'wl-analysis-csv-v2', equipment_setup_id: 'bench-a' }, defaultDevice: { provider: 'WL Analysis' } };
+        saveAssessmentDraftSetup('user-1', 'att-1', setup);
+        saveAssessmentDraft('user-1', 'att-1', [row]);
+        expect(loadAssessmentDraftSetup('user-1', 'att-1')).toEqual(setup);
+        expect(loadAssessmentDraft('user-1', 'att-1')).toEqual([row]);
+        saveAssessmentDraftSetup('user-1', 'att-1', { ...setup, defaultDevice: { provider: 'manual' } });
+        expect(loadAssessmentDraft('user-1', 'att-1')).toEqual([row]);
+        expect(loadAssessmentDraftSetup('other-user', 'att-1')).toBeNull();
+        clearAssessmentDraft('user-1', 'att-1');
+        expect(loadAssessmentDraftSetup('user-1', 'att-1')).toBeNull();
     });
 
     it('isolates drafts by Firebase uid even when attempt ids match', () => {

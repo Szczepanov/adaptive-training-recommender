@@ -8,6 +8,7 @@ import type {
 } from './models';
 import { assertValidMeasurementProtocol } from './protocols';
 import { assertObservationContext } from './validation';
+import { assertFixedLoadComparisonContext, assertFixedLoadTrialEligibility } from './fixedLoadVelocity';
 
 /** Upper bound on append-only corrections per ordinal; mirrored by `app/firestore.rules`. */
 export const MAX_TRIAL_CORRECTIONS = 20;
@@ -109,6 +110,7 @@ export function assertValidAssessmentTrial(trial: AssessmentTrial, protocol: Mea
     assertTrialValues(trial, capture);
 
     assertObservationContext(trial.context, 'context');
+    assertFixedLoadTrialEligibility(trial, protocol);
     if (Object.keys(trial.context).length > MAX_TRIAL_CONTEXT_KEYS) {
         throw new Error(`Trial context cannot exceed ${MAX_TRIAL_CONTEXT_KEYS} keys`);
     }
@@ -146,6 +148,7 @@ export function assertValidAssessmentTrialSet(
             throw new Error(`Trial ${trial.id} supersedes missing trial ${trial.supersedesTrialId}`);
         }
     }
+    if (trials.length > 0) assertFixedLoadComparisonContext(protocol, trials, trials[0].context);
 }
 
 /** The current (latest unsuperseded) trial for each ordinal, in ordinal order. */

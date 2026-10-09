@@ -112,6 +112,19 @@ describe('MetricObservationService', () => {
     });
 
     describe('createInitialRevision', () => {
+        it('rejects a fixed-load revision falsely attributed to a different source-trial load', async () => {
+            const metricId = 'strength_fixed_load_mean_velocity_mps';
+            const context = { test_load_kg: 60, measurement_method_id: 'manual', equipment_setup_id: 'bench-a' };
+            const revision = makeRevision({ metricId, observationKey: `attempt-1:${metricId}`, unit: 'm/s', value: 0.8,
+                source: 'derived', protocolRef: { id: 'strength-bench-press-fixed-load-velocity', revision: 1 }, context,
+                derivedFromEvidenceRefs: [{ kind: 'assessment_trial', assessmentAttemptId: 'attempt-1', trialId: 'trial-1' }], algorithmVersion: 'assessment-reducer-v1' });
+            firestore.transaction.get.mockImplementation(async (ref: { path: string }) => ref.path.endsWith('/trials/trial-1')
+                ? snapshot({ id: 'trial-1', assessmentAttemptId: 'attempt-1', validity: 'valid', context,
+                    values: { load_kg: 65, successful: true, mean_concentric_velocity_mps: 0.8 } }) : snapshot(null));
+            await expect(new MetricObservationService({} as never).createInitialRevision('user-1', revision)).rejects.toThrow(/source trial/);
+            expect(firestore.transaction.set).not.toHaveBeenCalled();
+        });
+
         it('creates initial revision 1 and head snapshot atomically when neither exists', async () => {
             firestore.transaction.get
                 .mockResolvedValueOnce(snapshot(null))

@@ -8,6 +8,7 @@ import type {
     ObservationValidity,
 } from './models';
 import { assertMetricUnit, getMetricDefinition } from './registry';
+import { assertFixedLoadObservation } from './fixedLoadVelocity';
 
 const OBSERVATION_SOURCES = new Set(['manual', 'garmin_activity', 'garmin_lap', 'derived']);
 const VALIDITIES = new Set<ObservationValidity>(['valid', 'invalid', 'practice', 'questionable']);
@@ -108,6 +109,7 @@ export function assertValidMetricObservationRevision(revision: MetricObservation
     if (revision.correctionReason !== undefined) assertNonEmptyString(revision.correctionReason, 'correctionReason');
 
     assertDerivationProvenance(revision);
+    assertFixedLoadObservation(revision);
 }
 
 const MAX_DERIVATION_SOURCES = 32;

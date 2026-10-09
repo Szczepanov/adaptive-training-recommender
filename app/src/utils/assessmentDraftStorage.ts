@@ -42,6 +42,16 @@ export interface DraftTrialRow {
     importReview?: DraftImportReview;
 }
 
+export interface AssessmentDraftSetup {
+    contextValues: Record<string, string>;
+    defaultDevice: MetricObservationDevice;
+}
+
+interface AssessmentDraft {
+    rows: DraftTrialRow[];
+    setup?: AssessmentDraftSetup;
+}
+
 const STORAGE_PREFIX = 'assessment_draft_';
 
 function draftStorageKey(userId: string, attemptId: string): string {
@@ -109,24 +119,48 @@ function isDraftRow(value: unknown): value is DraftTrialRow {
 }
 
 /** Storage can be blocked or cleared (private mode, previews); every accessor degrades to "no draft". */
-export function loadAssessmentDraft(userId: string, attemptId: string): DraftTrialRow[] | null {
+function readAssessmentDraft(userId: string, attemptId: string): AssessmentDraft | null {
     try {
         const raw = localStorage.getItem(draftStorageKey(userId, attemptId));
         if (!raw) return null;
         const parsed: unknown = JSON.parse(raw);
-        if (Array.isArray(parsed) && parsed.length > 0 && parsed.every(isDraftRow)) return parsed;
+        if (Array.isArray(parsed) && parsed.every(isDraftRow)) return { rows: parsed };
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            const draft = parsed as AssessmentDraft;
+            if (!Array.isArray(draft.rows) || !draft.rows.every(isDraftRow)) return null;
+            const setup = draft.setup;
+            const validSetup = setup && setup.contextValues && typeof setup.contextValues === 'object'
+                && !Array.isArray(setup.contextValues) && Object.keys(setup.contextValues).length <= 32
+                && Object.values(setup.contextValues).every(value => typeof value === 'string')
+                && setup.defaultDevice !== undefined && isDraftDevice(setup.defaultDevice);
+            return { rows: draft.rows, ...(validSetup ? { setup } : {}) };
+        }
     } catch {
         // Storage unavailable or corrupted draft: fall back to a fresh capture table.
     }
     return null;
 }
 
-export function saveAssessmentDraft(userId: string, attemptId: string, rows: readonly DraftTrialRow[]): void {
+export function loadAssessmentDraft(userId: string, attemptId: string): DraftTrialRow[] | null {
+    const draft = readAssessmentDraft(userId, attemptId);
+    return draft && draft.rows.length > 0 ? draft.rows : null;
+}
+
+export function loadAssessmentDraftSetup(userId: string, attemptId: string): AssessmentDraftSetup | null {
+    return readAssessmentDraft(userId, attemptId)?.setup ?? null;
+}
+
+export function saveAssessmentDraft(userId: string, attemptId: string, rows: readonly DraftTrialRow[], setup?: AssessmentDraftSetup): void {
     try {
-        localStorage.setItem(draftStorageKey(userId, attemptId), JSON.stringify(rows));
+        const retainedSetup = setup ?? loadAssessmentDraftSetup(userId, attemptId);
+        localStorage.setItem(draftStorageKey(userId, attemptId), JSON.stringify({ rows, ...(retainedSetup ? { setup: retainedSetup } : {}) }));
     } catch {
         // Storage unavailable: the draft simply does not survive a reload.
     }
+}
+
+export function saveAssessmentDraftSetup(userId: string, attemptId: string, setup: AssessmentDraftSetup): void {
+    saveAssessmentDraft(userId, attemptId, loadAssessmentDraft(userId, attemptId) ?? [], setup);
 }
 
 export function clearAssessmentDraft(userId: string, attemptId: string): void {

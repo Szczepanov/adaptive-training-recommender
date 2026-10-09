@@ -9,6 +9,7 @@ import {
 describe('OV1 metric registry', () => {
     it('ships the bounded v1 registry', () => {
         expect(listMetricDefinitions().map(metric => metric.id)).toEqual([
+            'strength_fixed_load_mean_velocity_mps',
             'cycling_tt_20m_mean_power_w',
             'cycling_tt_4m_mean_power_w',
             'cycling_submax_mean_hr_bpm',
@@ -32,7 +33,7 @@ describe('OV1 metric registry', () => {
         expect(getMetricDefinition('cycling_sprint_1s_peak_power_w')).toMatchObject({ domain: 'cycling', unit: 'W', direction: 'higher_is_better' });
         expect(getMetricDefinition('cycling_sprint_5s_mean_power_w')).toMatchObject({ domain: 'cycling', unit: 'W', direction: 'higher_is_better' });
         expect(() => assertMetricUnit('seated_medball_throw_distance_m', 'cm')).toThrow(/requires unit m/);
-        // Raw capture fields (cadence, balance, bar velocity, RPE) are deliberately not metrics.
+        // Raw telemetry remains separate from the dedicated fixed-load velocity metric.
         expect(() => getMetricDefinition('peak_cadence_rpm')).toThrow(/Unsupported metric id/);
         expect(() => getMetricDefinition('mean_concentric_velocity_mps')).toThrow(/Unsupported metric id/);
     });

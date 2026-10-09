@@ -2,6 +2,7 @@ import { expect, test } from './support/test';
 import {
   completeTypicalCheckin,
   provisionAthlete,
+  readSessionExecutions,
   seedRecoverySnapshot,
   signInThroughUi,
 } from './support/athlete';
@@ -42,6 +43,102 @@ function wlSingleRepCsv(weightKg: number, tags: string, ascentVelocity: number, 
   for (let i = 0; i < 5; i += 1) push(0, 0);
   return lines.join('\n');
 }
+
+test('fixed-load velocity: import, reload, offline retry, history and exports preserve one assessment', async ({ page }) => {
+  const athlete = await provisionAthlete();
+  const date = await seedRecoverySnapshot(athlete);
+  await signInThroughUi(page, athlete);
+  await completeTypicalCheckin(page, athlete, date);
+  await page.locator('.navbar-desktop-menu').getByRole('button', { name: /More/ }).click();
+  await page.locator('#desktop-more-panel').getByRole('button', { name: /Testing/ }).click();
+  await page.getByRole('button', { name: 'Bench press fixed-load velocity · rev 1' }).click();
+  await page.getByLabel(/test_load_kg/).fill('60');
+  await page.getByLabel(/equipment_setup_id/).fill('bench-a-camera-a');
+  await page.getByRole('button', { name: 'Confirm lock and start' }).click();
+  await page.getByRole('button', { name: /Finish Session \(/ }).click();
+  await page.getByRole('button', { name: 'Finish & Save Session', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Record assessment trials' })).toBeVisible();
+  await page.locator('.wl-file-input').setInputFiles([
+    { name: 'bench-1.csv', mimeType: 'text/csv', buffer: Buffer.from(wlSingleRepCsv(60, 'bench press attempt 1', 0.6, 0.75)) },
+    { name: 'bench-2.csv', mimeType: 'text/csv', buffer: Buffer.from(wlSingleRepCsv(60, 'bench press attempt 2', 0.8, 0.95)) },
+  ]);
+  await page.getByRole('button', { name: 'Apply to draft rows (2)' }).click();
+  await page.getByRole('button', { name: 'Remove Attempt 3' }).click();
+  const setup = page.locator('.attempt-setup-details');
+  await setup.getByLabel('Provider', { exact: true }).fill('WL Analysis');
+  await page.locator('.trial-row-card').first().getByRole('checkbox', { name: 'Load is kilograms' }).check();
+  const method = await setup.getByLabel(/measurement_method_id/).inputValue();
+  expect(method).toContain('wl');
+  await page.reload();
+  await expect(page.getByRole('heading', { name: 'Record assessment trials' })).toBeVisible();
+  await expect(setup.getByLabel(/test_load_kg/)).toHaveValue('60');
+  await expect(setup.getByLabel(/measurement_method_id/)).toHaveValue(method);
+  await expect(setup.getByLabel(/equipment_setup_id/)).toHaveValue('bench-a-camera-a');
+  await expect(setup.getByLabel('Provider', { exact: true })).toHaveValue('WL Analysis');
+  const rows = page.locator('.trial-row-card');
+  await expect(rows).toHaveCount(2);
+  await expect(rows.first().getByRole('checkbox', { name: 'Load is kilograms' })).toBeChecked();
+  await expect(rows.first().getByRole('checkbox', { name: 'Technical validity is correct' })).not.toBeChecked();
+  for (const row of await rows.all()) {
+    await row.getByRole('checkbox', { name: 'Load is kilograms' }).check();
+    await row.getByRole('checkbox', { name: 'Success / miss matches the video' }).check();
+    await row.getByRole('checkbox', { name: 'Technical validity is correct' }).check();
+  }
+  await expect(page.locator('.canonical-preview-container')).toContainText('0.815 m/s');
+  await page.context().setOffline(true);
+  try {
+    await page.getByRole('button', { name: 'Save assessment trials' }).click();
+    // Firestore can keep its first server read pending while offline. Both a pending
+    // save and a surfaced failure retain the draft; neither is a completed assessment.
+    await expect.poll(async () => await page.getByRole('button', { name: 'Saving…', exact: true }).isVisible()
+      || await page.locator('.testing-error').isVisible()).toBe(true);
+    await expect(page.getByRole('heading', { name: 'Record assessment trials' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Assessment recorded' })).toHaveCount(0);
+    await expect(rows).toHaveCount(2);
+    await expect(setup.getByLabel(/test_load_kg/)).toHaveValue('60');
+    await expect(setup.getByLabel(/measurement_method_id/)).toHaveValue(method);
+    await expect(setup.getByLabel(/equipment_setup_id/)).toHaveValue('bench-a-camera-a');
+    await expect(rows.first().getByRole('checkbox', { name: 'Technical validity is correct' })).toBeChecked();
+  } finally {
+    await page.context().setOffline(false);
+  }
+  // Reconnection may resume the pending read, or expose a retryable transaction
+  // failure. Retry only once the first save has settled and the button is actionable.
+  await expect.poll(async () => await page.getByRole('heading', { name: 'Assessment recorded' }).isVisible()
+    || (await page.getByRole('button', { name: 'Save assessment trials', exact: true }).count() > 0
+      && await page.getByRole('button', { name: 'Save assessment trials', exact: true }).isEnabled()), { timeout: 20_000 }).toBe(true);
+  if (!await page.getByRole('heading', { name: 'Assessment recorded' }).isVisible()) {
+    await expect(page.locator('.testing-error')).toBeVisible();
+    await page.getByRole('button', { name: 'Save assessment trials', exact: true }).click();
+  }
+  await expect(page.getByRole('heading', { name: 'Assessment recorded' })).toBeVisible();
+  await expect(page.locator('.testing-observations')).toContainText('0.815 m/s');
+  const jsonDownload = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Export physical-capital evidence (JSON)' }).click();
+  const jsonStream = await (await jsonDownload).createReadStream();
+  expect(jsonStream).not.toBeNull();
+  const jsonChunks: Buffer[] = [];
+  for await (const chunk of jsonStream!) jsonChunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+  const evidence = JSON.parse(Buffer.concat(jsonChunks).toString('utf-8'));
+  expect(evidence.attempts).toHaveLength(1);
+  expect(evidence.trials).toHaveLength(2);
+  expect(evidence.canonicalObservations).toHaveLength(1);
+  expect(evidence.canonicalObservations[0].revisions[0]).toMatchObject({ value: 0.815, context: { test_load_kg: 60, measurement_method_id: method } });
+  expect(evidence.protocols.some((item: { id: string }) => item.id === 'strength-bench-press-fixed-load-velocity')).toBe(true);
+  expect(await readSessionExecutions(athlete)).toHaveLength(1);
+  await page.getByRole('button', { name: 'Done', exact: true }).click();
+  await page.locator('.navbar-desktop-menu').getByRole('button', { name: /More/ }).click();
+  await page.locator('#desktop-more-panel').getByRole('button', { name: /Testing/ }).click();
+  await page.getByRole('tab', { name: 'History' }).click();
+  await expect(page.locator('.assessment-series-card', { hasText: 'Bench press fixed-load velocity' })).toContainText('0.815');
+  const csvDownload = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Export history (CSV)' }).click();
+  const csvStream = await (await csvDownload).createReadStream();
+  expect(csvStream).not.toBeNull();
+  const csvChunks: Buffer[] = [];
+  for await (const chunk of csvStream!) csvChunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+  expect(Buffer.concat(csvChunks).toString('utf-8')).toContain('strength_fixed_load_mean_velocity_mps');
+});
 
 test('physical capital assessment: standing broad jump trial capture, checkpoint attempt, history comparability, and exports', async ({ page }) => {
   const athlete = await provisionAthlete();
