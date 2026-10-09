@@ -53,7 +53,6 @@ class GarminDataClient(Protocol):
     def schedule_workout(self, workout_id: str, date_iso: str) -> dict[str, Any]: ...
     def get_gear(self, user_profile_number: str | int | None = None) -> list[dict[str, Any]]: ...
     def get_nutrition_daily_food_log(self, date_iso: str) -> dict[str, Any]: ...
-    def get_nutrition_daily_meals(self, date_iso: str) -> dict[str, Any]: ...
 
 
 @dataclass(frozen=True)
@@ -286,11 +285,6 @@ class GarminClientWrapper:
         if not self.api:
             raise RuntimeError("Garmin client is not authenticated. Call login first.")
         return self._call_api("get_nutrition_daily_food_log", date_iso) or {}
-
-    def get_nutrition_daily_meals(self, date_iso: str) -> dict[str, Any]:
-        if not self.api:
-            raise RuntimeError("Garmin client is not authenticated. Call login first.")
-        return self._call_api("get_nutrition_daily_meals", date_iso) or {}
 
     def download_activity_original(self, activity_id: str) -> bytes | None:
         """Return Garmin's original activity archive without interpreting its contents.
