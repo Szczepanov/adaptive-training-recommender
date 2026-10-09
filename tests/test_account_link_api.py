@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import threading
 from http import HTTPStatus
 from types import SimpleNamespace
@@ -433,3 +434,43 @@ def test_log_message_redacts_query_parameters(monkeypatch: Any) -> None:
     log = captured_logs[0]
     assert "/api/garmin/login" in log
     assert "secret123" not in log
+
+
+def test_read_json_invalid_content_length() -> None:
+    handler = object.__new__(GarminAccountLinkHandler)
+    handler.headers = {"Content-Length": "invalid"}
+    with pytest.raises(ValueError, match="Invalid Content-Length."):
+        handler._read_json()  # noqa: SLF001
+
+
+def test_read_json_body_size_out_of_bounds() -> None:
+    handler = object.__new__(GarminAccountLinkHandler)
+    handler.headers = {"Content-Length": "0"}
+    with pytest.raises(ValueError, match="Request body is empty or too large."):
+        handler._read_json()  # noqa: SLF001
+
+    handler.headers = {"Content-Length": str(account_link_api.MAX_BODY_BYTES + 1)}
+    with pytest.raises(ValueError, match="Request body is empty or too large."):
+        handler._read_json()  # noqa: SLF001
+
+
+def test_read_json_invalid_json_and_non_dict() -> None:
+    handler = object.__new__(GarminAccountLinkHandler)
+    handler.headers = {"Content-Length": "10"}
+    handler.rfile = io.BytesIO(b"not json!!")
+    with pytest.raises(ValueError, match="Request body must be valid JSON."):
+        handler._read_json()  # noqa: SLF001
+
+    handler.rfile = io.BytesIO(b"[1, 2, 3]")
+    with pytest.raises(ValueError, match="Request body must be a JSON object."):
+        handler._read_json()  # noqa: SLF001
+
+
+def test_read_json_valid_payload() -> None:
+    handler = object.__new__(GarminAccountLinkHandler)
+    payload_bytes = b'{"email": "user@example.com"}'
+    handler.headers = {"Content-Length": str(len(payload_bytes))}
+    handler.rfile = io.BytesIO(payload_bytes)
+
+    result = handler._read_json()  # noqa: SLF001
+    assert result == {"email": "user@example.com"}
