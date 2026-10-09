@@ -5,7 +5,7 @@ import { access, mkdir, readFile, realpath, stat, writeFile } from 'node:fs/prom
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { CONCENTRIC_SEGMENTATION_V1, CONCENTRIC_SEGMENTATION_V2 } from '../src/observations/concentricSegmentation.ts';
 import { parseWlAnalysisCsv, WL_ANALYSIS_CSV_PARSER_V1, WL_ANALYSIS_CSV_PARSER_V2, WL_PARSER_SEGMENTATION_RULE } from '../src/observations/wlAnalysisCsv.ts';
-import { parseOpenBarAnalysis } from '../src/observations/openBarAnalysis.ts';
+import { parseOpenBarAnalysis, openBarTrackerMethodParameters } from '../src/observations/openBarAnalysis.ts';
 import { buildAgreementReport } from '../src/observations/velocityAgreement.ts';
 
 const usage = 'Usage: --pairs <pairs.json> --output <basename> [--segmentation concentric-segmentation-v2] [--min-overlap 0.5] [--force]';
@@ -48,7 +48,13 @@ function openBarMethodConfigSha256(rawText) {
     const pipeline = provenance?.pipeline ?? {};
     const configuration = {
         schemaVersion: root?.schema_version ?? null,
-        tracker: provenance?.tracker ?? null,
+        tracker: provenance?.tracker ? {
+            ...provenance.tracker,
+            implementation: {
+                ...provenance.tracker.implementation,
+                parameters: openBarTrackerMethodParameters(provenance.tracker.implementation.parameters ?? {}),
+            },
+        } : null,
         model: provenance?.model ?? null,
         filter: kinematics?.input === 'filtered' ? derived?.filtered?.filter ?? null : null,
         kinematics: { input: kinematics?.input ?? null, method: kinematics?.method ?? null },

@@ -7,8 +7,11 @@ import {
     type ConcentricRep,
     type ConcentricSegmentationRule,
 } from './concentricSegmentation.ts';
+import { sha256Hex } from '../utils/sha256.ts';
 
 export const OPENBAR_ANALYSIS_PARSER_V1 = 'openbar-analysis-v1';
+export const OPENBAR_ANALYSIS_PARSER_V2 = 'openbar-analysis-v2';
+export const OPENBAR_MAX_TRACKER_SIGNATURE_LENGTH = 16 * 1024;
 export const OPENBAR_GAP_INTERVAL_FACTOR = 1.5;
 export const OPENBAR_MAX_FILE_BYTES = 20 * 1024 * 1024;
 export const OPENBAR_MAX_SAMPLES = 100_000;
@@ -20,6 +23,10 @@ export interface OpenBarImplementation {
 export interface OpenBarProvenance {
     trackerId: string;
     tracker: OpenBarImplementation;
+    /** Complete canonical scalar signature, including clip-specific provenance. */
+    trackerParameters: string | null;
+    /** Method identity excludes only prediction_sha256, seed_timestamp_s and end_s. */
+    trackerMethodParametersSha256: string | null;
     filter: OpenBarImplementation | null;
     /** Canonical scalar filter configuration; null means no explicit parameters. */
     filterParameters: string | null;
@@ -48,7 +55,7 @@ export interface OpenBarRep extends ConcentricRep {
     exclusion: null | 'spans_gap' | 'touches_series_edge';
 }
 export interface OpenBarAnalysisParse {
-    parserVersion: typeof OPENBAR_ANALYSIS_PARSER_V1;
+    parserVersion: typeof OPENBAR_ANALYSIS_PARSER_V1 | typeof OPENBAR_ANALYSIS_PARSER_V2;
     segmentationRule: ConcentricSegmentationRule;
     schemaVersion: 1;
     sourceVideoSha256: string;
@@ -81,7 +88,7 @@ function implementation(value: unknown, label: string): OpenBarImplementation {
     return { implementation: text(record.implementation, `${label} implementation`), version: text(record.version, `${label} version`) };
 }
 
-function parameterSignature(value: unknown, label: string): string | null {
+function parameterSignature(value: unknown, label: string, maxLength = 128): string | null {
     if (value === undefined) return null;
     const record = object(value, label);
     const entries = Object.entries(record).sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0);
@@ -101,8 +108,14 @@ function parameterSignature(value: unknown, label: string): string | null {
         }
         return `${encodeURIComponent(key)}=${encodeURIComponent(typed)}`;
     }).join('&');
-    if (signature.length > 128) throw new Error(`OpenBar ${label} is too large for the versioned import contract.`);
+    if (signature.length > maxLength) throw new Error(`OpenBar ${label} is too large for the versioned import contract.`);
     return signature;
+}
+
+/* Clip identity remains in full provenance; it does not define a tracking algorithm. */
+export function openBarTrackerMethodParameters(parameters: Record<string, unknown>): Record<string, unknown> {
+    return Object.fromEntries(Object.entries(parameters).filter(([key]) =>
+        !['prediction_sha256', 'seed_timestamp_s', 'end_s'].includes(key)));
 }
 
 /** Validates the consumed schema subset. OpenBar's Rust validator owns the full schema. */
@@ -179,10 +192,10 @@ export function parseOpenBarAnalysis(rawText: string, segmentationRule: Concentr
     const provenanceRoot = object(root.provenance, 'provenance');
     const tracker = object(provenanceRoot.tracker, 'tracker');
     const trackerMethod = object(tracker.implementation, 'tracker implementation');
-    const trackerParameters = parameterSignature(trackerMethod.parameters, 'tracker parameters');
-    if (trackerParameters !== null) {
-        throw new Error('OpenBar tracker parameters are not supported by this importer. Use an unparameterized tracker export or update the adapter contract.');
-    }
+    const trackerParameters = parameterSignature(trackerMethod.parameters, 'tracker parameters', OPENBAR_MAX_TRACKER_SIGNATURE_LENGTH);
+    const trackerMethodParametersSha256 = trackerParameters === null ? null : sha256Hex(
+        parameterSignature(openBarTrackerMethodParameters(object(trackerMethod.parameters, 'tracker parameters')),
+            'tracker method parameters', OPENBAR_MAX_TRACKER_SIGNATURE_LENGTH) ?? 'none');
     const pipeline = object(provenanceRoot.pipeline, 'pipeline');
     const method = object(kinematics.method, 'kinematics method');
     const parameters = object(method.parameters, 'kinematics parameters');
@@ -205,6 +218,7 @@ export function parseOpenBarAnalysis(rawText: string, segmentationRule: Concentr
     }
     const provenance: OpenBarProvenance = {
         trackerId: text(tracker.id, 'tracker id'), tracker: implementation(trackerMethod, 'tracker'),
+        trackerParameters, trackerMethodParametersSha256,
         filter: filterMethod ? implementation(filterMethod, 'filter') : null,
         filterParameters: filterMethod ? parameterSignature(filterMethod.parameters, 'filter parameters') : null,
         kinematicsInput: kinematics.input, kinematicsMethod: implementation(method, 'kinematics method'),
@@ -234,7 +248,7 @@ export function parseOpenBarAnalysis(rawText: string, segmentationRule: Concentr
         throw new Error('OpenBar repetition measurements must be finite. Export the analysis again.');
     }
     return {
-        parserVersion: OPENBAR_ANALYSIS_PARSER_V1, segmentationRule, schemaVersion: 1,
+        parserVersion: trackerParameters === null ? OPENBAR_ANALYSIS_PARSER_V1 : OPENBAR_ANALYSIS_PARSER_V2, segmentationRule, schemaVersion: 1,
         sourceVideoSha256: identity.source_sha256.toLowerCase(), provenance, frames, breaks, reps,
     };
 }

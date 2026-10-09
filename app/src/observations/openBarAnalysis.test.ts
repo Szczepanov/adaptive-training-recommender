@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CONCENTRIC_SEGMENTATION_V1, CONCENTRIC_SEGMENTATION_V2 } from './concentricSegmentation';
-import { buildOpenBarAnalysis, openBarProfileToWlCsv, openBarSingleRepProfile } from './fixtures/openBarAnalysisFixtures';
-import { OPENBAR_MAX_FILE_BYTES, OPENBAR_MAX_SAMPLES, parseOpenBarAnalysis } from './openBarAnalysis';
+import { buildOpenBarAnalysis, openBarCsrtParameters, openBarProfileToWlCsv, openBarSingleRepProfile } from './fixtures/openBarAnalysisFixtures';
+import { OPENBAR_ANALYSIS_PARSER_V1, OPENBAR_ANALYSIS_PARSER_V2, OPENBAR_MAX_FILE_BYTES, OPENBAR_MAX_SAMPLES, OPENBAR_MAX_TRACKER_SIGNATURE_LENGTH, parseOpenBarAnalysis } from './openBarAnalysis';
 import { parseWlAnalysisCsv, WL_ANALYSIS_CSV_PARSER_V1, WL_ANALYSIS_CSV_PARSER_V2 } from './wlAnalysisCsv';
 
 const parse = (value: unknown) => parseOpenBarAnalysis(JSON.stringify(value), CONCENTRIC_SEGMENTATION_V2);
@@ -140,10 +140,50 @@ describe('OpenBar analysis-v1 parser (#981)', () => {
         (a.calibration.quality as { status: string }).status = 'mystery';
         expect(() => parse(a)).toThrow(/calibration quality status/);
     });
-    it('fails closed on parameterized trackers until their bounded identity is defined', () => {
+    it('accepts full scalar tracker provenance beyond 128 characters without changing source bytes', () => {
         const a = buildOpenBarAnalysis();
-        (a.provenance.tracker.implementation.parameters as Record<string, number>).search_radius = 12;
-        expect(() => parse(a)).toThrow(/tracker parameters are not supported/);
+        a.provenance.tracker.implementation.parameters = openBarCsrtParameters();
+        const bytes = JSON.stringify(a);
+        const parsed = parseOpenBarAnalysis(bytes, CONCENTRIC_SEGMENTATION_V2);
+        expect(parsed.parserVersion).toBe(OPENBAR_ANALYSIS_PARSER_V2);
+        expect(parsed.provenance.trackerParameters!.length).toBeGreaterThan(128);
+        expect(parsed.provenance.trackerParameters).toContain(`prediction_sha256=s%3A${'c'.repeat(64)}`);
+        expect(parsed.provenance.trackerMethodParametersSha256).toMatch(/^[a-f0-9]{64}$/);
+        expect(JSON.stringify(a)).toBe(bytes);
+        expect(parse(buildOpenBarAnalysis()).parserVersion).toBe(OPENBAR_ANALYSIS_PARSER_V1);
+        expect(parse(buildOpenBarAnalysis()).provenance.trackerParameters).toBeNull();
+    });
+    it.each([null, [], { nested: 1 }])('rejects non-scalar tracker parameter %j', invalid => {
+        const a = buildOpenBarAnalysis();
+        a.provenance.tracker.implementation.parameters = { config: invalid };
+        expect(() => parse(a)).toThrow(/scalar/);
+    });
+    it('rejects invalid tracker names, nonfinite values and oversized signatures', () => {
+        const a = buildOpenBarAnalysis();
+        for (const key of ['', ' '.repeat(2), 'x'.repeat(65)]) {
+            a.provenance.tracker.implementation.parameters = { [key]: 1 };
+            expect(() => parse(a)).toThrow(/invalid parameter name/);
+        }
+        a.provenance.tracker.implementation.parameters = { overflow: 1 };
+        expect(() => parseOpenBarAnalysis(JSON.stringify(a).replace('"overflow":1', '"overflow":1e999'), CONCENTRIC_SEGMENTATION_V2)).toThrow(/finite/);
+        a.provenance.tracker.implementation.parameters = { config: 'x'.repeat(OPENBAR_MAX_TRACKER_SIGNATURE_LENGTH) };
+        expect(() => parse(a)).toThrow(/too large/);
+    });
+    it('canonicalizes key order and separates clip provenance from method settings', () => {
+        const a = buildOpenBarAnalysis();
+        const params = openBarCsrtParameters();
+        a.provenance.tracker.implementation.parameters = params;
+        const first = parse(a).provenance;
+        a.provenance.tracker.implementation.parameters = Object.fromEntries(Object.entries(params).reverse());
+        expect(parse(a).provenance).toEqual(first);
+        a.provenance.tracker.implementation.parameters = { ...params, prediction_sha256: 'd'.repeat(64), seed_timestamp_s: 0.5, end_s: 3 };
+        const second = parse(a).provenance;
+        expect(second.trackerParameters).not.toBe(first.trackerParameters);
+        expect(second.trackerMethodParametersSha256).toBe(first.trackerMethodParametersSha256);
+        for (const config of [{ threads: 2 }, { init_box: '[301,300,200,200]' }, { confidence: 'other' }, { tracker: 'other' }]) {
+            a.provenance.tracker.implementation.parameters = { ...params, ...config };
+            expect(parse(a).provenance.trackerMethodParametersSha256).not.toBe(first.trackerMethodParametersSha256);
+        }
     });
     it('rejects finite inputs whose reported rep arithmetic overflows', () => {
         const a = buildOpenBarAnalysis();

@@ -11,7 +11,7 @@ import { deleteDoc, doc, getDoc, setDoc, updateDoc, writeBatch, type Firestore }
 import { AssessmentTrialService } from '../services/assessmentTrialService';
 import type { AssessmentTrial, MeasurementProtocol, MetricObservationRevision } from '../observations/models';
 import { BENCH_PRESS_FIXED_LOAD_VELOCITY_PROTOCOL } from '../observations/physicalCapitalProtocols';
-import { buildOpenBarAnalysis } from '../observations/fixtures/openBarAnalysisFixtures';
+import { buildOpenBarAnalysis, openBarCsrtParameters } from '../observations/fixtures/openBarAnalysisFixtures';
 import { parseOpenBarAnalysis } from '../observations/openBarAnalysis';
 import { CONCENTRIC_SEGMENTATION_V2 } from '../observations/concentricSegmentation';
 import { proposeOpenBarTrial, velocityMeasurementMethodId } from '../observations/openBarAnalysisImport';
@@ -258,9 +258,14 @@ emulatorDescribe('Assessment trial and derivation Firestore rules (ADR-0046)', (
         await assertFails(fixedObservationBatch(db, fixedRevision({ value: 1.5 })).commit());
     });
 
-    it.each([true, false])('supports full OpenBar provenance within the rule budget (filtered=%s) and refuses malformed/relabelled methods', async filtered => {
+    it.each([
+        { filtered: true, parameterized: false }, { filtered: false, parameterized: false },
+        { filtered: true, parameterized: true }, { filtered: false, parameterized: true },
+    ])('supports full OpenBar provenance within the rule budget ($filtered/$parameterized) and refuses malformed/relabelled methods', async ({ filtered, parameterized }) => {
         const db = await seedFixedLoad();
-        const parsed = parseOpenBarAnalysis(JSON.stringify(buildOpenBarAnalysis(undefined, { filtered })), CONCENTRIC_SEGMENTATION_V2);
+        const analysis = buildOpenBarAnalysis(undefined, { filtered });
+        if (parameterized) analysis.provenance.tracker.implementation.parameters = openBarCsrtParameters();
+        const parsed = parseOpenBarAnalysis(JSON.stringify(analysis), CONCENTRIC_SEGMENTATION_V2);
         const result = proposeOpenBarTrial({ fileName: 'rep.json', fileHash: 'a'.repeat(64), parsed }, new Set(), new Set());
         expect(result.status).toBe('proposed');
         if (result.status !== 'proposed') return;
@@ -294,6 +299,12 @@ emulatorDescribe('Assessment trial and derivation Firestore rules (ADR-0046)', (
         ]) {
             if (!filtered && 'openbar_filter_implementation' in change) continue;
             await assertFails(setDoc(doc(db, `${attemptPath}/trials/trial-1`), { ...row, context: { ...context, ...change } }));
+        }
+        if (parameterized) {
+            for (const invalid of [null, 'bad', 'b'.repeat(64)]) {
+                await assertFails(setDoc(doc(db, `${attemptPath}/trials/trial-1`), { ...row, context: { ...context, openbar_tracker_method_parameters_sha256: invalid } }));
+            }
+            await assertFails(setDoc(doc(db, `${attemptPath}/trials/trial-1`), { ...row, context: omit(context, 'openbar_tracker_method_parameters_sha256') }));
         }
         await assertSucceeds(setDoc(doc(db, `${attemptPath}/trials/trial-1`), row));
         await assertSucceeds(fixedObservationBatch(db, fixedRevision({ context: { ...fixedContext, measurement_method_id: context.measurement_method_id }, device: p.device })).commit());

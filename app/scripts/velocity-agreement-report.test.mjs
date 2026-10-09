@@ -3,7 +3,7 @@ import { linkSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync, 
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { buildOpenBarAnalysis, openBarProfileToWlCsv, openBarSingleRepProfile } from '../src/observations/fixtures/openBarAnalysisFixtures.ts';
+import { buildOpenBarAnalysis, openBarCsrtParameters, openBarProfileToWlCsv, openBarSingleRepProfile } from '../src/observations/fixtures/openBarAnalysisFixtures.ts';
 
 const directories = [];
 afterEach(() => { for (const path of directories.splice(0)) rmSync(path, { recursive: true, force: true }); });
@@ -92,6 +92,48 @@ describe('velocity agreement CLI', () => {
         const result = run(['--pairs', pairs, '--output', output]);
         expect(result.status).toBe(1);
         expect(result.stderr).toContain('same OpenBar method configuration');
+        expect(existsSync(`${output}.json`)).toBe(false);
+    });
+    it.each([false, true])('separates clip-specific hashes and timing from CSRT method homogeneity (changed=%s)', changed => {
+        const { path, pairs, output, config } = fixture();
+        const first = buildOpenBarAnalysis(undefined, { videoHash: 'a'.repeat(64) });
+        first.provenance.tracker.implementation.parameters = openBarCsrtParameters();
+        const firstBytes = JSON.stringify(first);
+        writeFileSync(join(path, 'openbar.json'), firstBytes);
+        const second = structuredClone(first);
+        second.identity.source_sha256 = 'd'.repeat(64);
+        second.provenance.tracker.implementation.parameters = Object.fromEntries(Object.entries({
+            ...openBarCsrtParameters(), prediction_sha256: 'e'.repeat(64), seed_timestamp_s: 0.5, end_s: 3,
+            ...(changed ? { threads: 2 } : {}),
+        }).reverse());
+        writeFileSync(join(path, 'openbar-second.json'), JSON.stringify(second));
+        config.pairs.push({ ...config.pairs[0], label: 'second-clip', openBarAnalysis: 'openbar-second.json' });
+        writeFileSync(pairs, JSON.stringify(config));
+        const result = run(['--pairs', pairs, '--output', output]);
+        expect(result.status, result.stderr).toBe(changed ? 1 : 0);
+        expect(readFileSync(join(path, 'openbar.json'), 'utf8')).toBe(firstBytes);
+        if (changed) {
+            expect(result.stderr).toContain('same OpenBar method configuration');
+            expect(existsSync(`${output}.json`)).toBe(false);
+        } else {
+            const report = JSON.parse(readFileSync(`${output}.json`, 'utf8'));
+            const a = report.videos.find(video => video.label === 'synthetic-lift').openBar;
+            const b = report.videos.find(video => video.label === 'second-clip').openBar;
+            expect(a.methodConfigSha256).toBe(b.methodConfigSha256);
+            expect(a.fileSha256).not.toBe(b.fileSha256);
+            expect(a.provenance.trackerParameters).not.toBe(b.provenance.trackerParameters);
+            expect(a.provenance.trackerParameters).toContain('c'.repeat(64));
+            expect(b.provenance.trackerParameters).toContain('e'.repeat(64));
+        }
+    });
+    it('rejects a cohort mixing legacy and parameterized parser identities', () => {
+        const { path, pairs, output, config } = fixture();
+        const second = buildOpenBarAnalysis();
+        second.provenance.tracker.implementation.parameters = openBarCsrtParameters();
+        writeFileSync(join(path, 'openbar-second.json'), JSON.stringify(second));
+        config.pairs.push({ ...config.pairs[0], label: 'parameterized', openBarAnalysis: 'openbar-second.json' });
+        writeFileSync(pairs, JSON.stringify(config));
+        expect(run(['--pairs', pairs, '--output', output]).stderr).toContain('same OpenBar parser version');
         expect(existsSync(`${output}.json`)).toBe(false);
     });
     it('does not split a cohort on an unused filter when kinematics consumes calibrated input', () => {

@@ -2,7 +2,7 @@
 import type { DraftTrialRow } from '../utils/assessmentDraftStorage';
 import type { MeasurementProtocol, MetricObservationDevice, ObservationContext } from './models';
 import { CONCENTRIC_SEGMENTATION_V1, CONCENTRIC_SEGMENTATION_V2 } from './concentricSegmentation';
-import { OPENBAR_ANALYSIS_PARSER_V1, type OpenBarAnalysisParse, type OpenBarRep } from './openBarAnalysis';
+import { OPENBAR_ANALYSIS_PARSER_V1, OPENBAR_ANALYSIS_PARSER_V2, type OpenBarAnalysisParse, type OpenBarRep } from './openBarAnalysis';
 import { velocityProposalToDraftRow, type VelocityTrialProposal } from './velocityFileImport';
 import { WL_ANALYSIS_CSV_PARSER_V1, WL_ANALYSIS_CSV_PARSER_V2 } from './wlAnalysisCsv';
 
@@ -11,6 +11,7 @@ export const OPENBAR_CONTEXT_KEYS = {
     parserVersion: 'openbar_parser_version', segmentationRule: 'openbar_segmentation_rule', schemaVersion: 'openbar_schema_version',
     repCount: 'openbar_rep_count', eligibleRepCount: 'openbar_eligible_rep_count', selectedRep: 'openbar_selected_rep', romCm: 'openbar_rom_cm',
     trackerId: 'openbar_tracker_id', trackerImplementation: 'openbar_tracker_implementation', trackerVersion: 'openbar_tracker_version',
+    trackerMethodParametersSha256: 'openbar_tracker_method_parameters_sha256',
     filterImplementation: 'openbar_filter_implementation', filterVersion: 'openbar_filter_version',
     filterParameters: 'openbar_filter_parameters',
     kinematicsInput: 'openbar_kinematics_input', kinematicsImplementation: 'openbar_kinematics_implementation',
@@ -87,6 +88,9 @@ export function proposeOpenBarTrial(
         [OPENBAR_CONTEXT_KEYS.calibrationQuality]: p.calibrationQuality,
         [OPENBAR_CONTEXT_KEYS.sourceVideoSha256]: parsed.sourceVideoSha256,
         [OPENBAR_CONTEXT_KEYS.openbarVersion]: p.openbarVersion,
+        ...(p.trackerMethodParametersSha256 === null ? {} : {
+            [OPENBAR_CONTEXT_KEYS.trackerMethodParametersSha256]: p.trackerMethodParametersSha256,
+        }),
     };
     if (Object.values(context).some(value => typeof value === 'string' && value.length > 128)) {
         return reject('The analysis provenance is too long to store. Use provenance values of at most 128 characters.');
@@ -148,7 +152,12 @@ export function velocityMeasurementMethodId(device: MetricObservationDevice | un
     if (c.openbar_parser_version !== undefined) {
         if (device?.provider !== OPENBAR_DEVICE_PROVIDER) throw new Error('Imported OpenBar velocity needs device provider OpenBar.');
         const parser = component('openbar_parser_version');
-        if (parser !== OPENBAR_ANALYSIS_PARSER_V1) throw new Error('Imported velocity uses an unsupported OpenBar parser.');
+        if (parser !== OPENBAR_ANALYSIS_PARSER_V1 && parser !== OPENBAR_ANALYSIS_PARSER_V2) throw new Error('Imported velocity uses an unsupported OpenBar parser.');
+        const trackerHash = c.openbar_tracker_method_parameters_sha256;
+        if (parser === OPENBAR_ANALYSIS_PARSER_V2
+            ? typeof trackerHash !== 'string' || !/^[a-f0-9]{64}$/.test(trackerHash)
+            : trackerHash !== undefined) throw new Error('Imported OpenBar tracker method parameters are invalid.');
+        const trackerParameters = parser === OPENBAR_ANALYSIS_PARSER_V2 ? `[sha256:${trackerHash}]` : '';
         const segmentation = component('openbar_segmentation_rule');
         if (segmentation !== CONCENTRIC_SEGMENTATION_V1 && segmentation !== CONCENTRIC_SEGMENTATION_V2) {
             throw new Error('Imported velocity uses an unsupported concentric segmentation rule.');
@@ -162,7 +171,7 @@ export function velocityMeasurementMethodId(device: MetricObservationDevice | un
             : `${component('openbar_filter_implementation')}@${component('openbar_filter_version')}[${c.openbar_filter_parameters === null ? 'default' : stringValue('openbar_filter_parameters')}]`;
         const kinematics = `${component('openbar_kinematics_implementation')}@${component('openbar_kinematics_version')}`
             + `[${stringValue('openbar_kinematics_parameters')};max-gap=${numberComponent('openbar_kinematics_max_gap_s')};min-confidence=${numberComponent('openbar_kinematics_min_confidence')}]`;
-        return `${parser}/${segmentation}/${component('openbar_tracker_implementation')}@${component('openbar_tracker_version')}`
+        return `${parser}/${segmentation}/${component('openbar_tracker_implementation')}@${component('openbar_tracker_version')}${trackerParameters}`
             + `/${filter}/${kinematicsInput}/${kinematics}/${component('openbar_calibration_method')}`;
     }
     if (c.wl_parser_version !== undefined) {
