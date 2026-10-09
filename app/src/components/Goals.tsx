@@ -3,6 +3,7 @@ import { goalService } from '../services/goalService';
 import { preferencesService } from '../services/preferencesService';
 import { trainingIntentProfileService } from '../services/trainingIntentProfileService';
 import { metricObservationService } from '../services/metricObservationService';
+import { assessmentAttemptService } from '../services/assessmentAttemptService';
 import type { UserGoal, GoalCategory, GoalDomain, GoalStatus, UserEvent, TrainingIntentProfile } from '../engine/models';
 import { deriveGoalCategory, deriveEventPriority, getDaysToEvent, goalToUserEvent, evaluatePeriodizationPhase } from '../engine/periodization';
 import { EVENT_PRESETS } from '../engine/eventPresets';
@@ -17,10 +18,10 @@ import {
 } from '../engine/performanceTargetPolicy';
 import { validatePerformanceTargetForDomain } from '../engine/performanceTargetValidation';
 import { getMetricDefinition } from '../observations/registry';
-import type { MetricObservationRevision } from '../observations/models';
+import type { AssessmentAttempt, MetricObservationRevision } from '../observations/models';
 import { PERFORMANCE_TEST_DEFINITIONS } from '../observations/performanceTestingCatalog';
 import { EXERCISES_BY_ID } from '../workouts/exercises';
-import { resolveGoalProgress, type GoalProgressResult } from '../engine/goalProgress';
+import { goalProgressEvidenceQuery, resolveGoalProgress, type GoalProgressResult } from '../engine/goalProgress';
 import {
   assessGoalFeasibility,
   type GoalFeasibilityAssessment,
@@ -96,6 +97,7 @@ export function Goals({ userId }: GoalsProps) {
   const [performanceProfile, setPerformanceProfile] = useState<AthletePerformanceProfile | null>(null);
   const [trainingIntentProfile, setTrainingIntentProfile] = useState<TrainingIntentProfile | null>(null);
   const [performanceObservations, setPerformanceObservations] = useState<MetricObservationRevision[]>([]);
+  const [performanceAttempts, setPerformanceAttempts] = useState<AssessmentAttempt[]>([]);
   const [performanceObservationState, setPerformanceObservationState] =
     useState<'not_needed' | 'loading' | 'available' | 'unavailable'>('not_needed');
 
@@ -221,39 +223,61 @@ export function Goals({ userId }: GoalsProps) {
     };
   }, [trainingIntentProfile]);
 
-  const performanceObservationMetricIds = useMemo(
-    () => Array.from(new Set(goals
+  const performanceTestTargets = useMemo(
+    () => goals
       .map(goal => goal.performanceTarget)
-      .filter((target): target is GoalPerformanceTarget => !!target && target.subjectRef.kind === 'performance_test')
-      .map(target => target.metricId))).sort(),
+      .filter((target): target is GoalPerformanceTarget => !!target && target.subjectRef.kind === 'performance_test'),
     [goals],
   );
+
+  // #897 WP8: attempts are loaded alongside observations so goal progress can exclude
+  // familiarization and abandoned-attempt evidence from the current value.
+  const evidenceQuery = useMemo(
+    () => goalProgressEvidenceQuery(performanceTestTargets),
+    [performanceTestTargets],
+  );
+  const performanceObservationMetricIds = evidenceQuery.metricIds;
+  const performanceAttemptProtocolIds = evidenceQuery.protocolIds;
 
   useEffect(() => {
     let cancelled = false;
     if (performanceObservationMetricIds.length === 0) {
       setPerformanceObservations([]);
+      setPerformanceAttempts([]);
       setPerformanceObservationState('not_needed');
       return () => { cancelled = true; };
     }
     setPerformanceObservationState('loading');
-    Promise.all(performanceObservationMetricIds.map(metricId =>
-      metricObservationService.listCurrentRevisionsForMetric(userId, metricId)))
-      .then(groups => {
-        if (!cancelled) {
-          setPerformanceObservations(groups.flat());
-          setPerformanceObservationState('available');
+    Promise.all([
+      Promise.all(performanceObservationMetricIds.map(metricId =>
+        metricObservationService.listCurrentRevisionsForMetric(userId, metricId))),
+      Promise.all(performanceAttemptProtocolIds.map(protocolId =>
+        assessmentAttemptService.listAttemptsForProtocolWithDiagnostics(userId, protocolId))),
+    ])
+      .then(([observationGroups, attemptGroups]) => {
+        if (cancelled) return;
+        // An unreadable attempt could be the one that makes evidence eligible, so a
+        // partial read must not look like "no comparable result".
+        if (attemptGroups.some(group => group.unreadableCount > 0)) {
+          setPerformanceObservations([]);
+          setPerformanceAttempts([]);
+          setPerformanceObservationState('unavailable');
+          return;
         }
+        setPerformanceObservations(observationGroups.flat());
+        setPerformanceAttempts(attemptGroups.flatMap(group => group.attempts));
+        setPerformanceObservationState('available');
       })
       .catch(error => {
         console.error('Error loading performance observations for goals:', error);
         if (!cancelled) {
           setPerformanceObservations([]);
+          setPerformanceAttempts([]);
           setPerformanceObservationState('unavailable');
         }
       });
     return () => { cancelled = true; };
-  }, [userId, performanceObservationMetricIds]);
+  }, [userId, performanceObservationMetricIds, performanceAttemptProtocolIds]);
 
   const filteredGoals = useMemo(() => goals.filter(goal => {
     if (filter === 'all') return true;
@@ -429,6 +453,7 @@ export function Goals({ userId }: GoalsProps) {
                       targetDate={goal.targetDate ?? null}
                       performanceProfile={performanceProfile}
                       comparableObservations={performanceObservations}
+                      assessmentAttempts={performanceAttempts}
                       observationDataState={performanceObservationState}
                       capacity={goalFeasibilityCapacity}
                     />
@@ -527,6 +552,8 @@ interface PerformanceTargetSummaryProps {
   targetDate: string | null;
   performanceProfile: AthletePerformanceProfile | null;
   comparableObservations?: readonly MetricObservationRevision[];
+  /** Attempts backing `comparableObservations`; familiarization/abandoned/unknown are excluded. */
+  assessmentAttempts?: readonly AssessmentAttempt[];
   observationDataState?: 'not_needed' | 'loading' | 'available' | 'unavailable';
   capacity?: GoalFeasibilityCapacityInput;
 }
@@ -544,6 +571,7 @@ export function PerformanceTargetSummary({
   targetDate,
   performanceProfile,
   comparableObservations = [],
+  assessmentAttempts = [],
   observationDataState = 'available',
   capacity,
 }: PerformanceTargetSummaryProps) {
@@ -554,8 +582,9 @@ export function PerformanceTargetSummary({
     () => resolveGoalProgress(target, {
       athletePerformanceProfile: performanceProfile,
       comparableObservations,
+      assessmentAttempts,
     }),
-    [target, performanceProfile, comparableObservations],
+    [target, performanceProfile, comparableObservations, assessmentAttempts],
   );
 
   const feasibility: GoalFeasibilityAssessment | null = useMemo(

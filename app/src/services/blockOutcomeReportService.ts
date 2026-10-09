@@ -1,5 +1,6 @@
 import type { DailyRecommendation } from '../engine/models';
-import type { CompetitionOutcome } from '../observations/models';
+import type { AssessmentAttempt, CompetitionOutcome } from '../observations/models';
+import { benchmarkEligibleAttemptIds } from '../observations/assessmentEvidenceEligibility';
 import {
     deriveProgress,
     type CurrentObservation,
@@ -24,6 +25,13 @@ export interface BlockOutcomeReportInput {
     evaluation: OutcomeEvaluationSnapshot;
     /** Current immutable head revisions; deriveProgress excludes invalid/practice revisions. */
     observations: readonly CurrentObservation[];
+    /**
+     * Assessment attempts backing `observations` (#897 WP8). Only observations from completed,
+     * non-familiarization attempts reach progress derivation; familiarization and non-completed
+     * (e.g. abandoned) attempts keep their evidence but never become a benchmark. Fails closed:
+     * an observation whose attempt is not supplied here is excluded.
+     */
+    assessmentAttempts: readonly AssessmentAttempt[];
     reliabilityEstimates?: readonly SeriesReliabilityEstimate[];
     /** Existing daily recommendation/adherence records for the report window. */
     recommendations: readonly DailyRecommendation[];
@@ -75,9 +83,12 @@ export class BlockOutcomeReportService {
             return inPeriod(date, startDate, endDate) && belongsToEvaluation(item, evaluation);
         });
 
+        const eligibleAttemptIds = benchmarkEligibleAttemptIds(input.assessmentAttempts);
+        const benchmarkObservations = input.observations.filter(observation =>
+            eligibleAttemptIds.has(observation.revision.assessmentAttemptId));
         const metricProgress = evaluation.bindings.map(binding => deriveProgress(
             binding,
-            input.observations,
+            benchmarkObservations,
             input.reliabilityEstimates ?? [],
         ));
         const process = deriveBlockProcessEvidence({

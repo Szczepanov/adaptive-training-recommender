@@ -24,6 +24,7 @@ import {
     type ProgressResult,
     type SeriesReliabilityEstimate,
 } from './progress';
+import { isBenchmarkEligibleAttempt } from './assessmentEvidenceEligibility';
 import { getMetricDefinition } from './registry';
 import type { OutcomeDirection, OutcomeMetricBinding } from '../outcomes/evaluationSpec';
 import { compareCodeUnits } from '../utils/canonicalJson';
@@ -104,8 +105,7 @@ export function computeSeriesProgress(
     // audit evidence but is never a longitudinal benchmark point, even when recorded
     // after the real baseline/checkpoint.
     const eligibleObservations = seriesObservations.filter(observation =>
-        observation.attempt.state === 'completed'
-        && observation.attempt.purpose !== 'familiarization'
+        isBenchmarkEligibleAttempt(observation.attempt)
         && observation.revision.metricId === identity.metricId
         && observation.revision.protocolRef.id === identity.protocolId
         && observation.revision.protocolRef.revision === identity.protocolRevision

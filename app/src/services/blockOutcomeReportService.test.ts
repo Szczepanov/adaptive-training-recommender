@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import type { DailyRecommendation } from '../engine/models';
-import type { CompetitionOutcome } from '../observations/models';
+import type {
+    AssessmentAttempt,
+    AssessmentAttemptPurpose,
+    AssessmentAttemptState,
+    CompetitionOutcome,
+    MetricObservationHead,
+    MetricObservationRevision,
+} from '../observations/models';
+import type { CurrentObservation } from '../observations/progress';
 import type { SessionOutcome } from '../responses/outcome';
 import type { OutcomeEvaluationSnapshot } from '../outcomes/evaluationSpec';
 import { BlockOutcomeReportService } from './blockOutcomeReportService';
@@ -78,6 +86,77 @@ function race(id: string, occurredAt: string): CompetitionOutcome {
     };
 }
 
+const P20_METRIC = 'cycling_tt_20m_mean_power_w';
+
+function windowBaselineEvaluation(): OutcomeEvaluationSnapshot {
+    const base = evaluation();
+    return {
+        ...base,
+        bindings: [{
+            id: 'primary',
+            metricId: P20_METRIC,
+            role: 'primary',
+            baseline: {
+                kind: 'first_valid_in_window',
+                window: { startDate: '2026-08-01', endDate: '2026-08-04' },
+                selection: 'earliest_valid',
+            },
+            expectedDirection: { kind: 'higher_is_better' },
+            rationale: 'Primary outcome',
+        }],
+    };
+}
+
+function attempt(id: string, purpose: AssessmentAttemptPurpose, state: AssessmentAttemptState = 'completed'): AssessmentAttempt {
+    return {
+        id,
+        protocolRef: { id: 'cycling-20m-tt', revision: 1 },
+        state,
+        purpose,
+    };
+}
+
+function observation(attemptId: string, value: number, observedAt: string): CurrentObservation {
+    const revision: MetricObservationRevision = {
+        observationKey: `${attemptId}:${P20_METRIC}`,
+        revision: 1,
+        metricId: P20_METRIC,
+        value,
+        unit: 'W',
+        observedAt,
+        source: 'manual',
+        protocolRef: { id: 'cycling-20m-tt', revision: 1 },
+        comparisonSeriesKey: 'series-a',
+        comparisonCanonicalizationVersion: 'comparison-series-v1',
+        assessmentAttemptId: attemptId,
+        validity: 'valid',
+        context: {},
+        createdAt: observedAt,
+    };
+    const head: MetricObservationHead = {
+        observationKey: revision.observationKey,
+        assessmentAttemptId: attemptId,
+        metricId: P20_METRIC,
+        headRevision: 1,
+        createdAt: observedAt,
+        updatedAt: observedAt,
+    };
+    return { head, revision };
+}
+
+function buildWindowReport(observations: readonly CurrentObservation[], assessmentAttempts: readonly AssessmentAttempt[]) {
+    return new BlockOutcomeReportService().buildReport({
+        evaluation: windowBaselineEvaluation(),
+        observations,
+        assessmentAttempts,
+        recommendations: [],
+        completedSessions: [],
+        sessionOutcomes: [],
+        keyRoles: { plannedOccurrenceIds: [], completedOccurrenceIds: [] },
+        ecologicalOutcomes: [],
+    });
+}
+
 describe('BlockOutcomeReportService', () => {
     const service = new BlockOutcomeReportService();
 
@@ -85,6 +164,7 @@ describe('BlockOutcomeReportService', () => {
         const report = service.buildReport({
             evaluation: evaluation(),
             observations: [],
+            assessmentAttempts: [],
             recommendations: [recommendation('2026-07-31'), recommendation('2026-08-02'), recommendation('2026-08-11')],
             completedSessions: [
                 { id: 'completed-before', date: '2026-07-31' },
@@ -119,6 +199,7 @@ describe('BlockOutcomeReportService', () => {
         expect(() => service.buildReport({
             evaluation: draft,
             observations: [],
+            assessmentAttempts: [],
             recommendations: [],
             completedSessions: [],
             sessionOutcomes: [],
@@ -160,6 +241,7 @@ describe('BlockOutcomeReportService', () => {
         const report = service.buildReport({
             evaluation: linkedEvaluation,
             observations: [],
+            assessmentAttempts: [],
             recommendations: [],
             completedSessions: [],
             sessionOutcomes: [],
@@ -168,5 +250,38 @@ describe('BlockOutcomeReportService', () => {
         });
 
         expect(report.ecologicalOutcomes.map(item => item.id)).toEqual(['legacy-matching', 'matching']);
+    });
+
+    describe('benchmark evidence eligibility (#897 WP8)', () => {
+        const windowObservations = [
+            observation('famil', 280, '2026-08-01T06:00:00.000Z'),
+            observation('base', 300, '2026-08-02T06:00:00.000Z'),
+            observation('post', 312, '2026-08-09T06:00:00.000Z'),
+        ];
+
+        it('does not let an earlier familiarization attempt become the window baseline', () => {
+            const report = buildWindowReport(windowObservations, [
+                attempt('famil', 'familiarization'),
+                attempt('base', 'baseline'),
+                attempt('post', 'post_block'),
+            ]);
+            expect(report.metricProgress[0]?.baselineObservationId).toBe(`base:${P20_METRIC}`);
+            expect(report.metricProgress[0]?.absoluteChange).toBe(12);
+        });
+
+        it('does not promote an abandoned attempt to the window baseline', () => {
+            const report = buildWindowReport(windowObservations, [
+                attempt('famil', 'baseline', 'abandoned'),
+                attempt('base', 'baseline'),
+                attempt('post', 'post_block'),
+            ]);
+            expect(report.metricProgress[0]?.baselineObservationId).toBe(`base:${P20_METRIC}`);
+        });
+
+        it('fails closed for observations whose attempt was not supplied', () => {
+            const report = buildWindowReport(windowObservations, [attempt('post', 'post_block')]);
+            expect(report.metricProgress[0]?.baselineObservationId).toBeUndefined();
+            expect(report.metricProgress[0]?.reasons).toContain('baseline_not_found');
+        });
     });
 });
