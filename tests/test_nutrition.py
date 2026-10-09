@@ -120,8 +120,6 @@ def test_garmin_provider_adapter_fetch_daily_nutrition_from_cached_stats_only() 
     assert canonical.protein_g is None  # Not provided by Garmin MFP bridge
     assert canonical.goal_energy_intake_kcal == 2300.0
 
-    # Normal sync must not add one nutrition-service request per logged day.
-    mock_client.get_nutrition_daily_food_log.assert_not_called()
     assert result.raw_payload == {
         "stats_consumed": 2400.0,
         "stats_includes_data": True,
@@ -165,7 +163,6 @@ def test_garmin_provider_adapter_fetch_daily_nutrition_zero_kcal_logged() -> Non
     assert canonical.energy_intake_kcal == 0.0
     assert canonical.has_intake_data is True
     assert canonical.energy_intake_kcal is not None
-    mock_client.get_nutrition_daily_food_log.assert_not_called()
 
 
 def test_firestore_repository_nutrition_persistence() -> None:
