@@ -170,4 +170,126 @@ describe('PerformanceTargetSummary (ADR-0041/PG3-PG4.5)', () => {
     );
     expect(html).not.toContain('Goal feasibility:');
   });
+
+  it('renders measured 1RM result for bridged exercise target when eligible observation exists (#897 WP8.1)', () => {
+    const target: GoalPerformanceTarget = {
+      kind: 'performance_metric',
+      metricId: 'strength_1rm_kg',
+      subjectRef: { kind: 'exercise', exerciseId: 'bench_press' },
+      targetValue: 120,
+    };
+    const observation: MetricObservationRevision = {
+      observationKey: 'att-bp-1:strength_1rm_kg',
+      revision: 1,
+      metricId: 'strength_1rm_kg',
+      value: 110,
+      unit: 'kg',
+      observedAt: '2026-09-18T06:00:00.000Z',
+      source: 'manual',
+      protocolRef: { id: 'strength-bench-press-1rm', revision: 1 },
+      comparisonSeriesKey: 'bench-series',
+      comparisonCanonicalizationVersion: 'comparison-series-v1',
+      assessmentAttemptId: 'att-bp-1',
+      validity: 'valid',
+      context: {},
+      createdAt: '2026-09-18T06:05:00.000Z',
+    };
+    const benchAttempt: AssessmentAttempt = {
+      id: 'att-bp-1',
+      protocolRef: { id: 'strength-bench-press-1rm', revision: 1 },
+      state: 'completed',
+      purpose: 'baseline',
+    };
+    const html = renderToStaticMarkup(
+      <PerformanceTargetSummary
+        target={target}
+        targetDate={null}
+        performanceProfile={{ estimated1RmKg: { bench_press: 100 } }}
+        comparableObservations={[observation]}
+        assessmentAttempts={[benchAttempt]}
+      />,
+    );
+    expect(html).toContain('Bench Press');
+    expect(html).toContain('Current result: 110 kg');
+    expect(html).toContain('gap 10 kg');
+  });
+
+  it('renders e1RM fallback for bridged exercise target when assessment is familiarization (#897 WP8.1)', () => {
+    const target: GoalPerformanceTarget = {
+      kind: 'performance_metric',
+      metricId: 'strength_1rm_kg',
+      subjectRef: { kind: 'exercise', exerciseId: 'back_squat' },
+      targetValue: 160,
+    };
+    const observation: MetricObservationRevision = {
+      observationKey: 'att-sq-1:strength_1rm_kg',
+      revision: 1,
+      metricId: 'strength_1rm_kg',
+      value: 155,
+      unit: 'kg',
+      observedAt: '2026-09-18T06:00:00.000Z',
+      source: 'manual',
+      protocolRef: { id: 'strength-back-squat-1rm', revision: 1 },
+      comparisonSeriesKey: 'squat-series',
+      comparisonCanonicalizationVersion: 'comparison-series-v1',
+      assessmentAttemptId: 'att-sq-famil',
+      validity: 'valid',
+      context: {},
+      createdAt: '2026-09-18T06:05:00.000Z',
+    };
+    const squatAttempt: AssessmentAttempt = {
+      id: 'att-sq-famil',
+      protocolRef: { id: 'strength-back-squat-1rm', revision: 1 },
+      state: 'completed',
+      purpose: 'familiarization',
+    };
+    const html = renderToStaticMarkup(
+      <PerformanceTargetSummary
+        target={target}
+        targetDate={null}
+        performanceProfile={{ estimated1RmKg: { back_squat: 140 } }}
+        comparableObservations={[observation]}
+        assessmentAttempts={[squatAttempt]}
+      />,
+    );
+    expect(html).toContain('Back Squat');
+    expect(html).toContain('Current estimate: 140 kg');
+    expect(html).not.toContain('Current result');
+  });
+
+  it('shows unavailable state for bridged exercise target when observationDataState is unavailable and no e1RM is present (#897 WP8.1)', () => {
+    const target: GoalPerformanceTarget = {
+      kind: 'performance_metric',
+      metricId: 'strength_1rm_kg',
+      subjectRef: { kind: 'exercise', exerciseId: 'back_squat' },
+      targetValue: 160,
+    };
+    const html = renderToStaticMarkup(
+      <PerformanceTargetSummary
+        target={target}
+        targetDate={null}
+        performanceProfile={null}
+        observationDataState="unavailable"
+      />,
+    );
+    expect(html).toContain('Comparable logged results are currently unavailable.');
+  });
+
+  it('shows combined empty state for bridged exercise target when neither benchmark nor e1RM exists (#897 WP8.1)', () => {
+    const target: GoalPerformanceTarget = {
+      kind: 'performance_metric',
+      metricId: 'strength_1rm_kg',
+      subjectRef: { kind: 'exercise', exerciseId: 'back_squat' },
+      targetValue: 160,
+    };
+    const html = renderToStaticMarkup(
+      <PerformanceTargetSummary
+        target={target}
+        targetDate={null}
+        performanceProfile={null}
+        observationDataState="available"
+      />,
+    );
+    expect(html).toContain('No recorded benchmark or e1RM yet for this exercise.');
+  });
 });

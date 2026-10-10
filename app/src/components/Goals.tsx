@@ -20,6 +20,7 @@ import { validatePerformanceTargetForDomain } from '../engine/performanceTargetV
 import { getMetricDefinition } from '../observations/registry';
 import type { AssessmentAttempt, MetricObservationRevision } from '../observations/models';
 import { PERFORMANCE_TEST_DEFINITIONS } from '../observations/performanceTestingCatalog';
+import { getAssessmentProtocolForExercise } from '../observations/exerciseAssessmentBridge';
 import { EXERCISES_BY_ID } from '../workouts/exercises';
 import { goalProgressEvidenceQuery, resolveGoalProgress, type GoalProgressResult } from '../engine/goalProgress';
 import {
@@ -225,18 +226,19 @@ export function Goals({ userId }: GoalsProps) {
     };
   }, [trainingIntentProfile]);
 
-  const performanceTestTargets = useMemo(
+  const performanceTargets = useMemo(
     () => goals
       .map(goal => goal.performanceTarget)
-      .filter((target): target is GoalPerformanceTarget => !!target && target.subjectRef.kind === 'performance_test'),
+      .filter((target): target is GoalPerformanceTarget => !!target),
     [goals],
   );
 
-  // #897 WP8: attempts are loaded alongside observations so goal progress can exclude
-  // familiarization and abandoned-attempt evidence from the current value.
+  // #897 WP8/WP8.1: attempts are loaded alongside observations so goal progress can exclude
+  // familiarization and abandoned-attempt evidence from the current value for both
+  // performance_test targets and bridged exercise targets (squat/bench 1RM).
   const evidenceQuery = useMemo(
-    () => goalProgressEvidenceQuery(performanceTestTargets),
-    [performanceTestTargets],
+    () => goalProgressEvidenceQuery(performanceTargets),
+    [performanceTargets],
   );
   const performanceObservationMetricIds = evidenceQuery.metricIds;
   const performanceAttemptProtocolIds = evidenceQuery.protocolIds;
@@ -581,6 +583,8 @@ export function PerformanceTargetSummary({
 }: PerformanceTargetSummaryProps) {
   const metric = getMetricDefinition(target.metricId);
   const subjectLabel = subjectDisplayName(target.subjectRef);
+  const hasExerciseBenchmark = target.subjectRef.kind === 'exercise'
+    && getAssessmentProtocolForExercise(target.subjectRef.exerciseId, target.metricId) !== null;
 
   const progress: GoalProgressResult = useMemo(
     () => resolveGoalProgress(target, {
@@ -640,12 +644,12 @@ export function PerformanceTargetSummary({
         </div>
       ) : (
         <div className="performance-target-progress muted">
-          {target.subjectRef.kind === 'exercise'
-            ? 'No recorded e1RM yet for this exercise.'
-            : observationDataState === 'loading'
-              ? 'Loading comparable logged results...'
-              : observationDataState === 'unavailable'
-                ? 'Comparable logged results are currently unavailable.'
+          {observationDataState === 'loading' && (target.subjectRef.kind === 'performance_test' || hasExerciseBenchmark)
+            ? 'Loading comparable logged results...'
+            : observationDataState === 'unavailable' && (target.subjectRef.kind === 'performance_test' || hasExerciseBenchmark)
+              ? 'Comparable logged results are currently unavailable.'
+              : target.subjectRef.kind === 'exercise'
+                ? (hasExerciseBenchmark ? 'No recorded benchmark or e1RM yet for this exercise.' : 'No recorded e1RM yet for this exercise.')
                 : 'No comparable logged result yet for this test.'}
         </div>
       )}

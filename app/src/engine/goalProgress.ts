@@ -1,5 +1,6 @@
 import type { AssessmentAttempt, MetricDefinition, MetricObservationRevision } from '../observations/models';
 import { benchmarkEligibleAttemptIds } from '../observations/assessmentEvidenceEligibility';
+import { getAssessmentProtocolForExercise } from '../observations/exerciseAssessmentBridge';
 import { getMetricDefinition } from '../observations/registry';
 import { getPerformanceTestDefinition } from '../observations/performanceTestingCatalog';
 import type { AthletePerformanceProfile, TargetSource } from '../workouts/models';
@@ -11,11 +12,16 @@ import { computeRequiredChange } from './goalMetricMath';
  * contract. This module is a pure evaluator -- it never reaches Firestore itself; callers
  * resolve `AthletePerformanceProfile` and any candidate observations first.
  *
- * Issue #897 WP8: for `performance_test` targets, only observations from a completed,
- * non-familiarization assessment attempt may become the current value (the same rule the
- * History read model uses, `isBenchmarkEligibleAttempt`). Callers supply the attempts; an
- * observation whose attempt is not supplied fails closed and is not eligible -- attempts are
- * always created by the testing workflow, so an unknown attempt is a read gap, not evidence.
+ * Issue #897 WP8: for `performance_test` targets and bridged `exercise` targets (squat/bench 1RM),
+ * only observations from a completed, non-familiarization assessment attempt may become the current
+ * value (the same rule the History read model uses, `isBenchmarkEligibleAttempt`). Callers supply
+ * the attempts; an observation whose attempt is not supplied fails closed and is not eligible --
+ * attempts are always created by the testing workflow, so an unknown attempt is a read gap, not evidence.
+ *
+ * Issue #897 WP8.1: for exercise-subject strength goals with bundled 1RM protocols (back squat, bench press),
+ * measured assessment evidence takes precedence over estimated 1RM when eligible measured evidence is present.
+ * If measured evidence is unavailable or ineligible, the resolver falls back to estimated 1RM from the profile.
+ * The two evidence sources are strictly distinguishable via `currentEvidenceKind`.
  */
 export type GoalCurrentEvidenceKind = 'estimated_1rm' | 'measured_observation';
 
@@ -69,14 +75,39 @@ function resolveTestCurrentObservation(
             observation.protocolRef.id === protocol.id
             && observation.protocolRef.revision === protocol.revision)
         .slice()
-        .sort((a, b) => a.observedAt.localeCompare(b.observedAt));
+        .sort((a, b) => a.observedAt.localeCompare(b.observedAt) || a.revision - b.revision);
     return candidates.at(-1) ?? null;
 }
 
 /**
- * Ids a loader must fetch so `resolveGoalProgress` can resolve `performance_test` targets:
- * observation metric ids and the protocol ids whose attempts back those observations.
- * Exercise (e1RM) targets need neither. Results are sorted and de-duplicated.
+ * Picks the most recent valid observation for the declared metric and mapped exercise-assessment
+ * protocol identity (Issue #897 WP8.1). Observations from familiarization, abandoned or unknown
+ * attempts are never candidates.
+ */
+function resolveExerciseCurrentObservation(
+    metricId: string,
+    protocolId: string,
+    observations: readonly MetricObservationRevision[],
+    attempts: readonly AssessmentAttempt[],
+): MetricObservationRevision | null {
+    const eligibleAttemptIds = benchmarkEligibleAttemptIds(attempts);
+    const candidates = observations
+        .filter(observation => observation.validity === 'valid')
+        .filter(observation => eligibleAttemptIds.has(observation.assessmentAttemptId))
+        .filter(observation => observation.metricId === metricId)
+        .filter(observation => observation.protocolRef.id === protocolId)
+        .slice()
+        .sort((a, b) => a.observedAt.localeCompare(b.observedAt) || a.revision - b.revision);
+    return candidates.at(-1) ?? null;
+}
+
+/**
+ * Ids a loader must fetch so `resolveGoalProgress` can resolve targets:
+ * - for `performance_test` targets: declared metric id and the protocol id from the test definition;
+ * - for `exercise` targets with a mapped 1RM protocol (e.g. back squat, bench press): declared metric id
+ *   and the mapped protocol id (#897 WP8.1);
+ * - other exercise targets (e.g. conventional deadlift) need neither and continue to resolve via e1RM.
+ * Results are sorted and de-duplicated.
  */
 export function goalProgressEvidenceQuery(
     targets: readonly GoalPerformanceTarget[],
@@ -84,9 +115,16 @@ export function goalProgressEvidenceQuery(
     const metricIds = new Set<string>();
     const protocolIds = new Set<string>();
     for (const target of targets) {
-        if (target.subjectRef.kind !== 'performance_test') continue;
-        metricIds.add(target.metricId);
-        protocolIds.add(getPerformanceTestDefinition(target.subjectRef.performanceTestId).protocol.id);
+        if (target.subjectRef.kind === 'performance_test') {
+            metricIds.add(target.metricId);
+            protocolIds.add(getPerformanceTestDefinition(target.subjectRef.performanceTestId).protocol.id);
+        } else if (target.subjectRef.kind === 'exercise') {
+            const protocolId = getAssessmentProtocolForExercise(target.subjectRef.exerciseId, target.metricId);
+            if (protocolId) {
+                metricIds.add(target.metricId);
+                protocolIds.add(protocolId);
+            }
+        }
     }
     return { metricIds: Array.from(metricIds).sort(), protocolIds: Array.from(protocolIds).sort() };
 }
@@ -114,11 +152,30 @@ export function resolveGoalProgress(
     let currentSource: TargetSource | undefined;
 
     if (target.subjectRef.kind === 'exercise') {
-        const resolved = resolveStrengthCurrentValue(target.subjectRef.exerciseId, options.athletePerformanceProfile);
-        if (resolved) {
-            currentValue = resolved.value;
-            currentEvidenceKind = 'estimated_1rm';
-            currentSource = resolved.source;
+        const mappedProtocolId = getAssessmentProtocolForExercise(
+            target.subjectRef.exerciseId,
+            target.metricId,
+        );
+        const observation = mappedProtocolId
+            ? resolveExerciseCurrentObservation(
+                target.metricId,
+                mappedProtocolId,
+                options.comparableObservations ?? [],
+                options.assessmentAttempts ?? [],
+            )
+            : null;
+
+        if (observation) {
+            currentValue = observation.value;
+            currentEvidenceKind = 'measured_observation';
+            currentObservedAt = observation.observedAt;
+        } else {
+            const resolved = resolveStrengthCurrentValue(target.subjectRef.exerciseId, options.athletePerformanceProfile);
+            if (resolved) {
+                currentValue = resolved.value;
+                currentEvidenceKind = 'estimated_1rm';
+                currentSource = resolved.source;
+            }
         }
     } else {
         const observation = resolveTestCurrentObservation(

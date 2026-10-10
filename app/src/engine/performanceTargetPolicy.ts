@@ -48,7 +48,7 @@ export const PERFORMANCE_TARGET_POLICIES: readonly PerformanceTargetPolicy[] = [
         family: 'strength',
         subjectKind: 'exercise',
         targetRange: { min: 1, max: 500 },
-        eligibleExerciseIds: ['conventional_deadlift', 'front_squat', 'bench_press', 'romanian_deadlift'],
+        eligibleExerciseIds: ['conventional_deadlift', 'front_squat', 'bench_press', 'romanian_deadlift', 'back_squat'],
     },
     {
         metricId: 'sprint_elapsed_time_s',
