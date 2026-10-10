@@ -1,152 +1,139 @@
 
-    function hasValidPlanBlock(userId) {
-      let data = request.resource.data;
-      return hasOwnedUserId(userId)
-        && data.keys().hasOnly(['userId', 'eventId', 'phase', 'startDate', 'endDate', 'volumeScale', 'intensityScale', 'createdAt', 'updatedAt'])
-        && data.phase == 'travel'
-        && isValidActivityDate(data.startDate)
-        && isValidActivityDate(data.endDate)
-        && data.startDate <= data.endDate
-        && data.volumeScale is number && data.volumeScale >= 0 && data.volumeScale <= 1
-        && data.intensityScale is number && data.intensityScale >= 0 && data.intensityScale <= 1
-        && (!('eventId' in data) || data.eventId is string)
-        && data.createdAt is string && data.updatedAt is string;
-    }
 
-    function hasValidExternalPlanHeader(userId) {
-      let data = request.resource.data;
-      return hasOwnedUserId(userId)
-        && data.keys().hasOnly(['userId', 'planId', 'revision', 'title', 'startDate', 'weekCount', 'contentHash', 'importedAt', 'supersededFrom', 'updatedAt'])
-        && data.planId is string && data.planId.size() > 0 && data.planId.size() <= 64
-        && data.revision is int && data.revision >= 1
-        && data.title is string && data.title.size() <= 200
-        && isValidActivityDate(data.startDate)
-        && data.weekCount is int && data.weekCount >= 1 && data.weekCount <= 26
-        && data.contentHash is string && data.contentHash.size() == 64
-        && data.importedAt is string && data.updatedAt is string
-        && (!('supersededFrom' in data) || data.supersededFrom == null || isValidActivityDate(data.supersededFrom));
-    }
+    match /users/{userId}/external_plans/{planId} {
+      function hasValidExternalPlanHeader(userId) {
+        let data = request.resource.data;
+        return hasOwnedUserId(userId)
+          && data.keys().hasOnly(['userId', 'planId', 'revision', 'title', 'startDate', 'weekCount', 'contentHash', 'importedAt', 'supersededFrom', 'updatedAt'])
+          && data.planId is string && data.planId.size() > 0 && data.planId.size() <= 64
+          && data.revision is int && data.revision >= 1
+          && data.title is string && data.title.size() <= 200
+          && isValidActivityDate(data.startDate)
+          && data.weekCount is int && data.weekCount >= 1 && data.weekCount <= 26
+          && data.contentHash is string && data.contentHash.size() == 64
+          && data.importedAt is string && data.updatedAt is string
+          && (!('supersededFrom' in data) || data.supersededFrom == null || isValidActivityDate(data.supersededFrom));
+      }
 
-    function isValidExternalRestDirective(directive, weekCount) {
-      return directive is map
-        && directive.keys().hasOnly(['id', 'week', 'day'])
-        && directive.id is string && directive.id.size() > 0 && directive.id.size() <= 64
-        && directive.week is int && directive.week >= 1 && directive.week <= weekCount
-        && directive.day in ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
-    }
+      function isValidExternalRestDirective(directive, weekCount) {
+        return directive is map
+          && directive.keys().hasOnly(['id', 'week', 'day'])
+          && directive.id is string && directive.id.size() > 0 && directive.id.size() <= 64
+          && directive.week is int && directive.week >= 1 && directive.week <= weekCount
+          && directive.day in ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+      }
 
-    function hasValidExternalRestDirectives(restDays, weekCount) {
-      return restDays is list && restDays.size() <= 26
-        && (restDays.size() < 1 || isValidExternalRestDirective(restDays[0], weekCount))
-        && (restDays.size() < 2 || isValidExternalRestDirective(restDays[1], weekCount))
-        && (restDays.size() < 3 || isValidExternalRestDirective(restDays[2], weekCount))
-        && (restDays.size() < 4 || isValidExternalRestDirective(restDays[3], weekCount))
-        && (restDays.size() < 5 || isValidExternalRestDirective(restDays[4], weekCount))
-        && (restDays.size() < 6 || isValidExternalRestDirective(restDays[5], weekCount))
-        && (restDays.size() < 7 || isValidExternalRestDirective(restDays[6], weekCount))
-        && (restDays.size() < 8 || isValidExternalRestDirective(restDays[7], weekCount))
-        && (restDays.size() < 9 || isValidExternalRestDirective(restDays[8], weekCount))
-        && (restDays.size() < 10 || isValidExternalRestDirective(restDays[9], weekCount))
-        && (restDays.size() < 11 || isValidExternalRestDirective(restDays[10], weekCount))
-        && (restDays.size() < 12 || isValidExternalRestDirective(restDays[11], weekCount))
-        && (restDays.size() < 13 || isValidExternalRestDirective(restDays[12], weekCount))
-        && (restDays.size() < 14 || isValidExternalRestDirective(restDays[13], weekCount))
-        && (restDays.size() < 15 || isValidExternalRestDirective(restDays[14], weekCount))
-        && (restDays.size() < 16 || isValidExternalRestDirective(restDays[15], weekCount))
-        && (restDays.size() < 17 || isValidExternalRestDirective(restDays[16], weekCount))
-        && (restDays.size() < 18 || isValidExternalRestDirective(restDays[17], weekCount))
-        && (restDays.size() < 19 || isValidExternalRestDirective(restDays[18], weekCount))
-        && (restDays.size() < 20 || isValidExternalRestDirective(restDays[19], weekCount))
-        && (restDays.size() < 21 || isValidExternalRestDirective(restDays[20], weekCount))
-        && (restDays.size() < 22 || isValidExternalRestDirective(restDays[21], weekCount))
-        && (restDays.size() < 23 || isValidExternalRestDirective(restDays[22], weekCount))
-        && (restDays.size() < 24 || isValidExternalRestDirective(restDays[23], weekCount))
-        && (restDays.size() < 25 || isValidExternalRestDirective(restDays[24], weekCount))
-        && (restDays.size() < 26 || isValidExternalRestDirective(restDays[25], weekCount));
-    }
+      function hasValidExternalRestDirectives(restDays, weekCount) {
+        return restDays is list && restDays.size() <= 26
+          && (restDays.size() < 1 || isValidExternalRestDirective(restDays[0], weekCount))
+          && (restDays.size() < 2 || isValidExternalRestDirective(restDays[1], weekCount))
+          && (restDays.size() < 3 || isValidExternalRestDirective(restDays[2], weekCount))
+          && (restDays.size() < 4 || isValidExternalRestDirective(restDays[3], weekCount))
+          && (restDays.size() < 5 || isValidExternalRestDirective(restDays[4], weekCount))
+          && (restDays.size() < 6 || isValidExternalRestDirective(restDays[5], weekCount))
+          && (restDays.size() < 7 || isValidExternalRestDirective(restDays[6], weekCount))
+          && (restDays.size() < 8 || isValidExternalRestDirective(restDays[7], weekCount))
+          && (restDays.size() < 9 || isValidExternalRestDirective(restDays[8], weekCount))
+          && (restDays.size() < 10 || isValidExternalRestDirective(restDays[9], weekCount))
+          && (restDays.size() < 11 || isValidExternalRestDirective(restDays[10], weekCount))
+          && (restDays.size() < 12 || isValidExternalRestDirective(restDays[11], weekCount))
+          && (restDays.size() < 13 || isValidExternalRestDirective(restDays[12], weekCount))
+          && (restDays.size() < 14 || isValidExternalRestDirective(restDays[13], weekCount))
+          && (restDays.size() < 15 || isValidExternalRestDirective(restDays[14], weekCount))
+          && (restDays.size() < 16 || isValidExternalRestDirective(restDays[15], weekCount))
+          && (restDays.size() < 17 || isValidExternalRestDirective(restDays[16], weekCount))
+          && (restDays.size() < 18 || isValidExternalRestDirective(restDays[17], weekCount))
+          && (restDays.size() < 19 || isValidExternalRestDirective(restDays[18], weekCount))
+          && (restDays.size() < 20 || isValidExternalRestDirective(restDays[19], weekCount))
+          && (restDays.size() < 21 || isValidExternalRestDirective(restDays[20], weekCount))
+          && (restDays.size() < 22 || isValidExternalRestDirective(restDays[21], weekCount))
+          && (restDays.size() < 23 || isValidExternalRestDirective(restDays[22], weekCount))
+          && (restDays.size() < 24 || isValidExternalRestDirective(restDays[23], weekCount))
+          && (restDays.size() < 25 || isValidExternalRestDirective(restDays[24], weekCount))
+          && (restDays.size() < 26 || isValidExternalRestDirective(restDays[25], weekCount));
+      }
 
-    function hasValidExternalPlanRevision() {
-      let data = request.resource.data;
-      // ADR-0035/0036/0037: rules validate the bounded plan-level storage shape for v3-v6.
-      // The TypeScript import validator remains authoritative for cross-entry invariants such
-      // as id/date uniqueness and fixed-session/rest conflicts, which require viewing the
-      // two authored lists together. v5's intentBlocks is deliberately kept shallow here
-      // (list + bounded size only, no per-block field validation) -- the same
-      // rule-evaluation-budget lesson `intent_blocks`' own rules already document below, and
-      // `engine/blockIntent.ts`'s validateIntentBlock (via validatePlanIntentBlocks) is
-      // authoritative for its deep cross-field invariants.
-      let restDaySchemas = [
-        'adaptive-training-recommender/external-plan@3',
-        'adaptive-training-recommender/external-plan@4',
-        'adaptive-training-recommender/external-plan@5',
-        'adaptive-training-recommender/external-plan@6',
-      ];
-      // v5/v6 may carry intentBlocks -- v3/v4 keep rejecting it, same as v1/v2 keep
-      // rejecting restDays.
-      let isV5OrV6 = data.schema in ['adaptive-training-recommender/external-plan@5', 'adaptive-training-recommender/external-plan@6'];
-      return data.keys().hasAll(['schema', 'planId', 'revision', 'title', 'startDate', 'weekCount', 'sessions'])
-        && data.schema in [
-          'adaptive-training-recommender/external-plan@1',
-          'adaptive-training-recommender/external-plan@2',
+      function hasValidExternalPlanRevision() {
+        let data = request.resource.data;
+        // ADR-0035/0036/0037: rules validate the bounded plan-level storage shape for v3-v6.
+        // The TypeScript import validator remains authoritative for cross-entry invariants such
+        // as id/date uniqueness and fixed-session/rest conflicts, which require viewing the
+        // two authored lists together. v5's intentBlocks is deliberately kept shallow here
+        // (list + bounded size only, no per-block field validation) -- the same
+        // rule-evaluation-budget lesson `intent_blocks`' own rules already document below, and
+        // `engine/blockIntent.ts`'s validateIntentBlock (via validatePlanIntentBlocks) is
+        // authoritative for its deep cross-field invariants.
+        let restDaySchemas = [
           'adaptive-training-recommender/external-plan@3',
           'adaptive-training-recommender/external-plan@4',
           'adaptive-training-recommender/external-plan@5',
           'adaptive-training-recommender/external-plan@6',
-        ]
-        && (isV5OrV6
-              ? data.keys().hasOnly(['schema', 'planId', 'revision', 'title', 'startDate', 'weekCount', 'notes', 'sessions', 'restDays', 'intentBlocks'])
-                 && data.keys().hasAll(['restDays'])
-              : data.schema in restDaySchemas
-                ? data.keys().hasOnly(['schema', 'planId', 'revision', 'title', 'startDate', 'weekCount', 'notes', 'sessions', 'restDays'])
+        ];
+        // v5/v6 may carry intentBlocks -- v3/v4 keep rejecting it, same as v1/v2 keep
+        // rejecting restDays.
+        let isV5OrV6 = data.schema in ['adaptive-training-recommender/external-plan@5', 'adaptive-training-recommender/external-plan@6'];
+        return data.keys().hasAll(['schema', 'planId', 'revision', 'title', 'startDate', 'weekCount', 'sessions'])
+          && data.schema in [
+            'adaptive-training-recommender/external-plan@1',
+            'adaptive-training-recommender/external-plan@2',
+            'adaptive-training-recommender/external-plan@3',
+            'adaptive-training-recommender/external-plan@4',
+            'adaptive-training-recommender/external-plan@5',
+            'adaptive-training-recommender/external-plan@6',
+          ]
+          && (isV5OrV6
+                ? data.keys().hasOnly(['schema', 'planId', 'revision', 'title', 'startDate', 'weekCount', 'notes', 'sessions', 'restDays', 'intentBlocks'])
                    && data.keys().hasAll(['restDays'])
-                : data.keys().hasOnly(['schema', 'planId', 'revision', 'title', 'startDate', 'weekCount', 'notes', 'sessions']))
-        && data.revision is int && data.revision >= 1
-        && isValidActivityDate(data.startDate)
-        && data.weekCount is int && data.weekCount >= 1 && data.weekCount <= 26
-        && (!(data.schema in restDaySchemas)
-          || hasValidExternalRestDirectives(data.restDays, data.weekCount))
-        && (!isV5OrV6
-          || !('intentBlocks' in data.keys())
-          || (data.intentBlocks is list && data.intentBlocks.size() <= 26))
-        && data.sessions is list && data.sessions.size() >= 1 && data.sessions.size() <= 120;
-    }
+                : data.schema in restDaySchemas
+                  ? data.keys().hasOnly(['schema', 'planId', 'revision', 'title', 'startDate', 'weekCount', 'notes', 'sessions', 'restDays'])
+                     && data.keys().hasAll(['restDays'])
+                  : data.keys().hasOnly(['schema', 'planId', 'revision', 'title', 'startDate', 'weekCount', 'notes', 'sessions']))
+          && data.revision is int && data.revision >= 1
+          && isValidActivityDate(data.startDate)
+          && data.weekCount is int && data.weekCount >= 1 && data.weekCount <= 26
+          && (!(data.schema in restDaySchemas)
+            || hasValidExternalRestDirectives(data.restDays, data.weekCount))
+          && (!isV5OrV6
+            || !('intentBlocks' in data.keys())
+            || (data.intentBlocks is list && data.intentBlocks.size() <= 26))
+          && data.sessions is list && data.sessions.size() >= 1 && data.sessions.size() <= 120;
+      }
 
-    function hasValidExternalPlanPlacement(userId) {
-      let data = request.resource.data;
-      return hasOwnedUserId(userId)
-        && data.keys().hasOnly(['userId', 'planId', 'revision', 'assignments', 'updatedAt'])
-        && data.planId is string && data.planId.size() > 0 && data.planId.size() <= 64
-        && data.revision is int && data.revision >= 1
-        && data.assignments is list && data.assignments.size() <= 120
-        && data.updatedAt is string;
-    }
+      function hasValidExternalPlanPlacement(userId) {
+        let data = request.resource.data;
+        return hasOwnedUserId(userId)
+          && data.keys().hasOnly(['userId', 'planId', 'revision', 'assignments', 'updatedAt'])
+          && data.planId is string && data.planId.size() > 0 && data.planId.size() <= 64
+          && data.revision is int && data.revision >= 1
+          && data.assignments is list && data.assignments.size() <= 120
+          && data.updatedAt is string;
+      }
 
-    function hasValidExternalPlanActivation(userId, planId, revisionId) {
-      let data = request.resource.data;
-      let header = getAfter(/databases/$(database)/documents/users/$(userId)/external_plans/$(planId)).data;
-      let revision = getAfter(/databases/$(database)/documents/users/$(userId)/external_plans/$(planId)/revisions/$(revisionId)).data;
-      return hasOwnedUserId(userId)
-        && data.keys().hasOnly(['userId', 'planId', 'revision', 'contentHash', 'effectiveFrom', 'activatedAt'])
-        && data.planId == planId
-        && data.revision is int && data.revision >= 1
-        && string(data.revision) == revisionId
-        && data.contentHash is string && data.contentHash.matches('^[a-f0-9]{64}$')
-        && isValidActivityDate(data.effectiveFrom)
-        && data.activatedAt is string
-        && existsAfter(/databases/$(database)/documents/users/$(userId)/external_plans/$(planId)/revisions/$(revisionId))
-        && revision.planId == planId
-        && revision.revision == data.revision
-        && ((existsAfter(/databases/$(database)/documents/users/$(userId)/external_plans/$(planId))
-          && header.planId == planId
-          && header.revision == data.revision
-          && header.contentHash == data.contentHash
-          && data.activatedAt == header.importedAt
-          && (header.get('supersededFrom', null) == data.effectiveFrom
-            || (header.get('supersededFrom', null) == null && revision.startDate == data.effectiveFrom)))
-);
-    }
+      function hasValidExternalPlanActivation(userId, planId, revisionId) {
+        let data = request.resource.data;
+        let header = getAfter(/databases/$(database)/documents/users/$(userId)/external_plans/$(planId)).data;
+        let revision = getAfter(/databases/$(database)/documents/users/$(userId)/external_plans/$(planId)/revisions/$(revisionId)).data;
+        return hasOwnedUserId(userId)
+          && data.keys().hasOnly(['userId', 'planId', 'revision', 'contentHash', 'effectiveFrom', 'activatedAt'])
+          && data.planId == planId
+          && data.revision is int && data.revision >= 1
+          && string(data.revision) == revisionId
+          && data.contentHash is string && data.contentHash.matches('^[a-f0-9]{64}$')
+          && isValidActivityDate(data.effectiveFrom)
+          && data.activatedAt is string
+          && existsAfter(/databases/$(database)/documents/users/$(userId)/external_plans/$(planId)/revisions/$(revisionId))
+          && revision.planId == planId
+          && revision.revision == data.revision
+          && ((existsAfter(/databases/$(database)/documents/users/$(userId)/external_plans/$(planId))
+            && header.planId == planId
+            && header.revision == data.revision
+            && header.contentHash == data.contentHash
+            && data.activatedAt == header.importedAt
+            && (header.get('supersededFrom', null) == data.effectiveFrom
+              || (header.get('supersededFrom', null) == null && revision.startDate == data.effectiveFrom)))
+  );
+      }
 
-    match /users/{userId}/external_plans/{planId} {
       allow read: if isOwner(userId);
       allow create: if hasValidExternalPlanHeader(userId);
       allow update: if hasValidExternalPlanHeader(userId)
@@ -189,42 +176,42 @@
       }
     }
 
-    // ADR-0037 (H5a/H5c): IntentBlock persistence. Modeled directly on external_plans above
-    // (header + immutable revisions/{revisionId} split, revision-not-newer on the header),
-    // kept deliberately shallow/structural per PR #468's rule-evaluation-budget lesson --
-    // `engine/blockIntent.ts`'s validateIntentBlock is authoritative for the deep
-    // cross-field invariants (dose envelopes, knowledge lineage, progression-contract
-    // binding, etc.); rules only need to keep the top-level shape and revision/hash
-    // identity honest, the same division of labor hasValidExternalPlanRevision already uses.
-    function hasValidIntentBlockHeader(userId) {
-      let data = request.resource.data;
-      return hasOwnedUserId(userId)
-        && data.keys().hasOnly(['userId', 'blockId', 'revision', 'contentHash', 'sourcePlanId', 'sourcePlanRevision', 'createdAt', 'updatedAt'])
-        && data.keys().hasAll(['userId', 'blockId', 'revision', 'contentHash', 'sourcePlanId', 'sourcePlanRevision', 'createdAt', 'updatedAt'])
-        && data.blockId is string && data.blockId.size() > 0 && data.blockId.size() <= 128
-        && data.revision is int && data.revision >= 1
-        && data.contentHash is string && data.contentHash.size() == 64
-        && data.sourcePlanId is string && data.sourcePlanId.size() > 0 && data.sourcePlanId.size() <= 128
-        && data.sourcePlanRevision is int && data.sourcePlanRevision >= 1
-        && data.createdAt is string && data.updatedAt is string;
-    }
-
-    function hasValidIntentBlockRevision(blockId, revisionId) {
-      let data = request.resource.data;
-      return data.keys().hasOnly(['userId', 'blockId', 'revision', 'block', 'pinnedTrainingIntentProfile', 'sourceSchemaVersion', 'sourceRef', 'contentHash', 'createdAt'])
-        && data.keys().hasAll(['userId', 'blockId', 'revision', 'block', 'pinnedTrainingIntentProfile', 'sourceSchemaVersion', 'sourceRef', 'contentHash', 'createdAt'])
-        && data.blockId == blockId
-        && string(data.revision) == revisionId
-        && data.revision is int && data.revision >= 1
-        && data.block is map
-        && data.pinnedTrainingIntentProfile is map
-        && data.sourceSchemaVersion is string && data.sourceSchemaVersion.size() > 0
-        && (data.sourceRef == null || (data.sourceRef is string && data.sourceRef.size() <= 128))
-        && data.contentHash is string && data.contentHash.size() == 64
-        && data.createdAt is string;
-    }
-
     match /users/{userId}/intent_blocks/{blockId} {
+      // ADR-0037 (H5a/H5c): IntentBlock persistence. Modeled directly on external_plans above
+      // (header + immutable revisions/{revisionId} split, revision-not-newer on the header),
+      // kept deliberately shallow/structural per PR #468's rule-evaluation-budget lesson --
+      // `engine/blockIntent.ts`'s validateIntentBlock is authoritative for the deep
+      // cross-field invariants (dose envelopes, knowledge lineage, progression-contract
+      // binding, etc.); rules only need to keep the top-level shape and revision/hash
+      // identity honest, the same division of labor hasValidExternalPlanRevision already uses.
+      function hasValidIntentBlockHeader(userId) {
+        let data = request.resource.data;
+        return hasOwnedUserId(userId)
+          && data.keys().hasOnly(['userId', 'blockId', 'revision', 'contentHash', 'sourcePlanId', 'sourcePlanRevision', 'createdAt', 'updatedAt'])
+          && data.keys().hasAll(['userId', 'blockId', 'revision', 'contentHash', 'sourcePlanId', 'sourcePlanRevision', 'createdAt', 'updatedAt'])
+          && data.blockId is string && data.blockId.size() > 0 && data.blockId.size() <= 128
+          && data.revision is int && data.revision >= 1
+          && data.contentHash is string && data.contentHash.size() == 64
+          && data.sourcePlanId is string && data.sourcePlanId.size() > 0 && data.sourcePlanId.size() <= 128
+          && data.sourcePlanRevision is int && data.sourcePlanRevision >= 1
+          && data.createdAt is string && data.updatedAt is string;
+      }
+
+      function hasValidIntentBlockRevision(blockId, revisionId) {
+        let data = request.resource.data;
+        return data.keys().hasOnly(['userId', 'blockId', 'revision', 'block', 'pinnedTrainingIntentProfile', 'sourceSchemaVersion', 'sourceRef', 'contentHash', 'createdAt'])
+          && data.keys().hasAll(['userId', 'blockId', 'revision', 'block', 'pinnedTrainingIntentProfile', 'sourceSchemaVersion', 'sourceRef', 'contentHash', 'createdAt'])
+          && data.blockId == blockId
+          && string(data.revision) == revisionId
+          && data.revision is int && data.revision >= 1
+          && data.block is map
+          && data.pinnedTrainingIntentProfile is map
+          && data.sourceSchemaVersion is string && data.sourceSchemaVersion.size() > 0
+          && (data.sourceRef == null || (data.sourceRef is string && data.sourceRef.size() <= 128))
+          && data.contentHash is string && data.contentHash.size() == 64
+          && data.createdAt is string;
+      }
+
       allow read: if isOwner(userId);
       allow create: if hasValidIntentBlockHeader(userId) && request.resource.data.blockId == blockId;
       allow update: if hasValidIntentBlockHeader(userId)
@@ -243,26 +230,26 @@
       }
     }
 
-    // ADR-0037 D-AUTHORITY (H5c), per docs/plans/h5c-progression-claim-design.md's own
-    // rules sketch: the athlete-scoped singleton progression-claim, at a literal `current`
-    // path so "singleton" is enforced by the path itself, not application convention. Kept
-    // shallow/structural, matching every other collection added in this PR.
-    function hasValidProgressionClaim(userId) {
-      let data = request.resource.data;
-      return hasOwnedUserId(userId)
-        && data.keys().hasOnly(['userId', 'state', 'experimentId', 'blockId', 'proposalId', 'sourcePlanRevision', 'activationKey', 'activationRevisionId', 'acquiredAt', 'revision', 'createdAt', 'updatedAt'])
-        && data.keys().hasAll(['userId', 'state', 'experimentId', 'blockId', 'proposalId', 'sourcePlanRevision', 'activationKey', 'activationRevisionId', 'acquiredAt', 'revision', 'createdAt', 'updatedAt'])
-        && data.state in ['held', 'released']
-        && data.experimentId is string && data.experimentId.size() > 0 && data.experimentId.size() <= 64
-        && data.blockId is string && data.blockId.size() > 0 && data.blockId.size() <= 128
-        && data.proposalId is string && data.proposalId.size() > 0 && data.proposalId.size() <= 128
-        && data.sourcePlanRevision is int && data.sourcePlanRevision >= 1
-        && data.activationKey is string && data.activationKey.size() == 64
-        && data.activationRevisionId is string && data.activationRevisionId.size() > 0
-        && data.acquiredAt is string && data.createdAt is string && data.updatedAt is string;
-    }
-
     match /users/{userId}/progression_experiment_claim/current {
+      // ADR-0037 D-AUTHORITY (H5c), per docs/plans/h5c-progression-claim-design.md's own
+      // rules sketch: the athlete-scoped singleton progression-claim, at a literal `current`
+      // path so "singleton" is enforced by the path itself, not application convention. Kept
+      // shallow/structural, matching every other collection added in this PR.
+      function hasValidProgressionClaim(userId) {
+        let data = request.resource.data;
+        return hasOwnedUserId(userId)
+          && data.keys().hasOnly(['userId', 'state', 'experimentId', 'blockId', 'proposalId', 'sourcePlanRevision', 'activationKey', 'activationRevisionId', 'acquiredAt', 'revision', 'createdAt', 'updatedAt'])
+          && data.keys().hasAll(['userId', 'state', 'experimentId', 'blockId', 'proposalId', 'sourcePlanRevision', 'activationKey', 'activationRevisionId', 'acquiredAt', 'revision', 'createdAt', 'updatedAt'])
+          && data.state in ['held', 'released']
+          && data.experimentId is string && data.experimentId.size() > 0 && data.experimentId.size() <= 64
+          && data.blockId is string && data.blockId.size() > 0 && data.blockId.size() <= 128
+          && data.proposalId is string && data.proposalId.size() > 0 && data.proposalId.size() <= 128
+          && data.sourcePlanRevision is int && data.sourcePlanRevision >= 1
+          && data.activationKey is string && data.activationKey.size() == 64
+          && data.activationRevisionId is string && data.activationRevisionId.size() > 0
+          && data.acquiredAt is string && data.createdAt is string && data.updatedAt is string;
+      }
+
       allow read: if isOwner(userId);
       allow create: if hasValidProgressionClaim(userId) && request.resource.data.revision == 1;
       allow update: if hasValidProgressionClaim(userId)
@@ -271,34 +258,48 @@
       allow delete: if false;
     }
 
-    // Deliberately no `../progression_experiment_claim/{anythingElse}` match: only the
-    // literal `current` path above is writable, so a client cannot create a second claim
-    // document under a different id and defeat the singleton by construction.
-
-    function hasValidProgressionActivation(userId, activationKey) {
-      let data = request.resource.data;
-      return hasOwnedUserId(userId)
-        && data.keys().hasOnly(['userId', 'activationKey', 'experimentId', 'blockId', 'proposalId', 'sourcePlanRevision', 'activationRevisionId', 'claimRevision', 'activatedAt', 'priorSettings', 'acceptedSettings'])
-        && data.keys().hasAll(['userId', 'activationKey', 'experimentId', 'blockId', 'proposalId', 'sourcePlanRevision', 'activationRevisionId', 'claimRevision', 'activatedAt', 'priorSettings', 'acceptedSettings'])
-        && data.activationKey == activationKey
-        && data.activationKey is string && data.activationKey.size() == 64
-        && data.experimentId is string && data.experimentId.size() > 0
-        && data.blockId is string && data.blockId.size() > 0
-        && data.proposalId is string && data.proposalId.size() > 0
-        && data.sourcePlanRevision is int && data.sourcePlanRevision >= 1
-        && data.activationRevisionId is string && data.activationRevisionId.size() > 0
-        && data.claimRevision is int && data.claimRevision >= 1
-        && data.activatedAt is string
-        && data.priorSettings is map && data.acceptedSettings is map;
-    }
-
     match /users/{userId}/progression_experiment_activations/{activationKey} {
+      // Deliberately no `../progression_experiment_claim/{anythingElse}` match: only the
+      // literal `current` path above is writable, so a client cannot create a second claim
+      // document under a different id and defeat the singleton by construction.
+
+      function hasValidProgressionActivation(userId, activationKey) {
+        let data = request.resource.data;
+        return hasOwnedUserId(userId)
+          && data.keys().hasOnly(['userId', 'activationKey', 'experimentId', 'blockId', 'proposalId', 'sourcePlanRevision', 'activationRevisionId', 'claimRevision', 'activatedAt', 'priorSettings', 'acceptedSettings'])
+          && data.keys().hasAll(['userId', 'activationKey', 'experimentId', 'blockId', 'proposalId', 'sourcePlanRevision', 'activationRevisionId', 'claimRevision', 'activatedAt', 'priorSettings', 'acceptedSettings'])
+          && data.activationKey == activationKey
+          && data.activationKey is string && data.activationKey.size() == 64
+          && data.experimentId is string && data.experimentId.size() > 0
+          && data.blockId is string && data.blockId.size() > 0
+          && data.proposalId is string && data.proposalId.size() > 0
+          && data.sourcePlanRevision is int && data.sourcePlanRevision >= 1
+          && data.activationRevisionId is string && data.activationRevisionId.size() > 0
+          && data.claimRevision is int && data.claimRevision >= 1
+          && data.activatedAt is string
+          && data.priorSettings is map && data.acceptedSettings is map;
+      }
+
       allow read: if isOwner(userId);
       allow create: if hasValidProgressionActivation(userId, activationKey);
       allow update, delete: if false;
     }
 
     match /users/{userId}/plan_blocks/{blockId} {
+      function hasValidPlanBlock(userId) {
+        let data = request.resource.data;
+        return hasOwnedUserId(userId)
+          && data.keys().hasOnly(['userId', 'eventId', 'phase', 'startDate', 'endDate', 'volumeScale', 'intensityScale', 'createdAt', 'updatedAt'])
+          && data.phase == 'travel'
+          && isValidActivityDate(data.startDate)
+          && isValidActivityDate(data.endDate)
+          && data.startDate <= data.endDate
+          && data.volumeScale is number && data.volumeScale >= 0 && data.volumeScale <= 1
+          && data.intensityScale is number && data.intensityScale >= 0 && data.intensityScale <= 1
+          && (!('eventId' in data) || data.eventId is string)
+          && data.createdAt is string && data.updatedAt is string;
+      }
+
       allow read: if isOwner(userId);
       allow create: if hasValidPlanBlock(userId);
       allow update: if hasValidPlanBlock(userId)
@@ -307,28 +308,28 @@
       allow delete: if isOwner(userId);
     }
 
-    function hasValidScheduleOverlay(userId) {
-      let data = request.resource.data;
-      return hasOwnedUserId(userId)
-        && data.keys().hasOnly(['userId', 'title', 'category', 'sport', 'startDate', 'endDate', 'dailyAvailabilityMinutes', 'volumeScale', 'intensityScale', 'expectedCost', 'equipment', 'environment', 'notes', 'createdAt', 'updatedAt'])
-        && data.keys().hasAll(['userId', 'title', 'category', 'startDate', 'endDate', 'dailyAvailabilityMinutes', 'volumeScale', 'intensityScale', 'expectedCost', 'createdAt', 'updatedAt'])
-        && data.title is string && data.title.size() > 0 && data.title.size() <= 200
-        && data.category in ['active_sport', 'sedentary_rest', 'high_step_walking', 'limited_availability']
-        && (!('sport' in data) || data.sport in ['skiing', 'volleyball', 'hiking', 'court_sport', 'field_sport', 'general'])
-        && isValidActivityDate(data.startDate)
-        && isValidActivityDate(data.endDate)
-        && data.startDate <= data.endDate
-        && data.dailyAvailabilityMinutes is int && data.dailyAvailabilityMinutes >= 0 && data.dailyAvailabilityMinutes <= 1440
-        && data.volumeScale is number && data.volumeScale >= 0 && data.volumeScale <= 1
-        && data.intensityScale is number && data.intensityScale >= 0 && data.intensityScale <= 1
-        && hasValidExpectedCost(data.expectedCost)
-        && (!('equipment' in data) || hasValidEquipmentList(data.equipment))
-        && (!('environment' in data) || data.environment in ['indoor', 'outdoor', 'either'])
-        && (!('notes' in data) || (data.notes is string && data.notes.size() <= 1000))
-        && data.createdAt is string && data.updatedAt is string;
-    }
-
     match /users/{userId}/schedule_overlays/{overlayId} {
+      function hasValidScheduleOverlay(userId) {
+        let data = request.resource.data;
+        return hasOwnedUserId(userId)
+          && data.keys().hasOnly(['userId', 'title', 'category', 'sport', 'startDate', 'endDate', 'dailyAvailabilityMinutes', 'volumeScale', 'intensityScale', 'expectedCost', 'equipment', 'environment', 'notes', 'createdAt', 'updatedAt'])
+          && data.keys().hasAll(['userId', 'title', 'category', 'startDate', 'endDate', 'dailyAvailabilityMinutes', 'volumeScale', 'intensityScale', 'expectedCost', 'createdAt', 'updatedAt'])
+          && data.title is string && data.title.size() > 0 && data.title.size() <= 200
+          && data.category in ['active_sport', 'sedentary_rest', 'high_step_walking', 'limited_availability']
+          && (!('sport' in data) || data.sport in ['skiing', 'volleyball', 'hiking', 'court_sport', 'field_sport', 'general'])
+          && isValidActivityDate(data.startDate)
+          && isValidActivityDate(data.endDate)
+          && data.startDate <= data.endDate
+          && data.dailyAvailabilityMinutes is int && data.dailyAvailabilityMinutes >= 0 && data.dailyAvailabilityMinutes <= 1440
+          && data.volumeScale is number && data.volumeScale >= 0 && data.volumeScale <= 1
+          && data.intensityScale is number && data.intensityScale >= 0 && data.intensityScale <= 1
+          && hasValidExpectedCost(data.expectedCost)
+          && (!('equipment' in data) || hasValidEquipmentList(data.equipment))
+          && (!('environment' in data) || data.environment in ['indoor', 'outdoor', 'either'])
+          && (!('notes' in data) || (data.notes is string && data.notes.size() <= 1000))
+          && data.createdAt is string && data.updatedAt is string;
+      }
+
       allow read: if isOwner(userId);
       allow create: if hasValidScheduleOverlay(userId);
       allow update: if hasValidScheduleOverlay(userId)

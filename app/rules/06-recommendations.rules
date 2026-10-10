@@ -1,291 +1,331 @@
 
-    function hasMatchingIdentityReview(userId, identity) {
-      let review = get(/databases/$(database)/documents/users/$(userId)/health_identity_review_events/$(identity.reviewEventId)).data;
-      return review.assessmentId == identity.identityAssessmentId
-        && review.label == identity.effectiveStatus;
-    }
 
-    function hasValidIdentityDecisionProvenance(userId, identity) {
-      let selected = identity.selectedEffectiveSource;
-      let assessment = get(/databases/$(database)/documents/users/$(userId)/health_identity_assessments/$(identity.identityAssessmentId)).data;
-      return
-        // Deep shape is enforced at the TypeScript persistence boundary. Keep the
-        // replay-critical cross-document bindings here: a client must not attach
-        // otherwise-valid identity evidence from a different assessment snapshot.
-        (selected == null || (
-          // Deep selected-source shape is validated by validateRecommendation. Field
-          // access here still fails closed for malformed non-map input; Rules retain
-          // only the replay-critical source-separation predicate.
-          identity.effectiveStatus == 'USER'
-          || selected.provider != identity.sharedBundleRef.provider
-          || selected.transport != identity.sharedBundleRef.transport
-        ))
-        // The assessment document is fetched from identityAssessmentId itself; comparing
-        // the server-owned document's duplicate internal id adds no binding strength.
-        && assessment.automaticStatus == identity.automaticStatus
-        && assessment.policyVersion == identity.identityPolicyVersion
-        && assessment.featureSchemaVersion == identity.featureSchemaVersion
-        && assessment.passportVersion == identity.passportVersion
-        && assessment.sharedBundleRef == identity.sharedBundleRef
-        && assessment.anchorBundleRefs == identity.anchorBundleRefs
-        && (identity.fallbackReason == null || identity.fallbackReason in assessment.reasonCodes)
-        && (identity.reviewEventId == null
-          ? identity.effectiveStatus == assessment.automaticStatus
-          : hasMatchingIdentityReview(userId, identity));
-    }
+    match /users/{userId}/daily_recommendations/{date} {
+      function hasValidAdherence(adherence) {
+        return adherence is map
+          && adherence.keys().hasOnly(['respondedAt', 'followed', 'actualModality', 'actualDurationMin', 'skipped', 'notes'])
+          && (adherence.respondedAt == null || adherence.respondedAt is string)
+          && (adherence.followed == null || adherence.followed is bool)
+          && (adherence.actualModality == null || adherence.actualModality is string)
+          && (adherence.actualDurationMin == null || (adherence.actualDurationMin is number && adherence.actualDurationMin >= 0))
+          && adherence.skipped is bool
+          && (adherence.notes == null || adherence.notes is string);
+      }
 
-    function hasValidKnowledgeLineage(lineage) {
-      // TypeScript owns container/ref shape and duplicate-ID validation. Rules keep the
-      // cardinality/size ceiling so this field cannot grow without bound.
-      return lineage.size() <= 64;
-    }
+      function isValidAdherenceOnlyUpdate(userId, date, changed) {
+        return isOwner(userId)
+          && resource.data.userId == userId
+          && resource.data.date == date
+          && request.resource.data.userId == resource.data.userId
+          && request.resource.data.date == resource.data.date
+          && changed.hasOnly(['adherence'])
+          && hasValidAdherence(request.resource.data.adherence);
+      }
 
-    function hasValidAthleteEvidenceLineage(lineage) {
-      // SKR4 snapshots at most 16 records. TypeScript owns exact list/ref shape; Rules
-      // retain the cardinality/size ceiling.
-      return lineage.size() <= 16;
-    }
+      function hasValidSessionReferenceBinding(binding) {
+        return binding is map
+          && binding.keys().hasOnly(['sessionSource', 'occurrenceId', 'prescriptionHash', 'fitWorkoutFingerprint', 'fitWorkoutFingerprintKind'])
+          && hasValidSessionSource(binding.sessionSource)
+          && binding.prescriptionHash is string && binding.prescriptionHash.size() > 0
+          && (!('occurrenceId' in binding) || (binding.occurrenceId is string && binding.occurrenceId.size() > 0))
+          && (('fitWorkoutFingerprint' in binding) == ('fitWorkoutFingerprintKind' in binding))
+          && (!('fitWorkoutFingerprintKind' in binding) || binding.fitWorkoutFingerprintKind in ['semantic_definition', 'index_fallback'])
+          && (!('fitWorkoutFingerprint' in binding) || (binding.fitWorkoutFingerprint is string && binding.fitWorkoutFingerprint.size() > 0));
+      }
 
-    function hasValidRecommendationAudit(userId, audit, version, date, revision) {
-      let hasLineage = 'knowledgeLineage' in audit;
-      return audit is map
-        && audit.keys().hasOnly(['policyVersion', 'evaluatedAt', 'decisionContextRevision', 'decisionContext', 'safetyStatus', 'history', 'envelope', 'plannedDose', 'executionDose', 'candidateScores', 'droppedContributorObjectives', 'externalPlan', 'externalRest', 'authoredOccurrence', 'primarySession', 'additionalSessions', 'subjectiveDrift', 'identityDecision', 'knowledgeLineage', 'athleteEvidenceLineage'])
-        && (version < 4
-          ? !hasLineage
-          : (version == 4 && hasLineage && hasValidKnowledgeLineage(audit.knowledgeLineage)))
-        && (!('athleteEvidenceLineage' in audit) || hasValidAthleteEvidenceLineage(audit.athleteEvidenceLineage))
-        // Scalar/deep audit shape is validated at the TypeScript persistence/read
-        // boundary. Rules keep the integrity-bearing context binding below; this split
-        // is required to preserve deterministic headroom under Firestore's expression
-        // budget (ADR-0010 implementation amendment, issue #953).
-        && (!('decisionContext' in audit) || (
-          // validateRecommendation owns exact context shape. Rules retain the
-          // integrity-bearing canonical path/revision/hash binding.
-          audit.decisionContext.path == 'users/' + userId + '/daily_recommendations/' + date + '/decision_contexts/' + string(revision)
-          && audit.decisionContext.revision == revision
-          && getAfter(/databases/$(database)/documents/users/$(userId)/daily_recommendations/$(date)/decision_contexts/$(string(revision))).data.contentHash == audit.decisionContext.contentHash
-        ))
-        && audit.safetyStatus == 'complete'
-        && audit.history is map
-        && audit.envelope is map
-        && (!('plannedDose' in audit) || audit.plannedDose is map)
-        && (!('executionDose' in audit) || audit.executionDose is map)
-        && audit.candidateScores is list && audit.candidateScores.size() <= 64
-        && !(('externalPlan' in audit) && ('externalRest' in audit))
-        // ADR-0035: default authored rest bypasses ranking entirely, so candidateScores must
-        // be empty. An explicit athlete override (audit.externalRest.overridden == true)
-        // suspends only the protected-rest short circuit -- selection is the ordinary ranked
-        // planner path, so candidateScores is populated exactly like any other decision.
-        && (!('droppedContributorObjectives' in audit)
-          || (audit.droppedContributorObjectives is list && audit.droppedContributorObjectives.size() <= 64))
-        && (!('externalPlan' in audit) || (audit.externalPlan is map))
-        && (!('externalRest' in audit) || (
-          audit.externalRest is map
-          && audit.externalRest.keys().hasOnly(['planId', 'revision', 'contentHash', 'restDirectiveId', 'date', 'overridden'])
-          && (!('overridden' in audit.externalRest) || audit.externalRest.overridden == true)
-          && (('overridden' in audit.externalRest && audit.externalRest.overridden == true) || audit.candidateScores.size() == 0)
-        ))
-        && (!('authoredOccurrence' in audit) || (
-          audit.authoredOccurrence is map
-          && audit.authoredOccurrence.decision in ['proceed', 'scale']
-        ))
-        && (!('identityDecision' in audit) || hasValidIdentityDecisionProvenance(userId, audit.identityDecision));
-    }
+      function hasValidAdditionalSessions(list) {
+        // `validateRecommendation` is the detailed binding authority. These are
+        // owner-owned supplemental sessions, while the rule keeps the operational
+        // cardinality limit that prevents an unbounded same-day recommendation.
+        return list is list && list.size() <= 4;
+      }
 
-    function hasValidRecommendation(userId, date) {
-      let data = request.resource.data;
-      return isOwner(userId)
-        && data.userId == userId
-        && data.date == date && date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
-        && data.keys().hasOnly(['userId', 'date', 'templateId', 'templateTitle', 'category', 'modality', 'mode', 'engineVerdict', 'rationale', 'schemaVersion', 'createdAt', 'updatedAt', 'adjustment', 'prescription', 'primarySession', 'additionalSessions', 'adherence', 'recommendationAudit', 'revision'])
-        && data.templateId is string
-        && data.templateTitle is string
-        && data.category is string
-        && data.modality is string
-        && data.mode in ['train', 'modify', 'recover']
-        && (!('engineVerdict' in data) || data.engineVerdict in ['proceed', 'scale', 'defer', 'skip', 'advisory'])
-        && data.rationale is string
-        && data.createdAt is string
-        && data.updatedAt is string
-        && data.schemaVersion in [1, 2, 3, 4]
-        && (!('revision' in data) || (data.revision is int && data.revision >= 1))
-        && hasValidAdherence(data.adherence)
-        && (!('primarySession' in data) || hasValidSessionReferenceBinding(data.primarySession))
-        && (!('additionalSessions' in data) || hasValidAdditionalSessions(data.additionalSessions))
-        && (data.schemaVersion < 3
-          || ('recommendationAudit' in data
-            && hasValidRecommendationAudit(userId, data.recommendationAudit, data.schemaVersion, date, data.revision)
-            && (!('sourceStatuses' in data.recommendationAudit.history) || (
-              data.recommendationAudit.history.sourceStatuses is map
-              && (!('activities' in data.recommendationAudit.history.sourceStatuses)
-                || data.recommendationAudit.history.sourceStatuses.activities in ['AVAILABLE', 'MISSING', 'INVALID', 'UNAVAILABLE'])
-            ))
-            // ADR-0035: the canonical-Rest binding applies only to the default (non-
-            // overridden) authored-rest path. An explicit athlete override runs the
-            // ordinary ranked planner and may legitimately persist any template.
-            && (!('externalRest' in data.recommendationAudit)
-              || (('overridden' in data.recommendationAudit.externalRest)
-                && data.recommendationAudit.externalRest.overridden == true)
-              || data.templateId == 'rest_01')));
-    }
+      function hasMatchingIdentityReview(userId, identity) {
+        let review = get(/databases/$(database)/documents/users/$(userId)/health_identity_review_events/$(identity.reviewEventId)).data;
+        return review.assessmentId == identity.identityAssessmentId
+          && review.label == identity.effectiveStatus;
+      }
 
-    function schemaRatchets() {
-      return request.resource.data.schemaVersion >= resource.data.schemaVersion;
-    }
+      function hasValidIdentityDecisionProvenance(userId, identity) {
+        let selected = identity.selectedEffectiveSource;
+        let assessment = get(/databases/$(database)/documents/users/$(userId)/health_identity_assessments/$(identity.identityAssessmentId)).data;
+        return
+          // Deep shape is enforced at the TypeScript persistence boundary. Keep the
+          // replay-critical cross-document bindings here: a client must not attach
+          // otherwise-valid identity evidence from a different assessment snapshot.
+          (selected == null || (
+            // Deep selected-source shape is validated by validateRecommendation. Field
+            // access here still fails closed for malformed non-map input; Rules retain
+            // only the replay-critical source-separation predicate.
+            identity.effectiveStatus == 'USER'
+            || selected.provider != identity.sharedBundleRef.provider
+            || selected.transport != identity.sharedBundleRef.transport
+          ))
+          // The assessment document is fetched from identityAssessmentId itself; comparing
+          // the server-owned document's duplicate internal id adds no binding strength.
+          && assessment.automaticStatus == identity.automaticStatus
+          && assessment.policyVersion == identity.identityPolicyVersion
+          && assessment.featureSchemaVersion == identity.featureSchemaVersion
+          && assessment.passportVersion == identity.passportVersion
+          && assessment.sharedBundleRef == identity.sharedBundleRef
+          && assessment.anchorBundleRefs == identity.anchorBundleRefs
+          && (identity.fallbackReason == null || identity.fallbackReason in assessment.reasonCodes)
+          && (identity.reviewEventId == null
+            ? identity.effectiveStatus == assessment.automaticStatus
+            : hasMatchingIdentityReview(userId, identity));
+      }
 
-    function auditWriteOnce(decisionChanged, changed) {
-      return !('recommendationAudit' in resource.data)
-        || decisionChanged
-        // `changed` avoids re-walking nested maps via diff() on every update evaluation.
-        || !changed.hasAny(['recommendationAudit']);
-    }
+      function hasValidKnowledgeLineage(lineage) {
+        // TypeScript owns container/ref shape and duplicate-ID validation. Rules keep the
+        // cardinality/size ceiling so this field cannot grow without bound.
+        return lineage.size() <= 64;
+      }
 
-    function decisionFieldsUnchanged(changed) {
-      let next = request.resource.data;
-      let previous = resource.data;
-      return changed.hasOnly(['updatedAt', 'adjustment', 'adherence', 'recommendationAudit', 'revision', 'engineVerdict', 'prescription'])
-        && (!('engineVerdict' in previous)
-          || (('engineVerdict' in next) && next.engineVerdict == previous.engineVerdict))
-        && (('prescription' in next) == ('prescription' in previous))
-        && (!('prescription' in previous)
-          || (!('id' in previous.prescription) || next.prescription.id == previous.prescription.id));
-    }
+      function hasValidAthleteEvidenceLineage(lineage) {
+        // SKR4 snapshots at most 16 records. TypeScript owns exact list/ref shape; Rules
+        // retain the cardinality/size ceiling.
+        return lineage.size() <= 16;
+      }
 
-    function archivesPriorRevision(userId, date, priorRevNum) {
-      let previous = resource.data;
-      let prior = getAfter(/databases/$(database)/documents/users/$(userId)/daily_recommendations/$(date)/revisions/$(string(priorRevNum))).data;
-      return prior.revision == priorRevNum
-        && prior.templateId == previous.templateId
-        && prior.templateTitle == previous.templateTitle
-        && prior.category == previous.category
-        && prior.modality == previous.modality
-        && prior.mode == previous.mode
-        && prior.rationale == previous.rationale
-        && (!('engineVerdict' in previous) || prior.engineVerdict == previous.engineVerdict)
-        && (!('prescription' in previous) || (
-          ('prescription' in prior)
-          && (!('id' in previous.prescription) || prior.prescription.id == previous.prescription.id)
-        ));
-    }
+      function hasValidRecommendationAudit(userId, audit, version, date, revision) {
+        let hasLineage = 'knowledgeLineage' in audit;
+        return audit is map
+          && audit.keys().hasOnly(['policyVersion', 'evaluatedAt', 'decisionContextRevision', 'decisionContext', 'safetyStatus', 'history', 'envelope', 'plannedDose', 'executionDose', 'candidateScores', 'droppedContributorObjectives', 'externalPlan', 'externalRest', 'authoredOccurrence', 'primarySession', 'additionalSessions', 'subjectiveDrift', 'identityDecision', 'knowledgeLineage', 'athleteEvidenceLineage'])
+          && (version < 4
+            ? !hasLineage
+            : (version == 4 && hasLineage && hasValidKnowledgeLineage(audit.knowledgeLineage)))
+          && (!('athleteEvidenceLineage' in audit) || hasValidAthleteEvidenceLineage(audit.athleteEvidenceLineage))
+          // Scalar/deep audit shape is validated at the TypeScript persistence/read
+          // boundary. Rules keep the integrity-bearing context binding below; this split
+          // is required to preserve deterministic headroom under Firestore's expression
+          // budget (ADR-0010 implementation amendment, issue #953).
+          && (!('decisionContext' in audit) || (
+            // validateRecommendation owns exact context shape. Rules retain the
+            // integrity-bearing canonical path/revision/hash binding.
+            audit.decisionContext.path == 'users/' + userId + '/daily_recommendations/' + date + '/decision_contexts/' + string(revision)
+            && audit.decisionContext.revision == revision
+            && getAfter(/databases/$(database)/documents/users/$(userId)/daily_recommendations/$(date)/decision_contexts/$(string(revision))).data.contentHash == audit.decisionContext.contentHash
+          ))
+          && audit.safetyStatus == 'complete'
+          && audit.history is map
+          && audit.envelope is map
+          && (!('plannedDose' in audit) || audit.plannedDose is map)
+          && (!('executionDose' in audit) || audit.executionDose is map)
+          && audit.candidateScores is list && audit.candidateScores.size() <= 64
+          && !(('externalPlan' in audit) && ('externalRest' in audit))
+          // ADR-0035: default authored rest bypasses ranking entirely, so candidateScores must
+          // be empty. An explicit athlete override (audit.externalRest.overridden == true)
+          // suspends only the protected-rest short circuit -- selection is the ordinary ranked
+          // planner path, so candidateScores is populated exactly like any other decision.
+          && (!('droppedContributorObjectives' in audit)
+            || (audit.droppedContributorObjectives is list && audit.droppedContributorObjectives.size() <= 64))
+          && (!('externalPlan' in audit) || (audit.externalPlan is map))
+          && (!('externalRest' in audit) || (
+            audit.externalRest is map
+            && audit.externalRest.keys().hasOnly(['planId', 'revision', 'contentHash', 'restDirectiveId', 'date', 'overridden'])
+            && (!('overridden' in audit.externalRest) || audit.externalRest.overridden == true)
+            && (('overridden' in audit.externalRest && audit.externalRest.overridden == true) || audit.candidateScores.size() == 0)
+          ))
+          && (!('authoredOccurrence' in audit) || (
+            audit.authoredOccurrence is map
+            && audit.authoredOccurrence.decision in ['proceed', 'scale']
+          ))
+          && (!('identityDecision' in audit) || hasValidIdentityDecisionProvenance(userId, audit.identityDecision));
+      }
 
-    // WP2 / Issue #953: On update, validate only changed sections.
-    // An unchanged section is byte-identical to what a previous allowed write stored,
-    // which was validated at creation or upon its last change.
-    function hasValidRecommendationUpdate(userId, date, changed) {
-      let data = request.resource.data;
-      // Most decision transitions change rationale/revision/audit but not the stable
-      // scalar identity fields. Test that set once rather than spending one expression
-      // per unchanged field. If any member changes, validate the whole stable scalar
-      // group so templateTitle/category/modality cannot bypass validation.
-      let stableScalarsChanged = changed.hasAny(['templateId', 'templateTitle', 'category', 'modality', 'mode', 'schemaVersion', 'engineVerdict']);
-      return isDateDocument(date)
-        && data.keys().hasOnly(['userId', 'date', 'templateId', 'templateTitle', 'category', 'modality', 'mode', 'engineVerdict', 'rationale', 'schemaVersion', 'createdAt', 'updatedAt', 'adjustment', 'prescription', 'primarySession', 'additionalSessions', 'adherence', 'recommendationAudit', 'revision'])
-        && (!stableScalarsChanged || (
-          data.templateId is string
+      function hasValidRecommendation(userId, date) {
+        let data = request.resource.data;
+        return isOwner(userId)
+          && data.userId == userId
+          && data.date == date && date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+          && data.keys().hasOnly(['userId', 'date', 'templateId', 'templateTitle', 'category', 'modality', 'mode', 'engineVerdict', 'rationale', 'schemaVersion', 'createdAt', 'updatedAt', 'adjustment', 'prescription', 'primarySession', 'additionalSessions', 'adherence', 'recommendationAudit', 'revision'])
+          && data.templateId is string
           && data.templateTitle is string
           && data.category is string
           && data.modality is string
           && data.mode in ['train', 'modify', 'recover']
-          && data.schemaVersion in [1, 2, 3, 4]
           && (!('engineVerdict' in data) || data.engineVerdict in ['proceed', 'scale', 'defer', 'skip', 'advisory'])
-        ))
-        && (!changed.hasAny(['rationale']) || data.rationale is string)
-        && (!changed.hasAny(['revision']) || (!('revision' in data) || (data.revision is int && data.revision >= 1)))
-        // createdAt is already pinned to resource.data by canUpdateRecommendation.
-        // updatedAt remains the only timestamp whose type must be checked on update.
-        && (!changed.hasAny(['updatedAt']) || data.updatedAt is string)
-        && (!changed.hasAny(['adherence']) || hasValidAdherence(data.adherence))
-        && (!changed.hasAny(['primarySession']) || (!('primarySession' in data) || hasValidSessionReferenceBinding(data.primarySession)))
-        && (!changed.hasAny(['additionalSessions']) || (!('additionalSessions' in data) || hasValidAdditionalSessions(data.additionalSessions)))
-        && (!changed.hasAny(['recommendationAudit', 'schemaVersion', 'revision'])
-          || (data.schemaVersion < 3
+          && data.rationale is string
+          && data.createdAt is string
+          && data.updatedAt is string
+          && data.schemaVersion in [1, 2, 3, 4]
+          && (!('revision' in data) || (data.revision is int && data.revision >= 1))
+          && hasValidAdherence(data.adherence)
+          && (!('primarySession' in data) || hasValidSessionReferenceBinding(data.primarySession))
+          && (!('additionalSessions' in data) || hasValidAdditionalSessions(data.additionalSessions))
+          && (data.schemaVersion < 3
             || ('recommendationAudit' in data
-              && hasValidRecommendationAudit(userId, data.recommendationAudit, data.schemaVersion, date, data.revision))))
-        && (!changed.hasAny(['templateId', 'recommendationAudit'])
-          || !('recommendationAudit' in data)
-          || !('externalRest' in data.recommendationAudit)
-          || (('overridden' in data.recommendationAudit.externalRest) && data.recommendationAudit.externalRest.overridden == true)
-          || data.templateId == 'rest_01');
-    }
+              && hasValidRecommendationAudit(userId, data.recommendationAudit, data.schemaVersion, date, data.revision)
+              && (!('sourceStatuses' in data.recommendationAudit.history) || (
+                data.recommendationAudit.history.sourceStatuses is map
+                && (!('activities' in data.recommendationAudit.history.sourceStatuses)
+                  || data.recommendationAudit.history.sourceStatuses.activities in ['AVAILABLE', 'MISSING', 'INVALID', 'UNAVAILABLE'])
+              ))
+              // ADR-0035: the canonical-Rest binding applies only to the default (non-
+              // overridden) authored-rest path. An explicit athlete override runs the
+              // ordinary ranked planner and may legitimately persist any template.
+              && (!('externalRest' in data.recommendationAudit)
+                || (('overridden' in data.recommendationAudit.externalRest)
+                  && data.recommendationAudit.externalRest.overridden == true)
+                || data.templateId == 'rest_01')));
+      }
 
-    function canUpdateRecommendation(userId, date, changed) {
-      let next = request.resource.data;
-      let previous = resource.data;
-      let decisionChanged = !decisionFieldsUnchanged(changed);
-      let priorRevNum = ('revision' in previous) ? previous.revision : 1;
-      return keepsOwnership(userId)
-        && next.createdAt == previous.createdAt
-        && schemaRatchets()
-        && hasValidRecommendationUpdate(userId, date, changed)
-        && auditWriteOnce(decisionChanged, changed)
-        && (!decisionChanged
-          ? (('revision' in previous) ? next.revision == previous.revision : (!('revision' in next) || next.revision == 1))
-          : (next.revision == priorRevNum + 1
-             && archivesPriorRevision(userId, date, priorRevNum))
-        );
-    }
+      function schemaRatchets() {
+        return request.resource.data.schemaVersion >= resource.data.schemaVersion;
+      }
 
-    function recommendationUpdateAllowed(userId, date, changed) {
-      return changed.size() > 0 && changed.hasOnly(['adherence'])
-        ? isValidAdherenceOnlyUpdate(userId, date, changed)
-        : canUpdateRecommendation(userId, date, changed);
-    }
+      function auditWriteOnce(decisionChanged, changed) {
+        return !('recommendationAudit' in resource.data)
+          || decisionChanged
+          // `changed` avoids re-walking nested maps via diff() on every update evaluation.
+          || !changed.hasAny(['recommendationAudit']);
+      }
 
-    function hasMatchingRecommendationContext(userId, date, revision, recDoc, data) {
-      let boundAudit = recDoc.recommendationAudit;
-      return recDoc.revision == data.recommendationRevision
-        && boundAudit.decisionContext.path == 'users/' + userId + '/daily_recommendations/' + date + '/decision_contexts/' + revision
-        && boundAudit.decisionContext.revision == data.recommendationRevision
-        && boundAudit.decisionContext.contentHash == data.contentHash
-        && boundAudit.policyVersion == data.policyVersion
-        && boundAudit.evaluatedAt == data.evaluatedAt;
-    }
+      function decisionFieldsUnchanged(changed) {
+        let next = request.resource.data;
+        let previous = resource.data;
+        return changed.hasOnly(['updatedAt', 'adjustment', 'adherence', 'recommendationAudit', 'revision', 'engineVerdict', 'prescription'])
+          && (!('engineVerdict' in previous)
+            || (('engineVerdict' in next) && next.engineVerdict == previous.engineVerdict))
+          && (('prescription' in next) == ('prescription' in previous))
+          && (!('prescription' in previous)
+            || (!('id' in previous.prescription) || next.prescription.id == previous.prescription.id));
+      }
 
-    function hasValidDecisionContext(userId, date, revision) {
-      let d = request.resource.data;
-      let recommendationPath = /databases/$(database)/documents/users/$(userId)/daily_recommendations/$(date);
-      return d.keys().hasOnly([
-          'schemaVersion', 'userId', 'date', 'recommendationRevision', 'evaluatedAt',
-          'policyVersion', 'captureVersion', 'appSource', 'minimumSafetyStatus',
-          'evaluatorInputs', 'performedTrainingFacts', 'mechanicalCheckinHistory', 'trainingHistoryReplay', 'contentHash'
-        ])
-        && d.keys().hasAll([
-          'schemaVersion', 'userId', 'date', 'recommendationRevision', 'evaluatedAt',
-          'policyVersion', 'captureVersion', 'appSource', 'minimumSafetyStatus',
-          'evaluatorInputs', 'performedTrainingFacts', 'contentHash'
-        ])
-        && d.schemaVersion == 1
-        && d.userId == userId
-        && d.date == date
-        && d.recommendationRevision is int && d.recommendationRevision >= 0
-        && string(d.recommendationRevision) == revision
-        && d.evaluatedAt is string
-        && d.policyVersion is string
-        && (d.recommendationRevision == 0 || (
-          existsAfter(recommendationPath)
-          && hasMatchingRecommendationContext(
-            userId, date, revision, getAfter(recommendationPath).data, d
-          )
-        ))
-        && d.captureVersion == 'same-day-capture-v1'
-        && d.appSource is map
-        && d.appSource.keys().hasOnly(['gitSha', 'dirty'])
-        && d.appSource.keys().hasAll(['gitSha', 'dirty'])
-        && d.appSource.gitSha is string && d.appSource.gitSha.size() > 0
-        && d.appSource.dirty is bool
-        && (d.minimumSafetyStatus == 'complete'
-          ? (d.recommendationRevision >= 1
-            && d.evaluatorInputs is map
-            && d.performedTrainingFacts is map)
-          : (d.minimumSafetyStatus in ['missing', 'incomplete']
-            && d.recommendationRevision == 0
-            && d.evaluatorInputs == null
-            && d.performedTrainingFacts == null))
-        && d.contentHash is string
-        && d.contentHash.matches('^[a-f0-9]{64}$');
-    }
+      function archivesPriorRevision(userId, date, priorRevNum) {
+        let previous = resource.data;
+        let prior = getAfter(/databases/$(database)/documents/users/$(userId)/daily_recommendations/$(date)/revisions/$(string(priorRevNum))).data;
+        return prior.revision == priorRevNum
+          && prior.templateId == previous.templateId
+          && prior.templateTitle == previous.templateTitle
+          && prior.category == previous.category
+          && prior.modality == previous.modality
+          && prior.mode == previous.mode
+          && prior.rationale == previous.rationale
+          && (!('engineVerdict' in previous) || prior.engineVerdict == previous.engineVerdict)
+          && (!('prescription' in previous) || (
+            ('prescription' in prior)
+            && (!('id' in previous.prescription) || prior.prescription.id == previous.prescription.id)
+          ));
+      }
 
-    match /users/{userId}/daily_recommendations/{date} {
+      // WP2 / Issue #953: On update, validate only changed sections.
+      // An unchanged section is byte-identical to what a previous allowed write stored,
+      // which was validated at creation or upon its last change.
+      function hasValidRecommendationUpdate(userId, date, changed) {
+        let data = request.resource.data;
+        // Most decision transitions change rationale/revision/audit but not the stable
+        // scalar identity fields. Test that set once rather than spending one expression
+        // per unchanged field. If any member changes, validate the whole stable scalar
+        // group so templateTitle/category/modality cannot bypass validation.
+        let stableScalarsChanged = changed.hasAny(['templateId', 'templateTitle', 'category', 'modality', 'mode', 'schemaVersion', 'engineVerdict']);
+        return isDateDocument(date)
+          && data.keys().hasOnly(['userId', 'date', 'templateId', 'templateTitle', 'category', 'modality', 'mode', 'engineVerdict', 'rationale', 'schemaVersion', 'createdAt', 'updatedAt', 'adjustment', 'prescription', 'primarySession', 'additionalSessions', 'adherence', 'recommendationAudit', 'revision'])
+          && (!stableScalarsChanged || (
+            data.templateId is string
+            && data.templateTitle is string
+            && data.category is string
+            && data.modality is string
+            && data.mode in ['train', 'modify', 'recover']
+            && data.schemaVersion in [1, 2, 3, 4]
+            && (!('engineVerdict' in data) || data.engineVerdict in ['proceed', 'scale', 'defer', 'skip', 'advisory'])
+          ))
+          && (!changed.hasAny(['rationale']) || data.rationale is string)
+          && (!changed.hasAny(['revision']) || (!('revision' in data) || (data.revision is int && data.revision >= 1)))
+          // createdAt is already pinned to resource.data by canUpdateRecommendation.
+          // updatedAt remains the only timestamp whose type must be checked on update.
+          && (!changed.hasAny(['updatedAt']) || data.updatedAt is string)
+          && (!changed.hasAny(['adherence']) || hasValidAdherence(data.adherence))
+          && (!changed.hasAny(['primarySession']) || (!('primarySession' in data) || hasValidSessionReferenceBinding(data.primarySession)))
+          && (!changed.hasAny(['additionalSessions']) || (!('additionalSessions' in data) || hasValidAdditionalSessions(data.additionalSessions)))
+          && (!changed.hasAny(['recommendationAudit', 'schemaVersion', 'revision'])
+            || (data.schemaVersion < 3
+              || ('recommendationAudit' in data
+                && hasValidRecommendationAudit(userId, data.recommendationAudit, data.schemaVersion, date, data.revision))))
+          && (!changed.hasAny(['templateId', 'recommendationAudit'])
+            || !('recommendationAudit' in data)
+            || !('externalRest' in data.recommendationAudit)
+            || (('overridden' in data.recommendationAudit.externalRest) && data.recommendationAudit.externalRest.overridden == true)
+            || data.templateId == 'rest_01');
+      }
+
+      function canUpdateRecommendation(userId, date, changed) {
+        let next = request.resource.data;
+        let previous = resource.data;
+        let decisionChanged = !decisionFieldsUnchanged(changed);
+        let priorRevNum = ('revision' in previous) ? previous.revision : 1;
+        return keepsOwnership(userId)
+          && next.createdAt == previous.createdAt
+          && schemaRatchets()
+          && hasValidRecommendationUpdate(userId, date, changed)
+          && auditWriteOnce(decisionChanged, changed)
+          && (!decisionChanged
+            ? (('revision' in previous) ? next.revision == previous.revision : (!('revision' in next) || next.revision == 1))
+            : (next.revision == priorRevNum + 1
+               && archivesPriorRevision(userId, date, priorRevNum))
+          );
+      }
+
+      function recommendationUpdateAllowed(userId, date, changed) {
+        return changed.size() > 0 && changed.hasOnly(['adherence'])
+          ? isValidAdherenceOnlyUpdate(userId, date, changed)
+          : canUpdateRecommendation(userId, date, changed);
+      }
+
+      function hasMatchingRecommendationContext(userId, date, revision, recDoc, data) {
+        let boundAudit = recDoc.recommendationAudit;
+        return recDoc.revision == data.recommendationRevision
+          && boundAudit.decisionContext.path == 'users/' + userId + '/daily_recommendations/' + date + '/decision_contexts/' + revision
+          && boundAudit.decisionContext.revision == data.recommendationRevision
+          && boundAudit.decisionContext.contentHash == data.contentHash
+          && boundAudit.policyVersion == data.policyVersion
+          && boundAudit.evaluatedAt == data.evaluatedAt;
+      }
+
+      function hasValidDecisionContext(userId, date, revision) {
+        let d = request.resource.data;
+        let recommendationPath = /databases/$(database)/documents/users/$(userId)/daily_recommendations/$(date);
+        return d.keys().hasOnly([
+            'schemaVersion', 'userId', 'date', 'recommendationRevision', 'evaluatedAt',
+            'policyVersion', 'captureVersion', 'appSource', 'minimumSafetyStatus',
+            'evaluatorInputs', 'performedTrainingFacts', 'mechanicalCheckinHistory', 'trainingHistoryReplay', 'contentHash'
+          ])
+          && d.keys().hasAll([
+            'schemaVersion', 'userId', 'date', 'recommendationRevision', 'evaluatedAt',
+            'policyVersion', 'captureVersion', 'appSource', 'minimumSafetyStatus',
+            'evaluatorInputs', 'performedTrainingFacts', 'contentHash'
+          ])
+          && d.schemaVersion == 1
+          && d.userId == userId
+          && d.date == date
+          && d.recommendationRevision is int && d.recommendationRevision >= 0
+          && string(d.recommendationRevision) == revision
+          && d.evaluatedAt is string
+          && d.policyVersion is string
+          && (d.recommendationRevision == 0 || (
+            existsAfter(recommendationPath)
+            && hasMatchingRecommendationContext(
+              userId, date, revision, getAfter(recommendationPath).data, d
+            )
+          ))
+          && d.captureVersion == 'same-day-capture-v1'
+          && d.appSource is map
+          && d.appSource.keys().hasOnly(['gitSha', 'dirty'])
+          && d.appSource.keys().hasAll(['gitSha', 'dirty'])
+          && d.appSource.gitSha is string && d.appSource.gitSha.size() > 0
+          && d.appSource.dirty is bool
+          && (d.minimumSafetyStatus == 'complete'
+            ? (d.recommendationRevision >= 1
+              && d.evaluatorInputs is map
+              && d.performedTrainingFacts is map)
+            : (d.minimumSafetyStatus in ['missing', 'incomplete']
+              && d.recommendationRevision == 0
+              && d.evaluatorInputs == null
+              && d.performedTrainingFacts == null))
+          && d.contentHash is string
+          && d.contentHash.matches('^[a-f0-9]{64}$');
+      }
+
       allow read: if isOwner(userId);
       allow create: if hasValidRecommendation(userId, date);
       allow update: if recommendationUpdateAllowed(userId, date, request.resource.data.diff(resource.data).affectedKeys());
@@ -306,101 +346,101 @@
       }
     }
 
-    function hasValidIntradayDecision(userId, decisionId) {
-      let data = request.resource.data;
-      let requiredKeys = [
-        'id', 'userId', 'date', 'asOf', 'policyVersion', 'schemaVersion',
-        'status', 'supersededDecisionId', 'occurrenceId', 'sessionId',
-        'windowId', 'bundleId', 'orderInBundle', 'predecessorExecutionId',
-        'predecessorOccurrenceId', 'reassessmentInputRevision',
-        'bundlePlacement', 'ledgerSnapshot', 'verdict'
-      ];
-      let allowedKeys = [
-        'id', 'userId', 'date', 'asOf', 'policyVersion', 'schemaVersion',
-        'status', 'supersededDecisionId', 'occurrenceId', 'sessionId',
-        'windowId', 'bundleId', 'orderInBundle', 'predecessorExecutionId',
-        'predecessorOccurrenceId', 'reassessmentInputRevision',
-        'bundlePlacement', 'ledgerSnapshot', 'verdict',
-        'postReservationLedgerRevision'
-      ];
-      return hasOwnedUserId(userId)
-        && data.keys().hasAll(requiredKeys)
-        && data.keys().hasOnly(allowedKeys)
-        && data.id == decisionId
-        && data.id is string && data.id.size() > 0 && data.id.size() <= 128
-        && data.date is string && data.date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
-        && data.asOf is string && data.asOf.size() > 0 && data.asOf.size() <= 64
-        && data.policyVersion is string && data.policyVersion.size() > 0 && data.policyVersion.size() <= 128
-        && data.schemaVersion == 1
-        && data.status in ['provisional', 'confirmed', 'superseded', 'dropped']
-        && (data.supersededDecisionId == null || (data.supersededDecisionId is string && data.supersededDecisionId.size() > 0 && data.supersededDecisionId.size() <= 128))
-        && data.occurrenceId is string && data.occurrenceId.size() > 0 && data.occurrenceId.size() <= 128
-        && data.sessionId is string && data.sessionId.size() > 0 && data.sessionId.size() <= 128
-        && data.windowId is string && data.windowId.size() > 0 && data.windowId.size() <= 128
-        && data.bundleId is string && data.bundleId.size() > 0 && data.bundleId.size() <= 128
-        && data.orderInBundle is int && data.orderInBundle >= 0
-        && (data.predecessorExecutionId == null || (data.predecessorExecutionId is string && data.predecessorExecutionId.size() > 0 && data.predecessorExecutionId.size() <= 128))
-        && (data.predecessorOccurrenceId == null || (data.predecessorOccurrenceId is string && data.predecessorOccurrenceId.size() > 0 && data.predecessorOccurrenceId.size() <= 128))
-        && (data.predecessorExecutionId == null) == (data.predecessorOccurrenceId == null)
-        && data.reassessmentInputRevision is map
-        && data.reassessmentInputRevision.keys().hasAll(['availabilityRevision', 'completedFactsRevision', 'checkinRevision', 'ledgerRevision', 'placementRevision'])
-        && data.bundlePlacement is map
-        && data.bundlePlacement.bundleId is string && data.bundlePlacement.bundleId.size() > 0 && data.bundlePlacement.bundleId.size() <= 128
-        && data.bundlePlacement.outcome in ['placed', 'infeasible']
-        && (
-          (data.bundlePlacement.outcome == 'placed' && data.bundlePlacement.bindings is list && data.bundlePlacement.bindings.size() > 0)
-          || (data.bundlePlacement.outcome == 'infeasible' && data.bundlePlacement.reason is string && data.bundlePlacement.reason.size() > 0 && data.bundlePlacement.reason.size() <= 512)
-        )
-        && data.ledgerSnapshot is map
-        && data.ledgerSnapshot.keys().hasAll(['ceilings', 'entries'])
-        && data.ledgerSnapshot.ceilings is map
-        && data.ledgerSnapshot.entries is list
-        && data.verdict is map
-        && data.verdict.decision in ['proceed', 'scale', 'defer', 'skip', 'pending']
-        && data.verdict.reasons is list
-        && (!('postReservationLedgerRevision' in data) || (data.postReservationLedgerRevision is string && data.postReservationLedgerRevision.size() > 0 && data.postReservationLedgerRevision.size() <= 128));
-    }
-
     match /users/{userId}/intraday_decisions/{decisionId} {
+      function hasValidIntradayDecision(userId, decisionId) {
+        let data = request.resource.data;
+        let requiredKeys = [
+          'id', 'userId', 'date', 'asOf', 'policyVersion', 'schemaVersion',
+          'status', 'supersededDecisionId', 'occurrenceId', 'sessionId',
+          'windowId', 'bundleId', 'orderInBundle', 'predecessorExecutionId',
+          'predecessorOccurrenceId', 'reassessmentInputRevision',
+          'bundlePlacement', 'ledgerSnapshot', 'verdict'
+        ];
+        let allowedKeys = [
+          'id', 'userId', 'date', 'asOf', 'policyVersion', 'schemaVersion',
+          'status', 'supersededDecisionId', 'occurrenceId', 'sessionId',
+          'windowId', 'bundleId', 'orderInBundle', 'predecessorExecutionId',
+          'predecessorOccurrenceId', 'reassessmentInputRevision',
+          'bundlePlacement', 'ledgerSnapshot', 'verdict',
+          'postReservationLedgerRevision'
+        ];
+        return hasOwnedUserId(userId)
+          && data.keys().hasAll(requiredKeys)
+          && data.keys().hasOnly(allowedKeys)
+          && data.id == decisionId
+          && data.id is string && data.id.size() > 0 && data.id.size() <= 128
+          && data.date is string && data.date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+          && data.asOf is string && data.asOf.size() > 0 && data.asOf.size() <= 64
+          && data.policyVersion is string && data.policyVersion.size() > 0 && data.policyVersion.size() <= 128
+          && data.schemaVersion == 1
+          && data.status in ['provisional', 'confirmed', 'superseded', 'dropped']
+          && (data.supersededDecisionId == null || (data.supersededDecisionId is string && data.supersededDecisionId.size() > 0 && data.supersededDecisionId.size() <= 128))
+          && data.occurrenceId is string && data.occurrenceId.size() > 0 && data.occurrenceId.size() <= 128
+          && data.sessionId is string && data.sessionId.size() > 0 && data.sessionId.size() <= 128
+          && data.windowId is string && data.windowId.size() > 0 && data.windowId.size() <= 128
+          && data.bundleId is string && data.bundleId.size() > 0 && data.bundleId.size() <= 128
+          && data.orderInBundle is int && data.orderInBundle >= 0
+          && (data.predecessorExecutionId == null || (data.predecessorExecutionId is string && data.predecessorExecutionId.size() > 0 && data.predecessorExecutionId.size() <= 128))
+          && (data.predecessorOccurrenceId == null || (data.predecessorOccurrenceId is string && data.predecessorOccurrenceId.size() > 0 && data.predecessorOccurrenceId.size() <= 128))
+          && (data.predecessorExecutionId == null) == (data.predecessorOccurrenceId == null)
+          && data.reassessmentInputRevision is map
+          && data.reassessmentInputRevision.keys().hasAll(['availabilityRevision', 'completedFactsRevision', 'checkinRevision', 'ledgerRevision', 'placementRevision'])
+          && data.bundlePlacement is map
+          && data.bundlePlacement.bundleId is string && data.bundlePlacement.bundleId.size() > 0 && data.bundlePlacement.bundleId.size() <= 128
+          && data.bundlePlacement.outcome in ['placed', 'infeasible']
+          && (
+            (data.bundlePlacement.outcome == 'placed' && data.bundlePlacement.bindings is list && data.bundlePlacement.bindings.size() > 0)
+            || (data.bundlePlacement.outcome == 'infeasible' && data.bundlePlacement.reason is string && data.bundlePlacement.reason.size() > 0 && data.bundlePlacement.reason.size() <= 512)
+          )
+          && data.ledgerSnapshot is map
+          && data.ledgerSnapshot.keys().hasAll(['ceilings', 'entries'])
+          && data.ledgerSnapshot.ceilings is map
+          && data.ledgerSnapshot.entries is list
+          && data.verdict is map
+          && data.verdict.decision in ['proceed', 'scale', 'defer', 'skip', 'pending']
+          && data.verdict.reasons is list
+          && (!('postReservationLedgerRevision' in data) || (data.postReservationLedgerRevision is string && data.postReservationLedgerRevision.size() > 0 && data.postReservationLedgerRevision.size() <= 128));
+      }
+
       allow read: if isOwner(userId);
       allow create: if hasValidIntradayDecision(userId, decisionId);
       allow update, delete: if false;
     }
 
-    // H4 (#434) PR 3 / ADR-0036 D-LEDGER, Phase 2 step 6a: the persisted date-level
-    // reservation aggregate. Firestore's `Transaction.get()` accepts a `DocumentReference`
-    // only -- a transaction cannot query "every occurrence for this date" -- so this one
-    // named document is the serialization authority every reserving/releasing write must
-    // update atomically; `session_occurrences` alone cannot give a claim transaction that
-    // guarantee. `reservations` is keyed by occurrenceId (an unbounded, dynamic keyspace),
-    // which the rules language cannot iterate to validate each entry's shape -- the same
-    // accepted tradeoff this schema already makes elsewhere for dynamic-keyed maps (e.g.
-    // `tissueResponses`); per-entry validation is enforced by
-    // `dailyLedgerAggregateService.ts` and its own tests, not by these rules.
-    function hasValidDailyLedgerAggregate(userId, date) {
-      let data = request.resource.data;
-      return hasOwnedUserId(userId)
-        && data.keys().hasOnly(['userId', 'date', 'revision', 'ceilings', 'reservations', 'generations', 'seededAt', 'createdAt', 'updatedAt'])
-        && data.keys().hasAll(['userId', 'date', 'revision', 'ceilings', 'reservations', 'seededAt', 'createdAt', 'updatedAt'])
-        && data.date == date
-        && isValidActivityDate(data.date)
-        && data.revision is int && data.revision >= 1
-        && data.ceilings is map
-        && data.ceilings.keys().hasOnly(['dailyMinuteCeiling', 'dailySystemicCostCeiling'])
-        && data.ceilings.keys().hasAll(['dailyMinuteCeiling', 'dailySystemicCostCeiling'])
-        && data.ceilings.dailyMinuteCeiling is number && data.ceilings.dailyMinuteCeiling >= 0
-        && data.ceilings.dailySystemicCostCeiling is number && data.ceilings.dailySystemicCostCeiling >= 0 && data.ceilings.dailySystemicCostCeiling <= 1
-        && data.reservations is map
-        && data.reservations.size() <= 50
-        // H4 (#434) PR 3 step 8, item 2a: per-sessionId recovery generation counters,
-        // keyed the same dynamic way as `reservations` -- see that field's comment on
-        // why the rules language cannot validate individual entry values here.
-        && (!('generations' in data) || (data.generations is map && data.generations.size() <= 50))
-        && data.seededAt is string && data.seededAt.size() > 0
-        && data.createdAt is string && data.updatedAt is string;
-    }
-
     match /users/{userId}/daily_ledgers/{date} {
+      // H4 (#434) PR 3 / ADR-0036 D-LEDGER, Phase 2 step 6a: the persisted date-level
+      // reservation aggregate. Firestore's `Transaction.get()` accepts a `DocumentReference`
+      // only -- a transaction cannot query "every occurrence for this date" -- so this one
+      // named document is the serialization authority every reserving/releasing write must
+      // update atomically; `session_occurrences` alone cannot give a claim transaction that
+      // guarantee. `reservations` is keyed by occurrenceId (an unbounded, dynamic keyspace),
+      // which the rules language cannot iterate to validate each entry's shape -- the same
+      // accepted tradeoff this schema already makes elsewhere for dynamic-keyed maps (e.g.
+      // `tissueResponses`); per-entry validation is enforced by
+      // `dailyLedgerAggregateService.ts` and its own tests, not by these rules.
+      function hasValidDailyLedgerAggregate(userId, date) {
+        let data = request.resource.data;
+        return hasOwnedUserId(userId)
+          && data.keys().hasOnly(['userId', 'date', 'revision', 'ceilings', 'reservations', 'generations', 'seededAt', 'createdAt', 'updatedAt'])
+          && data.keys().hasAll(['userId', 'date', 'revision', 'ceilings', 'reservations', 'seededAt', 'createdAt', 'updatedAt'])
+          && data.date == date
+          && isValidActivityDate(data.date)
+          && data.revision is int && data.revision >= 1
+          && data.ceilings is map
+          && data.ceilings.keys().hasOnly(['dailyMinuteCeiling', 'dailySystemicCostCeiling'])
+          && data.ceilings.keys().hasAll(['dailyMinuteCeiling', 'dailySystemicCostCeiling'])
+          && data.ceilings.dailyMinuteCeiling is number && data.ceilings.dailyMinuteCeiling >= 0
+          && data.ceilings.dailySystemicCostCeiling is number && data.ceilings.dailySystemicCostCeiling >= 0 && data.ceilings.dailySystemicCostCeiling <= 1
+          && data.reservations is map
+          && data.reservations.size() <= 50
+          // H4 (#434) PR 3 step 8, item 2a: per-sessionId recovery generation counters,
+          // keyed the same dynamic way as `reservations` -- see that field's comment on
+          // why the rules language cannot validate individual entry values here.
+          && (!('generations' in data) || (data.generations is map && data.generations.size() <= 50))
+          && data.seededAt is string && data.seededAt.size() > 0
+          && data.createdAt is string && data.updatedAt is string;
+      }
+
       allow read: if isOwner(userId);
       allow create: if hasValidDailyLedgerAggregate(userId, date);
       allow update: if hasValidDailyLedgerAggregate(userId, date)
@@ -416,29 +456,29 @@
       allow delete: if false;
     }
 
-    // ADR-0036 (H4) D-PLACEMENT follow-up: a v4 intraday bundle's resolved window
-    // placement, persisted as a legacy date-level display record -- see
-    // `intradayBundlePlacementAuditService.ts`'s header for why this is a separate
-    // sibling document rather than a `recommendationAudit.externalPlan` field
-    // (that path is already at Firestore's per-request rule-evaluation ceiling).
-    // Kept deliberately shallow/structural per PR #468's lesson: `bindings`' own field
-    // shapes are validated at the TS boundary (`IntradayBundlePlacementRecord`), not here.
-    function hasValidIntradayBundlePlacement(userId, date) {
-      let data = request.resource.data;
-      return hasOwnedUserId(userId)
-        && data.keys().hasOnly(['userId', 'date', 'bundleId', 'outcome', 'bindings', 'reason', 'revision', 'createdAt', 'updatedAt'])
-        && data.keys().hasAll(['userId', 'date', 'bundleId', 'outcome', 'bindings', 'reason', 'revision', 'createdAt', 'updatedAt'])
-        && data.date == date
-        && isValidActivityDate(data.date)
-        && data.bundleId is string && data.bundleId.size() > 0 && data.bundleId.size() <= 128
-        && data.outcome in ['placed', 'infeasible']
-        && data.bindings is list && data.bindings.size() <= 8
-        && (data.reason == null || (data.reason is string && data.reason.size() <= 512))
-        && data.revision is int && data.revision >= 1
-        && data.createdAt is string && data.updatedAt is string;
-    }
-
     match /users/{userId}/intraday_bundle_placements/{date} {
+      // ADR-0036 (H4) D-PLACEMENT follow-up: a v4 intraday bundle's resolved window
+      // placement, persisted as a legacy date-level display record -- see
+      // `intradayBundlePlacementAuditService.ts`'s header for why this is a separate
+      // sibling document rather than a `recommendationAudit.externalPlan` field
+      // (that path is already at Firestore's per-request rule-evaluation ceiling).
+      // Kept deliberately shallow/structural per PR #468's lesson: `bindings`' own field
+      // shapes are validated at the TS boundary (`IntradayBundlePlacementRecord`), not here.
+      function hasValidIntradayBundlePlacement(userId, date) {
+        let data = request.resource.data;
+        return hasOwnedUserId(userId)
+          && data.keys().hasOnly(['userId', 'date', 'bundleId', 'outcome', 'bindings', 'reason', 'revision', 'createdAt', 'updatedAt'])
+          && data.keys().hasAll(['userId', 'date', 'bundleId', 'outcome', 'bindings', 'reason', 'revision', 'createdAt', 'updatedAt'])
+          && data.date == date
+          && isValidActivityDate(data.date)
+          && data.bundleId is string && data.bundleId.size() > 0 && data.bundleId.size() <= 128
+          && data.outcome in ['placed', 'infeasible']
+          && data.bindings is list && data.bindings.size() <= 8
+          && (data.reason == null || (data.reason is string && data.reason.size() <= 512))
+          && data.revision is int && data.revision >= 1
+          && data.createdAt is string && data.updatedAt is string;
+      }
+
       allow read: if isOwner(userId);
       allow create: if hasValidIntradayBundlePlacement(userId, date);
       // A later re-proposal for the same date may legitimately replace this document
@@ -453,61 +493,61 @@
       allow delete: if false;
     }
 
-    // ADR-0036 D-AUDIT: immutable, content-addressed replay input and proposal snapshot.
-    // Deep member/window/activity validation remains at the TypeScript boundary; rules
-    // enforce ownership, bounded shape, identity binding, and write-once semantics.
-    function hasValidIntradayBundlePlacementAudit(userId) {
-      let data = request.resource.data;
-      let isV5OrV6 = data.planSnapshot.schema in ['adaptive-training-recommender/external-plan@5', 'adaptive-training-recommender/external-plan@6'];
-      return hasOwnedUserId(userId)
-        && data.keys().hasOnly(['schemaVersion', 'auditId', 'snapshotHash', 'userId', 'date', 'asOf', 'policyVersion', 'plan', 'planSnapshot', 'bundleId', 'scheduleWindows', 'fixedActivities', 'restDates', 'planSessions', 'members', 'ledger', 'proposal', 'createdAt'])
-        && data.schemaVersion == 'intraday_bundle_placement_audit_v1'
-        && data.auditId is string && data.auditId.matches('^audit_[0-9a-f]{64}$')
-        && data.snapshotHash is string && data.snapshotHash.matches('^[0-9a-f]{64}$')
-        && isValidActivityDate(data.date)
-        && data.asOf is string && data.asOf.size() > 0 && data.asOf.size() <= 64
-        && data.policyVersion is string && data.policyVersion.size() > 0 && data.policyVersion.size() <= 128
-        && data.plan is map && data.plan.keys().hasOnly(['planId', 'revision', 'contentHash'])
-        && data.plan.planId is string && data.plan.planId.size() > 0 && data.plan.planId.size() <= 128
-        && data.plan.revision is int && data.plan.revision >= 1
-        && data.plan.contentHash is string && data.plan.contentHash.matches('^[0-9a-f]{64}$')
-        && data.planSnapshot is map
-        && (isV5OrV6
-          ? data.planSnapshot.keys().hasOnly(['schema', 'planId', 'revision', 'title', 'startDate', 'weekCount', 'notes', 'sessions', 'restDays', 'intentBlocks'])
-          : data.planSnapshot.keys().hasOnly(['schema', 'planId', 'revision', 'title', 'startDate', 'weekCount', 'notes', 'sessions', 'restDays']))
-        && data.planSnapshot.schema in ['adaptive-training-recommender/external-plan@4', 'adaptive-training-recommender/external-plan@5', 'adaptive-training-recommender/external-plan@6']
-        && data.planSnapshot.planId == data.plan.planId
-        && data.planSnapshot.revision == data.plan.revision
-        && data.planSnapshot.revision is int
-        && data.planSnapshot.title is string && data.planSnapshot.title.size() > 0 && data.planSnapshot.title.size() <= 200
-        && isValidActivityDate(data.planSnapshot.startDate)
-        && data.planSnapshot.weekCount is int && data.planSnapshot.weekCount >= 1 && data.planSnapshot.weekCount <= 52
-        && data.planSnapshot.sessions is list && data.planSnapshot.sessions.size() > 0 && data.planSnapshot.sessions.size() <= 120
-        && data.planSnapshot.restDays is list && data.planSnapshot.restDays.size() <= 64
-        && (!('intentBlocks' in data.planSnapshot) || (data.planSnapshot.intentBlocks is list && data.planSnapshot.intentBlocks.size() <= 26))
-        && data.bundleId is string && data.bundleId.size() > 0 && data.bundleId.size() <= 128
-        && data.scheduleWindows is list && data.scheduleWindows.size() <= 8
-        && data.fixedActivities is list && data.fixedActivities.size() <= 32
-        && data.restDates is list && data.restDates.size() <= 64
-        && data.planSessions is list && data.planSessions.size() > 0 && data.planSessions.size() <= 8
-        && data.members is list && data.members.size() > 0 && data.members.size() <= 8
-        && data.ledger is map && data.ledger.keys().hasOnly(['ceilings', 'entries', 'result'])
-        && data.ledger.ceilings is map
-        && data.ledger.ceilings.dailyMinuteCeiling is number && data.ledger.ceilings.dailyMinuteCeiling >= 0
-        && data.ledger.ceilings.dailySystemicCostCeiling is number && data.ledger.ceilings.dailySystemicCostCeiling >= 0 && data.ledger.ceilings.dailySystemicCostCeiling <= 1
-        && data.ledger.entries is list && data.ledger.entries.size() <= 50
-        && data.ledger.result is map
-        && data.ledger.result.remainingMinutes is number && data.ledger.result.remainingMinutes >= 0
-        && data.ledger.result.remainingSystemicCost is number && data.ledger.result.remainingSystemicCost >= 0 && data.ledger.result.remainingSystemicCost <= 1
-        && data.ledger.result.unresolvedEntries is list && data.ledger.result.unresolvedEntries.size() <= 50
-        && data.proposal is map && data.proposal.bundleId == data.bundleId
-        && data.proposal.outcome in ['placed', 'infeasible']
-        && ((data.proposal.outcome == 'placed' && data.proposal.bindings is list && data.proposal.bindings.size() > 0 && data.proposal.bindings.size() <= 8)
-          || (data.proposal.outcome == 'infeasible' && data.proposal.reason is string && data.proposal.reason.size() > 0 && data.proposal.reason.size() <= 512))
-        && data.createdAt is string && data.createdAt.size() > 0 && data.createdAt.size() <= 64;
-    }
-
     match /users/{userId}/intraday_bundle_placement_audits/{auditId} {
+      // ADR-0036 D-AUDIT: immutable, content-addressed replay input and proposal snapshot.
+      // Deep member/window/activity validation remains at the TypeScript boundary; rules
+      // enforce ownership, bounded shape, identity binding, and write-once semantics.
+      function hasValidIntradayBundlePlacementAudit(userId) {
+        let data = request.resource.data;
+        let isV5OrV6 = data.planSnapshot.schema in ['adaptive-training-recommender/external-plan@5', 'adaptive-training-recommender/external-plan@6'];
+        return hasOwnedUserId(userId)
+          && data.keys().hasOnly(['schemaVersion', 'auditId', 'snapshotHash', 'userId', 'date', 'asOf', 'policyVersion', 'plan', 'planSnapshot', 'bundleId', 'scheduleWindows', 'fixedActivities', 'restDates', 'planSessions', 'members', 'ledger', 'proposal', 'createdAt'])
+          && data.schemaVersion == 'intraday_bundle_placement_audit_v1'
+          && data.auditId is string && data.auditId.matches('^audit_[0-9a-f]{64}$')
+          && data.snapshotHash is string && data.snapshotHash.matches('^[0-9a-f]{64}$')
+          && isValidActivityDate(data.date)
+          && data.asOf is string && data.asOf.size() > 0 && data.asOf.size() <= 64
+          && data.policyVersion is string && data.policyVersion.size() > 0 && data.policyVersion.size() <= 128
+          && data.plan is map && data.plan.keys().hasOnly(['planId', 'revision', 'contentHash'])
+          && data.plan.planId is string && data.plan.planId.size() > 0 && data.plan.planId.size() <= 128
+          && data.plan.revision is int && data.plan.revision >= 1
+          && data.plan.contentHash is string && data.plan.contentHash.matches('^[0-9a-f]{64}$')
+          && data.planSnapshot is map
+          && (isV5OrV6
+            ? data.planSnapshot.keys().hasOnly(['schema', 'planId', 'revision', 'title', 'startDate', 'weekCount', 'notes', 'sessions', 'restDays', 'intentBlocks'])
+            : data.planSnapshot.keys().hasOnly(['schema', 'planId', 'revision', 'title', 'startDate', 'weekCount', 'notes', 'sessions', 'restDays']))
+          && data.planSnapshot.schema in ['adaptive-training-recommender/external-plan@4', 'adaptive-training-recommender/external-plan@5', 'adaptive-training-recommender/external-plan@6']
+          && data.planSnapshot.planId == data.plan.planId
+          && data.planSnapshot.revision == data.plan.revision
+          && data.planSnapshot.revision is int
+          && data.planSnapshot.title is string && data.planSnapshot.title.size() > 0 && data.planSnapshot.title.size() <= 200
+          && isValidActivityDate(data.planSnapshot.startDate)
+          && data.planSnapshot.weekCount is int && data.planSnapshot.weekCount >= 1 && data.planSnapshot.weekCount <= 52
+          && data.planSnapshot.sessions is list && data.planSnapshot.sessions.size() > 0 && data.planSnapshot.sessions.size() <= 120
+          && data.planSnapshot.restDays is list && data.planSnapshot.restDays.size() <= 64
+          && (!('intentBlocks' in data.planSnapshot) || (data.planSnapshot.intentBlocks is list && data.planSnapshot.intentBlocks.size() <= 26))
+          && data.bundleId is string && data.bundleId.size() > 0 && data.bundleId.size() <= 128
+          && data.scheduleWindows is list && data.scheduleWindows.size() <= 8
+          && data.fixedActivities is list && data.fixedActivities.size() <= 32
+          && data.restDates is list && data.restDates.size() <= 64
+          && data.planSessions is list && data.planSessions.size() > 0 && data.planSessions.size() <= 8
+          && data.members is list && data.members.size() > 0 && data.members.size() <= 8
+          && data.ledger is map && data.ledger.keys().hasOnly(['ceilings', 'entries', 'result'])
+          && data.ledger.ceilings is map
+          && data.ledger.ceilings.dailyMinuteCeiling is number && data.ledger.ceilings.dailyMinuteCeiling >= 0
+          && data.ledger.ceilings.dailySystemicCostCeiling is number && data.ledger.ceilings.dailySystemicCostCeiling >= 0 && data.ledger.ceilings.dailySystemicCostCeiling <= 1
+          && data.ledger.entries is list && data.ledger.entries.size() <= 50
+          && data.ledger.result is map
+          && data.ledger.result.remainingMinutes is number && data.ledger.result.remainingMinutes >= 0
+          && data.ledger.result.remainingSystemicCost is number && data.ledger.result.remainingSystemicCost >= 0 && data.ledger.result.remainingSystemicCost <= 1
+          && data.ledger.result.unresolvedEntries is list && data.ledger.result.unresolvedEntries.size() <= 50
+          && data.proposal is map && data.proposal.bundleId == data.bundleId
+          && data.proposal.outcome in ['placed', 'infeasible']
+          && ((data.proposal.outcome == 'placed' && data.proposal.bindings is list && data.proposal.bindings.size() > 0 && data.proposal.bindings.size() <= 8)
+            || (data.proposal.outcome == 'infeasible' && data.proposal.reason is string && data.proposal.reason.size() > 0 && data.proposal.reason.size() <= 512))
+          && data.createdAt is string && data.createdAt.size() > 0 && data.createdAt.size() <= 64;
+      }
+
       allow read: if isOwner(userId);
       allow create: if hasValidIntradayBundlePlacementAudit(userId)
         && request.resource.data.auditId == auditId;

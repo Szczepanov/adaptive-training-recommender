@@ -1,76 +1,20 @@
 
-    function hasValidGoalTaper() {
-      return !('taper' in request.resource.data)
-        || (request.resource.data.taper is map
-          && request.resource.data.taper.keys().hasOnly(['startDate'])
-          && request.resource.data.taper.startDate is string
-          && request.resource.data.taper.startDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$'));
-    }
-
-    // ADR-0041: rules can only validate bounded structure and exact keys -- they cannot
-    // prove membership in the application's metric/exercise/performance-test registries.
-    // Semantic validation (validatePerformanceTargetForDomain) is enforced by
-    // goalService.ts at both write and read boundaries; validateGoal itself deliberately
-    // remains structural-only to preserve the observations/engine isolation boundary.
-    // Rules are therefore a structural backstop, not the registry authority.
-    function hasValidGoalPerformanceTarget() {
-      return !('performanceTarget' in request.resource.data)
-        || request.resource.data.performanceTarget == null
-        || (request.resource.data.performanceTarget is map
-          && request.resource.data.performanceTarget.keys().hasOnly(['kind', 'metricId', 'subjectRef', 'targetValue'])
-          && request.resource.data.performanceTarget.kind == 'performance_metric'
-          && request.resource.data.performanceTarget.metricId is string
-          && request.resource.data.performanceTarget.metricId.size() > 0
-          && request.resource.data.performanceTarget.targetValue is number
-          && request.resource.data.performanceTarget.subjectRef is map
-          && (
-            (request.resource.data.performanceTarget.subjectRef.keys().hasOnly(['kind', 'exerciseId'])
-              && request.resource.data.performanceTarget.subjectRef.kind == 'exercise'
-              && request.resource.data.performanceTarget.subjectRef.exerciseId is string
-              && request.resource.data.performanceTarget.subjectRef.exerciseId.size() > 0)
-            || (request.resource.data.performanceTarget.subjectRef.keys().hasOnly(['kind', 'performanceTestId'])
-              && request.resource.data.performanceTarget.subjectRef.kind == 'performance_test'
-              && request.resource.data.performanceTarget.subjectRef.performanceTestId is string
-              && request.resource.data.performanceTarget.subjectRef.performanceTestId.size() > 0)
-          ));
-    }
-
-    function hasValidAdherence(adherence) {
-      return adherence is map
-        && adherence.keys().hasOnly(['respondedAt', 'followed', 'actualModality', 'actualDurationMin', 'skipped', 'notes'])
-        && (adherence.respondedAt == null || adherence.respondedAt is string)
-        && (adherence.followed == null || adherence.followed is bool)
-        && (adherence.actualModality == null || adherence.actualModality is string)
-        && (adherence.actualDurationMin == null || (adherence.actualDurationMin is number && adherence.actualDurationMin >= 0))
-        && adherence.skipped is bool
-        && (adherence.notes == null || adherence.notes is string);
-    }
-
-    function isValidAdherenceOnlyUpdate(userId, date, changed) {
-      return isOwner(userId)
-        && resource.data.userId == userId
-        && resource.data.date == date
-        && request.resource.data.userId == resource.data.userId
-        && request.resource.data.date == resource.data.date
-        && changed.hasOnly(['adherence'])
-        && hasValidAdherence(request.resource.data.adherence);
-    }
-
-    function hasValidDecisionJournalEntry(userId, date) {
-      return hasOwnedUserId(userId)
-        && isDateDocument(date)
-        && request.resource.data.keys().hasOnly(['userId', 'date', 'externalVerdict', 'externalNote', 'sawEngineVerdictFirst', 'actualVerdict', 'createdAt', 'updatedAt', 'schemaVersion'])
-        && request.resource.data.keys().hasAll(['userId', 'date', 'externalVerdict', 'sawEngineVerdictFirst', 'createdAt', 'updatedAt', 'schemaVersion'])
-        && request.resource.data.externalVerdict in ['proceed', 'scale', 'defer', 'skip', 'advisory']
-        && (!('externalNote' in request.resource.data) || (request.resource.data.externalNote is string && request.resource.data.externalNote.size() <= 2000))
-        && request.resource.data.sawEngineVerdictFirst is bool
-        && (!('actualVerdict' in request.resource.data) || request.resource.data.actualVerdict in ['proceed', 'scale', 'defer', 'skip', 'advisory'])
-        && request.resource.data.createdAt is string
-        && request.resource.data.updatedAt is string
-        && request.resource.data.schemaVersion == 1;
-    }
 
     match /users/{userId}/decision_journal/{date} {
+      function hasValidDecisionJournalEntry(userId, date) {
+        return hasOwnedUserId(userId)
+          && isDateDocument(date)
+          && request.resource.data.keys().hasOnly(['userId', 'date', 'externalVerdict', 'externalNote', 'sawEngineVerdictFirst', 'actualVerdict', 'createdAt', 'updatedAt', 'schemaVersion'])
+          && request.resource.data.keys().hasAll(['userId', 'date', 'externalVerdict', 'sawEngineVerdictFirst', 'createdAt', 'updatedAt', 'schemaVersion'])
+          && request.resource.data.externalVerdict in ['proceed', 'scale', 'defer', 'skip', 'advisory']
+          && (!('externalNote' in request.resource.data) || (request.resource.data.externalNote is string && request.resource.data.externalNote.size() <= 2000))
+          && request.resource.data.sawEngineVerdictFirst is bool
+          && (!('actualVerdict' in request.resource.data) || request.resource.data.actualVerdict in ['proceed', 'scale', 'defer', 'skip', 'advisory'])
+          && request.resource.data.createdAt is string
+          && request.resource.data.updatedAt is string
+          && request.resource.data.schemaVersion == 1;
+      }
+
       allow read: if isOwner(userId);
       allow create: if hasValidDecisionJournalEntry(userId, date);
       allow update: if keepsOwnership(userId)
@@ -84,6 +28,42 @@
     }
 
     match /users/{userId}/goals/{goalId} {
+      function hasValidGoalTaper() {
+        return !('taper' in request.resource.data)
+          || (request.resource.data.taper is map
+            && request.resource.data.taper.keys().hasOnly(['startDate'])
+            && request.resource.data.taper.startDate is string
+            && request.resource.data.taper.startDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$'));
+      }
+
+      // ADR-0041: rules can only validate bounded structure and exact keys -- they cannot
+      // prove membership in the application's metric/exercise/performance-test registries.
+      // Semantic validation (validatePerformanceTargetForDomain) is enforced by
+      // goalService.ts at both write and read boundaries; validateGoal itself deliberately
+      // remains structural-only to preserve the observations/engine isolation boundary.
+      // Rules are therefore a structural backstop, not the registry authority.
+      function hasValidGoalPerformanceTarget() {
+        return !('performanceTarget' in request.resource.data)
+          || request.resource.data.performanceTarget == null
+          || (request.resource.data.performanceTarget is map
+            && request.resource.data.performanceTarget.keys().hasOnly(['kind', 'metricId', 'subjectRef', 'targetValue'])
+            && request.resource.data.performanceTarget.kind == 'performance_metric'
+            && request.resource.data.performanceTarget.metricId is string
+            && request.resource.data.performanceTarget.metricId.size() > 0
+            && request.resource.data.performanceTarget.targetValue is number
+            && request.resource.data.performanceTarget.subjectRef is map
+            && (
+              (request.resource.data.performanceTarget.subjectRef.keys().hasOnly(['kind', 'exerciseId'])
+                && request.resource.data.performanceTarget.subjectRef.kind == 'exercise'
+                && request.resource.data.performanceTarget.subjectRef.exerciseId is string
+                && request.resource.data.performanceTarget.subjectRef.exerciseId.size() > 0)
+              || (request.resource.data.performanceTarget.subjectRef.keys().hasOnly(['kind', 'performanceTestId'])
+                && request.resource.data.performanceTarget.subjectRef.kind == 'performance_test'
+                && request.resource.data.performanceTarget.subjectRef.performanceTestId is string
+                && request.resource.data.performanceTarget.subjectRef.performanceTestId.size() > 0)
+            ));
+      }
+
       allow read: if isOwner(userId);
       allow create: if hasOwnedUserId(userId) && hasValidGoalTaper() && hasValidGoalPerformanceTarget();
       allow update: if keepsOwnership(userId) && request.resource.data.createdAt == resource.data.createdAt && hasValidGoalTaper() && hasValidGoalPerformanceTarget();
@@ -123,41 +103,55 @@
         && (sz <= 19 || isValidEquipmentItem(list[19]));
     }
 
-    function hasValidAvailabilityContextOverride(m) {
-      return m is map
-        && m.keys().hasOnly(['environment', 'equipment'])
-        && (!('environment' in m) || m.environment in ['indoor', 'outdoor', 'either'])
-        && (!('equipment' in m) || hasValidEquipmentList(m.equipment));
-    }
-
-    function hasValidOptionalCatalogId(data, key) {
-      return !(key in data) || (data[key] is string && data[key].size() > 0 && data[key].size() <= 120);
-    }
-
-    function hasValidFixedActivity(userId) {
-      let data = request.resource.data;
-      return hasOwnedUserId(userId)
-        && isValidActivityDate(data.date)
-        && data.keys().hasOnly(['userId', 'title', 'date', 'startTime', 'durationMin', 'fixed', 'expectedStimulus', 'expectedCost', 'environment', 'equipment', 'availabilityOverride', 'availabilityContextOverride', 'templateId', 'workoutId', 'isCompleted', 'createdAt', 'updatedAt'])
-        && data.keys().hasAll(['userId', 'title', 'date', 'durationMin', 'fixed', 'environment', 'isCompleted', 'createdAt', 'updatedAt'])
-        && data.title is string && data.title.size() <= 200
-        && data.durationMin is int && data.durationMin > 0 && data.durationMin <= 1440
-        && data.fixed is bool
-        && data.environment in ['indoor', 'outdoor', 'either']
-        && data.isCompleted is bool
-        && data.createdAt is string
-        && data.updatedAt is string
-        && (!('startTime' in data) || data.startTime is string)
-        && (!('expectedStimulus' in data) || hasValidExpectedStimulus(data.expectedStimulus))
-        && (!('expectedCost' in data) || hasValidExpectedCost(data.expectedCost))
-        && (!('equipment' in data) || hasValidEquipmentList(data.equipment))
-        && (!('availabilityOverride' in data) || (data.availabilityOverride is number && data.availabilityOverride >= 0 && data.availabilityOverride <= 1440))
-        && (!('availabilityContextOverride' in data) || hasValidAvailabilityContextOverride(data.availabilityContextOverride))
-        && hasValidOptionalCatalogId(data, 'templateId')
-        && hasValidOptionalCatalogId(data, 'workoutId');
-    }
-
     match /users/{userId}/fixed_activities/{activityId} {
+      function hasValidExpectedStimulus(m) {
+        return m is map
+          && m.keys().hasOnly(['aerobicEndurance', 'thresholdPower', 'vo2MaxPower', 'repeatedSurges', 'sprintPower', 'fatigueResistance', 'maxStrength', 'hypertrophy'])
+          && m.size() <= 8
+          && hasValidAxisValue(m, 'aerobicEndurance')
+          && hasValidAxisValue(m, 'thresholdPower')
+          && hasValidAxisValue(m, 'vo2MaxPower')
+          && hasValidAxisValue(m, 'repeatedSurges')
+          && hasValidAxisValue(m, 'sprintPower')
+          && hasValidAxisValue(m, 'fatigueResistance')
+          && hasValidAxisValue(m, 'maxStrength')
+          && hasValidAxisValue(m, 'hypertrophy');
+      }
+
+      function hasValidAvailabilityContextOverride(m) {
+        return m is map
+          && m.keys().hasOnly(['environment', 'equipment'])
+          && (!('environment' in m) || m.environment in ['indoor', 'outdoor', 'either'])
+          && (!('equipment' in m) || hasValidEquipmentList(m.equipment));
+      }
+
+      function hasValidOptionalCatalogId(data, key) {
+        return !(key in data) || (data[key] is string && data[key].size() > 0 && data[key].size() <= 120);
+      }
+
+      function hasValidFixedActivity(userId) {
+        let data = request.resource.data;
+        return hasOwnedUserId(userId)
+          && isValidActivityDate(data.date)
+          && data.keys().hasOnly(['userId', 'title', 'date', 'startTime', 'durationMin', 'fixed', 'expectedStimulus', 'expectedCost', 'environment', 'equipment', 'availabilityOverride', 'availabilityContextOverride', 'templateId', 'workoutId', 'isCompleted', 'createdAt', 'updatedAt'])
+          && data.keys().hasAll(['userId', 'title', 'date', 'durationMin', 'fixed', 'environment', 'isCompleted', 'createdAt', 'updatedAt'])
+          && data.title is string && data.title.size() <= 200
+          && data.durationMin is int && data.durationMin > 0 && data.durationMin <= 1440
+          && data.fixed is bool
+          && data.environment in ['indoor', 'outdoor', 'either']
+          && data.isCompleted is bool
+          && data.createdAt is string
+          && data.updatedAt is string
+          && (!('startTime' in data) || data.startTime is string)
+          && (!('expectedStimulus' in data) || hasValidExpectedStimulus(data.expectedStimulus))
+          && (!('expectedCost' in data) || hasValidExpectedCost(data.expectedCost))
+          && (!('equipment' in data) || hasValidEquipmentList(data.equipment))
+          && (!('availabilityOverride' in data) || (data.availabilityOverride is number && data.availabilityOverride >= 0 && data.availabilityOverride <= 1440))
+          && (!('availabilityContextOverride' in data) || hasValidAvailabilityContextOverride(data.availabilityContextOverride))
+          && hasValidOptionalCatalogId(data, 'templateId')
+          && hasValidOptionalCatalogId(data, 'workoutId');
+      }
+
       allow read: if isOwner(userId);
       allow create: if hasValidFixedActivity(userId);
       allow update: if hasValidFixedActivity(userId)
@@ -166,41 +160,41 @@
       allow delete: if isOwner(userId);
     }
 
-    // Issue #805: optional, default-off capability-maintenance opt-in. Absent = opted out;
-    // mirrors validationCore.ts validateTrainingIntentProfile.
-    function hasValidCapabilityMaintenance(value) {
-      return value is map
-        && value.keys().hasOnly(['enabled', 'capabilities'])
-        && value.keys().hasAll(['enabled', 'capabilities'])
-        && value.enabled is bool
-        && value.capabilities is list
-        && value.capabilities.size() <= 4
-        && value.capabilities.hasOnly(['linear_speed_skill', 'acceleration_deceleration', 'multidirectional_change_of_direction', 'sport_skill'])
-        && value.capabilities.toSet().size() == value.capabilities.size()
-        && (value.enabled == false || value.capabilities.size() > 0);
-    }
-
-    function hasValidTrainingIntentProfile(userId) {
-      let data = request.resource.data;
-      let commitment = data.weeklyCommitment;
-      return hasOwnedUserId(userId)
-        && data.keys().hasOnly(['userId', 'planningMode', 'priorities', 'weeklyCommitment', 'organizationPreference', 'schemaVersion', 'createdAt', 'updatedAt', 'capabilityMaintenance'])
-        && (!('capabilityMaintenance' in data) || hasValidCapabilityMaintenance(data.capabilityMaintenance))
-        && data.keys().hasAll(['userId', 'planningMode', 'priorities', 'weeklyCommitment', 'organizationPreference', 'schemaVersion', 'createdAt', 'updatedAt'])
-        && data.planningMode in ['evergreen', 'event_directed', 'externally_planned']
-        && data.priorities is list && data.priorities.size() <= 6
-        && data.weeklyCommitment is map
-        && commitment.keys().hasOnly(['minSessions', 'targetSessions', 'maxSessions'])
-        && commitment.keys().hasAll(['minSessions', 'targetSessions', 'maxSessions'])
-        && commitment.minSessions is int && commitment.minSessions >= 1 && commitment.minSessions <= 14
-        && commitment.targetSessions is int && commitment.targetSessions >= commitment.minSessions && commitment.targetSessions <= 14
-        && commitment.maxSessions is int && commitment.maxSessions >= commitment.targetSessions && commitment.maxSessions <= 14
-        && data.organizationPreference == 'auto'
-        && data.schemaVersion is int && data.schemaVersion >= 1
-        && data.createdAt is string && data.updatedAt is string;
-    }
-
     match /users/{userId}/training_intent/profile {
+      // Issue #805: optional, default-off capability-maintenance opt-in. Absent = opted out;
+      // mirrors validationCore.ts validateTrainingIntentProfile.
+      function hasValidCapabilityMaintenance(value) {
+        return value is map
+          && value.keys().hasOnly(['enabled', 'capabilities'])
+          && value.keys().hasAll(['enabled', 'capabilities'])
+          && value.enabled is bool
+          && value.capabilities is list
+          && value.capabilities.size() <= 4
+          && value.capabilities.hasOnly(['linear_speed_skill', 'acceleration_deceleration', 'multidirectional_change_of_direction', 'sport_skill'])
+          && value.capabilities.toSet().size() == value.capabilities.size()
+          && (value.enabled == false || value.capabilities.size() > 0);
+      }
+
+      function hasValidTrainingIntentProfile(userId) {
+        let data = request.resource.data;
+        let commitment = data.weeklyCommitment;
+        return hasOwnedUserId(userId)
+          && data.keys().hasOnly(['userId', 'planningMode', 'priorities', 'weeklyCommitment', 'organizationPreference', 'schemaVersion', 'createdAt', 'updatedAt', 'capabilityMaintenance'])
+          && (!('capabilityMaintenance' in data) || hasValidCapabilityMaintenance(data.capabilityMaintenance))
+          && data.keys().hasAll(['userId', 'planningMode', 'priorities', 'weeklyCommitment', 'organizationPreference', 'schemaVersion', 'createdAt', 'updatedAt'])
+          && data.planningMode in ['evergreen', 'event_directed', 'externally_planned']
+          && data.priorities is list && data.priorities.size() <= 6
+          && data.weeklyCommitment is map
+          && commitment.keys().hasOnly(['minSessions', 'targetSessions', 'maxSessions'])
+          && commitment.keys().hasAll(['minSessions', 'targetSessions', 'maxSessions'])
+          && commitment.minSessions is int && commitment.minSessions >= 1 && commitment.minSessions <= 14
+          && commitment.targetSessions is int && commitment.targetSessions >= commitment.minSessions && commitment.targetSessions <= 14
+          && commitment.maxSessions is int && commitment.maxSessions >= commitment.targetSessions && commitment.maxSessions <= 14
+          && data.organizationPreference == 'auto'
+          && data.schemaVersion is int && data.schemaVersion >= 1
+          && data.createdAt is string && data.updatedAt is string;
+      }
+
       allow read: if isOwner(userId);
       allow create: if hasValidTrainingIntentProfile(userId);
       allow update: if hasValidTrainingIntentProfile(userId)
@@ -214,14 +208,14 @@
       allow write: if false;
     }
 
-    function hasValidUnavailableModalities(data) {
-      return !('unavailableModalities' in data)
-        || (data.unavailableModalities is list
-          && data.unavailableModalities.size() <= 9
-          && data.unavailableModalities.hasOnly(['Running', 'Cycling', 'Swimming', 'Walking', 'Strength', 'Field', 'Mobility', 'Cross Training', 'Rowing']));
-    }
-
     match /users/{userId}/preferences/profile {
+      function hasValidUnavailableModalities(data) {
+        return !('unavailableModalities' in data)
+          || (data.unavailableModalities is list
+            && data.unavailableModalities.size() <= 9
+            && data.unavailableModalities.hasOnly(['Running', 'Cycling', 'Swimming', 'Walking', 'Strength', 'Field', 'Mobility', 'Cross Training', 'Rowing']));
+      }
+
       allow read: if isOwner(userId);
       allow create: if hasOwnedUserId(userId) && hasValidUnavailableModalities(request.resource.data);
       allow update: if keepsOwnership(userId) && request.resource.data.createdAt == resource.data.createdAt
@@ -229,11 +223,11 @@
       allow delete: if false;
     }
 
-    function hasValidInjuryList(injuries) {
-      return injuries is list && injuries.size() <= 20;
-    }
-
     match /users/{userId}/trainingSettings/profile {
+      function hasValidInjuryList(injuries) {
+        return injuries is list && injuries.size() <= 20;
+      }
+
       allow read: if isOwner(userId);
       allow create: if hasOwnedUserId(userId)
         && request.resource.data.schemaVersion in [2, 3]
@@ -255,25 +249,25 @@
       allow write: if false;
     }
 
-    function hasValidActivityOverride(userId, activityId) {
-      let data = request.resource.data;
-      return hasOwnedUserId(userId)
-        && data.activityId == activityId
-        && isValidActivityDate(data.date)
-        && data.keys().hasOnly(['activityId', 'userId', 'date', 'originalType', 'originalIntensityTag', 'overriddenModality', 'overriddenIntensity', 'rpe', 'stimulusFocus', 'notes', 'createdAt', 'updatedAt'])
-        && data.keys().hasAll(['activityId', 'userId', 'date', 'originalType', 'originalIntensityTag', 'overriddenModality', 'overriddenIntensity', 'createdAt', 'updatedAt'])
-        && data.originalType is string && data.originalType.size() > 0 && data.originalType.size() <= 128
-        && data.originalIntensityTag is string && data.originalIntensityTag.size() <= 64
-        && data.overriddenModality in ['Running', 'Cycling', 'Swimming', 'Strength', 'Mobility', 'Field', 'Cross Training', 'Unknown']
-        && data.overriddenIntensity in ['easy', 'moderate', 'hard', 'unknown']
-        && (!('rpe' in data) || data.rpe == null || (data.rpe is number && data.rpe >= 1 && data.rpe <= 10))
-        && (!('stimulusFocus' in data) || data.stimulusFocus == null || data.stimulusFocus in ['aerobicEndurance', 'thresholdPower', 'vo2MaxPower', 'repeatedSurges', 'sprintPower', 'fatigueResistance', 'maxStrength', 'hypertrophy'])
-        && (!('notes' in data) || data.notes == null || (data.notes is string && data.notes.size() <= 2000))
-        && data.createdAt is string && data.createdAt.size() > 0
-        && data.updatedAt is string && data.updatedAt.size() > 0;
-    }
-
     match /users/{userId}/activity_overrides/{activityId} {
+      function hasValidActivityOverride(userId, activityId) {
+        let data = request.resource.data;
+        return hasOwnedUserId(userId)
+          && data.activityId == activityId
+          && isValidActivityDate(data.date)
+          && data.keys().hasOnly(['activityId', 'userId', 'date', 'originalType', 'originalIntensityTag', 'overriddenModality', 'overriddenIntensity', 'rpe', 'stimulusFocus', 'notes', 'createdAt', 'updatedAt'])
+          && data.keys().hasAll(['activityId', 'userId', 'date', 'originalType', 'originalIntensityTag', 'overriddenModality', 'overriddenIntensity', 'createdAt', 'updatedAt'])
+          && data.originalType is string && data.originalType.size() > 0 && data.originalType.size() <= 128
+          && data.originalIntensityTag is string && data.originalIntensityTag.size() <= 64
+          && data.overriddenModality in ['Running', 'Cycling', 'Swimming', 'Strength', 'Mobility', 'Field', 'Cross Training', 'Unknown']
+          && data.overriddenIntensity in ['easy', 'moderate', 'hard', 'unknown']
+          && (!('rpe' in data) || data.rpe == null || (data.rpe is number && data.rpe >= 1 && data.rpe <= 10))
+          && (!('stimulusFocus' in data) || data.stimulusFocus == null || data.stimulusFocus in ['aerobicEndurance', 'thresholdPower', 'vo2MaxPower', 'repeatedSurges', 'sprintPower', 'fatigueResistance', 'maxStrength', 'hypertrophy'])
+          && (!('notes' in data) || data.notes == null || (data.notes is string && data.notes.size() <= 2000))
+          && data.createdAt is string && data.createdAt.size() > 0
+          && data.updatedAt is string && data.updatedAt.size() > 0;
+      }
+
       allow read: if isOwner(userId);
       allow create: if hasValidActivityOverride(userId, activityId);
       allow update: if hasValidActivityOverride(userId, activityId)
@@ -289,31 +283,31 @@
       allow write: if false;
     }
 
-    function isStrengthSessionDocument(sessionId) {
-      return request.resource.data.sessionId == sessionId;
-    }
-
-    function hasValidStrengthSession(userId, sessionId) {
-      let data = request.resource.data;
-      return hasOwnedUserId(userId)
-        && isStrengthSessionDocument(sessionId)
-        && data.keys().hasOnly(['userId', 'sessionId', 'date', 'startedAt', 'completedAt', 'updatedAt', 'state', 'sourceRecommendationDate', 'exercises', 'sessionRpe', 'notes', 'completionEvidence', 'schemaVersion'])
-        && data.keys().hasAll(['userId', 'sessionId', 'date', 'startedAt', 'updatedAt', 'state', 'exercises', 'schemaVersion'])
-        && data.sessionId is string && data.sessionId.size() > 0 && data.sessionId.size() <= 128
-        && isValidActivityDate(data.date)
-        && data.startedAt is string && data.startedAt.size() > 0
-        && data.updatedAt is string && data.updatedAt.size() > 0
-        && (!('completedAt' in data) || (data.completedAt is string && data.completedAt.size() > 0))
-        && data.state in ['in_progress', 'completed', 'abandoned']
-        && ((data.state == 'completed') == ('completedAt' in data))
-        && (!('sourceRecommendationDate' in data) || isValidActivityDate(data.sourceRecommendationDate))
-        && data.exercises is list && data.exercises.size() <= 30
-        && (!('sessionRpe' in data) || (data.sessionRpe is number && data.sessionRpe >= 0 && data.sessionRpe <= 10))
-        && (!('notes' in data) || (data.notes is string && data.notes.size() <= 2000))
-        && data.schemaVersion == 1;
-    }
-
     match /users/{userId}/strength_sessions/{sessionId} {
+      function isStrengthSessionDocument(sessionId) {
+        return request.resource.data.sessionId == sessionId;
+      }
+
+      function hasValidStrengthSession(userId, sessionId) {
+        let data = request.resource.data;
+        return hasOwnedUserId(userId)
+          && isStrengthSessionDocument(sessionId)
+          && data.keys().hasOnly(['userId', 'sessionId', 'date', 'startedAt', 'completedAt', 'updatedAt', 'state', 'sourceRecommendationDate', 'exercises', 'sessionRpe', 'notes', 'completionEvidence', 'schemaVersion'])
+          && data.keys().hasAll(['userId', 'sessionId', 'date', 'startedAt', 'updatedAt', 'state', 'exercises', 'schemaVersion'])
+          && data.sessionId is string && data.sessionId.size() > 0 && data.sessionId.size() <= 128
+          && isValidActivityDate(data.date)
+          && data.startedAt is string && data.startedAt.size() > 0
+          && data.updatedAt is string && data.updatedAt.size() > 0
+          && (!('completedAt' in data) || (data.completedAt is string && data.completedAt.size() > 0))
+          && data.state in ['in_progress', 'completed', 'abandoned']
+          && ((data.state == 'completed') == ('completedAt' in data))
+          && (!('sourceRecommendationDate' in data) || isValidActivityDate(data.sourceRecommendationDate))
+          && data.exercises is list && data.exercises.size() <= 30
+          && (!('sessionRpe' in data) || (data.sessionRpe is number && data.sessionRpe >= 0 && data.sessionRpe <= 10))
+          && (!('notes' in data) || (data.notes is string && data.notes.size() <= 2000))
+          && data.schemaVersion == 1;
+      }
+
       allow read: if isOwner(userId);
       allow create: if hasValidStrengthSession(userId, sessionId)
         && request.resource.data.state == 'in_progress'
@@ -330,23 +324,23 @@
       allow delete: if isOwner(userId);
     }
 
-    function hasValidGarminQueuedWorkout(userId, date) {
-      let data = request.resource.data;
-      return hasOwnedUserId(userId)
-        && isDateDocument(date)
-        && data.keys().hasOnly(['userId', 'date', 'workoutTitle', 'modality', 'status', 'queuedAt', 'syncedAt', 'error', 'payload', 'garminWorkoutId'])
-        && data.keys().hasAll(['userId', 'date', 'workoutTitle', 'modality', 'status', 'queuedAt', 'payload'])
-        && data.workoutTitle is string && data.workoutTitle.size() <= 200
-        && data.modality is string && data.modality.size() <= 64
-        && data.status in ['pending', 'synced', 'failed']
-        && data.queuedAt is string
-        && (!('syncedAt' in data) || data.syncedAt == null || data.syncedAt is string)
-        && (!('error' in data) || data.error == null || (data.error is string && data.error.size() <= 2000))
-        && (!('garminWorkoutId' in data) || data.garminWorkoutId is string)
-        && data.payload is map;
-    }
-
     match /users/{userId}/garmin_workout_queue/{date} {
+      function hasValidGarminQueuedWorkout(userId, date) {
+        let data = request.resource.data;
+        return hasOwnedUserId(userId)
+          && isDateDocument(date)
+          && data.keys().hasOnly(['userId', 'date', 'workoutTitle', 'modality', 'status', 'queuedAt', 'syncedAt', 'error', 'payload', 'garminWorkoutId'])
+          && data.keys().hasAll(['userId', 'date', 'workoutTitle', 'modality', 'status', 'queuedAt', 'payload'])
+          && data.workoutTitle is string && data.workoutTitle.size() <= 200
+          && data.modality is string && data.modality.size() <= 64
+          && data.status in ['pending', 'synced', 'failed']
+          && data.queuedAt is string
+          && (!('syncedAt' in data) || data.syncedAt == null || data.syncedAt is string)
+          && (!('error' in data) || data.error == null || (data.error is string && data.error.size() <= 2000))
+          && (!('garminWorkoutId' in data) || data.garminWorkoutId is string)
+          && data.payload is map;
+      }
+
       allow read: if isOwner(userId);
       allow create: if hasValidGarminQueuedWorkout(userId, date);
       allow update: if hasValidGarminQueuedWorkout(userId, date)
@@ -354,20 +348,20 @@
       allow delete: if isOwner(userId);
     }
 
-    function hasValidGarminSyncRequest(userId) {
-      let data = request.resource.data;
-      return hasOwnedUserId(userId)
-        && data.keys().hasOnly(['userId', 'status', 'requestedAt', 'completedAt', 'error', 'requestType', 'days'])
-        && data.keys().hasAll(['userId', 'status', 'requestedAt'])
-        && data.status == 'pending'
-        && data.requestedAt is string
-        && (!('requestType' in data) || data.requestType in ['sync', 'initial_backfill', 'backfill'])
-        && (!('days' in data) || (data.days is int && data.days >= 1 && data.days <= 365))
-        && (!('completedAt' in data) || data.completedAt == null)
-        && (!('error' in data) || data.error == null);
-    }
-
     match /users/{userId}/garmin_sync_requests/{requestId} {
+      function hasValidGarminSyncRequest(userId) {
+        let data = request.resource.data;
+        return hasOwnedUserId(userId)
+          && data.keys().hasOnly(['userId', 'status', 'requestedAt', 'completedAt', 'error', 'requestType', 'days'])
+          && data.keys().hasAll(['userId', 'status', 'requestedAt'])
+          && data.status == 'pending'
+          && data.requestedAt is string
+          && (!('requestType' in data) || data.requestType in ['sync', 'initial_backfill', 'backfill'])
+          && (!('days' in data) || (data.days is int && data.days >= 1 && data.days <= 365))
+          && (!('completedAt' in data) || data.completedAt == null)
+          && (!('error' in data) || data.error == null);
+      }
+
       allow read: if isOwner(userId);
       allow create, update: if hasValidGarminSyncRequest(userId) && requestId == 'latest';
       allow delete: if isOwner(userId);
