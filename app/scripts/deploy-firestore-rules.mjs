@@ -1,37 +1,56 @@
 import { execFileSync } from 'node:child_process';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   appDirectory,
+  accessToken,
   compareLocalFirestoreRules,
   inspectDeployedFirestoreRules,
   printComparison,
   projectFromArgs,
+  rulesApiRequest,
 } from './check-firestore-rules-drift.mjs';
 import { buildRules } from './build-firestore-rules.mjs';
 import { minifyRules } from './minify-firestore-rules.mjs';
 
-export async function withMinifiedRulesConfig(deploy, directory = appDirectory) {
-  const temporaryDirectory = await mkdtemp(path.join(directory, '.firestore-rules-deploy-'));
-  // Firebase resolves every relative reference from the config's directory.
-  const configPath = `${temporaryDirectory}.json`;
+export async function deployFirestoreRules(project, source) {
+  const content = minifyRules(source);
+  if (Buffer.byteLength(content, 'utf8') > 256 * 1024) {
+    throw new Error('Minified Firestore rules exceed the 256 KiB source limit.');
+  }
+  const token = accessToken();
+  const projectName = `projects/${encodeURIComponent(project)}`;
+  // Creation compiles the source; avoid the CLI's extra :test compile and catch-all
+  // PATCH -> POST fallback that masks transient release failures as HTTP 409 (#5590).
+  const ruleset = await rulesApiRequest(`${projectName}/rulesets`, token, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ source: { files: [{ name: 'firestore.rules', content }] } }),
+  });
+  if (typeof ruleset.name !== 'string' || !ruleset.name.startsWith(`${projectName}/rulesets/`)) {
+    throw new Error('Firebase Rules API did not return a ruleset in the requested project.');
+  }
+  const releaseName = `${projectName}/releases/cloud.firestore`;
+  // This guarded procedure backs up an existing release before deploying; no create fallback.
   try {
-    const config = JSON.parse(await readFile(path.join(directory, 'firebase.json'), 'utf8'));
-    if (!config.firestore || Array.isArray(config.firestore) || config.firestore.rules !== 'firestore.rules') {
-      throw new Error('Expected firebase.json firestore.rules to reference the generated firestore.rules.');
+    return await rulesApiRequest(releaseName, token, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ release: { name: releaseName, rulesetName: ruleset.name }, updateMask: 'rulesetName' }),
+    });
+  } catch (error) {
+    if (![429, 500, 502, 503, 504].includes(error.status)
+      && !['TypeError', 'TimeoutError', 'AbortError'].includes(error.name)) throw error;
+    // A failed response can follow a successful write; prove activation before failing.
+    let release;
+    try {
+      release = await rulesApiRequest(releaseName, token);
+    } catch {
+      throw error;
     }
-    const rulesPath = path.join(temporaryDirectory, 'firestore.rules');
-    const source = await readFile(path.join(directory, 'firestore.rules'), 'utf8');
-    await writeFile(rulesPath, minifyRules(source), { encoding: 'utf8', mode: 0o600, flag: 'wx' });
-    config.firestore.rules = path.relative(directory, rulesPath).split(path.sep).join('/');
-    await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
-    return await deploy(configPath);
-  } finally {
-    await Promise.all([
-      rm(configPath, { force: true }),
-      rm(temporaryDirectory, { recursive: true, force: true }),
-    ]);
+    if (release.rulesetName === ruleset.name) return release;
+    throw error;
   }
 }
 
@@ -41,44 +60,6 @@ function run(command, args) {
     shell: process.platform === 'win32',
     stdio: 'inherit',
   });
-}
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-// firebase-tools' release update falls back to a plain "create" call on ANY error from its
-// initial update attempt (see updateOrCreateRelease in firebase-tools/lib/gcp/rules.js) --
-// including a transient timeout or 5xx from the Firebase Rules API, not just "release does
-// not exist yet". Past the very first deploy the release always already exists, so that
-// fallback then fails with "409: Requested entity already exists", surfacing a transient
-// backend hiccup as a hard error. This is a known firebase-tools limitation that gets more
-// likely to bite the larger firestore.rules gets
-// (https://github.com/firebase/firebase-tools/issues/5590,
-// https://github.com/firebase/firebase-tools/issues/2127). Retrying is safe: `firebase
-// deploy --only firestore:rules` is idempotent, and the post-deploy hash check in main()
-// still fails the run if every attempt leaves the deployed rules not matching this repo.
-const RULES_DEPLOY_ATTEMPTS = 3;
-const RULES_DEPLOY_RETRY_DELAY_MS = 15_000;
-
-async function deployRulesWithRetry(command, args) {
-  for (let attempt = 1; attempt <= RULES_DEPLOY_ATTEMPTS; attempt += 1) {
-    try {
-      run(command, args);
-      return;
-    } catch (err) {
-      if (attempt === RULES_DEPLOY_ATTEMPTS) {
-        throw err;
-      }
-      console.warn(
-        `firebase deploy --only firestore:rules failed on attempt ${attempt}/${RULES_DEPLOY_ATTEMPTS}; ` +
-          `retrying in ${RULES_DEPLOY_RETRY_DELAY_MS / 1000}s (see the comment above ` +
-          'deployRulesWithRetry for why this is often transient).',
-      );
-      console.warn(err instanceof Error ? err.message : err);
-      await sleep(RULES_DEPLOY_RETRY_DELAY_MS);
-    }
-  }
 }
 
 async function main() {
@@ -106,13 +87,15 @@ async function main() {
   run(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['run', 'test:rules']);
 
   console.log('Pre-deployment deployed-rules identity:');
-  printComparison(await compareLocalFirestoreRules(project));
+  const comparison = await compareLocalFirestoreRules(project);
+  printComparison(comparison);
 
-  console.log('Deploying only Cloud Firestore Security Rules.');
-  await withMinifiedRulesConfig((configPath) => deployRulesWithRetry(
-    process.platform === 'win32' ? 'firebase.cmd' : 'firebase',
-    ['deploy', '--only', 'firestore:rules', '--project', project, '--non-interactive', '--config', path.basename(configPath)],
-  ));
+  if (comparison.matches) {
+    console.log('Rules already match; skipping ruleset creation and activation.');
+  } else {
+    console.log('Deploying only Cloud Firestore Security Rules.');
+    await deployFirestoreRules(project, await readFile(path.join(appDirectory, 'firestore.rules'), 'utf8'));
+  }
 
   console.log('Post-deployment deployed-rules identity:');
   const after = await compareLocalFirestoreRules(project);

@@ -89,7 +89,7 @@ jobs:
       # cleanup remains an explicit operator action after reviewing the difference. Firebase
       # also compiles firestore.rules before deploying indexes; its Rules API can transiently
       # return a 5xx before any index mutation. Repeating this idempotent, non-force deploy is
-      # safe and mirrors app/scripts/deploy-firestore-rules.mjs's retry policy.
+      # safe. The rules-only deployment uses per-request REST API retries instead.
       - name: Deploy Firestore indexes
         shell: bash
         run: |

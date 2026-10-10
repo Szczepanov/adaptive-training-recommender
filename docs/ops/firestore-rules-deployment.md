@@ -29,26 +29,26 @@ remain in that scope, so cross-domain calls retain their visibility. Do not edit
 file directly. Missing required modules and stale output fail the sync check, which also runs
 in CI, `npm run check`, and `make verify`.
 
-The guarded rules deployment checks sync before reading production. It creates a temporary
-config beside `firebase.json` and a separate minified rules file, preserving the original
-config's relative paths. Both temporary artifacts are removed after success or failure;
-tracked source and configuration remain readable. The minifier preserves quoted strings,
+The guarded rules deployment checks sync before reading production. It minifies the generated
+source in memory and uploads it directly through the Firebase Rules REST API; no temporary
+Firebase config or rules file is needed. Tracked source and configuration remain readable.
+The minifier preserves quoted strings,
 escapes, and syntax-sensitive token boundaries. Emulator coverage compiles the minified
 source and exercises ownership, immutable prescriptions, and transaction path bindings.
 
 ## Prerequisites
 
-From this PC, authenticate the two local tools as an operator with Firebase Rules access:
+From this PC, authenticate Application Default Credentials as an operator with Firebase Rules access:
 
 ```powershell
-firebase login
 gcloud auth application-default login
 ```
 
 Do not copy a service-account JSON file into the repository or export it to CI. The
 root-level `firebase-service-account.json`, if present locally, is ignored and is not used
-by these commands. The Firebase CLI login performs deployment; Application Default
-Credentials only read the deployed Rules API release and perform a confirmed rollback.
+by these commands. Application Default Credentials read the deployed release, upload and
+activate rules, and perform a confirmed rollback. CI uses its existing keyless Workload
+Identity Federation credentials for the same API calls.
 
 ## Normal deployment
 
@@ -67,9 +67,13 @@ deployment. The deployment command then:
 1. saves the currently active release and ruleset identity under
    `app/artifacts/firestore-rules-rollbacks/` (ignored by Git);
 2. reruns the mandatory local `npm run test:rules` emulator suite;
-3. deploys minified `firestore:rules` to `adaptive-training-recommender`;
+3. creates a ruleset from minified source and patches only the existing `cloud.firestore`
+   release to point at it;
 4. reads the deployed source again and fails unless its normalized SHA-256 matches
    `app/firestore.rules`.
+
+When the pre-deployment comparison already matches, the upload and activation are skipped;
+the emulator gate and final identity check still run.
 
 Drift comparison applies the same minifier to both sources. Comments, line endings, and
 formatting do not create drift; changed rule tokens and string contents do. This is lexical
@@ -80,7 +84,7 @@ Record the command output, commit, deployment time, and resulting ruleset name i
 change review. Firebase Rules releases can take several minutes to propagate, so do not
 assume an immediate client request proves the new release is active.
 
-## Known deploy flakiness: transient 409 on release update
+## Rules API failures and retries
 
 `firebase deploy --only firestore:rules` can fail with
 `Error: Request to https://firebaserules.googleapis.com/v1/projects/.../releases had HTTP
@@ -90,19 +94,37 @@ a rules problem: `updateOrCreateRelease` (in firebase-tools' `gcp/rules.js`) alw
 timeout or 5xx from the Firebase Rules API included, not only "release doesn't exist yet" --
 it falls back to *creating* a release with the same name. Past the very first deploy that
 release always already exists, so the fallback then 409s, turning a transient backend hiccup
-into a hard failure. It gets more likely to bite as `firestore.rules` grows -- see
+into a hard failure. Large rulesets have also exhibited intermittent 503 errors during
+cloud compilation and ruleset creation, even when emulator validation passes -- see
 [firebase-tools#5590](https://github.com/firebase/firebase-tools/issues/5590) and
 [firebase-tools#2127](https://github.com/firebase/firebase-tools/issues/2127).
 
-`firestore:rules:deploy` (`app/scripts/deploy-firestore-rules.mjs`) retries the `firebase
-deploy` call itself (3 attempts, 15s apart) because the command is idempotent and the
-post-deploy hash check still fails the run if every attempt leaves production not matching
-`app/firestore.rules`. If it still fails after all retries -- in CI or locally -- rerun it;
-if it keeps failing, check whether `app/firestore.rules` has grown close to the [Firestore
+`firestore:rules:deploy` (`app/scripts/deploy-firestore-rules.mjs`) now uses the documented
+[ruleset creation](https://firebase.google.com/docs/reference/rules/rest/v1/projects.rulesets/create)
+and [release PATCH](https://firebase.google.com/docs/reference/rules/rest/v1/projects.releases/patch)
+endpoints directly. Ruleset creation validates syntax and semantics, so the CLI's additional
+`:test` compilation is unnecessary after the mandatory emulator suite. A failed activation
+retries PATCH against the same uploaded ruleset; it never falls back to creating a release
+or recompiling the source. This procedure requires an existing release, as its backup step
+already did.
+
+API reads, ruleset creation, and activation each allow six attempts for HTTP 429, 500, 502,
+503, and 504, with delays of 15, 30, 60, 120, and 120 seconds. Each request has a 60-second
+timeout. Other HTTP errors, network errors, and timeouts fail immediately. Logs identify the
+failing API phase and status without printing credentials. The post-deploy hash check still
+requires production to match the repository. A POST whose response is lost can leave an
+unused immutable ruleset; retries never activate it without a returned identity.
+If activation exhausts transient-error retries or loses its response, the command reads the
+release identity and accepts success only when it points at the uploaded ruleset. A different
+identity or an unsuccessful read preserves the original deployment error. The final source
+hash check still follows this reconciliation.
+
+If persistent backend errors exhaust retries, the command fails; no client retry policy can
+guarantee recovery from a Firebase outage. Check whether the rules have grown close to the [Firestore
 Security Rules size limits](https://firebase.google.com/docs/firestore/quotas#security_rules)
-(256 KB source / 250 KB compiled) and look for removable dead code first (the CLI's own
-`[W] ... Unused function: ...` compile warnings, printed during `test:rules` and the deploy
-step, point at candidates).
+(256 KB source / 250 KB compiled). The command rejects minified source over 256 KiB before
+upload. Emulator validation does not prove the production compiled-size budget; investigate
+complexity and removable dead code when repeated backend failures persist.
 
 ## Drift and remediation
 

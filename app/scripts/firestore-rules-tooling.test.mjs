@@ -1,11 +1,13 @@
-import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { minifyRules } from './minify-firestore-rules.mjs';
 import { buildRules, RULES_MODULES } from './build-firestore-rules.mjs';
-import { normalizeRulesSource } from './check-firestore-rules-drift.mjs';
-import { withMinifiedRulesConfig } from './deploy-firestore-rules.mjs';
+import { normalizeRulesSource, rulesApiRequest } from './check-firestore-rules-drift.mjs';
+import { deployFirestoreRules } from './deploy-firestore-rules.mjs';
+
+vi.mock('node:child_process', () => ({ execFileSync: vi.fn(() => 'synthetic-token') }));
 
 const directories = [];
 async function fixture() {
@@ -14,6 +16,9 @@ async function fixture() {
   return directory;
 }
 afterEach(async () => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
   await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })));
 });
 
@@ -112,43 +117,111 @@ describe('readable rules assembly', () => {
   });
 });
 
-describe('isolated minified deployment config', () => {
-  it.each(['invalid-config', 'invalid-source'])('cleans preparation failures (%s) before invoking deploy', async (failure) => {
-    const directory = await fixture();
-    await writeFile(path.join(directory, 'firebase.json'), JSON.stringify({ firestore: { rules: failure === 'invalid-config' ? 'other.rules' : 'firestore.rules' } }));
-    await writeFile(path.join(directory, 'firestore.rules'), failure === 'invalid-source' ? '/* unterminated' : 'allow read: if true;');
-    let deployed = false;
-    await expect(withMinifiedRulesConfig(() => { deployed = true; }, directory)).rejects.toThrow();
-    expect(deployed).toBe(false);
-    expect((await readdir(directory)).sort()).toEqual(['firebase.json', 'firestore.rules']);
+describe('Rules API deployment', () => {
+  const project = 'synthetic-project';
+  const rulesetName = `projects/${project}/rulesets/new-rules`;
+  const releaseName = `projects/${project}/releases/cloud.firestore`;
+  const source = '// readable\nallow read: if false;\n';
+  function response(status, body = {}) {
+    return new Response(JSON.stringify(body), { status });
+  }
+  function requests() {
+    vi.useFakeTimers();
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const fetch = vi.fn();
+    vi.stubGlobal('fetch', fetch);
+    return fetch;
+  }
+
+  it('uploads minified source once and patches only the existing default release', async () => {
+    const fetch = requests()
+      .mockResolvedValueOnce(response(200, { name: rulesetName }))
+      .mockResolvedValueOnce(response(200, { name: releaseName, rulesetName }));
+    await deployFirestoreRules(project, source);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    const [createUrl, createOptions] = fetch.mock.calls[0];
+    expect(createUrl).toBe(`https://firebaserules.googleapis.com/v1/projects/${project}/rulesets`);
+    expect(createOptions.method).toBe('POST');
+    expect(createOptions.headers.Authorization).toBe('Bearer synthetic-token');
+    expect(JSON.parse(createOptions.body)).toEqual({ source: { files: [{ name: 'firestore.rules', content: minifyRules(source) }] } });
+    const [patchUrl, patchOptions] = fetch.mock.calls[1];
+    expect(patchUrl).toBe(`https://firebaserules.googleapis.com/v1/${releaseName}`);
+    expect(patchOptions.method).toBe('PATCH');
+    expect(JSON.parse(patchOptions.body)).toEqual({ release: { name: releaseName, rulesetName }, updateMask: 'rulesetName' });
   });
 
-  it.each([false, true])('preserves config references and tracked files, cleans after failure=%s', async (fail) => {
-    const directory = await fixture();
-    const config = { firestore: { rules: 'firestore.rules', indexes: 'firestore.indexes.json' }, hosting: { public: 'dist' } };
-    const configSource = JSON.stringify(config);
-    const source = '// readable\nallow read: if true;\n';
-    await writeFile(path.join(directory, 'firebase.json'), configSource);
-    await writeFile(path.join(directory, 'firestore.rules'), source);
-    let configPath;
-    let minifiedPath;
-    const result = withMinifiedRulesConfig(async (temporaryConfigPath) => {
-      configPath = temporaryConfigPath;
-      expect(path.dirname(configPath)).toBe(directory);
-      const temporary = JSON.parse(await readFile(configPath, 'utf8'));
-      expect(temporary.hosting).toEqual(config.hosting);
-      expect(temporary.firestore.indexes).toBe(config.firestore.indexes);
-      minifiedPath = path.resolve(directory, temporary.firestore.rules);
-      expect(await readFile(minifiedPath, 'utf8')).toBe(minifyRules(source));
-      if (fail) throw new Error('deploy failed');
-      return 'deployed';
-    }, directory);
-    if (fail) await expect(result).rejects.toThrow('deploy failed');
-    else await expect(result).resolves.toBe('deployed');
-    expect(await readFile(path.join(directory, 'firebase.json'), 'utf8')).toBe(configSource);
-    expect(await readFile(path.join(directory, 'firestore.rules'), 'utf8')).toBe(source);
-    await expect(readFile(configPath)).rejects.toThrow();
-    await expect(readFile(minifiedPath)).rejects.toThrow();
-    expect((await readdir(directory)).sort()).toEqual(['firebase.json', 'firestore.rules']);
+  it('retries upload and activation independently without repeating successful compilation', async () => {
+    const fetch = requests()
+      .mockResolvedValueOnce(response(503))
+      .mockResolvedValueOnce(response(503))
+      .mockResolvedValueOnce(response(200, { name: rulesetName }))
+      .mockResolvedValueOnce(response(503))
+      .mockResolvedValueOnce(response(200, { name: releaseName, rulesetName }));
+    const assertion = expect(deployFirestoreRules(project, source)).resolves.toBeDefined();
+    await vi.runAllTimersAsync();
+    await assertion;
+    expect(fetch.mock.calls.map(([, options]) => options.method)).toEqual(['POST', 'POST', 'POST', 'PATCH', 'PATCH']);
+    expect(fetch.mock.calls.slice(3).map(([, options]) => JSON.parse(options.body).release.rulesetName)).toEqual([rulesetName, rulesetName]);
+  });
+
+  it.each([400, 401, 403, 404, 409])('fails immediately on permanent HTTP %s without activating rules', async (status) => {
+    const fetch = requests().mockResolvedValue(response(status));
+    await expect(deployFirestoreRules(project, source)).rejects.toThrow(`Firebase Rules API ${status}`);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('never falls back to release creation when PATCH fails', async () => {
+    const fetch = requests()
+      .mockResolvedValueOnce(response(200, { name: rulesetName }))
+      .mockResolvedValueOnce(response(403));
+    await expect(deployFirestoreRules(project, source)).rejects.toThrow('Firebase Rules API 403');
+    expect(fetch.mock.calls.map(([, options]) => options.method)).toEqual(['POST', 'PATCH']);
+  });
+
+  it.each([true, false])('reconciles an exhausted activation error with release identity (matches=%s)', async (matches) => {
+    const fetch = requests().mockResolvedValueOnce(response(200, { name: rulesetName }));
+    for (let attempt = 0; attempt < 6; attempt += 1) fetch.mockResolvedValueOnce(response(503));
+    fetch.mockResolvedValueOnce(response(200, { name: releaseName, rulesetName: matches ? rulesetName : 'projects/synthetic-project/rulesets/old' }));
+    const deployed = deployFirestoreRules(project, source).then((value) => ({ value }), (error) => ({ error }));
+    await vi.runAllTimersAsync();
+    const result = await deployed;
+    if (matches) expect(result.value).toMatchObject({ rulesetName });
+    else expect(result.error.message).toContain('Firebase Rules API 503');
+    expect(fetch.mock.calls.map(([, options]) => options.method ?? 'GET')).toEqual(['POST', ...Array(6).fill('PATCH'), 'GET']);
+  });
+
+  it('verifies an activation whose response was lost without creating another ruleset', async () => {
+    const fetch = requests()
+      .mockResolvedValueOnce(response(200, { name: rulesetName }))
+      .mockRejectedValueOnce(new TypeError('fetch failed'))
+      .mockResolvedValueOnce(response(200, { name: releaseName, rulesetName }));
+    await expect(deployFirestoreRules(project, source)).resolves.toMatchObject({ rulesetName });
+    expect(fetch.mock.calls.map(([, options]) => options.method ?? 'GET')).toEqual(['POST', 'PATCH', 'GET']);
+  });
+
+  it('does not activate an invalid or foreign ruleset response', async () => {
+    const fetch = requests().mockResolvedValue(response(200, { name: 'projects/other/rulesets/id' }));
+    await expect(deployFirestoreRules(project, source)).rejects.toThrow(/ruleset/i);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects oversized source before making an API call', async () => {
+    const fetch = requests();
+    await expect(deployFirestoreRules(project, `allow read: if '${'a'.repeat(256 * 1024)}' == '';`)).rejects.toThrow(/256/);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it.each([429, 500, 502, 503, 504])('bounds HTTP %s retries with increasing delays and preserves the error', async (status) => {
+    const fetch = requests().mockImplementation(() => Promise.resolve(response(status, { error: { message: 'synthetic failure' } })));
+    const start = Date.now();
+    const assertion = expect(rulesApiRequest('projects/synthetic/releases/cloud.firestore', 'token')).rejects.toThrow(`Firebase Rules API ${status}`);
+    await vi.runAllTimersAsync();
+    await assertion;
+    expect(fetch).toHaveBeenCalledTimes(6);
+    expect(Date.now() - start).toBe(345_000);
+    expect(console.warn.mock.calls.map(([message]) => message)).toEqual(expect.arrayContaining([
+      expect.stringContaining('15s'), expect.stringContaining('30s'), expect.stringContaining('60s'), expect.stringContaining('120s'),
+    ]));
   });
 });

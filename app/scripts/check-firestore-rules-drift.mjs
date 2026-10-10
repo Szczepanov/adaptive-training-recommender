@@ -22,7 +22,7 @@ export function projectFromArgs(args = process.argv.slice(2)) {
   return project;
 }
 
-function accessToken() {
+export function accessToken() {
   const gcloud = process.platform === 'win32' ? 'gcloud.cmd' : 'gcloud';
   try {
     return execFileSync(
@@ -41,24 +41,32 @@ function accessToken() {
   }
 }
 
-async function rulesApiRequest(resourceName, token, options = {}) {
-  const response = await fetch(
-    `https://firebaserules.googleapis.com/v1/${resourceName}`,
-    {
-      ...options,
-      headers: {
-        Authorization: `Bearer ${token}`,
-        ...(options.headers ?? {}),
+export async function rulesApiRequest(resourceName, token, options = {}) {
+  const retryDelays = [15_000, 30_000, 60_000, 120_000, 120_000];
+  for (let attempt = 0; ; attempt += 1) {
+    const response = await fetch(
+      `https://firebaserules.googleapis.com/v1/${resourceName}`,
+      {
+        ...options,
+        signal: AbortSignal.timeout(60_000),
+        headers: {
+          Authorization: `Bearer ${token}`,
+          ...(options.headers ?? {}),
+        },
       },
-    },
-  );
+    );
+    if (response.ok) return response.json();
 
-  if (!response.ok) {
     const body = await response.text();
-    throw new Error(`Firebase Rules API ${response.status}: ${body}`);
+    const delay = retryDelays[attempt];
+    if (delay === undefined || ![429, 500, 502, 503, 504].includes(response.status)) {
+      const error = new Error(`Firebase Rules API ${response.status}: ${body}`);
+      error.status = response.status;
+      throw error;
+    }
+    console.warn(`Firebase Rules API ${response.status} on ${options.method ?? 'GET'} ${resourceName}; attempt ${attempt + 1}/6, retrying in ${delay / 1000}s.`);
+    await new Promise((resolve) => setTimeout(resolve, delay));
   }
-
-  return response.json();
 }
 
 export function sha256(source) {
