@@ -23,6 +23,80 @@ afterEach(async () => {
 });
 
 describe('Firestore rules minification and drift identity', () => {
+  it('shortens helper declarations and calls without changing data keys or strings', () => {
+    const source = "function longHelper(value) { return value.longHelper() == 'longHelper' && value.longHelper; } allow read: if longHelper(resource.data);";
+    expect(minifyRules(source)).toBe("function _f0(_v0){return _v0.longHelper()=='longHelper'&&_v0.longHelper;}allow read:if _f0(resource.data);");
+  });
+
+  it('avoids capture by existing identifiers and is stable on already compact helpers', () => {
+    const source = 'function first(value) { return second(value) && _f0 && _v0; } function second(value) { return value > 0; } allow read: if first(1);';
+    const compact = minifyRules(source);
+    expect(compact).toContain('function _f1(_v1)');
+    expect(compact).toContain('function _f2(_v1)');
+    expect(compact).toContain('return _f2(_v1)&&_f0&&_v0');
+    expect(minifyRules(compact)).toBe(compact);
+    expect(normalizeRulesSource(source)).toBe(normalizeRulesSource(compact));
+  });
+
+  it('preserves sibling helper scopes and reserved path names', () => {
+    const source = 'match /_f0/{_f1} { function validator(v) { return v; } allow read: if validator(true); } match /other/{id} { function validator(v) { return !v; } allow read: if validator(false); }';
+    const compact = minifyRules(source);
+    expect(compact).toContain('match/_f0/{_f1}');
+    expect(compact).toContain('function _f2(_v0){return _v0;}allow read:if _f2(true)');
+    expect(compact).toContain('function _f3(_v0){return!_v0;}allow read:if _f3(false)');
+    expect(minifyRules(compact)).toBe(compact);
+  });
+
+  it('resolves local builtin shadowing without renaming unrelated builtin calls', () => {
+    const source = 'match /a/{id} { function exists(value) { return value; } allow read: if exists(true); } match /b/{id} { allow read: if exists(/databases/$(database)/documents/x) && getAfter(/databases/$(database)/documents/x).data.ok; }';
+    const compact = minifyRules(source);
+    expect(compact).toContain('function _f0(_v0){return _v0;}allow read:if _f0(true)');
+    expect(compact).toContain('if exists(/databases/$(database)/documents/x)&&getAfter(');
+    expect(minifyRules(compact)).toBe(compact);
+  });
+
+  it('binds forward calls and resolves a child helper independently of its parent', () => {
+    const source = 'function check(value) { return valid(value); } function valid(value) { return value; } match /a/{id} { function valid(value) { return !value; } allow read: if check(true) && valid(false); }';
+    const compact = minifyRules(source);
+    expect(compact).toContain('function _f0(_v0){return _f1(_v0);}');
+    expect(compact).toContain('allow read:if _f0(true)&&_f2(false)');
+    expect(minifyRules(compact)).toBe(compact);
+  });
+
+  it('shortens local bindings while preserving static paths, interpolation and field keys', () => {
+    const source = "function check(userId) { let record = get(/databases/$(database)/documents/users/userId); let value = get(/databases/$(database)/documents/users/$(userId)).data.userId; return {'userId': userId, 'value': value / record.data.value}; }";
+    const compact = minifyRules(source);
+    expect(compact).toContain('get(/databases/$(database)/documents/users/userId)');
+    expect(compact).toContain('get(/databases/$(database)/documents/users/$(_v0)).data.userId');
+    expect(compact).toContain("return{'userId':_v0,'value':_v2/_v1.data.value}");
+    expect(minifyRules(compact)).toBe(compact);
+  });
+
+  it('preserves type names when a parameter has the same spelling', () => {
+    const compact = minifyRules('function valid(list) { return list is list && list.size() > 0; }');
+    expect(compact).toBe('function _f0(_v0){return _v0 is list&&_v0.size()>0;}');
+    expect(minifyRules(compact)).toBe(compact);
+  });
+
+  it.each([
+    'function same() { return true; } function same() { return false; }',
+    'function bad(value, value) { return value; }',
+    'function bad(value) { let value = true; return value; }',
+  ])('rejects duplicate declarations instead of repairing invalid rules %j', (source) => {
+    expect(() => minifyRules(source)).toThrow(/Duplicate/);
+  });
+
+  it.each(['function bad(null) { return null; }', 'function true() { return true; }'])('rejects reserved declaration names %j', (source) => {
+    expect(() => minifyRules(source)).toThrow(/Reserved/);
+  });
+
+  it('keeps the repository upload artifact stable under repeated normalization', async () => {
+    const source = await buildRules({ check: true });
+    const compact = minifyRules(source);
+    expect(minifyRules(compact)).toBe(compact);
+    expect(normalizeRulesSource(compact)).toBe(normalizeRulesSource(source));
+  });
+
   it('removes comments and preserves URL, regex, whitespace and escapes in strings', () => {
     const literal = String.raw`'https://host/a/*b*/  c' + "a\\b\"c//.*"`;
     expect(minifyRules(`// header\r\nreturn  ${literal}; /* trailer */`)).toBe(`return ${literal.replace(' + ', '+')};`);
@@ -73,6 +147,18 @@ describe('Firestore rules minification and drift identity', () => {
 });
 
 describe('readable rules assembly', () => {
+  it('keeps collection validators out of the inherited documents scope', async () => {
+    const source = await buildRules({ check: true });
+    // Root helpers are compiled into every child match; new shared helpers need review.
+    expect([...source.matchAll(/^    function (\w+)\(/gm)].map((match) => match[1]).sort()).toEqual([
+      'assessmentTrialIdFor', 'hasOwnedUserId', 'hasValidAxisValue', 'hasValidEquipmentList',
+      'hasValidExpectedCost', 'hasValidObservationDevice',
+      'hasValidProtocolRef', 'hasValidSessionSource', 'isDateDocument', 'isFixedLoadProtocol',
+      'isOwner', 'isRealCalendarDate', 'isValidActivityDate', 'isValidEquipmentItem',
+      'keepsOwnership', 'outcomeMetricUnits', 'sameFixedLoadContext',
+    ].sort());
+  });
+
   async function modules(directory) {
     await mkdir(path.join(directory, 'rules'));
     for (const name of [...RULES_MODULES].reverse()) {

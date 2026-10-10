@@ -24,16 +24,19 @@ npm run test:rules
 ```
 
 `rules:build` assembles modules in lexical order into readable, committed
-`app/firestore.rules`. The header opens the shared scope; the footer closes it. Functions
-remain in that scope, so cross-domain calls retain their visibility. Do not edit the generated
-file directly. Missing required modules and stale output fail the sync check, which also runs
+`app/firestore.rules`. The header opens the shared scope; the footer closes it. Keep helpers
+used by a single collection inside that collection's `match` block. Only genuinely shared
+helpers belong in the documents scope; the tooling test explicitly lists them for review.
+Do not edit the generated file directly. Missing required modules and stale output fail the sync check, which also runs
 in CI, `npm run check`, and `make verify`.
 
 The guarded rules deployment checks sync before reading production. It minifies the generated
 source in memory and uploads it directly through the Firebase Rules REST API; no temporary
 Firebase config or rules file is needed. Tracked source and configuration remain readable.
 The minifier preserves quoted strings,
-escapes, and syntax-sensitive token boundaries. Emulator coverage compiles the minified
+escapes, and syntax-sensitive token boundaries. It also shortens helper names, parameters,
+and local variables using their declaring scopes. Fields, static path segments, path wildcard
+names, free variables, and builtins retain their spelling. Emulator coverage compiles the minified
 source and exercises ownership, immutable prescriptions, and transaction path bindings.
 
 ## Prerequisites
@@ -75,9 +78,10 @@ deployment. The deployment command then:
 When the pre-deployment comparison already matches, the upload and activation are skipped;
 the emulator gate and final identity check still run.
 
-Drift comparison applies the same minifier to both sources. Comments, line endings, and
-formatting do not create drift; changed rule tokens and string contents do. This is lexical
-normalization, not a claim that different expressions are semantically equivalent. The
+Drift comparison applies the same minifier to both sources. Comments, line endings, formatting,
+and the compactor's binding aliases do not create drift; changed conditions, paths, fields,
+and string contents do. Normalization preserves expressions and binding resolution; it does
+not claim that differently written conditions are semantically equivalent. The
 rollback backup retains the original deployed source and ruleset identity.
 
 Record the command output, commit, deployment time, and resulting ruleset name in the
@@ -123,8 +127,19 @@ If persistent backend errors exhaust retries, the command fails; no client retry
 guarantee recovery from a Firebase outage. Check whether the rules have grown close to the [Firestore
 Security Rules size limits](https://firebase.google.com/docs/firestore/quotas#security_rules)
 (256 KB source / 250 KB compiled). The command rejects minified source over 256 KiB before
-upload. Emulator validation does not prove the production compiled-size budget; investigate
-complexity and removable dead code when repeated backend failures persist.
+upload. Emulator validation does not prove the production compiled-size budget.
+
+Firebase's [compiler guidance](https://firebase.google.com/docs/rules/rules-language#expression_complexity_and_compiler_limits)
+also identifies inherited helper scopes as a source of compiler stack exhaustion (503) and
+compiled executable size failures (400). Functions declared at the documents scope are
+inherited and compiled into every child match. Splitting source into module files or removing
+whitespace does not reduce that duplication. Collection-specific validation families must
+live inside their existing match blocks, with shared dependencies kept visible to every caller.
+The scope regression test prevents silently restoring collection validators to the root.
+Whitespace removal alone also leaves long binding names in the compiled executable. The
+upload compactor shortens those names while the authored/generated rules stay readable.
+For this remediation, isolated cloud release creation and PATCH succeeded with a compiled
+executable below the limit; the temporary releases and rulesets were deleted afterwards.
 
 ## Drift and remediation
 

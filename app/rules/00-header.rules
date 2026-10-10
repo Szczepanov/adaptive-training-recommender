@@ -40,20 +40,6 @@ service cloud.firestore {
       return !(key in m) || (m[key] is number && m[key] >= 0 && m[key] <= 1);
     }
 
-    function hasValidExpectedStimulus(m) {
-      return m is map
-        && m.keys().hasOnly(['aerobicEndurance', 'thresholdPower', 'vo2MaxPower', 'repeatedSurges', 'sprintPower', 'fatigueResistance', 'maxStrength', 'hypertrophy'])
-        && m.size() <= 8
-        && hasValidAxisValue(m, 'aerobicEndurance')
-        && hasValidAxisValue(m, 'thresholdPower')
-        && hasValidAxisValue(m, 'vo2MaxPower')
-        && hasValidAxisValue(m, 'repeatedSurges')
-        && hasValidAxisValue(m, 'sprintPower')
-        && hasValidAxisValue(m, 'fatigueResistance')
-        && hasValidAxisValue(m, 'maxStrength')
-        && hasValidAxisValue(m, 'hypertrophy');
-    }
-
     function hasValidExpectedCost(m) {
       return m is map
         && m.keys().hasOnly(['systemic', 'cardiovascular', 'lowerBody', 'upperBody', 'impactTissue', 'neuromuscular'])
