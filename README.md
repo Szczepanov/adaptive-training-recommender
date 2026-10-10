@@ -90,14 +90,14 @@ Adaptive Training Recommendations & Native Session Execution
 26. **Advanced Execution Scheduling (ADR-0035, ADR-0036)**: Explicit rest-day authoring in external plans and intraday training windows.
 27. **Longitudinal Body-Composition and Fueling Observations (ADR-0039)**: Provider-agnostic body mass, home tape measurements, device body-composition estimates, and subjective fueling context without recommendation authority.
 
-29. **Server-Authoritative Anthropometry Writes (ADR-0040)**: Dedicated Python Cloud Run API that validates protocol, bounds, and identity for anthropometry observations before persisting them, superseding direct client Firestore writes.
-30. **Typed Strength, Speed and Power Performance Goals (ADR-0041)**: Explicit non-authoritative typed targets and shared deterministic multi-target comparator for performance goals.
-31. **Nutrition Ingestion, Provenance, and Decision Authority (ADR-0042)**: Provider-neutral energy intake and macro ingestion, strict separation from energy expenditure, tripartite provenance identity, explicit missingness semantics, safe daily deduplication, and strictly retrospective zero recommendation authority.
-32. **Individualized Rolling Catalog-Load Budget (ADR-0043)**: Versioned, user-history-derived catalog-load envelope to week-ahead planning.
-33. **Constraint-Aware Requirement Fulfilment (ADR-0044)**: Defines the requirement-class boundary for constrained planning while preserving canonical coverage, objective-credit, load and intraday authorities.
-34. **Athlete-Relative Weekly Aerobic Dose Envelope (ADR-0045)**: 28-day history-derived easy-aerobic weekly envelope with a public-health fallback, no intensity equivalence, and a conditional exact long aerobic anchor.
-35. **First-Class Raw Assessment Trial Evidence (ADR-0046)**: Extends OV with immutable raw multi-trial evidence, append-only corrections, deterministic reducers and typed derivation provenance while preserving evidence-only authority.
-36. **Fixed-Load Mean Velocity Assessment Series (ADR-0047)**: Dedicated fixed-load velocity protocols per exercise with exact load, measurement method (including importer parser version) and equipment setup as series-defining identity; no observation-key change.
+28. **Server-Authoritative Anthropometry Writes (ADR-0040)**: Dedicated Python Cloud Run API that validates protocol, bounds, and identity for anthropometry observations before persisting them, superseding direct client Firestore writes.
+29. **Typed Strength, Speed and Power Performance Goals (ADR-0041)**: Explicit non-authoritative typed targets and shared deterministic multi-target comparator for performance goals.
+30. **Nutrition Ingestion, Provenance, and Decision Authority (ADR-0042)**: Provider-neutral energy intake and macro ingestion, strict separation from energy expenditure, tripartite provenance identity, explicit missingness semantics, safe daily deduplication, and strictly retrospective zero recommendation authority.
+31. **Individualized Rolling Catalog-Load Budget (ADR-0043)**: Versioned, user-history-derived catalog-load envelope to week-ahead planning.
+32. **Constraint-Aware Requirement Fulfilment (ADR-0044)**: Defines the requirement-class boundary for constrained planning while preserving canonical coverage, objective-credit, load and intraday authorities.
+33. **Athlete-Relative Weekly Aerobic Dose Envelope (ADR-0045)**: 28-day history-derived easy-aerobic weekly envelope with a public-health fallback, no intensity equivalence, and a conditional exact long aerobic anchor.
+34. **First-Class Raw Assessment Trial Evidence (ADR-0046)**: Extends OV with immutable raw multi-trial evidence, append-only corrections, deterministic reducers and typed derivation provenance while preserving evidence-only authority.
+35. **Fixed-Load Mean Velocity Assessment Series (ADR-0047)**: Dedicated fixed-load velocity protocols per exercise with exact load, measurement method (including importer parser version) and equipment setup as series-defining identity; no observation-key change.
 
 ---
 
