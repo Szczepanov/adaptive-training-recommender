@@ -54,6 +54,14 @@ describe('GoalService persistence shape', () => {
         });
     });
 
+    it('rejects a fitness-race write without a format identity', async () => {
+        const service = new GoalService();
+        await expect(service.createGoal('u1', {
+            ...eventGoal, eventCategory: 'fitness_race', eventPreset: null,
+        })).rejects.toThrow('Event preset must be a valid style');
+        expect(firestore.addDoc).not.toHaveBeenCalled();
+    });
+
     it('removes category and former event fields when a dated event becomes a plain dated goal', async () => {
         const service = new GoalService();
         await service.updateGoal('u1', eventGoal.id, {

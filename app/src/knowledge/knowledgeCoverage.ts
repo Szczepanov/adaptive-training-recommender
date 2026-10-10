@@ -628,10 +628,10 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
     },
     {
         id: 'event.demand_presets', domain: 'event_demand', title: 'Sport/event demand profiles',
-        currentRule: 'Road race, criterium, TT, gran fondo, gravel, running distances, triathlon distances and strength events are mapped to authored 0..1 aerobic/threshold/VO2/surge/sprint/fatigue-resistance/neuromuscular demand vectors.',
+        currentRule: 'Road race, criterium, TT, gran fondo, gravel, running distances, triathlon distances and strength events are mapped to authored 0..1 aerobic/threshold/VO2/surge/sprint/fatigue-resistance/neuromuscular demand vectors. HYROX Open Singles reuses the general-target vector without format-specific planning authority.',
         classification: 'product_heuristic', coverage: 'partial', decisionImpact: 'high', safetyImpact: 'low', researchPriority: 'p1',
         codeRefs: ['engine/eventPresets.ts:EVENT_PRESETS'], knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.eventDurationLimiterShift, KNOWLEDGE_CLAIM_IDS.eventDemandPresetsPolicy],
-        coverageRationale: 'Evidence Pack 6 reclassifies this from scientific_claim to product_heuristic (an authored 0-1 vector table is an encoding, not a measured constant) and registers a moderate-certainty boundary that endurance demands shift with event duration and race morphology, plus a product-policy record of the 19 authored preset vectors. Stays partial at P1: the field literature supports broad demand differences but validates no individual axis value or exact preset mapping, and the strength_meet/general_target presets have no cited endurance-event-demand literature behind them.',
+        coverageRationale: 'Evidence Pack 6 reclassifies this from scientific_claim to product_heuristic (an authored 0-1 vector table is an encoding, not a measured constant) and registers a moderate-certainty boundary that endurance demands shift with event duration and race morphology, plus a product-policy record of the 20 authored preset vectors. Stays partial at P1: the field literature supports broad demand differences but validates no individual axis value or exact preset mapping, and the strength_meet/general_target presets have no cited endurance-event-demand literature behind them.',
     },
     {
         id: 'event.gran_fondo_durability', domain: 'event_demand', title: 'Gran-fondo durability objective and surge separation',

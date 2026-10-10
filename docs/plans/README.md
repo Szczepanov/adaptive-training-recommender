@@ -1,5 +1,10 @@
 # Implementation Plans
 
+**HYROX goal-entry delivery (2026-10-10):** the [event-taxonomy plan](./2026-10-05-event-taxonomy-fitness-race-hyrox.md)
+has an implemented goal-entry slice for HYROX Open Singles with explicit generic training
+and taper guidance. The full P0 planning system remains pending ADR-0048 acceptance;
+format-specific workouts, coverage, generated plans and calibration have not shipped.
+
 Plans describe **how a change gets made**. They are mutable working documents with a
 status lifecycle, and they are expected to go stale — that is what `Superseded` and
 `Archived` are for.

@@ -128,6 +128,14 @@ export const EVENT_PRESETS: Record<UserEvent['category'], EventPreset[]> = {
             demandProfile: { aerobicEndurance: 0.15, thresholdPower: 0.15, vo2MaxPower: 0.1, repeatedSurges: 0.15, sprintPower: 0.35, fatigueResistance: 0.25, neuromuscular: 0.8 },
         },
     ],
+    fitness_race: [
+        {
+            id: 'hyrox_open_singles',
+            label: 'HYROX Open Singles',
+            // shortcut: generic demand only, replace when reviewed HYROX planning policy ships.
+            demandProfile: GENERIC_BASE_DEMAND,
+        },
+    ],
     general_target: [
         {
             id: 'generic',

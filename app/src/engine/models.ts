@@ -431,7 +431,9 @@ export interface UserEvent {
     date: string; // YYYY-MM-DD
     priority: EventPriority;
     lifecycle: EventLifecycle;
-    category: 'running_race' | 'cycling_event' | 'triathlon' | 'strength_meet' | 'general_target';
+    category: 'running_race' | 'cycling_event' | 'triathlon' | 'strength_meet' | 'general_target' | 'fitness_race';
+    /** Stable format identity retained from the goal; never inferred from its title or demand. */
+    presetId?: string;
     demandProfile: EventDemandProfile;
     timing?: EventTiming;
     taper?: EventTaperSpec;

@@ -53,6 +53,7 @@ export function modalitiesForEventCategory(category: UserEvent['category']): Ses
         case 'running_race': return ['Running'];
         case 'triathlon': return ['Swimming', 'Cycling', 'Running'];
         case 'strength_meet': return ['Strength'];
+        case 'fitness_race': // Generic guidance until format-specific planning is implemented.
         case 'general_target': return [];
     }
 }
@@ -551,6 +552,7 @@ export function goalToUserEvent(goal: UserGoal & { id?: string }): UserEvent | n
         priority: deriveEventPriority(goal.priority),
         lifecycle: goal.eventLifecycle ?? 'scheduled',
         category: goal.eventCategory,
+        ...(goal.eventPreset ? { presetId: goal.eventPreset } : {}),
         demandProfile: resolveDemandProfile(goal.eventCategory, goal.eventPreset),
         // goal.timing already passed validateGoal's validateEventTiming check on write
         // (see validation.ts) -- not re-validated here, same trust boundary as every

@@ -731,6 +731,23 @@ export const VISUAL_SCENARIOS: VisualScenario[] = [
     fixture: standardFixture,
   },
   {
+    id: 'goals-hyrox',
+    title: 'Goals — HYROX Open Singles target',
+    screen: 'goals',
+    expectedFocus: ['HYROX Open Singles, the target date, and taper class remain scannable.',
+      'Generic event guidance and the absence of HYROX-specific workouts and plans are explicit.'],
+    fixture: buildFixture({ goals: [{
+      ...eventGoal,
+      id: 'visual-hyrox-goal',
+      domain: 'general_fitness',
+      title: 'HYROX Open Singles',
+      description: 'Finish my first HYROX Open Singles race.',
+      targetOutcome: 'Finish the race.',
+      eventCategory: 'fitness_race',
+      eventPreset: 'hyrox_open_singles',
+    }] }),
+  },
+  {
     id: 'data-recovery',
     title: 'Detailed data — recovery tab',
     screen: 'data',

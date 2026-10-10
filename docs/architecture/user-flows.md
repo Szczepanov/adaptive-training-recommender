@@ -360,6 +360,13 @@ copy.
 archive, and archived-goal deletion. Dated event goals carry event metadata used by
 periodization/taper calculations, and the screen derives the current focus event/phase.
 
+The event picker includes **Fitness race (HYROX) → HYROX Open Singles**. This registration
+preserves `fitness_race / hyrox_open_singles` through persistence and `UserEvent.presetId`,
+with generic demand guidance and the existing priority-based competition taper (or an
+athlete-authored taper start). The form and saved goal explicitly disclose that HYROX-specific
+workouts and plans are not yet available. No format-specific modality or exact-coverage
+authority is granted by this registration.
+
 Two implementation details matter to navigation work:
 
 * paused goals appear only under `all`, because there is no dedicated paused filter; and

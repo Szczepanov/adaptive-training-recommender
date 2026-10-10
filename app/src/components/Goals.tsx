@@ -33,6 +33,7 @@ import './overlayContract.css';
 import './Goals.css';
 
 const FAMILY_LABELS: Record<PerformanceGoalFamily, string> = { strength: 'Strength', speed: 'Speed', power: 'Power' };
+const HYROX_SUPPORT_HINT = 'HYROX is saved as a target event. Training and taper use generic event guidance; HYROX-specific workouts and plans are not available yet.';
 
 function subjectDisplayName(subjectRef: PerformanceSubjectRef): string {
     if (subjectRef.kind === 'exercise') {
@@ -68,6 +69,7 @@ const EVENT_CATEGORY_LABELS: Record<UserEvent['category'], string> = {
   running_race: 'Running race',
   triathlon: 'Triathlon',
   strength_meet: 'Strength meet',
+  fitness_race: 'Fitness race (HYROX)',
   general_target: 'General target',
 };
 
@@ -369,7 +371,7 @@ export function Goals({ userId }: GoalsProps) {
                       {goal.title}
                       {goal.eventCategory && goal.targetDate && (
                         <span className="event-badge">
-                          🏁 {EVENT_CATEGORY_LABELS[goal.eventCategory]} · {(() => {
+                          🏁 {EVENT_PRESETS[goal.eventCategory].find(preset => preset.id === goal.eventPreset)?.label ?? EVENT_CATEGORY_LABELS[goal.eventCategory]} · {(() => {
                             const days = getDaysToEvent(goal.targetDate, today);
                             return days >= 0 ? `in ${days}d` : `${Math.abs(days)}d ago`;
                           })()}
@@ -446,6 +448,8 @@ export function Goals({ userId }: GoalsProps) {
                       </div>
                     )}
                   </div>
+
+                  {goal.eventCategory === 'fitness_race' && <p className="event-support-hint">{HYROX_SUPPORT_HINT}</p>}
 
                   {goal.performanceTarget && (
                     <PerformanceTargetSummary
@@ -984,6 +988,7 @@ function GoalModal({ goal, onSave, onClose }: GoalModalProps) {
                 <div className="form-group">
                   <label>Event type</label>
                   <select
+                    aria-label="Event type"
                     value={formData.eventCategory}
                     required={formData.isEvent}
                     onChange={(e) => {
@@ -1001,6 +1006,7 @@ function GoalModal({ goal, onSave, onClose }: GoalModalProps) {
                 <div className="form-group">
                   <label>Event style</label>
                   <select
+                    aria-label="Event style"
                     value={formData.eventPreset}
                     disabled={!formData.eventCategory}
                     required={formData.isEvent}
@@ -1012,6 +1018,8 @@ function GoalModal({ goal, onSave, onClose }: GoalModalProps) {
                   </select>
                 </div>
               </div>
+
+              {formData.eventCategory === 'fitness_race' && <p className="event-support-hint">{HYROX_SUPPORT_HINT}</p>}
 
               <p className="taper-class-preview">
                 Taper class: <strong>{deriveEventPriority(formData.priority)}</strong>

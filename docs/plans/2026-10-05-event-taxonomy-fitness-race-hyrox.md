@@ -11,6 +11,14 @@
 
 ## 1. Goal
 
+**2026-10-10 goal-entry slice:** HYROX Open Singles can be created, edited and persisted as
+`fitness_race / hyrox_open_singles`, with format identity retained in `UserEvent.presetId`.
+The UI explicitly discloses generic training/taper guidance. This slice reuses the existing
+generic demand and priority-based competition taper; it does not implement the P0 planning
+system below. ADR-0048 remains proposed, and its acceptance-dependent format-specific
+calibration, centralized semantics, exact coverage, generated plans and multidomain sessions
+remain pending. The generic interim registration is not the proposed specifically supported P0 format.
+
 Deliver the smallest end-to-end product slice that can represent and plan a fitness race honestly without weakening existing architecture contracts.
 
 P0 must support:

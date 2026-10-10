@@ -526,6 +526,28 @@
 }
 
 /* Event fields */
+.event-support-hint {
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+@media (max-width: 640px) {
+  .goal-header {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .goal-meta {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .event-section .form-row {
+    grid-template-columns: 1fr;
+  }
+}
+
 .event-badge {
   display: inline-block;
   margin-left: 0.5rem;

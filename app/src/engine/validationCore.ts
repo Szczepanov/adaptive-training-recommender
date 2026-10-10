@@ -640,7 +640,7 @@ export function validateGoal(raw: any): ValidationResult<UserGoal> {
     }
 
     // Event fields: only meaningful alongside a target date (a race needs a date).
-    const validEventCategories: UserEvent['category'][] = ['running_race', 'cycling_event', 'triathlon', 'strength_meet', 'general_target'];
+    const validEventCategories: UserEvent['category'][] = ['running_race', 'cycling_event', 'triathlon', 'strength_meet', 'general_target', 'fitness_race'];
     const rawEventCategory = normalizeEmptyToNull(raw.eventCategory);
     if (rawEventCategory !== null) {
         if (!validEventCategories.includes(rawEventCategory)) {
@@ -658,7 +658,7 @@ export function validateGoal(raw: any): ValidationResult<UserGoal> {
     }
 
     const rawEventPreset = normalizeEmptyToNull(raw.eventPreset);
-    if (rawEventPreset !== null) {
+    if (rawEventPreset !== null || rawEventCategory === 'fitness_race') {
         const presetIds = validEventCategories.includes(rawEventCategory) ? EVENT_PRESETS[rawEventCategory as UserEvent['category']].map(p => p.id) : [];
         if (!rawEventCategory || !presetIds.includes(rawEventPreset)) {
             errors.push({
