@@ -46,6 +46,15 @@ const input: CompetitionOutcomeCaptureInput = {
 };
 
 describe('deriveCompetitionOutcomeCapture', () => {
+    it('retains HYROX event identity while recording the result under the generic sport', () => {
+        const result = deriveCompetitionOutcomeCapture('user-1', {
+            ...goal, eventCategory: 'fitness_race', eventPreset: 'hyrox_open_singles',
+        }, { ...input, metrics: { elapsed_seconds: 3012 } });
+        expect(result.event).toMatchObject({ category: 'fitness_race', presetId: 'hyrox_open_singles' });
+        expect(result.outcome.sport).toBe('other');
+        expect(result.outcome.eventRef).toBe(goal.id);
+    });
+
     it('builds an event-linked ecological outcome and a draft evaluation for a completed event goal', () => {
         const result = deriveCompetitionOutcomeCapture('user-1', goal, input);
 

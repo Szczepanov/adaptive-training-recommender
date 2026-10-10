@@ -148,15 +148,17 @@ describe('periodization and event-demand evidence pack (SKR3 W1)', () => {
             // The claim, product-policy source and coverage rationale all state the authored count;
             // drift in any of them means the knowledge artifact is stale. The original draft said 22.
             const presetCount = Object.values(EVENT_PRESETS).reduce((total, list) => total + list.length, 0);
-            expect(claim.statement).toContain('19 authored event presets');
-            expect(presetCount).toBe(19);
+            expect(claim.statement).toContain('20 authored event presets');
+            expect(presetCount).toBe(20);
+            expect(claim.statement).toContain('HYROX Open Singles reuses the general-target vector');
+            expect(resolveDemandProfile('fitness_race', 'hyrox_open_singles')).toEqual(resolveDemandProfile('general_target', 'generic'));
 
             const policySource = getKnowledgeSource('PRODUCT-PERIODIZATION-EVENT-DEMAND-POLICY-V1');
-            expect(policySource.notes).toContain('19 authored event-preset demand vectors');
+            expect(policySource.notes).toContain('20 authored event-preset demand vectors');
             expect(policySource.notes).not.toContain('22 authored');
 
             const coverage = coverageById('event.demand_presets');
-            expect(coverage?.coverageRationale).toContain('19 authored preset vectors');
+            expect(coverage?.coverageRationale).toContain('20 authored preset vectors');
             expect(coverage?.coverageRationale).not.toContain('22 preset');
         });
 

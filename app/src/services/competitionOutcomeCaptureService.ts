@@ -64,6 +64,7 @@ function sportForEvent(category: UserEvent['category']): CompetitionOutcome['spo
         case 'running_race': return 'running';
         case 'strength_meet': return 'other';
         case 'triathlon': return 'other';
+        case 'fitness_race': return 'other';
         case 'general_target': return 'other';
     }
 }

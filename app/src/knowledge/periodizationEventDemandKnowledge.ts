@@ -121,9 +121,9 @@ export const PERIODIZATION_EVENT_DEMAND_SOURCES: readonly KnowledgeSource[] = [
         id: PERIODIZATION_EVENT_DEMAND_PRODUCT_POLICY_SOURCE,
         title: 'Adaptive Training Recommender periodization & event-demand calibration policy v1',
         sourceType: 'product_policy',
-        citation: 'Adaptive Training Recommender product policy, reviewed 2026-09-02.',
+        citation: 'Adaptive Training Recommender product policy, reviewed 2026-09-02; generic HYROX goal registration reviewed 2026-10-10.',
         publishedOn: '2026-09-02',
-        notes: 'Registers the exact phase day-boundaries, demand-blend weights and volume/intensity scales, the normalized objective-inclusion thresholds, the multi-event contribution/merge rules, and the 19 authored event-preset demand vectors as product calibration, distinct from the scientific boundaries above.',
+        notes: 'Registers the exact phase day-boundaries, demand-blend weights and volume/intensity scales, the normalized objective-inclusion thresholds, the multi-event contribution/merge rules, and the 20 authored event-preset demand vectors as product calibration, distinct from the scientific boundaries above.',
     },
     {
         id: GRAN_FONDO_DURABILITY_PRODUCT_POLICY_SOURCE,
@@ -166,7 +166,7 @@ export const PERIODIZATION_EVENT_DEMAND_CLAIMS: readonly KnowledgeClaim[] = [
             { sourceId: SHARMA_TRIATHLON_DISTANCE_CHAPTER, directness: 'partially_direct', note: 'Triathlon-specific distance-dependent limiter shift.' },
         ],
         limitations: [
-            'Does not validate the exact 0-1 numeric value chosen for any axis of any of the 19 authored event presets in EVENT_PRESETS -- those are product calibration informed by, not derived from, this literature.',
+            'Does not validate the exact 0-1 numeric value chosen for any axis of any of the 20 authored event presets in EVENT_PRESETS -- those are product calibration informed by, not derived from, this literature.',
             'The scientific sources support broad duration/morphology differences, not the exact mapping between every named product preset; for example, the quoted cycling time-trial vector remains product-authored calibration rather than a study-derived profile.',
             'No cited source covers strength_meet or general_target categories; those two preset groups have no direct endurance-performance-limiter literature behind them.',
             'Cycling morphology evidence is largely observational field data and review synthesis rather than randomized manipulation of race format; it supports characterization, not a causal training-effect estimate.',
@@ -202,12 +202,12 @@ export const PERIODIZATION_EVENT_DEMAND_CLAIMS: readonly KnowledgeClaim[] = [
     },
     {
         id: PERIODIZATION_EVENT_DEMAND_CLAIM_IDS.eventDemandPresetsPolicy,
-        statement: 'Product event-demand v1: each of the 19 authored event presets across cycling, running, triathlon and strength maps to a specific 7-axis (aerobicEndurance/thresholdPower/vo2MaxPower/repeatedSurges/sprintPower/fatigueResistance/neuromuscular) 0-1 demand vector -- e.g. cycling time trial emphasizes thresholdPower (0.95) with minimal repeatedSurges/sprintPower (0.1 each), while criterium emphasizes vo2MaxPower/repeatedSurges/sprintPower (0.85/0.9/0.7) with lower aerobicEndurance (0.5).',
+        statement: 'Product event-demand v2: each of the 20 authored event presets across cycling, running, triathlon, strength, fitness races and general targets maps to a 7-axis (aerobicEndurance/thresholdPower/vo2MaxPower/repeatedSurges/sprintPower/fatigueResistance/neuromuscular) 0-1 demand vector -- e.g. cycling time trial emphasizes thresholdPower (0.95) with minimal repeatedSurges/sprintPower (0.1 each), while criterium emphasizes vo2MaxPower/repeatedSurges/sprintPower (0.85/0.9/0.7) with lower aerobicEndurance (0.5). HYROX Open Singles reuses the general-target vector with no format-specific modality authority, workouts or plan; competition taper uses the existing generic priority fallback, with athlete-authored overrides retained.',
         claimType: 'heuristic', maturity: 'heuristic', status: 'active', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional', safetyImpact: 'low',
         applicability: { contexts: ['event_demand_characterization', 'training_periodization'], sports: ['cycling', 'running', 'endurance_multisport', 'strength'], populations: ['app_users_with_target_events'], outcomes: ['event_demand_vector'], horizon: 'chronic' },
         evidence: [{ sourceId: PERIODIZATION_EVENT_DEMAND_PRODUCT_POLICY_SOURCE, directness: 'direct' }],
-        limitations: ['The exact numeric value on every axis of all 19 presets is product calibration informed by, but not derived from, the cited physiological-demand literature; no study measures training demand on this specific normalized scale, and the two strength_meet presets and the general_target preset have no directly cited endurance-performance-limiter literature behind them at all.'],
-        reviewedOn: '2026-09-02', version: 1,
+        limitations: ['The exact numeric value on every axis of all 20 presets is product calibration informed by, but not derived from, the cited physiological-demand literature; no study measures training demand on this specific normalized scale, and the two strength_meet presets, the general_target preset and the generic HYROX fallback have no directly cited endurance-performance-limiter literature behind them at all. HYROX-specific demand, exact coverage, generated plans and taper calibration remain unimplemented.'],
+        reviewedOn: '2026-10-10', version: 2,
     },
     {
         id: PERIODIZATION_EVENT_DEMAND_CLAIM_IDS.granFondoDurabilityPolicy,

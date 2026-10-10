@@ -333,6 +333,15 @@ function capabilityMaintenanceScenario(optedIn: boolean): AthleteScenario {
 
 export const SCENARIOS: AthleteScenario[] = [
     {
+        id: 'hyrox_generic_event_goal',
+        label: 'HYROX target event with generic guidance',
+        description: 'A fitness-race goal enters the existing event/taper path without claiming HYROX-specific programming or modality authority.',
+        context: context({ free_weights: true }, ['Running', 'Strength']),
+        event: { ...eventOn('hyrox-open', 14, 'fitness_race', 'hyrox_open_singles', 'B'), presetId: 'hyrox_open_singles' },
+        startDate: START_DATE, weeks: 3,
+        readinessForWeek: () => stableReadiness(),
+    },
+    {
         id: 'cycling_recovery_authority_exit',
         label: 'Completed cycling recovery hands execution back to Evergreen (#933)',
         description: 'Starts inside structured recovery and crosses the first date no longer owned by the event. The actual focus-event eligibility boundary, not the authored recovery end, determines the handoff.',
