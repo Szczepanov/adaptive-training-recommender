@@ -945,7 +945,8 @@ All three now share `assessmentEvidenceEligibility.ts` `isBenchmarkEligibleAttem
 
 ## WP8.1 Typed performance goals
 
-**Blocked by:** WP6.4, ADR-0041 and an explicit reviewed exercise-mapping/resolver bridge for measured squat/bench 1RM.
+**Status:** Implemented on the #897 PR D branch.
+**Blocked by:** none (completed).
 **Unlocks:** Measured assessment evidence can satisfy supported typed goals without conflating tested 1RM with e1RM.
 
 Do not assume all canonical assessment observations already satisfy typed goals.
@@ -962,6 +963,15 @@ Protocol reference alone does not solve exercise subject identity. New jump/thro
 The first athlete-usable baseline slice may ship before the strength-goal bridge, but #897's typed-goal acceptance criterion remains open until a reviewed mapping/resolver path is implemented or the issue scope is explicitly amended. Do not silently mark the requirement complete.
 
 Do not make target values alter assessment protocols.
+
+**Implementation summary (WP8.1):**
+- Reviewed bidirectional bridge in `exerciseAssessmentBridge.ts` maps `bench_press` <-> `strength-bench-press-1rm` and `back_squat` <-> `strength-back-squat-1rm` for `strength_1rm_kg`.
+- Added `'back_squat'` to `PERFORMANCE_TARGET_POLICIES` eligible exercises in `performanceTargetPolicy.ts`.
+- Extended `resolveGoalProgress` and `goalProgressEvidenceQuery` in `goalProgress.ts`:
+  - **Movement Isolation:** Filters by protocol identity; prevents cross-talk across exercises sharing `strength_1rm_kg`.
+  - **Eligibility Gate:** Applies WP8.0 `benchmarkEligibleAttemptIds` so only completed, non-familiarization attempts supply benchmarks; missing attempt evidence fails closed.
+  - **Precedence & Fallback:** Measured 1RM takes precedence (`measured_observation`); falls back to profile e1RM (`estimated_1rm`) when measured evidence is absent or ineligible; returns `no_baseline` when neither exists.
+  - **UI & Read Diagnostics:** Updated `Goals.tsx` to load attempts for bridged exercises and surface unavailable vs empty states correctly.
 
 ## WP8.2 Block review
 

@@ -25,6 +25,18 @@ describe('performance target validation', () => {
         }
     });
 
+    it('accepts back_squat as an eligible strength exercise target (#897 WP8.1)', () => {
+        const result = validatePerformanceTarget(target({
+            subjectRef: { kind: 'exercise', exerciseId: 'back_squat' },
+            targetValue: 180,
+        }));
+        expect(result.isValid).toBe(true);
+        if (result.isValid) {
+            expect(result.family).toBe('strength');
+            expect(result.metric.unit).toBe('kg');
+        }
+    });
+
     it('accepts a valid speed performance-test target', () => {
         const result = validatePerformanceTarget(target({
             metricId: 'sprint_elapsed_time_s',
