@@ -8,7 +8,7 @@
   ES10 needs continued accumulation plus a separate, deliberate activation review — this
   first read is evidence, not a promotion decision.
 * **Decision authority:** none.
-* **Governing ADRs:** ADR-0027 and proposed ADR-0030.
+* **Governing ADRs:** accepted ADR-0027 and ADR-0030; ES10 activation remains a separate decision.
 
 ## Goal
 Replace unreliable Google Health transport for Eight Sleep with a repository-owned read-only connector emitting existing `CanonicalHealthObservation`s.

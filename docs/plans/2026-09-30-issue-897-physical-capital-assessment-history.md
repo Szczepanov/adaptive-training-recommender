@@ -735,7 +735,7 @@ Requirements:
 **Blocked by:** WP5.1, WP2.3 and the existing performed-training reconciliation path.
 **Unlocks:** E2E proof that assessment evidence does not double-count physical work.
 
-The assessment attempt/trial/observation records are evidence sidecars to the `SessionRunner` execution. They must not create another completed workout. Verify the current performed-training reconciliation path rather than assuming proposed ADR-0034 semantics are automatically active everywhere.
+The assessment attempt/trial/observation records are evidence sidecars to the `SessionRunner` execution. They must not create another completed workout. Verify the current performed-training reconciliation path rather than assuming accepted ADR-0034 semantics are automatically active everywhere.
 
 Required invariant:
 

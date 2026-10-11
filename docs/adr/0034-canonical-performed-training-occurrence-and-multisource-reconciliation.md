@@ -1,8 +1,9 @@
 # ADR-0034: Canonical performed training occurrence and multisource reconciliation
 
-* **Status:** Proposed
+* **Status:** Accepted
 * **Date:** 2026-09-01
 * **Deciders:** Core Engineering Team
+* **Accepted:** 2026-10-11 by the repository owner. Architecture acceptance preserves the staged rollout and engine-activation gates below.
 
 ---
 

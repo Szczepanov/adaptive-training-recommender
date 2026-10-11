@@ -1,8 +1,9 @@
 # ADR-0038: Engine-Generated Recovery Placement as a Requirement
 
-* **Status:** Proposed
+* **Status:** Accepted
 * **Date:** 2026-09-07
 * **Deciders:** Repository owner
+* **Accepted:** 2026-10-11 by the repository owner. Policy acceptance does not activate runtime behavior; implementation, evidence, knowledge-alignment and policy-version gates remain.
 * **Source analysis:** [PR #453](https://github.com/Szczepanov/adaptive-training-recommender/pull/453) review; [recommender optimization analysis](../analysis/2026-09-07-recommender-optimization-opportunities.md)
 
 ## Context
@@ -132,7 +133,7 @@ seven-day recovery-free span can close.
 
 ## Decision
 
-Adopt **Option D** as the proposed v1 contract, subject to the implementation and acceptance
+Adopt **Option D** as the accepted v1 contract, subject to the implementation and acceptance
 requirements below.
 
 ### Product-policy scalar
