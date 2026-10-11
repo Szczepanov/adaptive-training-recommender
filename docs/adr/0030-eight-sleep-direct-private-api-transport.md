@@ -1,8 +1,9 @@
 # ADR-0030: Direct Read-Only Eight Sleep Private-API Transport
 
-* **Status:** Proposed
+* **Status:** Accepted
 * **Date:** 2026-08-28
 * **Deciders:** Core Engineering Team
+* **Accepted:** 2026-10-11 by the repository owner. Architecture acceptance preserves the separate baseline/fusion activation gates.
 
 ## Context
 ADR-0027 separates provider from transport. Google Health Eight Sleep data was observed but later proved unreliable as authoritative acquisition. Eight Sleep has no supported public developer API and the initial PR #275 used an archived `pyeight` lineage.

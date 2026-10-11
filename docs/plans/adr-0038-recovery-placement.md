@@ -1,8 +1,8 @@
 # ADR-0038 recovery placement implementation plan
 
-**Status:** Draft — ADR-0038 is Proposed
+**Status:** In progress — ADR-0038 is Accepted; runtime activation remains gated
 **Tracks:** [ADR-0038](../adr/0038-engine-generated-recovery-placement.md), PR #455
-**Blocked by:** acceptance of ADR-0038 / PR #455 before runtime activation
+**Blocked by:** runtime activation requires completed integration, deterministic simulation and corpus review, knowledge alignment, and a policy-version bump
 **Unlocks:** explicit plan-independent recovery placement, rolling seven-date recovery invariant, recovery deadline diagnostics
 **Builds on:** PR #453 effective-dose projection; ADR-0016 exact coverage identity; ADR-0018 weekly-role allocation/D-SUPPORT; ADR-0033 knowledge governance; ADR-0034 canonical performed-training occurrences; ADR-0035 authored rest; ADR-0036 schedule windows
 **Source analysis:** [2026-09-07 ADR-0038 implementation analysis](../analysis/2026-09-07-adr-0038-recovery-placement-implementation-analysis.md)
@@ -172,8 +172,8 @@ Bootstrap semantics are deliberately explicit:
 - `B` must be durable and reused across daily recomputation; it must never default to each new
   `asOfDate`.
 
-The merged ADR now carries this bootstrap interpretation. Keep this plan aligned with ADR-0038 if
-the owner changes the grace-window contract before acceptance.
+The accepted ADR carries this bootstrap interpretation. A later change to the grace-window contract
+requires a new decision record under ADR-0001.
 
 ## E. D-SUPPORT remains authoritative
 
@@ -207,7 +207,7 @@ behavior.
 
 ## RP0 — Freeze contracts and pure recovery state
 
-**Status:** blocked by ADR-0038 acceptance for behavior; pure scaffolding may be prepared earlier
+**Status:** pure state and deadline scaffolding implemented in PR #463; live integration remains gated
 **Depends on:** PR #455
 **Behavior change:** none if kept disconnected from live ranking
 
@@ -255,7 +255,7 @@ qualifying candidate receive?** No optimizer change yet.
 
 ## RP1 — Complete exact recovery identity
 
-**Status:** planned
+**Status:** baseline exact recovery identity scaffolding implemented in PR #463; activation proof remains
 **Depends on:** RP0
 **Behavior change:** exact coverage/fact semantics may change; review persistence/replay impact before merge
 
@@ -688,7 +688,7 @@ not flip the live composition seam merely because PR D was opened.
 PR #453 effective-dose projection
         |
         v
-PR #455 / ADR-0038 accepted or explicitly authorized for scaffolding
+ADR-0038 accepted (2026-10-11); runtime activation remains gated
         |
         v
 A: policy state + exact identity
@@ -811,7 +811,7 @@ checks are re-run against that production wiring.
 
 Before declaring ADR-0038 implemented:
 
-- [ ] ADR-0038 is Accepted, or owner explicitly authorizes implementation while Proposed.
+- [x] ADR-0038 is Accepted by the repository owner (2026-10-11); runtime activation remains gated.
 - [ ] Bootstrap semantics (`B + 7`, `B` not recovery, pre-`B` prefix excluded) are aligned with the
       accepted ADR wording.
 - [ ] No runtime path fabricates an authored plan/block for baseline recovery.
