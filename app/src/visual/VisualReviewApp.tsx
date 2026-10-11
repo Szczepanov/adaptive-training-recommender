@@ -17,6 +17,7 @@ import { prepareCatalogSessionLaunch } from '../services/sessionAuthoringService
 import type { SessionDefinition, SessionReferenceBinding } from '../sessions/models';
 import { MorningDecisionAdjustedLaunchHarness } from './MorningDecisionAdjustedLaunchHarness';
 import { AssessmentVelocityImportHarness } from './AssessmentVelocityImportHarness';
+import { BlockReviewPanel } from '../components/testing/BlockReviewPanel';
 
 interface VisualReviewAppProps {
   scenario: VisualScenario;
@@ -76,7 +77,7 @@ export function VisualReviewApp({ scenario }: VisualReviewAppProps) {
 
   const appScreen: Screen = screen === 'session' || screen === 'builder'
     ? 'sessions'
-    : screen === 'assessment-capture'
+    : screen === 'assessment-capture' || screen === 'block-review'
       ? 'testing'
     : screen === 'morning-card'
       ? 'home'
@@ -100,6 +101,7 @@ export function VisualReviewApp({ scenario }: VisualReviewAppProps) {
         {screen === 'home' && <Home userId={VISUAL_USER_ID} onNavigate={handleAppNavigate} onViewData={() => navigate('data')} />}
         {screen === 'morning-card' && <MorningDecisionAdjustedLaunchHarness />}
         {screen === 'assessment-capture' && <AssessmentVelocityImportHarness fixedLoad={scenario.id === 'assessment-fixed-load-velocity'} />}
+        {screen === 'block-review' && <div className="testing-workflow"><BlockReviewPanel userId={VISUAL_USER_ID} /></div>}
         {screen === 'plan' && <PlanView userId={VISUAL_USER_ID} onNavigate={handleAppNavigate} />}
         {screen === 'checkin' && <DailyCheckin userId={VISUAL_USER_ID} onNavigate={handleAppNavigate} onBack={() => navigate('home')} />}
         {screen === 'goals' && <Goals userId={VISUAL_USER_ID} />}

@@ -36,6 +36,15 @@ import {
 import type { IntentBlock } from '../engine/blockIntent';
 import { buildTreatmentIntentReplayPayloadV1, hashTreatmentIntentReplayPayload } from '../engine/blockIntentReplay';
 
+describe('bounded intent block review listing', () => {
+    it('bounds IDs before hydration and reports the extra ID as truncation', async () => {
+        firestore.getDocs.mockResolvedValueOnce({ docs: ['a', 'b', 'sentinel'].map(id => ({ id })) });
+        const state = await new IntentBlockService({} as never).listBlockIds('u1', 2);
+        expect(state).toMatchObject({ status: 'AVAILABLE', data: ['a', 'b'], issues: [{ code: 'intent-block-list-truncated' }] });
+        expect(firestore.limit).toHaveBeenCalledWith(3);
+    });
+});
+
 const USER_ID = 'u1';
 
 function block(overrides: Partial<IntentBlock> = {}): IntentBlock {

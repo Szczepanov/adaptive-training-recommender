@@ -20,6 +20,8 @@ const mockCollection = vi.fn((..._args: unknown[]) => ({ path: pathOf(_args) }))
 const mockDoc = vi.fn((..._args: unknown[]) => ({ path: pathOf(_args) }));
 const mockQuery = vi.fn((coll: { path: string }, ...clauses: Array<{ field: string; op: string; value: unknown }>) => ({ coll, clauses }));
 const mockWhere = vi.fn((field: string, op: string, value: unknown) => ({ field, op, value }));
+const mockOrderBy = vi.fn((field: string, direction: string) => ({ field, direction }));
+const mockLimit = vi.fn((count: number) => ({ count }));
 
 async function fakeGetDoc(ref: { path: string }) {
     const data = docStore.get(ref.path);
@@ -63,6 +65,8 @@ vi.mock('firebase/firestore', () => ({
     getDocs: mockGetDocs,
     query: mockQuery,
     where: mockWhere,
+    orderBy: mockOrderBy,
+    limit: mockLimit,
     runTransaction: mockRunTransaction,
 }));
 vi.mock('../firebase', () => ({ getDb: vi.fn(() => ({})) }));
@@ -235,6 +239,13 @@ describe('mergeOccurrences', () => {
 });
 
 describe('queryActiveInDateWindow', () => {
+    it('fails closed on a bounded review sentinel before interpreting a partial sample', async () => {
+        mockGetDocs.mockResolvedValueOnce({ docs: ['a', 'b', 'sentinel'].map(id => ({ id, data: () => ({}), ref: { path: id } })) });
+        const repo = new PerformedTrainingOccurrenceRepository({} as never);
+        await expect(repo.queryActiveInDateWindow(userId, '2026-08-25', '2026-08-27', 2)).rejects.toThrow(/truncated/);
+        expect(mockLimit).toHaveBeenCalledWith(3);
+        expect(mockOrderBy).toHaveBeenCalledWith('localDate', 'asc');
+    });
     it('excludes merged occurrences and occurrences outside the date window', async () => {
         const repo = new PerformedTrainingOccurrenceRepository({} as never);
         await repo.createOrGetForSource(userId, structuredFacts());

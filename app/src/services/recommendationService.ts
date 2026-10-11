@@ -395,7 +395,11 @@ export class RecommendationService {
         userId: string,
         startDateInclusive: string,
         throughDateExclusive: string,
+        maxRecords?: number,
     ): Promise<DataState<DailyRecommendation[]>> {
+        if (maxRecords !== undefined && (!Number.isSafeInteger(maxRecords) || maxRecords < 1 || maxRecords >= Number.MAX_SAFE_INTEGER)) {
+            throw new RangeError('maxRecords must be a positive safe integer with room for a sentinel');
+        }
         try {
             const collRef = collection(getDb(), 'users', userId, this.collectionPath);
             const rangeQuery = query(
@@ -403,8 +407,12 @@ export class RecommendationService {
                 where('date', '>=', startDateInclusive),
                 where('date', '<', throughDateExclusive),
                 orderBy('date', 'asc'),
+                ...(maxRecords === undefined ? [] : [limit(maxRecords + 1)]),
             );
             const querySnapshot = await getDocs(rangeQuery);
+            if (maxRecords !== undefined && querySnapshot.docs.length > maxRecords) {
+                return { status: 'INVALID', issues: [{ code: 'recommendation-history-truncated', documentPath: `users/${userId}/${this.collectionPath}` }] };
+            }
             const recommendations: DailyRecommendation[] = [];
             const issues: DataIssue[] = [];
             const revisions: string[] = [];

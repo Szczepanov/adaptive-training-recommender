@@ -25,6 +25,10 @@ export interface BlockOutcomeReportInput {
     evaluation: OutcomeEvaluationSnapshot;
     /** Current immutable head revisions; deriveProgress excludes invalid/practice revisions. */
     observations: readonly CurrentObservation[];
+    /** Optional bounded reader samples, kept separate for distinct frozen bindings. */
+    observationsByBinding?: Readonly<Record<string, readonly CurrentObservation[]>>;
+    /** Finite reader horizon for legacy bindings that did not freeze a target window. */
+    defaultTargetObservationWindow?: { startDate: string; endDate: string };
     /**
      * Assessment attempts backing `observations` (#897 WP8). Only observations from completed,
      * non-familiarization attempts reach progress derivation; familiarization and non-completed
@@ -87,8 +91,10 @@ export class BlockOutcomeReportService {
         const benchmarkObservations = input.observations.filter(observation =>
             eligibleAttemptIds.has(observation.revision.assessmentAttemptId));
         const metricProgress = evaluation.bindings.map(binding => deriveProgress(
-            binding,
-            benchmarkObservations,
+            binding.targetObservationWindow || !input.defaultTargetObservationWindow ? binding
+                : { ...binding, targetObservationWindow: input.defaultTargetObservationWindow },
+            input.observationsByBinding?.[binding.id]?.filter(observation =>
+                eligibleAttemptIds.has(observation.revision.assessmentAttemptId)) ?? benchmarkObservations,
             input.reliabilityEstimates ?? [],
         ));
         const process = deriveBlockProcessEvidence({

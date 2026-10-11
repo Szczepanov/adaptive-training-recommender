@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { OutcomeEvaluationSpecRevision, OutcomeMetricBinding } from '../outcomes/evaluationSpec';
+import { hashEvaluationContent } from '../outcomes/evaluationHash';
 
 const firestore = vi.hoisted(() => ({
     doc: vi.fn(),
@@ -154,5 +155,17 @@ describe('OutcomeEvaluationService', () => {
         firestore.getDoc.mockResolvedValueOnce(snapshot({ ...revision, bindings: [binding] }));
         const service = new OutcomeEvaluationService({} as never);
         await expect(service.getRevision('u1', 'block-1', 1)).resolves.toEqual({ revision, bindings: [binding] });
+    });
+
+    it('recomputes frozen content hashes and rejects tampered criteria or a forged hash', async () => {
+        const active = { ...revision, status: 'active' as const, activatedAt: '2026-08-22T06:00:00.000Z', contentHash: '' };
+        active.contentHash = await hashEvaluationContent({ revision: active, bindings: [binding] });
+        const service = new OutcomeEvaluationService({} as never);
+        firestore.getDoc.mockResolvedValueOnce(snapshot({ ...active, bindings: [binding] }));
+        await expect(service.getRevision('u1', 'block-1', 1)).resolves.toMatchObject({ revision: active });
+        firestore.getDoc.mockResolvedValueOnce(snapshot({ ...active, bindings: [{ ...binding, rationale: 'tampered' }] }));
+        await expect(service.getRevision('u1', 'block-1', 1)).rejects.toThrow(/content hash mismatch/);
+        firestore.getDoc.mockResolvedValueOnce(snapshot({ ...active, contentHash: 'forged', bindings: [binding] }));
+        await expect(service.getRevision('u1', 'block-1', 1)).rejects.toThrow(/content hash mismatch/);
     });
 });

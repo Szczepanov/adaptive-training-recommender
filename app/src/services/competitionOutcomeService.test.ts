@@ -4,6 +4,7 @@ import type { CompetitionOutcome } from '../observations/models';
 const firestore = vi.hoisted(() => ({
     doc: vi.fn(),
     getDoc: vi.fn(),
+    collection: vi.fn(), getDocs: vi.fn(), documentId: vi.fn(), limit: vi.fn(), orderBy: vi.fn(), query: vi.fn(),
     runTransaction: vi.fn(),
     transactionGet: vi.fn(),
     transactionSet: vi.fn(),
@@ -13,6 +14,8 @@ vi.mock('firebase/firestore', () => ({
     doc: firestore.doc,
     getDoc: firestore.getDoc,
     runTransaction: firestore.runTransaction,
+    collection: firestore.collection, getDocs: firestore.getDocs, documentId: firestore.documentId,
+    limit: firestore.limit, orderBy: firestore.orderBy, query: firestore.query,
 }));
 
 vi.mock('../firebase', () => ({
@@ -31,6 +34,17 @@ const validOutcome: CompetitionOutcome = {
     context: { course: 'circuit-a' },
     createdAt: '2026-08-21T06:00:00.000Z',
 };
+
+describe('bounded block review ecological listing', () => {
+    it('preserves unreadable records and sentinel state without reading the sentinel', async () => {
+        firestore.getDocs.mockResolvedValueOnce({ docs: [
+            { id: validOutcome.id, data: () => validOutcome }, { id: 'wrong', data: () => validOutcome }, { id: 'sentinel' },
+        ] });
+        const read = await new CompetitionOutcomeService({} as never).listOutcomesWithDiagnostics('u1', 2);
+        expect(read).toEqual({ outcomes: [validOutcome], unreadableCount: 1, truncated: true });
+        expect(firestore.limit).toHaveBeenCalledWith(3);
+    });
+});
 
 function snapshot<T>(value: T | null) {
     return value === null

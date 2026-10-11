@@ -1,4 +1,4 @@
-import { doc, getDoc, runTransaction, type Firestore } from 'firebase/firestore';
+import { collection, doc, documentId, getDoc, getDocs, limit, orderBy, query, runTransaction, type Firestore } from 'firebase/firestore';
 import { getDb } from '../firebase';
 import type { CompetitionOutcome } from '../observations/models';
 import { assertValidCompetitionOutcome } from '../observations/validation';
@@ -33,6 +33,26 @@ export class CompetitionOutcomeService {
         assertValidCompetitionOutcome(outcome);
         if (outcome.id !== outcomeId) throw new Error(`Competition outcome path mismatch for ${outcomeId}`);
         return outcome;
+    }
+
+    /** ID-ordered bounded ecological evidence sample, with a truncation sentinel. */
+    async listOutcomesWithDiagnostics(userId: string, maxRecords = 100): Promise<{
+        outcomes: CompetitionOutcome[]; unreadableCount: number; truncated: boolean;
+    }> {
+        if (!Number.isSafeInteger(maxRecords) || maxRecords < 1 || maxRecords >= Number.MAX_SAFE_INTEGER) throw new RangeError('Invalid maxRecords');
+        const snapshot = await getDocs(query(collection(this.db, 'users', userId, 'competition_outcomes'),
+            orderBy(documentId(), 'asc'), limit(maxRecords + 1)));
+        const outcomes: CompetitionOutcome[] = [];
+        let unreadableCount = 0;
+        for (const item of snapshot.docs.slice(0, maxRecords)) {
+            try {
+                const outcome = item.data() as CompetitionOutcome;
+                assertValidCompetitionOutcome(outcome);
+                if (outcome.id !== item.id) throw new Error('Competition outcome path mismatch');
+                outcomes.push(outcome);
+            } catch { unreadableCount++; }
+        }
+        return { outcomes, unreadableCount, truncated: snapshot.docs.length > maxRecords };
     }
 }
 

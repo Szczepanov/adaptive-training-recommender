@@ -42,6 +42,48 @@ OV/outcome evidence and optimizer/planner/rules/weekly-allocation modules in eit
 where that would grant outcome evidence production selection authority. A future
 outcome-to-planning rule requires a separate ADR/ship decision.
 
+## Physical-capital block review (Issue #897 WP8.2)
+
+The WP8.2 review is an athlete-invoked report/export flow in Testing History, alongside
+`AssessmentHistory`. It composes the existing `BlockOutcomeReportService` and report exporters;
+it does not create a second evaluation or evidence model. `BlockReviewService.listReviews`
+offers eligible block/evaluation selections, and `loadReview` loads one exact selection for a
+Warsaw as-of date. A selection identifies the block and its validated intent revision plus the
+evaluation ID/revision; loading verifies the pinned evaluation's content hash and exact
+revision rather than following a mutable head.
+
+`BlockReviewService` validates the current intent-block head/hash, pinned revision, and frozen
+evaluation identity, activation date and recomputed content hash. It inspects up to 20 blocks
+plus a sentinel and 20 distinct evaluation references; each evaluation permits at most 16
+bindings. Assessment reads allow up to
+100 attempts per protocol plus a sentinel; each accepted observation must match its current
+head and immutable revision and have an eligible parent attempt. A declared baseline can be
+read directly outside the detail period. Frozen baseline policies and target windows remain
+authoritative; when a binding has no frozen target window, the compatibility window includes
+eligible history through the Warsaw as-of date. The report retains the complete frozen binding,
+so baseline selectors and any declared target window remain available in nested provenance.
+
+Process evidence is bounded to 180 days. Recommendations, execution headers and active
+performed occurrences each use a 200-record limit plus sentinel; ecological outcomes use a
+100-record ID-ordered sample plus sentinel. Check-ins and responses are read through the
+evaluation end plus a seven-day tissue follow-up window, capped at the Warsaw as-of date.
+Raw trials, observation revision chains and extra body-mass reads are excluded. Source states
+(`available`, `missing`, `unreadable`, `unsupported`, `truncated`), record counts and
+limitations are retained with reader/report versions, block revision/hash, complete frozen
+bindings, assessment attempts and canonical observation revisions. Both JSON and CSV exports
+retain the provenance sidecar.
+
+The current reader explicitly marks weekly-role evidence unsupported because there is no
+frozen occurrence binding, and records limitations that no reliability-estimate reader is
+wired and performed comparison is not loaded. The unsupported weekly-role source forces an
+overall `insufficient_evidence` verdict; individual metric progress can still be displayed.
+Partial coverage cannot support an absence claim. The report can describe observed change but
+cannot attribute it to training causally or influence production selection.
+
+This focused review action does not promote the optional OV6.2 analytics dashboard, which
+remains usage-triggered. Synthetic engineering tests establish software contracts only;
+operational acceptance still requires real comparable post-block evidence (#897).
+
 ## Metric registry (app/src/observations/registry.ts)
 
 The outcome metric registry is bounded and strongly typed:

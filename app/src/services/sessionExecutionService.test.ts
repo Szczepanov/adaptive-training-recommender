@@ -15,6 +15,7 @@ const firestore = vi.hoisted(() => {
         query: vi.fn(),
         where: vi.fn(),
         orderBy: vi.fn(),
+        limit: vi.fn(),
         runTransaction: vi.fn(),
         writeBatch: vi.fn(),
     };
@@ -43,6 +44,21 @@ function validExecution(overrides: Record<string, unknown> = {}) {
         ...overrides,
     };
 }
+
+describe('bounded block review execution headers', () => {
+    it('reads headers only and preserves invalid rows and truncation', async () => {
+        firestore.getDocs.mockResolvedValueOnce({ docs: [
+            { id: EXECUTION_ID, ref: { path: `users/${USER_ID}/session_executions/${EXECUTION_ID}` }, data: () => validExecution() },
+            { id: 'bad', ref: { path: `users/${USER_ID}/session_executions/bad` }, data: () => ({}) },
+            { id: 'sentinel' },
+        ] });
+        const read = await new SessionExecutionService({} as never).getExecutionHeadersInRange(USER_ID, '2026-08-01', '2026-09-01', 2);
+        expect(read.executions).toHaveLength(1);
+        expect(read.invalidRecords).toBe(1); expect(read.truncated).toBe(true);
+        expect(firestore.limit).toHaveBeenCalledWith(3);
+        expect(firestore.getDocs).toHaveBeenCalledTimes(1);
+    });
+});
 
 function validEntry(overrides: Record<string, unknown> = {}) {
     return {

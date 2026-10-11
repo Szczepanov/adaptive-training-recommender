@@ -1,4 +1,4 @@
-import type { CompetitionOutcome } from '../observations/models';
+import type { AssessmentAttempt, CompetitionOutcome, MetricObservationRevision } from '../observations/models';
 import type { ProgressResult } from '../observations/progress';
 import type { ClosedLoopFeedbackRecord } from '../feedback/feedbackModels';
 import type { OutcomeEvaluationSnapshot, OutcomeMetricBinding } from './evaluationSpec';
@@ -15,7 +15,29 @@ export const BLOCK_ADEQUACY_V1 = {
 
 export type BlockVerdict = 'on_track' | 'mixed' | 'off_track' | 'insufficient_evidence';
 
+export interface BlockReviewSource {
+    source: string;
+    status: 'available' | 'missing' | 'unreadable' | 'unsupported' | 'truncated';
+    recordCount: number;
+    unreadableCount?: number;
+}
+
+export interface BlockReviewProvenance {
+    readerVersion: string;
+    reportVersion: string;
+    asOfDate: string;
+    blockRef: { id: string; revision: number; contentHash: string };
+    sources: readonly BlockReviewSource[];
+    limitations: readonly string[];
+    bindings: readonly { bindingId: string; metricId: string; protocolRef?: { id: string; revision: number }; frozenBinding: OutcomeMetricBinding; progress: ProgressResult }[];
+    observations: readonly { observationId: string; revision: number; assessmentAttemptId: string; protocolId: string; protocolRevision: number; metricId: string; comparisonSeriesKey: string; comparisonCanonicalizationVersion: string; canonicalRevision: MetricObservationRevision }[];
+    assessmentAttempts: readonly AssessmentAttempt[];
+    performedOccurrenceIds: readonly string[];
+}
+
 export interface BlockOutcomeReport {
+    /** Additive read provenance; absent on reports composed directly from canonical inputs. */
+    reviewProvenance?: BlockReviewProvenance;
     evaluationRef: {
         id: string;
         revision: number;

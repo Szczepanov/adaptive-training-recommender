@@ -210,10 +210,16 @@ export class IntentBlockService {
         }
     }
 
-    async listBlockIds(userId: string): Promise<DataState<string[]>> {
+    async listBlockIds(userId: string, maxBlocks?: number): Promise<DataState<string[]>> {
+        if (maxBlocks !== undefined && (!Number.isSafeInteger(maxBlocks) || maxBlocks < 1 || maxBlocks >= Number.MAX_SAFE_INTEGER)) {
+            throw new RangeError('maxBlocks must be a positive safe integer with room for a sentinel');
+        }
         try {
-            const snapshot = await getDocs(collection(this.db, 'users', userId, 'intent_blocks'));
-            return { status: 'AVAILABLE', data: snapshot.docs.map(item => item.id).sort(), revision: null };
+            const ref = collection(this.db, 'users', userId, 'intent_blocks');
+            const snapshot = await getDocs(maxBlocks === undefined ? ref : query(ref, orderBy(documentId(), 'asc'), limit(maxBlocks + 1)));
+            return { status: 'AVAILABLE', data: snapshot.docs.slice(0, maxBlocks).map(item => item.id).sort(), revision: null,
+                ...(maxBlocks !== undefined && snapshot.docs.length > maxBlocks
+                    ? { issues: [{ code: 'intent-block-list-truncated', documentPath: `users/${userId}/intent_blocks` }] } : {}) };
         } catch (error: unknown) {
             return { status: 'UNAVAILABLE', operation: 'list intent blocks', retryable: getErrorCode(error) !== 'permission-denied', message: getErrorMessage(error) };
         }
