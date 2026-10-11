@@ -7,6 +7,9 @@ import {
     runTransaction,
     setDoc,
     where,
+    limit,
+    orderBy,
+    documentId,
     type Firestore,
 } from 'firebase/firestore';
 import { getDb } from '../firebase';
@@ -107,15 +110,20 @@ export class AssessmentAttemptService {
     async listAttemptsForProtocolWithDiagnostics(
         userId: string,
         protocolId: string,
-    ): Promise<{ attempts: AssessmentAttempt[]; unreadableCount: number }> {
+        maxAttempts?: number,
+    ): Promise<{ attempts: AssessmentAttempt[]; unreadableCount: number; truncated?: boolean }> {
+        if (maxAttempts !== undefined && (!Number.isSafeInteger(maxAttempts) || maxAttempts < 1)) {
+            throw new Error('maxAttempts must be a positive safe integer');
+        }
         const attempts = query(
             collection(this.db, 'users', userId, 'assessment_attempts'),
             where('protocolRef.id', '==', protocolId),
+            ...(maxAttempts === undefined ? [] : [orderBy(documentId(), 'asc'), limit(maxAttempts + 1)]),
         );
         const snapshots = await getDocs(attempts);
         const candidates: AssessmentAttempt[] = [];
         let unreadableCount = 0;
-        for (const snapshot of snapshots.docs) {
+        for (const snapshot of snapshots.docs.slice(0, maxAttempts)) {
             const attempt = snapshot.data() as AssessmentAttempt;
             try {
                 assertValidAssessmentAttempt(attempt);
@@ -133,7 +141,8 @@ export class AssessmentAttemptService {
             const dateB = b.startedAt ?? `${b.scheduledDate ?? ''}T00:00:00`;
             return dateA.localeCompare(dateB);
         });
-        return { attempts: sorted, unreadableCount };
+        return { attempts: sorted, unreadableCount,
+            ...(maxAttempts === undefined ? {} : { truncated: snapshots.docs.length > maxAttempts }) };
     }
 
     /**

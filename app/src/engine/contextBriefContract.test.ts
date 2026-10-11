@@ -236,4 +236,19 @@ describe('context brief contract identity (#894)', () => {
             purpose: 'planning', asOfDate: AS_OF, generatedAt, requireSourceState: true,
         })).toThrow(/source state and currency missing/);
     });
+
+    it('limits assessment rendering to planning and guards the required section and source diagnostics', () => {
+        const assessmentEvidence = { sources: [], unsupportedCount: 0, omittedCount: 0, relevanceState: 'available' as const };
+        const generatedAt = '2026-09-10T06:00:00.000Z';
+        const text = buildContextBrief(baseInput({ purpose: 'planning', generatedAt, assessmentEvidence }));
+        expect(text).toContain('## Measured performance evidence');
+        for (const purpose of ['morning', 'diagnostic'] as const) {
+            expect(buildContextBrief(baseInput({ purpose, assessmentEvidence }))).not.toContain('## Measured performance evidence');
+        }
+        const source = '\nSource state and currency (dates never shift the as-of date):\n- Recovery snapshot for today\n- Canonical performed training:\n- Current-day plan authority inputs:\n- Assessment benchmarks:\n';
+        const expected = { purpose: 'planning' as const, asOfDate: AS_OF, generatedAt, requireSourceState: true };
+        expect(() => assertRenderedBriefContract(text + source, expected)).not.toThrow();
+        expect(() => assertRenderedBriefContract((text + source).replace('## Measured performance evidence', ''), expected)).toThrow(/assessment evidence\/source state missing/);
+        expect(() => assertRenderedBriefContract(text + source.replace('- Assessment benchmarks:', ''), expected)).toThrow(/assessment evidence\/source state missing/);
+    });
 });

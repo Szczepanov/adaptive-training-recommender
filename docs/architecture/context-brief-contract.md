@@ -4,14 +4,14 @@ The Context Brief is the read-only handoff between the athlete record and an ext
 It is treated as a versioned API even though the wire format remains human/LLM-readable
 Markdown.
 
-This document describes the current v4 contract. Issue #894 established the versioned export
+This document describes the current v5 contract. Issue #894 established the versioned export
 contract through v3: purpose/window identity, source state and currency, canonical performed
 training, missingness semantics, purpose budgets, golden fixtures and service-built regression
-coverage. Issue #893 advances that contract to v4 for the planning-only external-plan execution
-round trip specified below. The final artifact remains Markdown; JSON is a versioned transport
-envelope around that same content. Morning D-1 adherence keeps its purpose-specific debrief path
-but consumes canonical performed-training facts; diagnostic preserves separately labelled raw
-provider provenance.
+coverage. Issue #893 advanced that contract to v4 for the planning-only external-plan execution
+round trip specified below. Issue #897 advances it to v5 with bounded measured performance evidence
+in planning exports. The final artifact remains Markdown; JSON is a versioned transport envelope
+around that same content. Morning D-1 adherence keeps its purpose-specific debrief path but consumes
+canonical performed-training facts; diagnostic preserves separately labelled raw provider provenance.
 
 ## Export boundary
 
@@ -58,7 +58,7 @@ create a second planning engine.
 
 ## Contract identity block
 
-Contract version `2026-09-context-brief-contract-v4` currently exposes one field per line so
+Contract version `2026-10-context-brief-contract-v5` currently exposes one field per line so
 each field is independently machine-readable:
 
 - `Contract version`;
@@ -78,7 +78,7 @@ does not claim the longer planning/diagnostic subjective-baseline or sensor-evid
 
 The source-state section identifies the relevant recovery snapshot and wearable metric dates,
 check-in date, Garmin activity read, canonical completed-training read, current plan inputs,
-and comparison evidence state. It distinguishes measured, missing, unavailable, invalid,
+planning assessment-benchmark relevance/read state, and comparison evidence state. It distinguishes measured, missing, unavailable, invalid,
 unsupported/not collected, and not applicable; a measured zero remains a value, not missingness.
 Where source data has a semantic date, the brief reports its age against the as-of date and
 flags a date older than the expected day as stale. Transport sync/update timestamps are
@@ -219,6 +219,48 @@ readiness, or duplicates raw telemetry (ids only).
 Determinism: identical persisted inputs, explicit `asOfDate`, purpose and contract version
 give identical semantic output; only `Generated at` varies.
 
+## Measured performance evidence
+
+Planning exports render `## Measured performance evidence` after goals. It is an observational,
+bounded assessment summary, never an input to recommendation selection. Morning and diagnostic
+exports neither read nor render it; diagnostic assessment export remains the detailed evidence
+surface. `ContextBriefService.build` includes its relevance/read state in the required planning
+source-state lines, and `assertRenderedBriefContract` rejects a service-built planning artifact
+without them.
+
+Only exact, supported bindings enter the section:
+
+- active typed goals: `exerciseAssessmentBridge` maps the supported squat/bench exercise targets;
+  a `performance_test` target binds the catalog protocol ID, exact revision, and metric;
+- explicit block bindings: the latest validated intent revision that covers `asOfDate`, followed
+  by the exact frozen evaluation revision pinned in `successCriteria.evaluationRef`, whose status
+  is `active`, `completed`, or `archived`. The metric and protocol revision must match exactly.
+
+Titles, capabilities, `PlanBlock` travel fields, and unbound targets never infer relevance.
+Bundled current and historical protocol revisions are supported; an unknown/unbound target is
+reported as unsupported rather than silently mapped to a profile estimate.
+
+The service preserves a finite, current-state read: 20 ID-ordered block headers plus one
+sentinel, then current validated revision/header-state reads; 20 deduplicated evaluation
+references; 12 deduplicated bindings; and 100 ID-ordered attempts per protocol plus one
+sentinel. It reads only eligible attempt/metric heads and current revisions, never metric-wide
+observations, trial rows, revision chains, or extra body-mass data. It does not reconstruct
+historical as-of authoring state. Rendering independently caps rows at 12 and bounds displayed
+IDs/device tokens to a single line of 96 characters.
+
+Projection reuses `buildAssessmentHistory` and `computeSeriesProgress`: completed,
+non-familiarization attempts with known parents and Warsaw observation/completion dates on or
+before `asOfDate` are eligible; a baseline has no 14-day cutoff. Complete sources report the
+benchmark, baseline, unit/date and comparable raw change, or explicitly report no comparable
+repeat. Benchmark and baseline values retain stored precision; the raw absolute change uses the
+History two-decimal display and percentage uses one decimal. Missing reliability still yields
+`insufficient_evidence`; other incompatible series are
+counted but receive no cross-series numeric delta. A truncated or unreadable source may render
+its measured sample but withholds whole-history baseline/latest/comparison and never makes an
+absence-of-repeat claim. Missing source, query failure, and unsupported binding stay distinct;
+partial relevance diagnostics retain valid goal evidence while saying relevant bindings may have
+been omitted.
+
 ## Information bounds
 
 The morning export caps provider fallback/detail at six D-1 rows. Planning keeps at most 12
@@ -232,6 +274,10 @@ its newest-20 row cap, one-line 96-character identifier projection, five-item ob
 cap and singular replacement-provenance cap, all with explicit omission semantics. Like activity detail, representative maximum-density
 fixtures exercise composition without a global truncation; authority rows are never cut merely
 to satisfy a whole-document character limit.
+
+Measured performance evidence is independently bounded by its 12-row renderer cap, one-line
+96-character token projection, and the bounded source reads above. Its omission/count and
+partial-read states are rendered explicitly rather than being hidden by document-level limits.
 
 ## Determinism
 
@@ -276,7 +322,10 @@ Version history:
   selection, and per-row identifier/observed-work bounds specified above. Planning exports
   produced between PR-C's merge and this bump carry v3 identity with v4 semantics; the bump
   bounds that window after the fact.
+- v4 → v5: planning-only measured performance evidence, including its exact relevance rules,
+  current-state bounded reads, partial-read semantics, source-state requirement, and finite
+  rendering bounds. The JSON transport envelope remains `context_brief_export_v2`.
 
 Contract identity is asserted on every service-built artifact, and fixed-date semantic tests
 exclude only the generation timestamp. JSON's `context_brief_export_v2` transport version is
-independent of semantic contract v4. No recommendation authority is added by this export.
+independent of semantic contract v5. No recommendation authority is added by this export.

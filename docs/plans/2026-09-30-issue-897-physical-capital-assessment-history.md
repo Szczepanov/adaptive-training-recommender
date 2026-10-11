@@ -1,7 +1,7 @@
 # Issue #897 — Physical-capital assessment history implementation plan
 
 **Date:** 2026-09-30
-**Status:** In progress — [ADR-0046](../adr/0046-first-class-raw-assessment-trial-evidence.md) accepted 2026-09-30; PR A (WP0–WP3 domain foundation) merged (PR #942); PR B (WP4 bundled catalog, WP5 trial capture UX, WP7.2 diagnostic JSON export) merged (PR #944); PR C (WP6 assessment history, series comparability, WP7.1 normalized CSV export, WP3.4 body-mass context, Appendix A ADR-0047) merged (PR #948), followed by a post-merge review hardening of body-mass source selection and row-level series comparability. #897 was reopened on 2026-10-01 after the PR C merge auto-closed it: WP6.6 fixed-load velocity (design: [ADR-0047](../adr/0047-fixed-load-velocity-assessment-series.md)) is implemented and passed local verification/review; WP8 bounded consumer integration (#897 PR D) remains open unless those acceptance criteria are explicitly rescoped. PR B2 (WP5.5 WL Analysis per-frame CSV import) shipped in PR #963; parser-v2 rep-boundary hardening followed in PR #984.
+**Status:** In progress — [ADR-0046](../adr/0046-first-class-raw-assessment-trial-evidence.md) accepted 2026-09-30; PR A (WP0–WP3 domain foundation) merged (PR #942); PR B (WP4 bundled catalog, WP5 trial capture UX, WP7.2 diagnostic JSON export) merged (PR #944); PR C (WP6 assessment history, series comparability, WP7.1 normalized CSV export, WP3.4 body-mass context, Appendix A ADR-0047) merged (PR #948), followed by a post-merge review hardening of body-mass source selection and row-level series comparability. #897 was reopened on 2026-10-01 after the PR C merge auto-closed it: WP6.6 fixed-load velocity (design: [ADR-0047](../adr/0047-fixed-load-velocity-assessment-series.md)) is implemented and passed local verification/review; WP8.0 merged in PR #1033, WP8.1 in PR #1036, and WP8.3 is implemented locally and verified 2026-10-11. WP8.2 production block-review wiring and the remaining real-evidence acceptance work remain open. PR B2 (WP5.5 WL Analysis per-frame CSV import) shipped in PR #963; parser-v2 rep-boundary hardening followed in PR #984.
 **Authority boundary:** evidence-only under the existing OV authority boundary; ADR-0046 grants no recommendation authority
 **Unlocks:** first-class multidomain physical-capital assessment capture, comparable history and normalized/diagnostic export without recommendation authority
 **Canonical status owner:** [Performance outcome validation (OV)](./performance-outcome-validation.md); this document is a scoped #897 implementation design, not a parallel OV status board
@@ -937,7 +937,7 @@ This work should reuse existing OV and PG contracts.
 
 ## WP8.0 Benchmark-evidence eligibility for existing consumers
 
-**Status:** Implemented on the #897 PR D branch.
+**Status:** Implemented in [PR #1033](https://github.com/Szczepanov/adaptive-training-recommender/pull/1033), merged 2026-10-09.
 
 Canonical observations do not carry their attempt's purpose or state, so a `valid` observation from a familiarization or abandoned attempt could reach consumers that read observations without the attempt. The History read model already excluded them; typed-goal current-value resolution (`goalProgress.ts` `resolveGoalProgress`) and the OV5 block-report composition boundary (`blockOutcomeReportService.ts` `BlockOutcomeReportService.buildReport`) did not.
 
@@ -945,24 +945,9 @@ All three now share `assessmentEvidenceEligibility.ts` `isBenchmarkEligibleAttem
 
 ## WP8.1 Typed performance goals
 
-**Status:** Implemented on the #897 PR D branch.
-**Blocked by:** none (completed).
-**Unlocks:** Measured assessment evidence can satisfy supported typed goals without conflating tested 1RM with e1RM.
+**Status:** Implemented in [PR #1036](https://github.com/Szczepanov/adaptive-training-recommender/pull/1036), merged 2026-10-10.
 
-Do not assume all canonical assessment observations already satisfy typed goals.
-
-Current ADR-0041 behavior differs by subject kind:
-
-- `performance_test` targets can resolve current measured `MetricObservationRevision` evidence through the bound performance-test protocol;
-- `exercise` strength targets currently resolve current capability from `AthletePerformanceProfile.estimated1RmKg`, not from measured assessment observations.
-
-Therefore squat/bench 1RM evidence needs an explicit bridge if it is to satisfy an exercise-subject goal. The implementation must either add a reviewed mapping from the bundled strength test to the canonical exercise identity and extend goal-progress resolution while keeping measured 1RM distinct from e1RM, or leave measured squat/bench assessment evidence outside typed-goal progress in the first slice.
-
-Protocol reference alone does not solve exercise subject identity. New jump/throw/sprint metrics should become goal-eligible only when a real typed-goal use case is declared; assessment metrics do not automatically become goal metrics.
-
-The first athlete-usable baseline slice may ship before the strength-goal bridge, but #897's typed-goal acceptance criterion remains open until a reviewed mapping/resolver path is implemented or the issue scope is explicitly amended. Do not silently mark the requirement complete.
-
-Do not make target values alter assessment protocols.
+WP8.1 delivered the reviewed squat/bench bridge while retaining the distinction between measured 1RM and profile e1RM. It does not make every assessment metric goal-eligible or make a target value alter an assessment protocol.
 
 **Implementation summary (WP8.1):**
 - Reviewed bidirectional bridge in `exerciseAssessmentBridge.ts` maps `bench_press` <-> `strength-bench-press-1rm` and `back_squat` <-> `strength-back-squat-1rm` for `strength_1rm_kg`.
@@ -996,23 +981,19 @@ It must not claim causality.
 
 ## WP8.3 Planning Context Brief
 
-**Blocked by:** WP6.4 plus the versioned Context Brief contract and a relevant active goal/block intent.
-**Unlocks:** Compact current benchmark/trend evidence in planning context without raw-table explosion.
+**Status:** Implemented locally and verified 2026-10-11.
 
-Follow #897’s bounded export intent.
+Planning Context Briefs now render `## Measured performance evidence` after goals. The evidence is observational only and does not change recommendation selection or `POLICY_VERSION`; the JSON envelope remains `context_brief_export_v2` while the semantic contract is `2026-10-context-brief-contract-v5`.
 
-For relevant active goals/block intent, include compact evidence such as:
+Relevance is exact and typed: active performance targets bind squat/bench through `exerciseAssessmentBridge`, while `performance_test` targets bind the catalog protocol revision and metric. Explicit block evidence comes only from the latest validated intent revision covering the as-of date and the exact frozen evaluation revision pinned in `successCriteria.evaluationRef` whose status is `active`, `completed`, or `archived`, with an exact metric and explicit protocol revision. Titles, capabilities, travel, and unbound targets do not infer relevance. Unknown or unbundled protocol bindings are reported as unsupported.
 
-```text
-Performance evidence
-- Back squat 1RM: 150 kg baseline, no comparable repeat yet.
-- Standing broad jump: 238 cm baseline, 231 cm latest (-2.9%); same protocol.
-- Cycling 5 s mean sprint power: 1,210 W baseline, 1,265 W latest (+4.5%); same protocol.
-```
+The planning read is bounded and does not reconstruct historical authoring state: it selects 20 ID-ordered block headers plus one sentinel, then current validated revision/header-state reads; 20 deduplicated evaluation references; 12 deduplicated bindings; and 100 ID-ordered attempts per protocol plus one sentinel. It reads only eligible attempt/metric heads and current revisions—never metric-wide observations, raw trials, revision chains, or extra body mass. IDs and device tokens are single-line 96-character projections; the renderer defensively limits rows to 12.
 
-Do not dump all trials into ordinary planning context.
+The projection reuses `buildAssessmentHistory` and `computeSeriesProgress`. It accepts completed, non-familiarization evidence with known parents and Warsaw observation/completion dates no later than the as-of date; baselines have no 14-day cutoff. A complete read reports benchmark, unit/date, baseline and comparable raw delta, or an explicit absence of a comparable repeat. Missing reliability reports `insufficient_evidence`; incompatible series remain visible but receive no cross-series numeric comparison. A truncated or unreadable attempt source may show its measured sample, but withholds baseline/latest/comparison and never claims that no repeat exists. Missing source, query outage, and unsupported binding remain distinct; partial relevance diagnostics retain valid goal evidence and state that relevant bindings may be omitted.
 
-Diagnostic export owns the detailed evidence.
+Planning source-state is mandatory at the service guard and names the assessment read/relevance state. Morning and diagnostic exports add no assessment reads or compact evidence section; detailed trial and revision evidence remains diagnostic-only.
+
+**Verification (2026-10-11):** `make verify` passed in 333 seconds with `VITEST_MAX_WORKERS=4` supplied by the process environment (no configuration change), after retrying an initial Vitest worker-startup failure. It included 8,375 frontend unit tests, 1,294 Python tests plus one platform skip, 422 Firestore-rules tests, 51 browser E2E tests, and two latency tests; typecheck, ESLint, build, audit, and the remaining gates also passed.
 
 ---
 

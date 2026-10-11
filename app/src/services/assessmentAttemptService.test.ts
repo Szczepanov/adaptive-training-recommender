@@ -8,6 +8,9 @@ const firestore = vi.hoisted(() => ({
     getDocs: vi.fn(),
     query: vi.fn((_collection: unknown, ...constraints: unknown[]) => ({ constraints })),
     where: vi.fn((field: string, op: string, value: string) => ({ field, op, value })),
+    limit: vi.fn((count: number) => ({ limit: count })),
+    documentId: vi.fn(() => '__name__'),
+    orderBy: vi.fn((field: string, direction: string) => ({ orderBy: field, direction })),
     setDoc: vi.fn(),
     runTransaction: vi.fn(),
 }));
@@ -20,6 +23,9 @@ vi.mock('firebase/firestore', () => ({
     query: firestore.query,
     setDoc: firestore.setDoc,
     where: firestore.where,
+    limit: firestore.limit,
+    documentId: firestore.documentId,
+    orderBy: firestore.orderBy,
     runTransaction: firestore.runTransaction,
 }));
 
@@ -51,6 +57,20 @@ describe('AssessmentAttemptService', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         service = new AssessmentAttemptService({} as never);
+    });
+
+    it('caps planning attempt reads with a sentinel without hiding malformed records in the sample', async () => {
+        firestore.getDocs.mockResolvedValue({ docs: [
+            docSnapshot(true, validAttempt),
+            docSnapshot(true, { ...validAttempt, id: 'bad', state: 'broken' }, 'bad'),
+            docSnapshot(true, { ...validAttempt, id: 'sentinel' }, 'sentinel'),
+        ] });
+        const result = await service.listAttemptsForProtocolWithDiagnostics('u1', 'proto-1', 2);
+        expect(result.attempts).toEqual([validAttempt]);
+        expect(result.unreadableCount).toBe(1);
+        expect(result.truncated).toBe(true);
+        expect(firestore.limit).toHaveBeenCalledWith(3);
+        expect(firestore.orderBy).toHaveBeenCalledWith('__name__', 'asc');
     });
 
     it('exports a default instance initialized with default db', () => {

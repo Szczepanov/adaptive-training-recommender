@@ -3,7 +3,7 @@
 exports[`ContextBriefService > golden service artifact: 2-day daily export 1`] = `
 "# Morning Training & Readiness Brief
 
-Contract version: 2026-09-context-brief-contract-v4
+Contract version: 2026-10-context-brief-contract-v5
 Purpose: morning
 As-of date: 2026-08-15 (Europe/Warsaw calendar date)
 Retrospective detail window: 2026-08-14 → 2026-08-15 (2 days)
@@ -97,7 +97,7 @@ No recommendation recorded for today yet (check-in may be pending or sync in pro
 exports[`ContextBriefService > golden service artifact: 14-day diagnostic export 1`] = `
 "# Training context brief
 
-Contract version: 2026-09-context-brief-contract-v4
+Contract version: 2026-10-context-brief-contract-v5
 Purpose: diagnostic
 As-of date: 2026-08-15 (Europe/Warsaw calendar date)
 Retrospective detail window: 2026-08-02 → 2026-08-15 (14 days)
@@ -300,7 +300,7 @@ Use this exact day-block format so it remains compatible with 1-click plan impor
 exports[`ContextBriefService > golden service artifact: 14-day full export 1`] = `
 "# Training context brief
 
-Contract version: 2026-09-context-brief-contract-v4
+Contract version: 2026-10-context-brief-contract-v5
 Purpose: planning
 As-of date: 2026-08-15 (Europe/Warsaw calendar date)
 Retrospective detail window: 2026-08-02 → 2026-08-15 (14 days)
@@ -317,6 +317,7 @@ Source state and currency (dates never shift the as-of date):
 - Current-day plan authority inputs: recommendations missing/no recommendation (latest update none recorded); imported schedule missing/no authored occurrence; imported revision no active plan; date 2026-08-15.
 - Power telemetry capability: missing/not configured (training settings absent).
 - Training-response comparisons: see display-only feature rows; insufficient evidence is stated per feature.
+- Assessment benchmarks: relevance available; 0 selected binding(s); 0 unavailable source(s); 0 incomplete source(s). Missing valid benchmarks, measurement dates and unsupported bindings are explicit in Measured performance evidence; the training-detail window does not limit baselines.
 - Value states: a measured 0 is explicit zero; missing means no record; unavailable means read failure; invalid means an unparseable record; unsupported means not collected by the source; not applicable means the feature does not apply. An em dash means unmeasured, never zero.
 
 Window: 2026-08-02 → 2026-08-15 (14 days). All dates are Europe/Warsaw calendar dates.
@@ -355,6 +356,11 @@ A session that violates any of these cannot be executed.
 ## 2. Current training intent & goals
 
 No active goals or training intent profile recorded.
+
+## Measured performance evidence
+
+Assessment benchmarks only; observational evidence, with no recommendation authority. Dates are Europe/Warsaw.
+No supported assessment binding in active typed goals or explicitly bound block objectives.
 
 ## 3. Objective recovery (wearable)
 
