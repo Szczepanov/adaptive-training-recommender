@@ -33,7 +33,7 @@
  * latest records" discipline ADR-0036 D-AUDIT states for a different collection).
  */
 
-import { doc, getDoc, getDocs, collection, runTransaction, type DocumentReference, type Firestore, type Transaction } from 'firebase/firestore';
+import { doc, getDoc, getDocs, collection, query, orderBy, documentId, limit, runTransaction, type DocumentReference, type Firestore, type Transaction } from 'firebase/firestore';
 import { getDb } from '../firebase';
 import type { DataState } from '../engine/dataState';
 import { getErrorCode, getErrorMessage } from '../utils/errors';
@@ -242,6 +242,37 @@ export class IntentBlockService {
         const activeBlocks = blocks.filter((block): block is IntentBlock =>
             block !== null && date >= block.dateRange.startDate && date <= block.dateRange.endDate);
         return { status: 'AVAILABLE', data: activeBlocks, revision: null };
+    }
+
+    /** Planning/export read of a deterministic document-ID sample, bounded before date filtering.
+     * The extra header is only a truncation sentinel; it is not hydrated or counted unreadable.
+     * Reads current latest revisions whose inclusive dateRange covers date, not revisions as of date.
+     * Query failures throw so an outage cannot masquerade as an empty or partially readable sample. */
+    async getActiveBlocksWithDiagnostics(
+        userId: string,
+        date: string,
+        maxBlocks = 20,
+    ): Promise<{ blocks: IntentBlock[]; unreadableCount: number; truncated: boolean }> {
+        if (!Number.isSafeInteger(maxBlocks) || maxBlocks <= 0 || maxBlocks >= Number.MAX_SAFE_INTEGER) {
+            throw new RangeError('maxBlocks must be a positive safe integer with room for a truncation sentinel');
+        }
+        const snapshot = await getDocs(query(
+            collection(this.db, 'users', userId, 'intent_blocks'),
+            orderBy(documentId(), 'asc'),
+            limit(maxBlocks + 1),
+        ));
+        const sampledBlocks = await Promise.all(snapshot.docs.slice(0, maxBlocks).map(async item => {
+            const headerState = await this.getHeaderState(userId, item.id);
+            if (headerState.status !== 'AVAILABLE') return null;
+            const revisionState = await this.getRevisionState(userId, item.id, headerState.data.revision);
+            return revisionState.status === 'AVAILABLE' ? revisionState.data.block : null;
+        }));
+        return {
+            blocks: sampledBlocks.filter((block): block is IntentBlock =>
+                block !== null && date >= block.dateRange.startDate && date <= block.dateRange.endDate),
+            unreadableCount: sampledBlocks.filter(block => block === null).length,
+            truncated: snapshot.docs.length > maxBlocks,
+        };
     }
 
     /**

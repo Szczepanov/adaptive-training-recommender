@@ -36,6 +36,12 @@ import { extractProviderWeightRecords, PROVIDER_BODY_MASS_SERIES_LOOKBACK_DAYS }
 import { addDaysToLocalDateString, getLocalDateString } from '../utils/localDate';
 import { observationKeyFor } from '../observations/validation';
 import type { AnthropometryEntry } from '../anthropometry/models';
+import { isBenchmarkEligibleAttempt } from '../observations/assessmentEvidenceEligibility';
+import {
+    ASSESSMENT_BRIEF_MAX_ATTEMPTS, ASSESSMENT_BRIEF_MAX_BINDINGS,
+    assessmentBriefBindingKey, type AssessmentBriefBinding, type AssessmentBriefSource,
+} from '../observations/contextBriefAssessments';
+import { compareCodeUnits } from '../utils/canonicalJson';
 
 export interface AssessmentAttemptDetailData {
     attempt: AssessmentAttempt;
@@ -169,6 +175,64 @@ export class AssessmentHistoryService {
             unreadableAttemptsCount: totalUnreadableAttempts,
             unreadableObservationsCount: totalUnreadableObservations,
         });
+    }
+
+    /**
+     * Planning-only, protocol-selective ID-ordered sample with a truncation sentinel.
+     * No date lookback: older baselines remain eligible. No trials, chains or body mass.
+     * Partial reads are preserved so the pure projection can withhold comparison claims.
+     */
+    async loadPlanningAssessmentSources(
+        userId: string,
+        bindings: readonly AssessmentBriefBinding[],
+        asOfDate: string,
+    ): Promise<AssessmentBriefSource[]> {
+        const selected = [...bindings].sort((a, b) => compareCodeUnits(assessmentBriefBindingKey(a), assessmentBriefBindingKey(b)))
+            .slice(0, ASSESSMENT_BRIEF_MAX_BINDINGS);
+        const sources: AssessmentBriefSource[] = [];
+        const protocolIds = [...new Set(selected.map(b => b.protocolId))];
+        for (const protocolId of protocolIds) {
+            const protocolBindings = selected.filter(b => b.protocolId === protocolId);
+            try {
+                const result = await this.attemptService.listAttemptsForProtocolWithDiagnostics(userId, protocolId, ASSESSMENT_BRIEF_MAX_ATTEMPTS);
+                const attempts = result.attempts.filter(a => a.protocolRef.id === protocolId && isBenchmarkEligibleAttempt(a)
+                    && (!a.completedAt || getLocalDateString(new Date(a.completedAt)) <= asOfDate));
+                const metricIds = [...new Set(protocolBindings.map(b => b.metricId))];
+                const observations: AssessmentBriefSource['observations'][number][] = [];
+                const unreadableByMetric = new Map<string, number>();
+                for (const attempt of attempts) {
+                    for (const metricId of metricIds) {
+                        if (!protocolBindings.some(b => b.metricId === metricId
+                            && (b.protocolRevision === undefined || b.protocolRevision === attempt.protocolRef.revision))) continue;
+                        try {
+                            const key = observationKeyFor(attempt.id, metricId);
+                            const head = await this.observationService.getHead(userId, key);
+                            if (!head) continue;
+                            const revision = await this.observationService.getRevision(userId, key, head.headRevision);
+                            if (!revision || head.assessmentAttemptId !== attempt.id || head.metricId !== metricId
+                                || revision.assessmentAttemptId !== attempt.id || revision.metricId !== metricId
+                                || revision.protocolRef.id !== protocolId || revision.protocolRef.revision !== attempt.protocolRef.revision
+                                || head.observationKey !== key || revision.observationKey !== key || revision.revision !== head.headRevision) {
+                                throw new Error('Assessment current head/revision identity mismatch');
+                            }
+                            observations.push({ head, revision });
+                        } catch {
+                            unreadableByMetric.set(metricId, (unreadableByMetric.get(metricId) ?? 0) + 1);
+                        }
+                    }
+                }
+                for (const binding of protocolBindings) {
+                    sources.push({ binding, attempts, observations: observations.filter(o => o.revision.metricId === binding.metricId),
+                        unreadableCount: result.unreadableCount + (unreadableByMetric.get(binding.metricId) ?? 0),
+                        truncated: result.truncated === true, unavailable: false });
+                }
+            } catch {
+                for (const binding of protocolBindings) {
+                    sources.push({ binding, attempts: [], observations: [], unreadableCount: 0, truncated: false, unavailable: true });
+                }
+            }
+        }
+        return sources;
     }
 
     /**

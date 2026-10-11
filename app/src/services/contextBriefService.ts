@@ -72,6 +72,14 @@ import { recommendationService } from './recommendationService';
 import { recoverySnapshotService } from './recoverySnapshotService';
 import { trainingIntentProfileService } from './trainingIntentProfileService';
 import { trainingSettingsService } from './trainingSettingsService';
+import { assessmentHistoryService } from './assessmentHistoryService';
+import { intentBlockService } from './intentBlockService';
+import { outcomeEvaluationService } from './outcomeEvaluationService';
+import {
+    ASSESSMENT_BRIEF_MAX_BINDINGS, assessmentBriefBindingsForGoals, assessmentBriefBindingKey,
+    assessmentBriefDefinition, type AssessmentBriefBinding, type AssessmentBriefInput,
+} from '../observations/contextBriefAssessments';
+import { compareCodeUnits } from '../utils/canonicalJson';
 
 export interface ContextBriefResult {
     /** The rendered markdown, ready to paste into an external planner. */
@@ -222,8 +230,8 @@ export class ContextBriefService {
         capabilityMaintenance?: CapabilityMaintenanceResult | null,
     ): Promise<ContextBriefResult> {
         const targetDate = asOfDate ?? getLocalDateString();
-        // Purpose selects the output contract. Planning and diagnostic deliberately share
-        // identical reads; the morning path skips planning-only ledgers, but reads
+        // Purpose selects the output contract. Planning alone reads compact assessment
+        // evidence; the morning path skips planning-only ledgers, but reads
         // canonical performed facts and D-1 imported authority for its debrief.
         const purpose = briefPurposeFor(preset);
         // The morning contract always includes today's status and yesterday's debrief,
@@ -301,6 +309,7 @@ export class ContextBriefService {
             anthropometryResult,
             bodyCompositionSnapshotResult,
             overrideResult,
+            activeBlockResult,
         ] = await Promise.allSettled([
             // getRecoverySnapshotByDate collapses UNAVAILABLE and MISSING to null, so a
             // read outage would be indistinguishable from "no data that day" and the
@@ -341,6 +350,7 @@ export class ContextBriefService {
             // Issue #813: exposure-ledger inputs, bounded to the render window and not read at
             // all for the morning brief, which does not render the ledgers.
             purpose === 'morning' ? Promise.resolve(null) : activityOverrideService.getOverridesSinceState(userId, startDate),
+            purpose === 'planning' ? intentBlockService.getActiveBlocksWithDiagnostics(userId, targetDate) : Promise.resolve(null),
         ] as const);
 
         const snapshots: DailyRecoverySnapshot[] = [];
@@ -433,6 +443,82 @@ export class ContextBriefService {
             : [];
         if (goalsResult.status !== 'fulfilled' || !['AVAILABLE', 'MISSING'].includes(goalsResult.value.status)) {
             unavailableSources.push('active goals');
+        }
+
+        let assessmentEvidence: AssessmentBriefInput | undefined;
+        if (purpose === 'planning') {
+            const goalBindings = assessmentBriefBindingsForGoals(goals);
+            const bindings = new Map<string, AssessmentBriefBinding>(goalBindings.bindings.map(b => [assessmentBriefBindingKey(b), b]));
+            let unsupportedCount = goalBindings.unsupportedCount;
+            let relevanceState: AssessmentBriefInput['relevanceState'] = unavailableSources.includes('active goals') ? 'unavailable' : 'available';
+            const relevanceNotes: string[] = [];
+            const refs = new Map<string, { id: string; revision: number; metricIds: Set<string> }>();
+            if (activeBlockResult.status === 'fulfilled' && activeBlockResult.value) {
+                const read = activeBlockResult.value;
+                if (read.unreadableCount || read.truncated) {
+                    if (relevanceState !== 'unavailable') relevanceState = 'incomplete';
+                    relevanceNotes.push(`Block-intent read incomplete: ${read.unreadableCount} unreadable record(s)${read.truncated ? '; ID-ordered block sample truncated at 20' : ''}.`);
+                    unavailableSources.push('assessment relevance (incomplete active block intents)');
+                }
+                for (const block of read.blocks) {
+                    for (const objective of block.objectives) {
+                        const ref = objective.successCriteria.evaluationRef;
+                        if (!ref) continue;
+                        const key = `${ref.id}|${ref.revision}`;
+                        const existing = refs.get(key) ?? { id: ref.id, revision: ref.revision, metricIds: new Set<string>() };
+                        existing.metricIds.add(ref.metricId);
+                        refs.set(key, existing);
+                    }
+                }
+            } else {
+                relevanceState = 'unavailable';
+                unavailableSources.push('assessment relevance (active block intents)');
+            }
+            const sortedRefs = [...refs.entries()].sort(([a], [b]) => compareCodeUnits(a, b));
+            if (sortedRefs.length > 20) {
+                if (relevanceState !== 'unavailable') relevanceState = 'incomplete';
+                relevanceNotes.push(`${sortedRefs.length - 20} frozen evaluation reference(s) omitted by the 20-read bound.`);
+                unavailableSources.push('assessment relevance (evaluation read bound)');
+            }
+            const evaluations = await Promise.allSettled(sortedRefs.slice(0, 20).map(async ([, ref]) => ({
+                ref, evaluation: await outcomeEvaluationService.getRevision(userId, ref.id, ref.revision),
+            })));
+            let missingEvaluations = 0;
+            let unreadableEvaluations = 0;
+            for (const result of evaluations) {
+                if (result.status === 'rejected') { unreadableEvaluations++; continue; }
+                const { ref, evaluation } = result.value;
+                if (!evaluation) { missingEvaluations++; continue; }
+                if (!['active', 'completed', 'archived'].includes(evaluation.revision.status)
+                    || (evaluation.revision.activatedAt && getLocalDateString(new Date(evaluation.revision.activatedAt)) > targetDate)) {
+                    unsupportedCount += ref.metricIds.size;
+                    continue;
+                }
+                for (const metricId of ref.metricIds) {
+                    const matching = evaluation.bindings.filter(b => b.metricId === metricId);
+                    if (!matching.length) unsupportedCount++;
+                    for (const metric of matching) {
+                        if (!metric.protocolRef) { unsupportedCount++; continue; }
+                        const binding = { protocolId: metric.protocolRef.id, protocolRevision: metric.protocolRef.revision, metricId };
+                        if (!assessmentBriefDefinition(binding)) { unsupportedCount++; continue; }
+                        bindings.set(assessmentBriefBindingKey(binding), binding);
+                    }
+                }
+            }
+            if (missingEvaluations || unreadableEvaluations) {
+                if (unreadableEvaluations) relevanceState = 'unavailable';
+                else if (relevanceState !== 'unavailable') relevanceState = 'incomplete';
+                relevanceNotes.push(`Frozen evaluations: ${missingEvaluations} missing; ${unreadableEvaluations} unreadable.`);
+                if (unreadableEvaluations) unavailableSources.push('assessment relevance (frozen evaluations)');
+            }
+            const selectedBindings = [...bindings.values()].sort((a, b) => compareCodeUnits(assessmentBriefBindingKey(a), assessmentBriefBindingKey(b)));
+            const sources = selectedBindings.length
+                ? await assessmentHistoryService.loadPlanningAssessmentSources(userId, selectedBindings.slice(0, ASSESSMENT_BRIEF_MAX_BINDINGS), targetDate)
+                : [];
+            if (sources.some(s => s.unavailable || s.truncated || s.unreadableCount)) {
+                unavailableSources.push('assessment benchmarks (incomplete or unavailable sources)');
+            }
+            assessmentEvidence = { sources, unsupportedCount, omittedCount: Math.max(0, selectedBindings.length - ASSESSMENT_BRIEF_MAX_BINDINGS), relevanceState, relevanceNotes };
         }
 
         const fixedActivitiesReadable = fixedActivityResult.status === 'fulfilled'
@@ -963,6 +1049,7 @@ export class ContextBriefService {
             preferences,
             intentProfile,
             goals,
+            assessmentEvidence,
             bodyComposition,
             purpose,
             generatedAt,
@@ -1108,6 +1195,7 @@ export class ContextBriefService {
             `- Current-day plan authority inputs: recommendations ${recommendationState} (latest update ${recommendationsReadable ? currentRecommendationUpdatedAt : 'unknown'}); imported schedule ${importedScheduleState}; imported revision ${importedRevisionState}; date ${targetDate}.`,
             `- Power telemetry capability: ${trainingSettingsReadStatus === 'INVALID' ? 'invalid (training-settings record could not be parsed)' : trainingSettingsReadStatus === 'UNAVAILABLE' ? 'unavailable (training-settings read failed)' : trainingSettingsReadStatus === 'MISSING' ? 'missing/not configured (training settings absent)' : trainingSettings?.capabilities?.powerMeter === false ? 'unsupported/not collected (configured unavailable)' : trainingSettings?.capabilities?.powerMeter === true ? 'configured available; individual activity measurement still depends on source' : 'missing/not configured (capability not configured)'}.`,
             `- Training-response comparisons: ${purpose === 'morning' ? 'not applicable to this compact morning export' : responseEvidence?.occurrenceRead === 'unavailable' ? 'unavailable (occurrence evidence read failed)' : 'see display-only feature rows; insufficient evidence is stated per feature'}.`,
+            ...(assessmentEvidence ? [`- Assessment benchmarks: relevance ${assessmentEvidence.relevanceState}; ${assessmentEvidence.sources.length} selected binding(s); ${assessmentEvidence.sources.filter(s => s.unavailable).length} unavailable source(s); ${assessmentEvidence.sources.filter(s => s.truncated || s.unreadableCount).length} incomplete source(s). Missing valid benchmarks, measurement dates and unsupported bindings are explicit in Measured performance evidence; the training-detail window does not limit baselines.`] : []),
             '- Value states: a measured 0 is explicit zero; missing means no record; unavailable means read failure; invalid means an unparseable record; unsupported means not collected by the source; not applicable means the feature does not apply. An em dash means unmeasured, never zero.',
         ];
         const text = rendered.replace(/(Generated at: [^\n]+\n)/, `$1${sourceLines.join('\n')}\n`);

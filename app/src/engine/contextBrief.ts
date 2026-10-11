@@ -20,6 +20,7 @@ import { briefContractHeaderLines } from './contextBriefContract';
 import type { PerformedExposureFact } from './performedTrainingFacts';
 import { SENSOR_OBSERVATION_HORIZON_DAYS } from './contextBriefSensorEvidence';
 import { renderPlannedExecutionStatuses, type PlannedExecutionStatus } from '../training-occurrence/plannedExecutionStatus';
+import { renderAssessmentBrief, type AssessmentBriefInput } from '../observations/contextBriefAssessments';
 
 // Re-exported so existing importers keep one entry point for the brief.
 export { round, signed } from './contextBriefRecovery';
@@ -50,6 +51,8 @@ export interface ContextBriefInput {
     preferences: UserPreferences | null;
     intentProfile: TrainingIntentProfile | null;
     goals?: readonly UserGoal[];
+    /** Planning-only bounded canonical assessment evidence; already fetched, no selection authority. */
+    assessmentEvidence?: AssessmentBriefInput;
     /** Pre-computed by the service layer (`contextBriefService.ts`), never fetched or
      * imported here: ADR-0039 D-BC-AUTH bars `engine/` from importing anthropometry at
      * all (enforced by `anthropometry/engineIsolation.test.ts`), so this is a plain,
@@ -880,6 +883,8 @@ export function buildContextBrief(input: ContextBriefInput): string {
     const intent = planningOrder && renderedIntent.length === 0
         ? [`## 2. ${SECTION_TITLE.intentFirst}`, '', 'No active goals or training intent profile recorded.']
         : renderedIntent;
+    const assessments = purpose === 'planning' && input.assessmentEvidence
+        ? renderAssessmentBrief(input.assessmentEvidence, asOfDate) : [];
     const objectiveLines = renderObjective(snapshots, windowDays, `## ${n(3, 2)}. ${SECTION_TITLE.objective}`, planningOrder);
     // Issue #812: the explanatory synthesis leads the recovery section so core evidence and
     // its interpretation precede secondary vendor observations. Reads only the as-of-date
@@ -923,7 +928,7 @@ export function buildContextBrief(input: ContextBriefInput): string {
         },
     );
     const body: string[][] = planningOrder
-        ? [constraints, intent, objective, bodyComposition, subjective, training, roundTrip, adherence]
+        ? [constraints, intent, assessments, objective, bodyComposition, subjective, training, roundTrip, adherence]
         : [constraints, objective, bodyComposition, training, subjective, adherence, intent];
     const purposeNote = planningOrder
         ? ['Export purpose: planning — sections are ordered by decision authority; forensic telemetry and '
