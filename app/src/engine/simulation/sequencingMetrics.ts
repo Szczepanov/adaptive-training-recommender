@@ -352,7 +352,10 @@ function computeOpportunityCost(traces: readonly ScenarioDecisionTrace[]): Oppor
 
 export function computeSequencingDiagnostics(traces: readonly ScenarioDecisionTrace[]): SequencingDiagnostics {
     const residualFatigueCollision = computeResidualFatigueCollision(traces);
-    const collisionByDate = new Map(residualFatigueCollision.perDay.map(d => [d.date, d.collision]));
+    const collisionByDate = new Map<string, typeof residualFatigueCollision.perDay[0]['collision']>();
+    for (const d of residualFatigueCollision.perDay) {
+        collisionByDate.set(d.date, d.collision);
+    }
     const previousTraceByDate = new Map<string, ScenarioDecisionTrace>();
     for (let i = 1; i < traces.length; i += 1) previousTraceByDate.set(traces[i].date, traces[i - 1]);
 

@@ -64,7 +64,11 @@ export function resolveRestDate(plan: ExternalTrainingPlan, directive: ExternalR
  * (no `restDays` field at all) and for a v3 plan with no directives. */
 export function resolveRestDatesByDate(plan: ExternalTrainingPlan): Map<string, ExternalRestDirective> {
     const restDays = (plan as { restDays?: readonly ExternalRestDirective[] }).restDays ?? [];
-    return new Map(restDays.map(directive => [resolveRestDate(plan, directive), directive]));
+    const map = new Map<string, typeof restDays[0]>();
+    for (const directive of restDays) {
+        map.set(resolveRestDate(plan, directive), directive);
+    }
+    return map;
 }
 
 /** The date the plan itself implies, before any overlay. A session with no `preferredDay`
@@ -107,7 +111,10 @@ export function resolvePlacement(
     overlay: ExternalPlanPlacement | null,
     occupancy: PlacementOccupancy = {},
 ): PlacedSession[] {
-    const assigned = new Map((overlay?.assignments ?? []).map(item => [item.sessionId, item]));
+    const assigned = new Map<string, NonNullable<typeof overlay>['assignments'][0]>();
+    for (const item of (overlay?.assignments ?? [])) {
+        assigned.set(item.sessionId, item);
+    }
     const fixedActivityDates = new Set(
         (occupancy.fixedActivities ?? []).filter(activity => !activity.isCompleted).map(activity => activity.date),
     );
@@ -118,7 +125,10 @@ export function resolvePlacement(
     const restDates = new Set(resolveRestDatesByDate(plan).keys());
     const occupiedByDate = new Map<string, Set<string>>();
     const placed: PlacedSession[] = [];
-    const authoredOrder = new Map(plan.sessions.map((session, index) => [session.id, index]));
+    const authoredOrder = new Map<string, number>();
+    for (let i = 0; i < plan.sessions.length; i++) {
+        authoredOrder.set(plan.sessions[i].id, i);
+    }
     const stableWithinWeek = (left: ExternalPlanSession, right: ExternalPlanSession): number =>
         left.placement.week - right.placement.week
         || (authoredOrder.get(left.id) ?? 0) - (authoredOrder.get(right.id) ?? 0);

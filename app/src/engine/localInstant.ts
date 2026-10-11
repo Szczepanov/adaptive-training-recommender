@@ -132,7 +132,11 @@ export function resolveLocalInstant(dateStr: string, timeStr: string, timeZone: 
     // Two different offsets can independently round-trip to the same candidate instant
     // (each offset is only actually valid within its own window), so de-duplicate by the
     // resolved instant itself before deciding resolved/ambiguous/nonexistent.
-    const uniqueMatches = [...new Map(matches.map(m => [m.instant, m])).values()].sort((a, b) => a.instant - b.instant);
+    const uniqueMap = new Map<number, typeof matches[0]>();
+    for (const m of matches) {
+        uniqueMap.set(m.instant, m);
+    }
+    const uniqueMatches = [...uniqueMap.values()].sort((a, b) => a.instant - b.instant);
 
     if (uniqueMatches.length === 0) return { status: 'nonexistent' };
     if (uniqueMatches.length === 1) {

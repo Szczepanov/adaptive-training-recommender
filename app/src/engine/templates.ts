@@ -897,6 +897,12 @@ function buildFirstEnrichedTemplateByModalityIndex(): ReadonlyMap<SessionTemplat
     return byModality;
 }
 
-export const ENRICHED_TEMPLATES_BY_ID: Map<string, SessionTemplate> = new Map(ENRICHED_TEMPLATES.map(t => [t.id, t]));
+export const ENRICHED_TEMPLATES_BY_ID: Map<string, SessionTemplate> = new Map();
+for (const t of ENRICHED_TEMPLATES) {
+    ENRICHED_TEMPLATES_BY_ID.set(t.id, t);
+}
 export const ENRICHED_TEMPLATES_BY_MODALITY = buildFirstEnrichedTemplateByModalityIndex();
-export const TEMPLATES_BY_ID = new Map(TEMPLATES.map(t => [t.id, t]));
+export const TEMPLATES_BY_ID = new Map<string, SessionTemplate>();
+for (const t of TEMPLATES) {
+    TEMPLATES_BY_ID.set(t.id, t);
+}

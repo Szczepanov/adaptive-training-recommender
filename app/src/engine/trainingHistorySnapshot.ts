@@ -107,7 +107,10 @@ export function buildTrainingHistorySnapshot(
     const recommendationRecords = requireAvailable('recommendations', recommendations);
     const completedEvents = reconcileCompletedTrainingEvents(activityRecords, recommendationRecords);
     completedEvents.sort((a, b) => a.date.localeCompare(b.date));
-    const recommendationsByDate = new Map(recommendationRecords.map(rec => [rec.date, rec]));
+    const recommendationsByDate = new Map<string, typeof recommendationRecords[0]>();
+    for (const rec of recommendationRecords) {
+        recommendationsByDate.set(rec.date, rec);
+    }
     const exposures = completedEvents.map(event => exposureWithExactIdentity(event, recommendationsByDate));
 
     let manualTrainingSourceState: DataStateSummary = { status: 'MISSING' };

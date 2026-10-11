@@ -246,7 +246,10 @@ export function compareAthleteEvidenceLineage(
 
     const current = currentRecords ?? [];
     if (current.length > 0) assertSingleAthleteScope(current);
-    const currentMap = new Map(current.map(record => [record.id, record]));
+    const currentMap = new Map<string, typeof current[0]>();
+    for (const record of current) {
+        currentMap.set(record.id, record);
+    }
     const drift: AthleteEvidenceLineageDrift[] = [];
 
     for (const ref of persistedLineage) {

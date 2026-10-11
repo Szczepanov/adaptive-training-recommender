@@ -264,7 +264,10 @@ function morningAdherenceEvidence(
     activities: readonly NormalizedGarminActivity[],
     yesterdayDate: string,
 ): { matched: NormalizedGarminActivity[]; unmatched: NormalizedGarminActivity[]; reason: string | null } {
-    const byId = new Map(activities.map(activity => [activity.activityId, activity]));
+    const byId = new Map<string, typeof activities[0]>();
+    for (const activity of activities) {
+        byId.set(activity.activityId, activity);
+    }
     const refCounts = new Map<string, number>();
     for (const id of allFacts.flatMap(fact => fact.providerActivityIds ?? [])) {
         refCounts.set(id, (refCounts.get(id) ?? 0) + 1);
@@ -481,8 +484,18 @@ function formatPhysicalWork(pw: NonNullable<DailySubjectiveCheckin['physicalWork
 
 function renderRecoveryTimeline(input: ContextBriefPlanningHandoffInput): string {
     const firstDate = addDaysToLocalDateString(input.asOfDate, -(RECOVERY_TIMELINE_DAYS - 1));
-    const snapshots = new Map(input.snapshots.filter(item => item.date >= firstDate && item.date <= input.asOfDate).map(item => [item.date, item]));
-    const checkins = new Map(input.checkins.filter(item => item.date >= firstDate && item.date <= input.asOfDate).map(item => [item.date, item]));
+    const snapshots = new Map<string, typeof input.snapshots[0]>();
+    for (const item of input.snapshots) {
+        if (item.date >= firstDate && item.date <= input.asOfDate) {
+            snapshots.set(item.date, item);
+        }
+    }
+    const checkins = new Map<string, typeof input.checkins[0]>();
+    for (const item of input.checkins) {
+        if (item.date >= firstDate && item.date <= input.asOfDate) {
+            checkins.set(item.date, item);
+        }
+    }
     const activitiesByDate = new Map<string, NormalizedGarminActivity[]>();
     for (const activity of input.activities.filter(item => item.date >= firstDate && item.date <= input.asOfDate)) {
         const sameDay = activitiesByDate.get(activity.date) ?? [];

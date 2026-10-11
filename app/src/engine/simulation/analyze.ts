@@ -712,11 +712,19 @@ export async function runForecastDailyParityScenario(
         };
     });
     const creditStateMatches = (day: ForecastDailyParityDay, aged: boolean, includeProjected: boolean, forced: boolean): boolean => {
-        const daily = new Map((forced ? day.dailyObjectivesOnForecastHistory : day.dailyObjectives).map(objective => [
-            objective.key, objective.completedCredit + (includeProjected ? objective.projectedCredit : 0),
-        ]));
-        const forecast = new Map(day.forecastObjectives.map(objective => [objective.key, objective]));
-        const currentPickCredit = new Map(day.currentPickCredits.map(credit => [credit.key, credit.earnedCredit]));
+        const daily = new Map<string, number>();
+        const objectivesSource = forced ? day.dailyObjectivesOnForecastHistory : day.dailyObjectives;
+        for (const objective of objectivesSource) {
+            daily.set(objective.key, objective.completedCredit + (includeProjected ? objective.projectedCredit : 0));
+        }
+        const forecast = new Map<string, typeof day.forecastObjectives[0]>();
+        for (const objective of day.forecastObjectives) {
+            forecast.set(objective.key, objective);
+        }
+        const currentPickCredit = new Map<string, number>();
+        for (const credit of day.currentPickCredits) {
+            currentPickCredit.set(credit.key, credit.earnedCredit);
+        }
         const forecastKeys = day.agedCompletedCredit.map(objective => objective.key);
         if (forecastKeys.length !== daily.size || forecastKeys.some(key => !daily.has(key))) return false;
         return day.agedCompletedCredit.every(objective => {
@@ -875,11 +883,17 @@ export async function runFatigueFusionComparison(
     const candidateStarted = performance.now();
     const candidate = await runAllScenarios(scenarios, 'simulation', { fatigueFusionPolicy: 'additive' });
     const candidateRuntimeMs = performance.now() - candidateStarted;
-    const baselineById = new Map(baseline.scenarios.map(result => [result.scenarioId, result]));
+    const baselineById = new Map<string, ScenarioResult>();
+    for (const result of baseline.scenarios) {
+        baselineById.set(result.scenarioId, result);
+    }
     const summaries = candidate.scenarios.map(next => {
         const current = baselineById.get(next.scenarioId);
         if (!current) throw new Error(`Missing max-policy result for ${next.scenarioId}.`);
-        const candidateTraces = new Map(next.decisionTraces.map(trace => [trace.date, trace]));
+        const candidateTraces = new Map<string, typeof next.decisionTraces[0]>();
+        for (const trace of next.decisionTraces) {
+            candidateTraces.set(trace.date, trace);
+        }
         let changedSelections = 0;
         let increasedPeakFatigueDays = 0;
         current.decisionTraces.forEach(trace => {
@@ -956,12 +970,21 @@ export async function runSubjectiveDriftComparison(
     const candidateStarted = performance.now();
     const candidate = await runAllScenarios(scenarios, 'simulation', { subjectiveDriftPolicy: 'drift', subjectiveDriftWeights: weights });
     const candidateRuntimeMs = performance.now() - candidateStarted;
-    const baselineById = new Map(baseline.scenarios.map(result => [result.scenarioId, result]));
-    const scenarioById = new Map(scenarios.map(item => [item.id, item]));
+    const baselineById = new Map<string, ScenarioResult>();
+    for (const result of baseline.scenarios) {
+        baselineById.set(result.scenarioId, result);
+    }
+    const scenarioById = new Map<string, AthleteScenario>();
+    for (const item of scenarios) {
+        scenarioById.set(item.id, item);
+    }
     const summaries: SubjectiveDriftScenarioComparison[] = candidate.scenarios.map(next => {
         const current = baselineById.get(next.scenarioId);
         if (!current) throw new Error(`Missing off-policy result for ${next.scenarioId}.`);
-        const candidateTraces = new Map(next.decisionTraces.map(trace => [trace.date, trace]));
+        const candidateTraces = new Map<string, typeof next.decisionTraces[0]>();
+        for (const trace of next.decisionTraces) {
+            candidateTraces.set(trace.date, trace);
+        }
         let changedSelections = 0;
         current.decisionTraces.forEach(trace => {
             const compared = candidateTraces.get(trace.date);
@@ -1084,7 +1107,10 @@ export async function runSubjectiveDriftSensitivityComparison(
 ): Promise<SubjectiveDriftSensitivityComparison> {
     const offScenarios = SUBJECTIVE_PROFILE_KINDS.map(kind => subjectiveDriftSensitivityScenario(kind, REFERENCE_SUBJECTIVE_BASELINE_POLICY));
     const offReport = await runAllScenarios(offScenarios, 'simulation', { subjectiveDriftPolicy: 'off' });
-    const offById = new Map(offReport.scenarios.map(result => [result.scenarioId, result]));
+    const offById = new Map<string, ScenarioResult>();
+    for (const result of offReport.scenarios) {
+        offById.set(result.scenarioId, result);
+    }
 
     const results: SubjectiveDriftSensitivityScenarioResult[] = [];
     for (const config of configs) {
@@ -1096,7 +1122,10 @@ export async function runSubjectiveDriftSensitivityComparison(
             const drift = driftReport.scenarios.find(result => result.scenarioId === scenarioId);
             if (!off || !drift) throw new Error(`Missing sensitivity result for ${scenarioId}.`);
             const driftScenario = driftScenarios.find(item => item.id === scenarioId)!;
-            const driftTraces = new Map(drift.decisionTraces.map(trace => [trace.date, trace]));
+            const driftTraces = new Map<string, typeof drift.decisionTraces[0]>();
+            for (const trace of drift.decisionTraces) {
+                driftTraces.set(trace.date, trace);
+            }
             let changedSelections = 0;
             off.decisionTraces.forEach(trace => {
                 const compared = driftTraces.get(trace.date);
@@ -1138,7 +1167,10 @@ function distributionDifference(preferred: Partial<Record<SessionTemplate['modal
 }
 
 function evaluatePreferenceSensitivity(results: ScenarioResult[]): PreferenceSensitivityResult[] {
-    const byId = new Map(results.map(result => [result.scenarioId, result]));
+    const byId = new Map<string, ScenarioResult>();
+    for (const result of results) {
+        byId.set(result.scenarioId, result);
+    }
     const comparisons = [{ preferredModality: 'Field', preferredScenarioId: 'field_sport_general_target', baselineScenarioId: 'no_event_base_phase' }];
     return comparisons.flatMap(comparison => {
         const preferred = byId.get(comparison.preferredScenarioId);
@@ -1150,7 +1182,10 @@ function evaluatePreferenceSensitivity(results: ScenarioResult[]): PreferenceSen
 }
 
 function evaluateReadinessSensitivity(results: ScenarioResult[]): ReadinessSensitivityResult[] {
-    const byId = new Map(results.map(result => [result.scenarioId, result]));
+    const byId = new Map<string, ScenarioResult>();
+    for (const result of results) {
+        byId.set(result.scenarioId, result);
+    }
     const baseline = byId.get('cycling_criterium_A');
     if (!baseline) return [];
     return (['fresh', 'stressed'] as const).flatMap(trajectory => {

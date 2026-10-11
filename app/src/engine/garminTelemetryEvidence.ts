@@ -148,7 +148,10 @@ export function deriveMatchedIntervalFade(
     if (uniqueIndexes.length < 2) {
         return { status: 'unavailable', attributedDate: activity.date, reason: 'insufficient_matched_laps' };
     }
-    const lapsByIndex = new Map((activity.laps ?? []).map(lap => [lap.lapIndex, lap]));
+    const lapsByIndex = new Map<number, NonNullable<typeof activity.laps>[0]>();
+    for (const lap of (activity.laps ?? [])) {
+        lapsByIndex.set(lap.lapIndex, lap);
+    }
     const matched = uniqueIndexes.map(index => lapsByIndex.get(index));
     if (matched.some(lap => lap === undefined)) {
         return { status: 'unavailable', attributedDate: activity.date, reason: 'matched_lap_missing' };

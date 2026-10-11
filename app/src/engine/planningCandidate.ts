@@ -136,8 +136,17 @@ export function buildPlanningCandidateIndex(
     const index = new Map<string, PlanningCandidate>();
     const templatesById: ReadonlyMap<string, SessionTemplate> = templates instanceof Map
         ? templates
-        : new Map((templates as readonly SessionTemplate[]).map(t => [t.id, t]));
-    const workoutsById = new Map(workouts.map(w => [w.id, w]));
+        : (() => {
+        const map = new Map<string, SessionTemplate>();
+        for (const t of templates as readonly SessionTemplate[]) {
+            map.set(t.id, t);
+        }
+        return map;
+    })();
+    const workoutsById = new Map<string, WorkoutDefinition>();
+    for (const w of workouts) {
+        workoutsById.set(w.id, w);
+    }
 
     for (const workout of workouts) {
         if (workout.status !== 'active' || workout.manualOnly) continue;

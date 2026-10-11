@@ -120,7 +120,10 @@ export function buildPlanDefinition(
     }
   }
 
-  const coverageByKey = new Map(coverage.map((item) => [item.key, item]));
+  const coverageByKey = new Map<string, typeof coverage[0]>();
+  for (const item of coverage) {
+      coverageByKey.set(item.key, item);
+  }
   for (const obj of objectives) {
     const block = blockSchedule.find((item) => item.id === obj.blockId);
     if (!block) {
