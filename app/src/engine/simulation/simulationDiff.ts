@@ -92,8 +92,14 @@ function diffObjectiveCredits(baseCredits: readonly ObjectiveCredit[] = [], curC
 }
 
 function diffObjectiveResolutions(baseObjs: readonly ObjectiveTally[] = [], curObjs: readonly ObjectiveTally[] = []): string[] {
-  const baseObjMap = new Map(baseObjs.map((o) => [o.key, o]));
-  const curObjMap = new Map(curObjs.map((o) => [o.key, o]));
+  const baseObjMap = new Map<string, typeof baseObjs[0]>();
+  for (const o of baseObjs) {
+      baseObjMap.set(o.key, o);
+  }
+  const curObjMap = new Map<string, typeof curObjs[0]>();
+  for (const o of curObjs) {
+      curObjMap.set(o.key, o);
+  }
   const allObjKeys = new Set([...baseObjMap.keys(), ...curObjMap.keys()]);
   const objDiffs: string[] = [];
   for (const objKey of allObjKeys) {
@@ -138,7 +144,10 @@ export function diffSimulationReports(
   const baseScenarios = baseReport.scenarios ?? [];
   const currentScenarios = currentReport.scenarios ?? [];
 
-  const currentByScenario = new Map(currentScenarios.map((s) => [s.scenarioId, s]));
+  const currentByScenario = new Map<string, typeof currentScenarios[0]>();
+  for (const s of currentScenarios) {
+      currentByScenario.set(s.scenarioId, s);
+  }
 
   for (const baseScenario of baseScenarios) {
     const curScenario = currentByScenario.get(baseScenario.scenarioId);

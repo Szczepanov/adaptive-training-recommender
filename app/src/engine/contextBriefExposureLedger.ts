@@ -174,8 +174,14 @@ function resolveEvents(input: ExposureLedgerInput): ResolvedEvent[] {
     ).filter(event => event.date >= input.lookbackStart && event.date <= input.asOfDate);
     const engineById = new Map(reconcileCompletedTrainingEvents([...input.activities], [...input.recommendations])
         .map(event => [event.id, event]));
-    const activityById = new Map(input.activities.map(activity => [activity.activityId, activity]));
-    const recommendationByDate = new Map(input.recommendations.map(rec => [rec.date, rec]));
+    const activityById = new Map<string, typeof input.activities[0]>();
+    for (const activity of input.activities) {
+        activityById.set(activity.activityId, activity);
+    }
+    const recommendationByDate = new Map<string, typeof input.recommendations[0]>();
+    for (const rec of input.recommendations) {
+        recommendationByDate.set(rec.date, rec);
+    }
     return events.map(event => {
         const activity = event.linkedActivityId ? activityById.get(event.linkedActivityId) ?? null : null;
         const override = event.linkedActivityId ? overrides[event.linkedActivityId] : undefined;

@@ -38,7 +38,10 @@ export function generateWeeklyObjectives(
         .find((block) => block.startDate <= asOfDate && asOfDate <= block.endDate);
     if (planDefinition && activeBlock && planDefinition.objectives.length > 0) {
         const objectives: WeeklyObjective[] = [];
-        const blockMap = new Map(planDefinition.blocks.map((b) => [b.id, b]));
+        const blockMap = new Map<string, typeof planDefinition.blocks[0]>();
+        for (const b of planDefinition.blocks) {
+            blockMap.set(b.id, b);
+        }
         // An authored travel overlay intentionally overlaps the derived block beneath it.
         // `buildCyclingEventPlan` puts overlays first, so selecting only the first active
         // block makes the explicit user contract authoritative for both dose *and* weekly

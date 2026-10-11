@@ -154,7 +154,10 @@ export function evaluateMechanicalStageProgression(
 
   // 3. Analyze tissue responses following recent exposures. Date-specific adjacency
   // is enforced later from actual/projected coverage history so it cannot blank a week.
-  const checkinsByDate = new Map(checkinHistory.map(c => [c.date, c.checkin]));
+  const checkinsByDate = new Map<string, typeof checkinHistory[0]['checkin']>();
+  for (const c of checkinHistory) {
+      checkinsByDate.set(c.date, c.checkin);
+  }
   const todayCheckin = checkinsByDate.get(asOfDate);
 
   const hasPain = todayCheckin?.painOrInjury || Boolean((todayCheckin as unknown as { painFlag?: boolean })?.painFlag);

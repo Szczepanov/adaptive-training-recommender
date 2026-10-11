@@ -273,7 +273,10 @@ export function getUnresolvedObjectivesV2(
     state: PlannerState,
     progress: ObjectiveProgress[] = []
 ): WeeklyObjective[] {
-    const progressMap = new Map(progress.map(p => [p.objectiveId, p]));
+    const progressMap = new Map<string, typeof progress[0]>();
+    for (const p of progress) {
+        progressMap.set(p.objectiveId, p);
+    }
     return state.weeklyObjectives.filter(obj => {
         const required = obj.requiredCredit ?? (obj.targetExposures > 0 ? obj.targetExposures : 1);
         const prog = progressMap.get(obj.id);

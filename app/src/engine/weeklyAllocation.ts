@@ -491,7 +491,10 @@ function resolveSinglePass(
         };
     });
 
-    const stateById = new Map(searchStates.map(state => [state.occurrence.id, state]));
+    const stateById = new Map<string, typeof searchStates[0]>();
+    for (const state of searchStates) {
+        stateById.set(state.occurrence.id, state);
+    }
     let transitionsUsed = 0;
     let budgetExhausted = false;
     let bestByOccurrence = new Map<string, AllocationAssignment>();
@@ -708,7 +711,10 @@ export function resolveWeeklyRoleReservations(
     // Primaries "cost" a support occurrence a date only if it was admissible there on its own
     // (root state); a date removed by pass 1 that the support could never use proves nothing.
     const removedDates = evaluator.forecastDates.filter(date => primaryDates.has(date) && !(options.unavailableDates?.has(date)));
-    const rootOutcomes = new Map(removedDates.map(date => [date, evaluator.evaluate([], date)] as const));
+    const rootOutcomes = new Map<string, ReturnType<typeof evaluator.evaluate>>();
+    for (const date of removedDates) {
+        rootOutcomes.set(date, evaluator.evaluate([], date));
+    }
     const primariesCostDate = (occurrence: RequiredRoleOccurrence) => removedDates.some(date => {
         const outcome = rootOutcomes.get(date);
         return Boolean(outcome

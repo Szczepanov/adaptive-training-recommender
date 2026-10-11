@@ -362,7 +362,10 @@ export function runIdentityReplay(
         config.method === 'leaveOneOut'
             ? leaveOneNightOutReplay(pairedRecords, bootstrapFitParams)
             : chronologicalExpandingWindowReplay(pairedRecords, bootstrapFitParams, config.minTrainingNights ?? 5);
-    const passportByNight = new Map(outOfSample.map((r) => [r.sourceNightKey, r]));
+    const passportByNight = new Map<string, typeof outOfSample[0]>();
+    for (const r of outOfSample) {
+        passportByNight.set(r.sourceNightKey, r);
+    }
 
     const attributionPolicy = config.attributionPolicy ?? DEFAULT_IDENTITY_ATTRIBUTION_POLICY;
     const attributionInputs = featuresByNight.map((features) => {

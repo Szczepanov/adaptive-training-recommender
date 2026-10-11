@@ -64,7 +64,10 @@ export const PERFORMANCE_TARGET_POLICIES: readonly PerformanceTargetPolicy[] = [
     },
 ];
 
-const POLICY_BY_METRIC_ID = new Map(PERFORMANCE_TARGET_POLICIES.map(policy => [policy.metricId, policy] as const));
+const POLICY_BY_METRIC_ID = new Map<string, typeof PERFORMANCE_TARGET_POLICIES[0]>();
+for (const policy of PERFORMANCE_TARGET_POLICIES) {
+    POLICY_BY_METRIC_ID.set(policy.metricId, policy);
+}
 
 export function getPerformanceTargetPolicy(metricId: string): PerformanceTargetPolicy | null {
     return POLICY_BY_METRIC_ID.get(metricId) ?? null;

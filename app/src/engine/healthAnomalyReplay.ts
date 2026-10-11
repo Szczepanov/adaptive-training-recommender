@@ -169,7 +169,10 @@ function summarizeRespirationElevation(rows: HealthAnomalyReplayRow[]): HealthAn
         }
         return counts;
     }, {});
-    const byDate = new Map(rows.map(row => [row.date, row]));
+    const byDate = new Map<string, typeof rows[0]>();
+    for (const row of rows) {
+        byDate.set(row.date, row);
+    }
     const elevated = rows.filter(isElevatedRespiration);
     const corroborated = elevated.filter(row => row.coreEvidence.some(
         evidence => evidence.signal !== 'respiration' && isAdverseCoreSignalEvidence(evidence),

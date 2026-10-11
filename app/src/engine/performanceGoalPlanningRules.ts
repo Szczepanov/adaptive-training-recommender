@@ -119,7 +119,10 @@ export const PERFORMANCE_GOAL_PLANNING_RULES: readonly PerformanceGoalPlanningRu
     },
 ];
 
-const RULE_BY_METRIC_ID = new Map(PERFORMANCE_GOAL_PLANNING_RULES.map(rule => [rule.metricId, rule] as const));
+const RULE_BY_METRIC_ID = new Map<string, typeof PERFORMANCE_GOAL_PLANNING_RULES[0]>();
+for (const rule of PERFORMANCE_GOAL_PLANNING_RULES) {
+    RULE_BY_METRIC_ID.set(rule.metricId, rule);
+}
 
 export function getPerformanceGoalPlanningRule(metricId: string): PerformanceGoalPlanningRule | null {
     return RULE_BY_METRIC_ID.get(metricId) ?? null;

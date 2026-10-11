@@ -205,7 +205,10 @@ export function beamSearchWeekAheadPlan(
             branch.microcycle,
             derivedCredits.map(item => ({ objectiveId: item.objective.id, earnedCredit: item.earnedCredit })),
         );
-        const allocationById = new Map(projected.allocations.map(item => [item.objectiveId, item.earnedCredit]));
+        const allocationById = new Map<string, number>();
+        for (const item of projected.allocations) {
+            allocationById.set(item.objectiveId, item.earnedCredit);
+        }
         const newCredits: PlannedObjectiveCredit[] = [];
         derivedCredits.forEach(({ objective }) => {
             const allocated = allocationById.get(objective.id) ?? 0;

@@ -555,7 +555,10 @@ export function applyProjectedObjectiveCredits(
     microcycle: MicrocycleState,
     credits: readonly ProjectedObjectiveCreditInput[],
 ): { microcycle: MicrocycleState; allocations: ProjectedObjectiveCreditAllocation[] } {
-    const proposedById = new Map(credits.map(credit => [credit.objectiveId, credit.earnedCredit]));
+    const proposedById = new Map<string, number>();
+    for (const credit of credits) {
+        proposedById.set(credit.objectiveId, credit.earnedCredit);
+    }
     const allocations: ProjectedObjectiveCreditAllocation[] = [];
     const objectives = microcycle.objectives.map(objective => {
         const proposed = proposedById.get(objective.id) ?? 0;
@@ -1451,7 +1454,10 @@ export function reconcileObjectivesForDate(
     const historicalReplayObjectiveIds = skeleton.objectives.map(objective => objective.id);
     const fresh = resolveMultiEventObjectives(events, date, periodization, skeleton.objectives);
 
-    const existingById = new Map(microcycle.objectives.map(objective => [objective.id, objective]));
+    const existingById = new Map<string, WeeklyObjective>();
+    for (const objective of microcycle.objectives) {
+        existingById.set(objective.id, objective);
+    }
     const existingByKey = new Map<WeeklyObjective['key'], WeeklyObjective[]>();
     microcycle.objectives.forEach(objective => {
         const matching = existingByKey.get(objective.key) ?? [];
@@ -1524,9 +1530,10 @@ export function ageCompletedObjectiveCreditForForecastDate(
             exposure.deliveredDose, exposure.stimulusConfidence ?? 'exact',
         )
         : updateMicrocycleProgress(state, exposure.trainingRecordLike), empty);
-    const agedById = new Map(aged.objectives.map(objective => [
-        objective.id, objective.completedCredit ?? objective.completedExposures,
-    ]));
+    const agedById = new Map<string, number>();
+    for (const objective of aged.objectives) {
+        agedById.set(objective.id, objective.completedCredit ?? objective.completedExposures);
+    }
     const projectedBeforeDate = priorProjectedExposures.filter(exposure => exposure.date < forecastDate);
     return {
         ...microcycle,
@@ -1632,7 +1639,10 @@ export function applyFixedActivityStimulusCredit(
             nextMicrocycle,
             derivedCredits.map(item => ({ objectiveId: item.objective.id, earnedCredit: item.earnedCredit })),
         );
-        const allocationById = new Map(projected.allocations.map(item => [item.objectiveId, item.earnedCredit]));
+        const allocationById = new Map<string, number>();
+        for (const item of projected.allocations) {
+            allocationById.set(item.objectiveId, item.earnedCredit);
+        }
         derivedCredits.forEach(({ objective }) => {
             const allocated = allocationById.get(objective.id) ?? 0;
             if (allocated <= 0) return;
@@ -1791,7 +1801,10 @@ export function generateWeekAheadPlan(
             microcycle,
             derivedCredits.map(item => ({ objectiveId: item.objective.id, earnedCredit: item.earnedCredit })),
         );
-        const allocationById = new Map(projected.allocations.map(item => [item.objectiveId, item.earnedCredit]));
+        const allocationById = new Map<string, number>();
+        for (const item of projected.allocations) {
+            allocationById.set(item.objectiveId, item.earnedCredit);
+        }
         derivedCredits.forEach(({ objective }) => {
             const allocated = allocationById.get(objective.id) ?? 0;
             if (allocated <= 0) return;

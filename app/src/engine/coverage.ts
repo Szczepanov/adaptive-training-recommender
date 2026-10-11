@@ -258,7 +258,10 @@ const COVERAGE_BY_DESCRIPTOR = new WeakMap<CoverageSetDescriptor, Map<PlanCovera
 function coverageFor(descriptor: CoverageSetDescriptor, key: PlanCoverageKey) {
     let byKey = COVERAGE_BY_DESCRIPTOR.get(descriptor);
     if (!byKey) {
-        byKey = new Map(descriptor.coverage.map(item => [item.key, item]));
+        byKey = new Map();
+        for (const item of descriptor.coverage) {
+            byKey.set(item.key, item);
+        }
         COVERAGE_BY_DESCRIPTOR.set(descriptor, byKey);
     }
     return byKey.get(key);
