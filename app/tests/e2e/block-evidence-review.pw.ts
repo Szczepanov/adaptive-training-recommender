@@ -8,6 +8,7 @@ import type { IntentBlock } from '../../src/engine/blockIntent';
 import { buildTreatmentIntentReplayPayloadV1, hashTreatmentIntentReplayPayload } from '../../src/engine/blockIntentReplay';
 import { hashEvaluationContent } from '../../src/outcomes/evaluationHash';
 import type { OutcomeEvaluationSnapshot } from '../../src/outcomes/evaluationSpec';
+import type { CompetitionOutcome } from '../../src/observations/models';
 import { STANDING_BROAD_JUMP_PROTOCOL } from '../../src/observations/physicalCapitalProtocols';
 import { buildComparisonSeries } from '../../src/observations/comparability';
 
@@ -58,6 +59,23 @@ async function seedReview(userId: string, corruptHash = false) {
     // A newer, unbound revision must never replace the explicitly pinned revision.
     await setDoc(doc(db, 'users', userId, 'outcome_evaluations', evaluation.revision.id), { id: evaluation.revision.id, currentRevision: 2 });
     await setDoc(doc(db, 'users', userId, 'measurement_protocols', protocol.id, 'revisions', String(protocol.revision)), protocol);
+    if (!corruptHash) {
+      const outcome: CompetitionOutcome = { id: 'z-linked-outcome', sport: 'field', source: 'manual',
+        occurredAt: `${endDate}T08:00:00Z`, createdAt: timestamp,
+        evaluationRef: { id: evaluation.revision.id, revision: 1, contentHash: evaluationHash },
+        result: { completed: true }, metrics: {}, context: {} };
+      await Promise.all([
+        ...Array.from({ length: 105 }, (_, index) => ({ ...outcome, id: `a-unrelated-${String(index).padStart(3, '0')}`,
+          evaluationRef: { ...outcome.evaluationRef!, id: 'other-evaluation' } })),
+        outcome,
+        { ...outcome, id: 'z-legacy-outcome', evaluationRef: undefined,
+          occurredAt: `${startDate}T12:30:00+02:00` },
+      ].map(record => {
+        const { evaluationRef, ...legacy } = record;
+        return setDoc(doc(db, 'users', userId, 'competition_outcomes', record.id),
+          evaluationRef ? record : legacy);
+      }));
+    }
     for (const [id, date, value, purpose] of [
       ['baseline', baselineDate, 230, 'baseline'], ['repeat', today, 240, 'post_block'],
     ] as const) {
@@ -117,7 +135,13 @@ for (const width of [1440, 390]) {
       expect(contents).toContain('baseline:');
       expect(contents).toContain('repeat:');
       expect(contents).toContain('unsupported');
-      if (format === 'JSON') expect(JSON.parse(contents).evaluationRef.revision).toBe(1);
+      if (format === 'JSON') {
+        const report = JSON.parse(contents);
+        expect(report.evaluationRef.revision).toBe(1);
+        expect(report.sourceIds.ecologicalOutcomeIds).toEqual(['z-legacy-outcome', 'z-linked-outcome']);
+        expect(report.reviewProvenance.sources.find((source: { source: string }) => source.source === 'ecological_outcomes'))
+          .toMatchObject({ status: 'available', recordCount: 2 });
+      } else expect(contents).toContain('ecological_outcomes:available:2');
     }
   });
 }

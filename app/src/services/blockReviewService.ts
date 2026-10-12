@@ -22,7 +22,7 @@ import { metricObservationService, type MetricObservationService } from './metri
 import { measurementProtocolService, type MeasurementProtocolService } from './measurementProtocolService';
 import { recommendationService } from './recommendationService';
 import { sessionExecutionService, type SessionExecutionService } from './sessionExecutionService';
-import { competitionOutcomeService, type CompetitionOutcomeService } from './competitionOutcomeService';
+import { competitionOutcomeService, COMPETITION_OUTCOME_MAX_SCANNED_RECORDS, type CompetitionOutcomeService } from './competitionOutcomeService';
 import { checkinService } from './checkinService';
 import { sessionResponseDocId, sessionResponseService, type SessionResponseService } from './sessionResponseService';
 import { performedTrainingOccurrenceRepository, type PerformedTrainingOccurrenceRepository } from '../training-occurrence/repository';
@@ -295,8 +295,9 @@ export class BlockReviewService {
             sessionOutcomes = await this.loadResponses(userId, executions, start, processEnd, asOfDate, result);
         }
         try {
-            const read = await this.deps.competitions.listOutcomesWithDiagnostics(userId, 100);
+            const read = await this.deps.competitions.listOutcomesWithDiagnostics(userId, evaluation, asOfDate, 100);
             ecologicalOutcomes = read.outcomes.filter(o => dateOf(o.occurredAt) <= asOfDate);
+            if (read.scanLimitReached) result.limitations.push(`ecological_outcomes:scan_limit_${COMPETITION_OUTCOME_MAX_SCANNED_RECORDS}`);
             result.sources.push(source('ecological_outcomes', ecologicalOutcomes.length, read.unreadableCount, read.truncated));
         } catch { result.sources.push({ source: 'ecological_outcomes', status: 'unreadable', recordCount: 0 }); }
         result.sources.push({ source: 'weekly_roles', status: 'unsupported', recordCount: 0 });

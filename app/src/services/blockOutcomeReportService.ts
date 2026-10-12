@@ -53,7 +53,9 @@ function inPeriod(date: string, startDate: string, endDate: string): boolean {
     return date >= startDate && date <= endDate;
 }
 
-function belongsToEvaluation(outcome: CompetitionOutcome, evaluation: OutcomeEvaluationSnapshot): boolean {
+export function ecologicalOutcomeMatchesEvaluation(outcome: CompetitionOutcome, evaluation: OutcomeEvaluationSnapshot): boolean {
+    const date = getLocalDateString(new Date(outcome.occurredAt));
+    if (!inPeriod(date, evaluation.revision.startDate, evaluation.revision.endDate)) return false;
     const sourceRef = evaluation.revision.sourceRef;
     if (outcome.evaluationRef !== undefined) {
         const matchesEvaluation = outcome.evaluationRef.id === evaluation.revision.id
@@ -82,10 +84,7 @@ export class BlockOutcomeReportService {
         const recommendations = input.recommendations.filter(item => inPeriod(item.date, startDate, endDate));
         const completedSessions = input.completedSessions.filter(item => inPeriod(item.date, startDate, endDate));
         const sessionOutcomes = input.sessionOutcomes.filter(item => inPeriod(item.sourceSession.date, startDate, endDate));
-        const ecologicalOutcomes = input.ecologicalOutcomes.filter(item => {
-            const date = getLocalDateString(new Date(item.occurredAt));
-            return inPeriod(date, startDate, endDate) && belongsToEvaluation(item, evaluation);
-        });
+        const ecologicalOutcomes = input.ecologicalOutcomes.filter(item => ecologicalOutcomeMatchesEvaluation(item, evaluation));
 
         const eligibleAttemptIds = benchmarkEligibleAttemptIds(input.assessmentAttempts);
         const benchmarkObservations = input.observations.filter(observation =>

@@ -64,8 +64,12 @@ eligible history through the Warsaw as-of date. The report retains the complete 
 so baseline selectors and any declared target window remain available in nested provenance.
 
 Process evidence is bounded to 180 days. Recommendations, execution headers and active
-performed occurrences each use a 200-record limit plus sentinel; ecological outcomes use a
-100-record ID-ordered sample plus sentinel. Check-ins and responses are read through the
+performed occurrences each use a 200-record limit plus sentinel. Ecological reads apply the
+existing frozen period, evaluation/event identity and Warsaw as-of rules before the 100-matching-outcome
+cap. Event-scoped reads filter by event ID in Firestore; ID-ordered pagination retains legacy
+records without evaluation links and offset timestamps. The scan inspects at most 200 records
+plus a sentinel; reaching that budget is explicitly truncated even if fewer than 100 outcomes
+match. Counts include only scoped evidence. Check-ins and responses are read through the
 evaluation end plus a seven-day tissue follow-up window, capped at the Warsaw as-of date.
 Raw trials, observation revision chains and extra body-mass reads are excluded. Source states
 (`available`, `missing`, `unreadable`, `unsupported`, `truncated`), record counts and

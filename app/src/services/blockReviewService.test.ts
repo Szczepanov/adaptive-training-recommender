@@ -242,6 +242,15 @@ describe('BlockReviewService assessment evidence', () => {
 });
 
 describe('BlockReviewService exports and process joins', () => {
+    it('passes the exact evaluation and as-of scope to the bounded ecological reader', async () => {
+        const { service, deps, evaluation } = await setup();
+        deps.competitions.listOutcomesWithDiagnostics.mockResolvedValue({ outcomes: [], unreadableCount: 0,
+            truncated: true, scanLimitReached: true });
+        const read = await service.loadReview('u1', selection, asOfDate);
+        expect(deps.competitions.listOutcomesWithDiagnostics).toHaveBeenCalledWith('u1', evaluation, asOfDate, 100);
+        expect(read.sources.find(s => s.source === 'ecological_outcomes')?.status).toBe('truncated');
+        expect(read.report?.reviewProvenance?.limitations).toContain('ecological_outcomes:scan_limit_200');
+    });
     it('preserves multiple historical policy contexts and explicitly unknown records without attribution', async () => {
         const s = await setup();
         s.deps.recommendations.getRecommendationsInRange.mockResolvedValue({ status: 'AVAILABLE', revision: null,
