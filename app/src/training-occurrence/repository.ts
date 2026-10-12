@@ -19,6 +19,8 @@ import {
     query,
     runTransaction,
     where,
+    orderBy,
+    limit,
     type Firestore,
     type Transaction,
 } from 'firebase/firestore';
@@ -253,15 +255,23 @@ export class PerformedTrainingOccurrenceRepository {
         userId: string,
         fromDateInclusive: string,
         toDateInclusive: string,
+        maxRecords?: number,
     ): Promise<PerformedTrainingOccurrence[]> {
+        if (maxRecords !== undefined && (!Number.isSafeInteger(maxRecords) || maxRecords < 1 || maxRecords >= Number.MAX_SAFE_INTEGER)) throw new RangeError('Invalid maxRecords');
         const activeQuery = query(
             this.occurrencesColl(userId),
             where('status', '==', 'active'),
             where('localDate', '>=', fromDateInclusive),
             where('localDate', '<=', toDateInclusive),
+            ...(maxRecords === undefined ? [] : [orderBy('localDate', 'asc'), limit(maxRecords + 1)]),
         );
         const snap = await getDocs(activeQuery);
-        return snap.docs.map(document => parsePerformedTrainingOccurrence(document.data(), userId));
+        if (maxRecords !== undefined && snap.docs.length > maxRecords) throw new Error('Performed occurrence review truncated');
+        return snap.docs.map(document => {
+            const occurrence = parsePerformedTrainingOccurrence(document.data(), userId);
+            if (maxRecords !== undefined && occurrence.performedOccurrenceId !== document.id) throw new Error('Performed occurrence path mismatch');
+            return occurrence;
+        });
     }
 
     /**

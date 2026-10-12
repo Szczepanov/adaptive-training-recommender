@@ -29,6 +29,15 @@ vi.mock('../firebase', () => ({ getDb: vi.fn(() => ({})) }));
 
 import { RecommendationService } from './recommendationService';
 
+describe('bounded block review recommendation history', () => {
+    it('fails closed on a record-count sentinel without parsing the truncated window', async () => {
+        firestore.getDocs.mockResolvedValueOnce({ docs: [{}, {}, {}] });
+        const state = await new RecommendationService().getRecommendationsInRange('u1', '2026-08-01', '2026-09-01', 2);
+        expect(state).toMatchObject({ status: 'INVALID', issues: [{ code: 'recommendation-history-truncated' }] });
+        expect(firestore.limit).toHaveBeenCalledWith(3);
+    });
+});
+
 function sortKeysDeep<T>(value: T): T {
     if (Array.isArray(value)) return value.map(sortKeysDeep) as unknown as T;
     if (value && typeof value === 'object') {

@@ -1,7 +1,7 @@
 # Issue #897 — Physical-capital assessment history implementation plan
 
 **Date:** 2026-09-30
-**Status:** In progress — [ADR-0046](../adr/0046-first-class-raw-assessment-trial-evidence.md) accepted 2026-09-30; PR A (WP0–WP3 domain foundation) merged (PR #942); PR B (WP4 bundled catalog, WP5 trial capture UX, WP7.2 diagnostic JSON export) merged (PR #944); PR C (WP6 assessment history, series comparability, WP7.1 normalized CSV export, WP3.4 body-mass context, Appendix A ADR-0047) merged (PR #948), followed by a post-merge review hardening of body-mass source selection and row-level series comparability. #897 was reopened on 2026-10-01 after the PR C merge auto-closed it: WP6.6 fixed-load velocity (design: [ADR-0047](../adr/0047-fixed-load-velocity-assessment-series.md)) is implemented and passed local verification/review; WP8.0 merged in PR #1033, WP8.1 in PR #1036, and WP8.3 is implemented locally and verified 2026-10-11. WP8.2 production block-review wiring and the remaining real-evidence acceptance work remain open. PR B2 (WP5.5 WL Analysis per-frame CSV import) shipped in PR #963; parser-v2 rep-boundary hardening followed in PR #984.
+**Status:** In progress — [ADR-0046](../adr/0046-first-class-raw-assessment-trial-evidence.md) accepted 2026-09-30; PR A (WP0–WP3 domain foundation) merged (PR #942); PR B (WP4 bundled catalog, WP5 trial capture UX, WP7.2 diagnostic JSON export) merged (PR #944); PR C (WP6 assessment history, series comparability, WP7.1 normalized CSV export, WP3.4 body-mass context, Appendix A ADR-0047) merged (PR #948), followed by a post-merge review hardening of body-mass source selection and row-level series comparability. #897 was reopened on 2026-10-01 after the PR C merge auto-closed it: WP6.6 fixed-load velocity (design: [ADR-0047](../adr/0047-fixed-load-velocity-assessment-series.md)) is implemented and passed local verification/review; WP8.0 merged in PR #1033, WP8.1 in PR #1036, and WP8.3 merged in PR #1042 on 2026-10-11. WP8.2 production review/export is implemented and locally verified; the remaining real-evidence acceptance work keeps #897 open. PR B2 (WP5.5 WL Analysis per-frame CSV import) shipped in PR #963; parser-v2 rep-boundary hardening followed in PR #984.
 **Authority boundary:** evidence-only under the existing OV authority boundary; ADR-0046 grants no recommendation authority
 **Unlocks:** first-class multidomain physical-capital assessment capture, comparable history and normalized/diagnostic export without recommendation authority
 **Canonical status owner:** [Performance outcome validation (OV)](./performance-outcome-validation.md); this document is a scoped #897 implementation design, not a parallel OV status board
@@ -941,7 +941,7 @@ This work should reuse existing OV and PG contracts.
 
 Canonical observations do not carry their attempt's purpose or state, so a `valid` observation from a familiarization or abandoned attempt could reach consumers that read observations without the attempt. The History read model already excluded them; typed-goal current-value resolution (`goalProgress.ts` `resolveGoalProgress`) and the OV5 block-report composition boundary (`blockOutcomeReportService.ts` `BlockOutcomeReportService.buildReport`) did not.
 
-All three now share `assessmentEvidenceEligibility.ts` `isBenchmarkEligibleAttempt`: only observations from a completed, non-familiarization attempt are benchmark candidates. The two new consumers fail closed — an observation whose attempt is not supplied is excluded — and the generic `deriveProgress` contract is unchanged. `BlockOutcomeReportService.buildReport` has no production caller yet, so that half is a boundary contract for WP8.2 rather than live behaviour. The Goals screen loads attempts through `assessmentAttemptService.listAttemptsForProtocolWithDiagnostics` (ids from `goalProgress.ts` `goalProgressEvidenceQuery`) and treats any unreadable attempt as unavailable evidence rather than "no comparable result". Evidence-only; no recommendation-selection authority and no `POLICY_VERSION` impact.
+All three now share `assessmentEvidenceEligibility.ts` `isBenchmarkEligibleAttempt`: only observations from a completed, non-familiarization attempt are benchmark candidates. The two new consumers fail closed — an observation whose attempt is not supplied is excluded — and the generic `deriveProgress` contract is unchanged. WP8.2 now invokes `BlockOutcomeReportService.buildReport` through the bounded production review flow described below. The Goals screen loads attempts through `assessmentAttemptService.listAttemptsForProtocolWithDiagnostics` (ids from `goalProgress.ts` `goalProgressEvidenceQuery`) and treats any unreadable attempt as unavailable evidence rather than "no comparable result". Evidence-only; no recommendation-selection authority and no `POLICY_VERSION` impact.
 
 ## WP8.1 Typed performance goals
 
@@ -960,28 +960,38 @@ WP8.1 delivered the reviewed squat/bench bridge while retaining the distinction 
 
 ## WP8.2 Block review
 
-**Blocked by:** WP6.4 plus existing OV5 evaluation/report contracts and real comparable post-block evidence.
-**Unlocks:** Evidence-only block outcome statements; no causal or prescription authority.
+**Status:** Engineering implementation verified 2026-10-11; pending PR merge. Real post-block acceptance remains open.
+**Unlocks:** Athlete-invoked, evidence-only review of an exact frozen block evaluation; no causal or prescription authority.
 
-A later block outcome can consume:
+**Synthetic verification (2026-10-11):** focused service/export/architecture/UI checks passed,
+including the final 26 service regressions; `tsc -b`, ESLint and independent review passed.
+The final canonical `make verify` passed, including 8,413 frontend tests, 1,294 Python tests,
+both rule shards, all 54 browser tests and latency gates. Existing configured skips remain.
+The new review/export browser journey passed at 1440 px and 390 px; desktop/mobile visual
+captures and mobile overflow/action-target inspection passed. These fixtures prove wiring,
+identity and export contracts, not real athlete outcomes or measurement reliability.
 
-- canonical result;
-- comparable change;
-- status.
+**Review hardening verification (2026-10-12):** 69 focused tests, `tsc -b`, ESLint and
+independent review passed. Canonical `make verify` passed with 8,419 frontend tests,
+1,294 Python tests and all 54 browser tests; existing skips remain. Desktop/mobile export
+journeys retain two scoped ecological outcomes after 105 unrelated records, and preserve
+scan-exhaustion diagnostics without claiming complete evidence.
 
-It may state:
+The production entry point is in Testing History beside assessment history, reusing the existing OV5 `BlockOutcomeReportService`, deterministic report model and CSV/JSON exporters. The athlete chooses a block and explicitly opens its review. The flow uses the current validated intent-block head/revision whose start date is no later than the Warsaw as-of date; finished blocks remain eligible for post-block review. It binds to the exact evaluation ID/revision pinned by an objective's `successCriteria.evaluationRef` and verifies the frozen content hash. A newer evaluation revision cannot substitute for that binding. It uses that evaluation's frozen target windows and declared baseline policy, while allowing the declared baseline to be read directly even when it lies outside the detail period.
 
-- improved;
-- stable/within noise;
-- declined;
-- insufficient evidence;
-- non-comparable.
+The bounded reader validates the current intent-block head/hash, the exact intent revision and the frozen evaluation revision/content hash before use. Physical-capital benchmark observations are eligible only when their attempt is completed and non-familiarization, their completion and observation dates are no later than the Warsaw as-of date, and the observation head still points to the exact immutable revision and parent attempt. The reader examines at most 20 blocks plus a sentinel and 20 distinct evaluation references, validates no more than 16 bindings per evaluation, and reads at most 100 attempts per protocol plus a sentinel. It can fetch a declared baseline head/current revision/parent directly even outside the block detail window. Process reads are capped at 180 days, with a bounded direct check-in/follow-up window; recommendations, execution headers, active canonical performed occurrences and ecological results have bounded reads with sentinels. Raw trials, observation revision chains and extra body-mass reads are excluded.
 
-It must not claim causality.
+Ecological pagination applies the existing evaluation period, exact evaluation/event binding and Warsaw as-of rules before the 100-matching-outcome cap. Event reviews filter by event ID in Firestore. Legacy records without evaluation links and timestamps with offsets retain their existing semantics; the reader scans at most 200 records plus a sentinel and explicitly discloses an exhausted scan budget. Unrelated records do not count as ecological evidence or silently consume the matching-result cap.
+
+Missing, unreadable, stale, mismatched, truncated or unsupported sources remain explicit diagnostics; partial coverage is insufficient evidence and cannot imply omitted evidence is absent. Source state is one of `available`, `missing`, `unreadable`, `unsupported` or `truncated`, with record counts and limitations retained in the report/export. The current reader explicitly reports weekly-role evidence as unsupported because it has no frozen occurrence binding, and records limitations that reliability estimates have no reader and performed comparison is not loaded. The unsupported weekly-role source forces the overall block verdict to `insufficient_evidence`; metric-level observations may still be shown with their own conservative progress status. Process, response and ecological evidence reuse existing report policies and exact provenance.
+
+The report may state improved, stable/within noise, declined, insufficient evidence, or non-comparable only when its validated source state supports that statement. JSON and CSV preserve the frozen evaluation identity and review provenance, including the Warsaw as-of date, block revision/hash, each complete frozen metric binding (baseline selector and target window), canonical observation revisions, attempt provenance, source states and limitations. Where a target window was not frozen, the current compatibility fallback is all eligible history through the as-of date; the bounded attempt query and its truncation state remain disclosed. It must not claim causality, fabricate reliability, or feed selector behavior. No `POLICY_VERSION` change is warranted. OV6.2's optional analytics dashboard remains usage-triggered and deferred; this scoped review is a direct report/export action, not a dashboard.
+
+**Done when:** the athlete can open the exact eligible block review from Testing History, inspect and export the deterministic report, and all incomplete or unsupported source states are visible and conservatively classified. Engineering tests use synthetic fixtures; they do not satisfy #897's separate acceptance for real, comparable post-block evidence. #897 remains open until that operational evidence and its remaining acceptance criteria are met.
 
 ## WP8.3 Planning Context Brief
 
-**Status:** Implemented locally and verified 2026-10-11.
+**Status:** Implemented in [PR #1042](https://github.com/Szczepanov/adaptive-training-recommender/pull/1042), merged 2026-10-11.
 
 Planning Context Briefs now render `## Measured performance evidence` after goals. The evidence is observational only and does not change recommendation selection or `POLICY_VERSION`; the JSON envelope remains `context_brief_export_v2` while the semantic contract is `2026-10-context-brief-contract-v5`.
 

@@ -25,6 +25,10 @@ export interface BlockOutcomeReportInput {
     evaluation: OutcomeEvaluationSnapshot;
     /** Current immutable head revisions; deriveProgress excludes invalid/practice revisions. */
     observations: readonly CurrentObservation[];
+    /** Optional bounded reader samples, kept separate for distinct frozen bindings. */
+    observationsByBinding?: Readonly<Record<string, readonly CurrentObservation[]>>;
+    /** Finite reader horizon for legacy bindings that did not freeze a target window. */
+    defaultTargetObservationWindow?: { startDate: string; endDate: string };
     /**
      * Assessment attempts backing `observations` (#897 WP8). Only observations from completed,
      * non-familiarization attempts reach progress derivation; familiarization and non-completed
@@ -49,7 +53,9 @@ function inPeriod(date: string, startDate: string, endDate: string): boolean {
     return date >= startDate && date <= endDate;
 }
 
-function belongsToEvaluation(outcome: CompetitionOutcome, evaluation: OutcomeEvaluationSnapshot): boolean {
+export function ecologicalOutcomeMatchesEvaluation(outcome: CompetitionOutcome, evaluation: OutcomeEvaluationSnapshot): boolean {
+    const date = getLocalDateString(new Date(outcome.occurredAt));
+    if (!inPeriod(date, evaluation.revision.startDate, evaluation.revision.endDate)) return false;
     const sourceRef = evaluation.revision.sourceRef;
     if (outcome.evaluationRef !== undefined) {
         const matchesEvaluation = outcome.evaluationRef.id === evaluation.revision.id
@@ -78,17 +84,16 @@ export class BlockOutcomeReportService {
         const recommendations = input.recommendations.filter(item => inPeriod(item.date, startDate, endDate));
         const completedSessions = input.completedSessions.filter(item => inPeriod(item.date, startDate, endDate));
         const sessionOutcomes = input.sessionOutcomes.filter(item => inPeriod(item.sourceSession.date, startDate, endDate));
-        const ecologicalOutcomes = input.ecologicalOutcomes.filter(item => {
-            const date = getLocalDateString(new Date(item.occurredAt));
-            return inPeriod(date, startDate, endDate) && belongsToEvaluation(item, evaluation);
-        });
+        const ecologicalOutcomes = input.ecologicalOutcomes.filter(item => ecologicalOutcomeMatchesEvaluation(item, evaluation));
 
         const eligibleAttemptIds = benchmarkEligibleAttemptIds(input.assessmentAttempts);
         const benchmarkObservations = input.observations.filter(observation =>
             eligibleAttemptIds.has(observation.revision.assessmentAttemptId));
         const metricProgress = evaluation.bindings.map(binding => deriveProgress(
-            binding,
-            benchmarkObservations,
+            binding.targetObservationWindow || !input.defaultTargetObservationWindow ? binding
+                : { ...binding, targetObservationWindow: input.defaultTargetObservationWindow },
+            input.observationsByBinding?.[binding.id]?.filter(observation =>
+                eligibleAttemptIds.has(observation.revision.assessmentAttemptId)) ?? benchmarkObservations,
             input.reliabilityEstimates ?? [],
         ));
         const process = deriveBlockProcessEvidence({

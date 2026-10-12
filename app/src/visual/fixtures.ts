@@ -25,7 +25,7 @@ export const VISUAL_USER_ID = 'visual-athlete';
 export const VISUAL_DATE = '2026-09-12';
 const TIMESTAMP = '2026-09-12T08:00:00.000+02:00';
 
-export type VisualScreen = 'home' | 'checkin' | 'goals' | 'data' | 'constraints' | 'preferences' | 'session' | 'builder' | 'plan' | 'morning-card' | 'assessment-capture';
+export type VisualScreen = 'home' | 'checkin' | 'goals' | 'data' | 'constraints' | 'preferences' | 'session' | 'builder' | 'plan' | 'morning-card' | 'assessment-capture' | 'block-review';
 
 export interface VisualScenario {
   id: string;
@@ -556,6 +556,11 @@ const importedPlan: ExternalTrainingPlan = {
 const externallyPlannedFixture = buildFixture({ externalPlan: importedPlan }, externallyPlannedProfile);
 
 export const VISUAL_SCENARIOS: VisualScenario[] = [
+  {
+    id: 'block-evidence-review', title: 'Block evidence review — explicit entrypoint', screen: 'block-review',
+    expectedFocus: ['Review is athlete-invoked.', 'The review action and observational limits remain readable on mobile.'],
+    fixture: standardFixture,
+  },
   ...['empty', 'preview', 'gap', 'rejected', 'applied'].map((state): VisualScenario => ({
     id: `assessment-openbar-${state}`, title: `Assessment — OpenBar import ${state}`, screen: 'assessment-capture',
     expectedFocus: ['Both velocity import cards remain readable on a phone.', 'Load units, exclusions, errors and confirmation actions remain clear.'],

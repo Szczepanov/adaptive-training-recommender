@@ -1,7 +1,12 @@
-import { doc, getDoc, runTransaction, type Firestore } from 'firebase/firestore';
+import { collection, doc, documentId, getDoc, getDocs, limit, orderBy, query, runTransaction, startAfter, where, type Firestore, type QueryDocumentSnapshot } from 'firebase/firestore';
 import { getDb } from '../firebase';
 import type { CompetitionOutcome } from '../observations/models';
 import { assertValidCompetitionOutcome } from '../observations/validation';
+import type { OutcomeEvaluationSnapshot } from '../outcomes/evaluationSpec';
+import { ecologicalOutcomeMatchesEvaluation } from './blockOutcomeReportService';
+import { getLocalDateString } from '../utils/localDate';
+
+export const COMPETITION_OUTCOME_MAX_SCANNED_RECORDS = 200;
 
 /** Ecological competition evidence stays separate from protocol-locked benchmark series. */
 export class CompetitionOutcomeService {
@@ -33,6 +38,43 @@ export class CompetitionOutcomeService {
         assertValidCompetitionOutcome(outcome);
         if (outcome.id !== outcomeId) throw new Error(`Competition outcome path mismatch for ${outcomeId}`);
         return outcome;
+    }
+
+    /** Scope before the result cap; legacy missing links and offset timestamps require a bounded scan. */
+    async listOutcomesWithDiagnostics(userId: string, evaluation: OutcomeEvaluationSnapshot, asOfDate: string, maxRecords = 100): Promise<{
+        outcomes: CompetitionOutcome[]; unreadableCount: number; truncated: boolean; scanLimitReached?: boolean;
+    }> {
+        if (!Number.isSafeInteger(maxRecords) || maxRecords < 1 || maxRecords >= Number.MAX_SAFE_INTEGER) throw new RangeError('Invalid maxRecords');
+        const outcomes: CompetitionOutcome[] = [];
+        let unreadableCount = 0;
+        if (asOfDate < evaluation.revision.startDate) return { outcomes, unreadableCount, truncated: false };
+        const event = evaluation.revision.sourceRef;
+        let cursor: QueryDocumentSnapshot | undefined;
+        let scanned = 0;
+        while (scanned <= COMPETITION_OUTCOME_MAX_SCANNED_RECORDS) {
+            const pageSize = Math.min(maxRecords + 1, COMPETITION_OUTCOME_MAX_SCANNED_RECORDS - scanned + 1);
+            const snapshot = await getDocs(query(collection(this.db, 'users', userId, 'competition_outcomes'),
+                ...(event?.kind === 'event' ? [where('eventRef', '==', event.id)] : []),
+                orderBy(documentId(), 'asc'), ...(cursor ? [startAfter(cursor)] : []), limit(pageSize)));
+            for (const item of snapshot.docs) {
+                if (scanned === COMPETITION_OUTCOME_MAX_SCANNED_RECORDS) {
+                    return { outcomes, unreadableCount, truncated: true, scanLimitReached: true };
+                }
+                scanned++;
+                try {
+                    const outcome = item.data() as CompetitionOutcome;
+                    assertValidCompetitionOutcome(outcome);
+                    if (outcome.id !== item.id) throw new Error('Competition outcome path mismatch');
+                    if (!ecologicalOutcomeMatchesEvaluation(outcome, evaluation)
+                        || getLocalDateString(new Date(outcome.occurredAt)) > asOfDate) continue;
+                    if (outcomes.length === maxRecords) return { outcomes, unreadableCount, truncated: true };
+                    outcomes.push(outcome);
+                } catch { unreadableCount++; }
+            }
+            if (snapshot.docs.length < pageSize) return { outcomes, unreadableCount, truncated: false };
+            cursor = snapshot.docs.at(-1);
+        }
+        return { outcomes, unreadableCount, truncated: true, scanLimitReached: true };
     }
 }
 

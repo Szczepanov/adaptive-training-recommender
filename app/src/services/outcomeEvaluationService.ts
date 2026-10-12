@@ -112,11 +112,16 @@ export class OutcomeEvaluationService {
     async getRevision(userId: string, evaluationId: string, revision: number): Promise<OutcomeEvaluationSnapshot | null> {
         const revisionSnapshot = await getDoc(this.revisionRef(userId, evaluationId, revision));
         if (!revisionSnapshot.exists()) return null;
-        return fromPersisted(
+        const result = fromPersisted(
             revisionSnapshot.data() as PersistedOutcomeEvaluationRevision,
             evaluationId,
             revision,
         );
+        if (result.revision.status !== 'draft'
+            && await hashEvaluationContent(result) !== result.revision.contentHash) {
+            throw new Error(`Outcome evaluation content hash mismatch for ${evaluationId}@${revision}`);
+        }
+        return result;
     }
 
     async activateRevision(

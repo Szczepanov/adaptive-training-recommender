@@ -10,6 +10,7 @@ import {
     query,
     where,
     orderBy,
+    limit,
     runTransaction,
     writeBatch,
     type Firestore,
@@ -962,6 +963,24 @@ export class SessionExecutionService {
             return;
         }
         await setDoc(this.executionRef(userId, executionId), patch, { merge: true });
+    }
+
+    /** Bounded report read of canonical headers; never hydrates entries or revision chains. */
+    async getExecutionHeadersInRange(userId: string, startDateInclusive: string, throughDateExclusive: string, maxRecords = 200): Promise<{
+        executions: SessionExecution[]; invalidRecords: number; truncated: boolean;
+    }> {
+        if (!Number.isSafeInteger(maxRecords) || maxRecords < 1 || maxRecords >= Number.MAX_SAFE_INTEGER) throw new RangeError('Invalid maxRecords');
+        const snap = await getDocs(query(collection(this.db, 'users', userId, 'session_executions'),
+            where('date', '>=', startDateInclusive), where('date', '<', throughDateExclusive),
+            orderBy('date', 'asc'), limit(maxRecords + 1)));
+        const executions: SessionExecution[] = [];
+        let invalidRecords = 0;
+        for (const item of snap.docs.slice(0, maxRecords)) {
+            const parsed = parseSessionExecutionDocument(item.data(), item.ref.path);
+            if (parsed.status === 'AVAILABLE' && parsed.data.executionId === item.id) executions.push(parsed.data);
+            else invalidRecords++;
+        }
+        return { executions, invalidRecords, truncated: snap.docs.length > maxRecords };
     }
 
     async getExecutionsInRange(

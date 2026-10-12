@@ -7,6 +7,29 @@
   box-sizing: border-box;
 }
 
+.block-review-panel,
+.block-review-result {
+  overflow-wrap: anywhere;
+}
+
+.block-review-result,
+.block-review-list {
+  display: grid;
+  gap: var(--space-3, 12px);
+  min-width: 0;
+}
+
+.block-review-panel summary {
+  cursor: pointer;
+  min-height: var(--touch-target-min, 44px);
+  display: list-item;
+  align-content: center;
+}
+
+.block-review-panel .testing-warning-banner p {
+  color: inherit;
+}
+
 .testing-header,
 .testing-row,
 .testing-actions,
@@ -576,6 +599,8 @@
 /* Assessment series card */
 .assessment-series-card {
   gap: 16px;
+  grid-template-columns: minmax(0, 1fr);
+  overflow-wrap: anywhere;
 }
 
 .series-card-header {
@@ -583,6 +608,7 @@
   justify-content: space-between;
   align-items: flex-start;
   gap: 12px;
+  flex-wrap: wrap;
 }
 
 .family-badge {

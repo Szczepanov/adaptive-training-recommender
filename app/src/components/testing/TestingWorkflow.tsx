@@ -42,6 +42,7 @@ import { isFixedLoadVelocityProtocol } from '../../observations/fixedLoadVelocit
 import { TrialCorrectionPanel } from './TrialCorrectionPanel';
 import { TestingCatalogPanel } from './TestingCatalogPanel';
 import { AssessmentHistory } from './AssessmentHistory';
+import { BlockReviewPanel } from './BlockReviewPanel';
 import './TestingWorkflow.css';
 
 type TestingStage = 'lookup' | 'ready' | 'running' | 'capture' | 'complete' | 'abandoned';
@@ -606,7 +607,10 @@ export const TestingWorkflow: React.FC<TestingWorkflowProps> = ({ userId, onClos
             {error && <p className="testing-error" role="alert">{error}</p>}
 
             {workflowTab === 'history' ? (
-                <AssessmentHistory userId={userId} />
+                <>
+                    <BlockReviewPanel userId={userId} />
+                    <AssessmentHistory userId={userId} />
+                </>
             ) : (
                 <>
                     {stage === 'lookup' && (

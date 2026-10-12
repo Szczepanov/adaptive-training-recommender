@@ -102,6 +102,21 @@ function report(context: Record<string, string | number | boolean | null>): Bloc
 }
 
 describe('block outcome exports', () => {
+    it('neutralizes formula-leading identifiers while preserving signed numeric deltas', () => {
+        const input = report({});
+        input.evaluationRef.id = '=1+1';
+        input.metricProgress = input.metricProgress.map(progress => ({
+            ...progress, baselineObservationId: '@SUM(A1)', latestObservationId: '+malicious',
+            comparisonSeriesKey: '-series', absoluteChange: -3, percentChange: -1,
+        }));
+        const csv = blockOutcomeReportToCsv(input);
+        expect(csv).toContain("'=1+1");
+        expect(csv).toContain("'@SUM(A1)");
+        expect(csv).toContain("'+malicious");
+        expect(csv).toContain("'-series");
+        expect(csv).toContain(',-3,-1,');
+        expect(blockOutcomeReportToJson(input)).toContain('"id":"=1+1"');
+    });
     it('orders metric CSV rows and reason codes deterministically', () => {
         const csv = blockOutcomeReportToCsv(report({ wind: true }));
         const lines = csv.split('\n');

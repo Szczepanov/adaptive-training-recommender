@@ -447,6 +447,13 @@ also remains available.
      trials clearly distinguished.
    - The toolbar provides one-click normalized CSV export (`assessment-history.csv`, 24 canonical columns) and
      offline diagnostic evidence export (`assessment_diagnostic_export_v2`).
+   - The athlete can explicitly choose **Review block evidence** to list eligible block/evaluation
+     pairs, then load one pinned review. The review binds to the exact validated intent revision and
+     evaluation ID/revision/content hash; it does not silently follow newer heads. It presents the
+     deterministic OV report with existing CSV/JSON exports and visible source limitations. A
+     partial or unsupported source set is reported as insufficient evidence. This is a focused
+     review action; the optional OV6.2 analytics dashboard remains deferred until repeated use
+     establishes a need.
 
 Open attempts are recovered on mount. The workflow records assessment-specific context and
 raw observations around the shared structured-session execution. Global resume state marks
