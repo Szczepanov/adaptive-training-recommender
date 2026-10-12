@@ -1,7 +1,7 @@
 # Issue #897 — Physical-capital assessment history implementation plan
 
 **Date:** 2026-09-30
-**Status:** In progress — [ADR-0046](../adr/0046-first-class-raw-assessment-trial-evidence.md) accepted 2026-09-30; PR A (WP0–WP3 domain foundation) merged (PR #942); PR B (WP4 bundled catalog, WP5 trial capture UX, WP7.2 diagnostic JSON export) merged (PR #944); PR C (WP6 assessment history, series comparability, WP7.1 normalized CSV export, WP3.4 body-mass context, Appendix A ADR-0047) merged (PR #948), followed by a post-merge review hardening of body-mass source selection and row-level series comparability. #897 was reopened on 2026-10-01 after the PR C merge auto-closed it: WP6.6 fixed-load velocity (design: [ADR-0047](../adr/0047-fixed-load-velocity-assessment-series.md)) is implemented and passed local verification/review; WP8.0 merged in PR #1033, WP8.1 in PR #1036, and WP8.3 merged in PR #1042 on 2026-10-11. WP8.2 production review/export is implemented and locally verified; the remaining real-evidence acceptance work keeps #897 open. PR B2 (WP5.5 WL Analysis per-frame CSV import) shipped in PR #963; parser-v2 rep-boundary hardening followed in PR #984.
+**Status:** In progress — [ADR-0046](../adr/0046-first-class-raw-assessment-trial-evidence.md) accepted 2026-09-30; PR A (WP0–WP3 domain foundation) merged (PR #942); PR B (WP4 bundled catalog, WP5 trial capture UX, WP7.2 diagnostic JSON export) merged (PR #944); PR C (WP6 assessment history, series comparability, WP7.1 normalized CSV export, WP3.4 body-mass context, Appendix A ADR-0047) merged (PR #948), followed by a post-merge review hardening of body-mass source selection and row-level series comparability. #897 was reopened on 2026-10-01 after the PR C merge auto-closed it: WP6.6 fixed-load velocity (design: [ADR-0047](../adr/0047-fixed-load-velocity-assessment-series.md)) merged in [PR #1016](https://github.com/Szczepanov/adaptive-training-recommender/pull/1016) on 2026-10-09; WP8.0 merged in PR #1033, WP8.1 in PR #1036, and WP8.3 merged in PR #1042 on 2026-10-11. WP8.2 production review/export merged in [PR #1043](https://github.com/Szczepanov/adaptive-training-recommender/pull/1043) on 2026-10-12 (08:54 Warsaw); real-device and comparable post-block acceptance keep #897 open. See the [post-merge acceptance audit](../analysis/2026-10-12-issue-897-postmerge-acceptance.md) for all criteria, missing inputs and the collection/readout procedure. PR B2 (WP5.5 WL Analysis per-frame CSV import) shipped in PR #963; parser-v2 rep-boundary hardening followed in PR #984.
 **Authority boundary:** evidence-only under the existing OV authority boundary; ADR-0046 grants no recommendation authority
 **Unlocks:** first-class multidomain physical-capital assessment capture, comparable history and normalized/diagnostic export without recommendation authority
 **Canonical status owner:** [Performance outcome validation (OV)](./performance-outcome-validation.md); this document is a scoped #897 implementation design, not a parallel OV status board
@@ -843,7 +843,7 @@ The history UI may default to earliest valid baseline-purpose observation for co
 
 ## WP6.6 Fixed-load velocity acceptance boundary
 
-**Status:** Implemented; focused and full local verification and independent review passed. WP8 remains open, so this slice references #897 without closing it.
+**Status:** Implemented in [PR #1016](https://github.com/Szczepanov/adaptive-training-recommender/pull/1016), merged 2026-10-09; focused and full local verification and independent review passed. WP8.0–WP8.3 subsequently merged; #897 remains open for the operational acceptance documented in the post-merge audit.
 
 [ADR-0047](../adr/0047-fixed-load-velocity-assessment-series.md) Option A supplies dedicated revision-1 bench-press and back-squat fixed-load velocity tests. The metric `strength_fixed_load_mean_velocity_mps` and required `test_load_kg`, `measurement_method_id` and `equipment_setup_id` dimensions follow registry/rules parity. The existing `max_valid` reducer selects the highest eligible mean velocity with deterministic trial provenance after pure validation checks exact load, success and actual method. Practice/invalid rows remain audit evidence; corrections keep the original series identity and commit raw/canonical changes atomically.
 
@@ -960,7 +960,7 @@ WP8.1 delivered the reviewed squat/bench bridge while retaining the distinction 
 
 ## WP8.2 Block review
 
-**Status:** Engineering implementation verified 2026-10-11; pending PR merge. Real post-block acceptance remains open.
+**Status:** Implemented in [PR #1043](https://github.com/Szczepanov/adaptive-training-recommender/pull/1043), merged 2026-10-12 at 08:54 Warsaw. Real-device and comparable post-block acceptance remain open; see the [post-merge audit](../analysis/2026-10-12-issue-897-postmerge-acceptance.md).
 **Unlocks:** Athlete-invoked, evidence-only review of an exact frozen block evaluation; no causal or prescription authority.
 
 **Synthetic verification (2026-10-11):** focused service/export/architecture/UI checks passed,
@@ -1177,14 +1177,13 @@ This is the first athlete-usable slice.
 - Appendix A: ADR-0047 (`docs/adr/0047-fixed-load-velocity-assessment-series.md`; delivered as Proposed, accepted 2026-10-01 with Option A) evaluating dedicated protocol, companion attempts, and multi-instance keys.
 - Comprehensive unit tests across all new modules and browser E2E (`tests/e2e/testing-physical-capital.pw.ts`).
 
-PR C closes the athlete-facing **history + normalized export** slice of “store, export and track”. It does **not** close Issue #897 as a whole: WP6.6 fixed-load velocity and WP8 bounded goal/context consumers remain open unless explicitly rescoped.
+PR C delivered the athlete-facing **history + normalized export** slice of “store, export and track”. Subsequent work implemented WP6.6 and merged WP8.0–WP8.3. Issue #897 remains open for the operational acceptance documented in the [post-merge audit](../analysis/2026-10-12-issue-897-postmerge-acceptance.md), not for reimplementation of those slices.
 
 ## PR D — bounded feedback-loop integration
 
-- WP8
-- block outcome/context brief/goals only where existing contracts need wiring
-
-Do not merge PR D into the earlier slices merely to make the feature appear more “intelligent”.
+Delivered as WP8.0 (#1033), WP8.1 (#1036), WP8.3 (#1042) and WP8.2 (#1043).
+The remaining evidence collection and contract decisions are tracked by the canonical OV board
+and the post-merge acceptance audit; this is delivery history, not an open wiring work list.
 
 ---
 

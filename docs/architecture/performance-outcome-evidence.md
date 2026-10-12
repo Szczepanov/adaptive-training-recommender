@@ -44,6 +44,11 @@ outcome-to-planning rule requires a separate ADR/ship decision.
 
 ## Physical-capital block review (Issue #897 WP8.2)
 
+Merged in [PR #1043](https://github.com/Szczepanov/adaptive-training-recommender/pull/1043)
+on 2026-10-12 (08:54 Warsaw). The [post-merge acceptance audit](../analysis/2026-10-12-issue-897-postmerge-acceptance.md)
+maps the engineering contracts to #897's criteria and defines the real collection/readout procedure.
+No production athlete evidence was inspected for that audit; synthetic wiring is not operational acceptance.
+
 The WP8.2 review is an athlete-invoked report/export flow in Testing History, alongside
 `AssessmentHistory`. It composes the existing `BlockOutcomeReportService` and report exporters;
 it does not create a second evaluation or evidence model. `BlockReviewService.listReviews`
@@ -83,6 +88,18 @@ wired and performed comparison is not loaded. The unsupported weekly-role source
 overall `insufficient_evidence` verdict; individual metric progress can still be displayed.
 Partial coverage cannot support an absence claim. The report can describe observed change but
 cannot attribute it to training causally or influence production selection.
+
+Removing these limitations requires authoritative inputs, not retrospective inference:
+`blockProcessEvidence` accepts exact planned/completed occurrence IDs, but the frozen evaluation
+spec has no weekly-role occurrence binding. `deriveProgress` accepts series-keyed
+`SeriesReliabilityEstimate` values and the pure report service accepts them optionally, but no
+authoritative estimate reader is wired. `PerformedSessionComparison` is available in the
+canonical completed-workout detail contract; the review currently uses occurrence identities
+for completed-session counts, and its report input has no performed-comparison field. A future
+bounded diagnostic join needs explicit planned/execution identity, scope and partial-read semantics.
+None of these gaps can be filled by using current rolling coverage, guessed reliability or
+unscoped workout comparisons. Baseline collection and raw-change review can proceed while
+the limitations remain disclosed; overall verdicts stay insufficient.
 
 This focused review action does not promote the optional OV6.2 analytics dashboard, which
 remains usage-triggered. Synthetic engineering tests establish software contracts only;
