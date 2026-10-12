@@ -5,8 +5,8 @@
  * uniqueness", `docs/plans/training-occurrence-pr1-scope.md` "Transaction boundary").
  *
  * Idempotent-create pattern mirrors `services/healthAnomalyPersistence.ts`: read inside a
- * transaction, return the existing record unchanged when a claim already exists, only
- * `transaction.set` when it doesn't. Firestore's optimistic-concurrency retry on
+ * transaction, refresh existing claimed facts only when they change, create when there
+ * is no claim. Firestore's optimistic-concurrency retry on
  * `runTransaction` (it re-runs the callback if a read document changed before commit) is
  * what makes two concurrent callers for the same source converge to one canonical
  * occurrence rather than requiring an external lock.
@@ -164,6 +164,31 @@ function assertSourceCardinality(sourceRefs: readonly PerformedOccurrenceSourceR
     }
 }
 
+/** Refresh facts under the source claim's transaction without changing identity or decisions. */
+function refreshOccurrenceSource(
+    occurrence: PerformedTrainingOccurrence,
+    facts: ReconciliationSourceFacts,
+): PerformedTrainingOccurrence {
+    const sourceKey = sourceKeyForRef(facts.sourceRef);
+    const existingRef = occurrence.sourceRefs.find(ref => sourceKeyForRef(ref) === sourceKey);
+    if (!existingRef) throw new Error(`Linked occurrence ${occurrence.performedOccurrenceId} has no source ${sourceKey}`);
+    const sourceRef = {
+        ...existingRef,
+        ...Object.fromEntries(Object.entries(facts.sourceRef).filter(([, value]) => value !== undefined)),
+    };
+    const projection = projectionAfterAttach(occurrence, facts);
+    if (Object.entries(sourceRef).every(([key, value]) => existingRef[key as keyof typeof existingRef] === value)
+        && Object.entries(projection).every(([key, value]) => occurrence[key as keyof OccurrenceProjection] === value)) {
+        return occurrence;
+    }
+    return {
+        ...occurrence,
+        ...projection,
+        sourceRefs: occurrence.sourceRefs.map(ref => sourceKeyForRef(ref) === sourceKey ? sourceRef : ref),
+        updatedAt: new Date().toISOString(),
+    };
+}
+
 /**
  * Automatic reconciliation is allowed to advance state/confidence, but it must never
  * erase a prior manual override or exclusion while doing so. This is the persistence-side
@@ -277,7 +302,8 @@ export class PerformedTrainingOccurrenceRepository {
     /**
      * Idempotent: the first caller for a given source creates the occurrence + source
      * link atomically; every later caller for the same source (repeated sync, concurrent
-     * arrival) observes the existing link and returns the same occurrence unchanged.
+     * arrival) observes the existing link and refreshes supplied facts on its owner.
+     * Identical retries leave the occurrence and source link unchanged.
      *
      * `initialReconciliation` lets the orchestration layer persist an ambiguity decision
      * in the SAME transaction as first creation. This is important: an ambiguous source
@@ -299,7 +325,9 @@ export class PerformedTrainingOccurrenceRepository {
                 const occSnap = await transaction.get(this.occurrenceRef(userId, link.performedOccurrenceId));
                 if (!occSnap.exists()) throw new Error(`Linked occurrence ${link.performedOccurrenceId} does not exist`);
                 const occurrence = await this.followMergeChainTx(transaction, userId, parsePerformedTrainingOccurrence(occSnap.data(), userId));
-                return { occurrence, created: false };
+                const updated = refreshOccurrenceSource(occurrence, facts);
+                if (updated !== occurrence) transaction.set(this.occurrenceRef(userId, occurrence.performedOccurrenceId), updated);
+                return { occurrence: updated, created: false };
             }
 
             const now = new Date().toISOString();
@@ -344,7 +372,11 @@ export class PerformedTrainingOccurrenceRepository {
             const linkSnap = await transaction.get(linkRef);
             if (linkSnap.exists()) {
                 const existingLink = parseSourceLinkForKey(linkSnap.data(), userId, sourceKey);
-                if (existingLink.performedOccurrenceId === occurrence.performedOccurrenceId) return occurrence;
+                if (existingLink.performedOccurrenceId === occurrence.performedOccurrenceId) {
+                    const updated = refreshOccurrenceSource(occurrence, facts);
+                    if (updated !== occurrence) transaction.set(this.occurrenceRef(userId, occurrence.performedOccurrenceId), updated);
+                    return updated;
+                }
                 throw new SourceLinkConflictError(sourceKey, existingLink.performedOccurrenceId, occurrence.performedOccurrenceId);
             }
 

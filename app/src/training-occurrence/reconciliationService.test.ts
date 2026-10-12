@@ -120,16 +120,23 @@ describe('reconcileSourceFacts', () => {
         expect(getShadowReconciliationCounters()['training_occurrence.matched']).toBe(1);
     });
 
-    it('repeated event: already linked -> returns the existing occurrence without touching create/attach', async () => {
+    it('repeated event: already linked -> refreshes its transactional owner without candidate matching', async () => {
         const existing = occurrence({ sourceRefs: [structuredFacts.sourceRef] });
         vi.mocked(repo.getBySourceKey).mockResolvedValue(existing);
+        vi.mocked(repo.createOrGetForSource).mockResolvedValue({
+            occurrence: existing,
+            created: false,
+        });
 
         const result = await reconcileSourceFacts('user-1', structuredFacts);
 
         expect(result.outcome).toBe('already_linked');
         expect(result.occurrence).toBe(existing);
         expect(repo.queryActiveInDateWindow).not.toHaveBeenCalled();
-        expect(repo.createOrGetForSource).not.toHaveBeenCalled();
+        expect(repo.createOrGetForSource).toHaveBeenCalledWith(
+            'user-1',
+            structuredFacts,
+        );
         expect(repo.attachSource).not.toHaveBeenCalled();
     });
 
@@ -177,6 +184,7 @@ describe('reconcileSourceFacts', () => {
     it('source-link conflict on attach converges onto whoever legitimately owns the source instead of erroring', async () => {
         const target = occurrence();
         const resolvedElsewhere = occurrence({ performedOccurrenceId: 'pto-elsewhere' });
+        vi.mocked(repo.createOrGetForSource).mockResolvedValue({ occurrence: resolvedElsewhere, created: false });
         vi.mocked(repo.getBySourceKey)
             .mockResolvedValueOnce(null) // initial "already linked?" check
             .mockResolvedValueOnce(resolvedElsewhere); // post-conflict re-resolve
@@ -188,6 +196,58 @@ describe('reconcileSourceFacts', () => {
         expect(result.outcome).toBe('already_linked');
         expect(result.occurrence?.performedOccurrenceId).toBe('pto-elsewhere');
         expect(getShadowReconciliationCounters()['training_occurrence.source_link_conflict']).toBe(1);
+    });
+
+    it('returns the current transaction owner when a manual action moved the claim after the first lookup', async () => {
+        vi.mocked(repo.getBySourceKey).mockResolvedValue(occurrence());
+        const currentOwner = occurrence({
+            performedOccurrenceId: 'pto-after-manual-unlink',
+            startedAt: garminFacts.startedAt,
+        });
+        vi.mocked(repo.createOrGetForSource).mockResolvedValue({
+            occurrence: currentOwner,
+            created: false,
+        });
+        const result = await reconcileSourceFacts('user-1', garminFacts);
+        expect(result.outcome).toBe('already_linked');
+        expect(result.occurrence).toBe(currentOwner);
+    });
+
+    it('refreshes detailed facts on the transaction owner after an attach loses to a sparse concurrent claim', async () => {
+        const target = occurrence({ sourceRefs: [structuredFacts.sourceRef] });
+        const sparseOwner = occurrence({
+            performedOccurrenceId: 'pto-concurrent',
+            startedAt: undefined,
+            endedAt: undefined,
+            sourceRefs: [garminFacts.sourceRef],
+        });
+        const enrichedOwner = {
+            ...sparseOwner,
+            startedAt: garminFacts.startedAt,
+            endedAt: garminFacts.endedAt,
+        };
+        vi.mocked(repo.getBySourceKey)
+            .mockResolvedValueOnce(null)
+            .mockResolvedValueOnce(sparseOwner);
+        vi.mocked(repo.queryActiveInDateWindow).mockResolvedValue([target]);
+        vi.mocked(repo.attachSource).mockRejectedValue(
+            new SourceLinkConflictError(
+                'provider_activity:garmin:act-2',
+                sparseOwner.performedOccurrenceId,
+                target.performedOccurrenceId,
+            ),
+        );
+        vi.mocked(repo.createOrGetForSource).mockResolvedValue({
+            occurrence: enrichedOwner,
+            created: false,
+        });
+        const result = await reconcileSourceFacts('user-1', garminFacts);
+        expect(result.outcome).toBe('already_linked');
+        expect(result.occurrence).toMatchObject({
+            performedOccurrenceId: 'pto-concurrent',
+            startedAt: garminFacts.startedAt,
+            endedAt: garminFacts.endedAt,
+        });
     });
 });
 
@@ -427,6 +487,7 @@ describe('reconcileDateRangeForUser', () => {
             revision: null,
         });
         vi.mocked(repo.getBySourceKey).mockResolvedValue(occurrence()); // pretend every source is already linked
+        vi.mocked(repo.createOrGetForSource).mockResolvedValue({ occurrence: occurrence(), created: false });
         vi.mocked(repo.queryActiveInDateWindow).mockResolvedValue([]);
 
         const summary = await reconcileDateRangeForUser('user-1', '2026-08-25', '2026-08-27');

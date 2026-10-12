@@ -116,7 +116,11 @@ export async function reconcileSourceFacts(userId: string, facts: Reconciliation
     try {
         const sourceKey = sourceKeyForRef(facts.sourceRef);
         const existing = await repository.getBySourceKey(userId, sourceKey);
-        if (existing) return { outcome: 'already_linked', occurrence: existing };
+        if (existing) {
+            // Re-read the claim transactionally: a manual unlink/merge may have moved it.
+            const { occurrence } = await repository.createOrGetForSource(userId, facts);
+            return { outcome: 'already_linked', occurrence };
+        }
 
         const scored = await candidatesFor(userId, facts);
         const decision = decideReconciliation(scored);
@@ -149,7 +153,10 @@ export async function reconcileSourceFacts(userId: string, facts: Reconciliation
                     // what is actually a successfully-idempotent outcome.
                     recordShadowReconciliationEvent({ type: 'training_occurrence.source_link_conflict', userId, message: err.message });
                     const resolved = await repository.getBySourceKey(userId, sourceKey);
-                    if (resolved) return { outcome: 'already_linked', occurrence: resolved };
+                    if (resolved) {
+                        const { occurrence } = await repository.createOrGetForSource(userId, facts);
+                        return { outcome: 'already_linked', occurrence };
+                    }
                 }
                 throw err;
             }
@@ -277,9 +284,9 @@ export interface SweepSummary {
 
 /**
  * Bounded date-range sweep -- the entry point used when a specific source ID isn't known
- * (the Garmin-sync-completed hooks), and generally for repair/backfill. Skips any source
- * that already has a source link (cheap `getBySourceKey` short-circuit inside
- * `reconcileSourceFacts`) so re-running the sweep over the same window is cheap and safe.
+ * (the Garmin-sync-completed hooks), and generally for repair/backfill. Existing source
+ * owners refresh their supplied facts before duplicate repair; identical retries write
+ * nothing and preserve recorded ambiguity and manual decisions.
  */
 export async function reconcileDateRangeForUser(
     userId: string,

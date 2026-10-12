@@ -135,6 +135,68 @@ describe('createOrGetForSource', () => {
         expect(occurrence.performedOccurrenceId).toBe(survivorSeed.performedOccurrenceId);
         expect(occurrence.status).toBe('active');
     });
+
+    it('refreshes late provider facts on the claimed identity without changing its link or manual decision', async () => {
+        const repo = new PerformedTrainingOccurrenceRepository({} as never);
+        const decision = {
+            state: 'single_source' as const,
+            manualDecision: {
+                decision: 'keep_separate' as const,
+                actor: userId,
+                decidedAt: '2026-08-26T07:32:00.000Z',
+            },
+        };
+        const first = await repo.createOrGetForSource(
+            userId,
+            { ...garminFacts(), startedAt: undefined, endedAt: undefined },
+            decision,
+        );
+        const linkBefore = [...docStore.entries()].find(([path]) =>
+            path.includes('performedOccurrenceSourceLinks/'),
+        );
+        const facts = {
+            ...garminFacts(),
+            sourceRef: { ...garminFacts().sourceRef, deviceId: 'watch-1' },
+        };
+        const refreshed = await repo.createOrGetForSource(userId, facts);
+        expect(refreshed.created).toBe(false);
+        expect(refreshed.occurrence).toMatchObject({
+            performedOccurrenceId: first.occurrence.performedOccurrenceId,
+            startedAt: facts.startedAt,
+            endedAt: facts.endedAt,
+            reconciliation: decision,
+        });
+        expect(refreshed.occurrence.sourceRefs).toEqual([facts.sourceRef]);
+        expect(
+            [...docStore.entries()].find(([path]) =>
+                path.includes('performedOccurrenceSourceLinks/'),
+            ),
+        ).toEqual(linkBefore);
+        const retried = await repo.createOrGetForSource(userId, facts);
+        expect(retried.occurrence).toEqual(refreshed.occurrence);
+    });
+
+    it('fails closed when a source link points at an occurrence that does not carry that source', async () => {
+        const repo = new PerformedTrainingOccurrenceRepository({} as never);
+        const { occurrence: provider } = await repo.createOrGetForSource(
+            userId,
+            garminFacts(),
+        );
+        const path = [...docStore.keys()].find((key) =>
+            key.endsWith(
+                `/performedTrainingOccurrences/${provider.performedOccurrenceId}`,
+            ),
+        )!;
+        docStore.set(path, {
+            ...docStore.get(path)!,
+            sourceRefs: [structuredFacts().sourceRef],
+        });
+        const before = [...docStore.entries()];
+        await expect(
+            repo.createOrGetForSource(userId, garminFacts()),
+        ).rejects.toThrow('has no source provider_activity:garmin:act-1');
+        expect([...docStore.entries()]).toEqual(before);
+    });
 });
 
 describe('attachSource', () => {
@@ -182,6 +244,50 @@ describe('attachSource', () => {
         const updated = await repo.attachSource(userId, target.performedOccurrenceId, garminFacts(), { state: 'matched' });
 
         expect(updated.startedAt).toBe(structuredFacts().startedAt); // not Garmin's startedAt
+    });
+
+    it('refreshes an already attached source ref while preserving structured fields and provenance', async () => {
+        const repo = new PerformedTrainingOccurrenceRepository({} as never);
+        const { occurrence: target } = await repo.createOrGetForSource(
+            userId,
+            structuredFacts(),
+        );
+        const attached = await repo.attachSource(
+            userId,
+            target.performedOccurrenceId,
+            garminFacts(),
+            {
+                state: 'matched',
+                confidence: 0.9,
+                manualDecision: {
+                    decision: 'link',
+                    actor: userId,
+                    decidedAt: '2026-08-26T07:32:00.000Z',
+                },
+            },
+        );
+        const facts = {
+            ...garminFacts(),
+            startedAt: '2026-08-26T05:00:00.000Z',
+            sourceRef: { ...garminFacts().sourceRef, deviceId: 'watch-1' },
+        };
+        const refreshed = await repo.attachSource(
+            userId,
+            target.performedOccurrenceId,
+            facts,
+            { state: 'single_source' },
+        );
+        expect(refreshed.startedAt).toBe(structuredFacts().startedAt);
+        expect(refreshed.sourceRefs).toEqual([
+            structuredFacts().sourceRef,
+            facts.sourceRef,
+        ]);
+        expect(refreshed.reconciliation).toEqual(attached.reconciliation);
+        expect(
+            await repo.attachSource(userId, target.performedOccurrenceId, facts, {
+                state: 'single_source',
+            }),
+        ).toEqual(refreshed);
     });
 });
 

@@ -2,10 +2,10 @@
 
 | | |
 |---|---|
-| **Status** | **In progress** — WP0–WP3 implemented; WP4–WP7 remain |
+| **Status** | **In progress** — WP0–WP4 implemented; WP5–WP7 remain |
 | **Source** | [Issue #895](https://github.com/Szczepanov/adaptive-training-recommender/issues/895) |
 | **Baseline** | `origin/main` at `e63517a7` (fetch 2026-09-29; includes #901, #910, #911, #912, #913, #914). The local checkout at plan-writing time was behind by 4 commits; all findings below were verified against the fetched tip (`git show FETCH_HEAD:<path>`), not the stale worktree. |
-| **Blocked by** | No code blocker for WP1–WP3 design. WP4–WP5 reuse the emulator harness from WP0. Per-item dependencies are listed below. |
+| **Blocked by** | No code blocker for WP5; it reuses the implemented diary and reconciliation harness. Per-item dependencies are listed below. |
 | **Unlocks** | Closure of #895; a lossless diary substrate that later history/fatigue cutovers (owned by TO, not this plan) can consume without re-litigating write authority. |
 | **Policy effect** | None. All work is persistence/reconciliation/observability plumbing. `POLICY_VERSION` must not change unless scope is explicitly widened in a separately reviewed policy change. |
 
@@ -13,7 +13,7 @@
 
 Make the structured SessionRunner the lossless, resumable, auditable source of truth for performed session semantics, with Garmin/provider activities attached as secondary measurement evidence for the same physical occurrence.
 
-The 2026-09-29 audit identified durable entry, correction and rest-write gaps. WP1 now batches diary targets, immutable audit records and execution touches into the SDK persistent-cache queue. Tombstones and durable receipts retain deletion and rejected intent across reload. Lifecycle and exact prescription resume are delivered by WP2/WP3. Ordering convergence, diagnostic UI and consumer inventory remain with WP4–WP7.
+The 2026-09-29 audit identified durable entry, correction and rest-write gaps. WP1 now batches diary targets, immutable audit records and execution touches into the SDK persistent-cache queue. Tombstones and durable receipts retain deletion and rejected intent across reload. Lifecycle and exact prescription resume are delivered by WP2/WP3. WP4 adds transactional source refresh and real arrival-order convergence proofs. Diagnostic UI, consumer inventory and closure remain with WP5–WP7.
 
 ## 2. Non-goals
 
@@ -136,21 +136,23 @@ state that pauses logging and new starts. An in-flight rest is cleared on reload
 
 The scoped delivery record is
 [`2026-10-05-issue-895-wp2-wp3-lifecycle-resume.md`](./2026-10-05-issue-895-wp2-wp3-lifecycle-resume.md).
-WP4–WP7 and related #723/#724/#896/#952 remain separate.
+WP5–WP7 and related #723/#724/#896 remain separate; #952 is already closed.
 
 ---
 
 ## WP4 — Arrival-ordering convergence
 
-**Status:** Not started
-**Blocked by:** WP0 fixtures; implementation likely test-plus-sweep-ordering only
+**Status:** Implemented — real reconciliation-service/emulator proofs and same-source metadata refresh
+**Blocked by:** None
 **Purpose:** reconciliation converges to one stable occurrence regardless of arrival order.
 
-### Changes
+### Delivered behavior
 
-- Prove (emulator): structured-first, Garmin-first, late provider detail, device-sync update, offline execution arriving later. `reconcileStructuredCompletion` / `reconcileGarminActivity` / `reconcileDateRangeForUser` converge without changing the stable user-visible identity; two genuine same-day workouts stay separate (date/modality alone never merges).
-- Manual `link`/`unlink`/`keep_separate` survive every ordering including background sweeps (`triggerGarminShadowReconciliationSweep`).
-- No matcher threshold changes without evidence review (`AUTO_LINK_CONFIDENCE` / `AMBIGUOUS_CONFIDENCE` stay unless a dedicated calibration plan moves them).
+- `reconciliationOrdering.emulator.test.ts` exercises the real service and authenticated repository for structured-first, Garmin-first, late provider detail, device-sync updates and late offline execution. Source lookups converge to the retained survivor, repeated sweeps are idempotent and distinct same-day workouts remain separate.
+- Manual `link`/`unlink`/`keep_separate` decisions and exclusions survive enrichment, retry and the date-range sweep used by `triggerGarminShadowReconciliationSweep`.
+- `reconcileSourceFacts` refreshes existing and concurrently claimed sources through `createOrGetForSource`. Its transaction rereads current ownership and follows merge chains; enrichment neither creates another occurrence nor erases known fields, overrides structured timing or changes reconciliation decisions. Identical retries are write-free.
+- Late detail can make an unresolved `single_source` pair matchable. Persisted weak-evidence or competing-candidate `ambiguous` decisions remain manual-only; additional detail never silently clears them.
+- Matcher thresholds and recommendation policy are unchanged. Synthetic emulator proofs do not establish cold-offline launch or real-device storage durability.
 
 ### Acceptance
 
