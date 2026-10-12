@@ -193,6 +193,17 @@ are preserved. The runner retries terminal history on mount and reconnect, inclu
 and predecessors with an active successor. Daily tissue feedback remains a check-in write before
 completion; it is not copied into terminal response evidence.
 
+Reconciliation retries refresh supplied source metadata through
+`PerformedTrainingOccurrenceRepository.createOrGetForSource`. The transaction rereads the
+source claim and follows merged records before updating its current owner. The source key,
+canonical occurrence identity and reconciliation decisions remain unchanged; absent metadata
+does not erase known fields, and provider updates do not overwrite a structured timeline.
+Identical retries do not write. `reconcileDateRangeForUser` refreshes linked sources before
+its existing duplicate repair, so late detail can make a `single_source` pair matchable.
+Persisted `ambiguous` records still require manual resolution, including when later detail
+would otherwise support a match. Manual links and bilateral unlink/keep-separate exclusions
+remain sticky through refresh and repeated sweeps.
+
 New fixture, manual, external-plan and catalog launches store a self-contained
 `definitionSnapshot` in their immutable prescription. The snapshot covers executable metadata
 and blocks; source identity is reconstructed from the pinned `SessionSourceRef`. Launch reads
