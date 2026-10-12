@@ -7,9 +7,9 @@
 * **Unlocks:** protocol-locked repeated testing, honest individual progress interpretation, block-level outcome reports, and later evidence for whether stable recommendation-policy versions are associated with better goal outcomes.
 * **Source analysis:** [`2026-08-21-performance-outcome-validation.md`](../analysis/2026-08-21-performance-outcome-validation.md)
 * **Origin / architecture reused:** ADR-0023 D-MOBS/D-MPOLICY plus the repeated-standardized-testing trigger originally recorded in [`multidomain-session-authoring-execution-and-evidence.md`](./multidomain-session-authoring-execution-and-evidence.md). Implementation ownership and live status are canonical in this OV plan.
-* **Issue #897 scoped extension:** the physical-capital assessment design is documented in [`2026-09-30-issue-897-physical-capital-assessment-history.md`](./2026-09-30-issue-897-physical-capital-assessment-history.md) and its raw-trial evidence contract in [ADR-0046](../adr/0046-first-class-raw-assessment-trial-evidence.md), **accepted 2026-09-30**. The #897 work is **in progress** (PR A merged, #942; PR B merged, #944; PR C merged, #948: history, comparability, CSV export, body-mass context, and proposed ADR-0047, with post-merge review hardening; PR B2 WL Analysis per-frame CSV import shipped, #963; parser-v2 hardening shipped, #984). #897 was reopened 2026-10-01: WP6.6 fixed-load velocity (ADR-0047 Option A) is implemented and passed local verification/review; WP8.0 merged in #1033 (2026-10-09), WP8.1 in #1036 (2026-10-10), and WP8.3 merged in #1042 (2026-10-11). WP8.2 production review/export is implemented and locally verified; the remaining real-evidence acceptance work keeps #897 open. The work stays evidence-only; this OV plan remains the sole live status authority.
+* **Issue #897 scoped extension:** the physical-capital assessment design is documented in [`2026-09-30-issue-897-physical-capital-assessment-history.md`](./2026-09-30-issue-897-physical-capital-assessment-history.md) and its raw-trial evidence contract in [ADR-0046](../adr/0046-first-class-raw-assessment-trial-evidence.md), **accepted 2026-09-30**. The #897 work is **in progress** (PR A merged, #942; PR B merged, #944; PR C merged, #948: history, comparability, CSV export, body-mass context, and proposed ADR-0047, with post-merge review hardening; PR B2 WL Analysis per-frame CSV import shipped, #963; parser-v2 hardening shipped, #984). #897 was reopened 2026-10-01: WP6.6 fixed-load velocity (ADR-0047 Option A) merged in [PR #1016](https://github.com/Szczepanov/adaptive-training-recommender/pull/1016) on 2026-10-09; WP8.0 merged in #1033 (2026-10-09), WP8.1 in #1036 (2026-10-10), and WP8.3 merged in #1042 (2026-10-11). WP8.2 production review/export merged in [PR #1043](https://github.com/Szczepanov/adaptive-training-recommender/pull/1043) on 2026-10-12 (08:54 Warsaw); real-device and comparable post-block acceptance keep #897 open. See the [post-merge acceptance audit](../analysis/2026-10-12-issue-897-postmerge-acceptance.md) for all criteria, missing inputs and the collection/readout procedure. The work stays evidence-only; this OV plan remains the sole live status authority.
 
-**WP8.2 production slice (2026-10-11).** Testing History now exposes an explicit block-review
+**WP8.2 production slice (merged 2026-10-12 in #1043).** Testing History now exposes an explicit block-review
 and CSV/JSON export action through `BlockReviewService`, reusing the pure OV5/OV6.1 composition.
 It resolves the exact frozen evaluation revision/hash, preserves declared/window baselines and
 protocol/series identity, and discloses bounded or incomplete canonical reads. Reader/report
@@ -17,6 +17,16 @@ contracts are `block-review-reader-v1` / `block-review-report-v1`; recommendatio
 Weekly-role bindings and reliability estimates remain explicitly unsupported/unavailable rather
 than fabricated. Synthetic service/browser fixtures prove wiring only. Real comparable post-block
 acceptance remains open under #897; this does not complete OV4.4, OV6.2 or OV7–OV8.
+
+**Post-merge acceptance (2026-10-12).** The [criterion-by-criterion audit](../analysis/2026-10-12-issue-897-postmerge-acceptance.md)
+maps all 31 issue checkboxes to existing implementations and synthetic proof, while identifying
+unproved real-device/athlete acceptance. The smallest next operational slice is actual-phone capture/reload/offline retry and
+single-occurrence verification, then the planned 19–25 October baseline and later comparable repeat.
+Keep #897 open; obtain the exact pinned intent/evaluation and private CSV/JSON evidence packet.
+Weekly-role bindings require a prospective frozen contract; reliability needs a reviewed authoritative
+source/reader (personal estimation still OV4.4-gated); performed comparison needs a bounded scope and
+identity/report contract. These are explicit follow-up decisions, not inputs to infer from workouts.
+Current overall verdicts stay insufficient. OV4.4, OV6.2 and OV7–OV8 statuses remain unchanged.
 
 > **This is an evidence capability, not a new recommendation phase.** `OV*` items may collect,
 > derive and report outcome evidence. They do not gain authority over same-day readiness,
