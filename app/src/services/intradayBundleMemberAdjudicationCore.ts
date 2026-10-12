@@ -190,6 +190,13 @@ export async function adjudicateIntradayBundleMembers(
         sessionsById.set(session.id, session);
     }
 
+    const executionsByOccurrenceId = new Map<string, typeof executions[0]>();
+    for (const exec of executions) {
+        if (exec.execution.occurrenceId) {
+            executionsByOccurrenceId.set(exec.execution.occurrenceId, exec);
+        }
+    }
+
     // Build initial ledger inputs from today's occurrences & executions
     const currentLedgerInputs: OccurrenceLedgerInput[] = allOccurrences.map(occ => {
         let estimatedMinutes = 45;
@@ -201,7 +208,7 @@ export async function adjudicateIntradayBundleMembers(
                 estimatedSystemicCost = estimateAuthoredSessionSystemicCost(sess.definition);
             }
         }
-        const linkedExec = executions.find(e => e.execution.occurrenceId === occ.occurrenceId);
+        const linkedExec = executionsByOccurrenceId.get(occ.occurrenceId);
         return {
             occurrenceId: occ.occurrenceId,
             occurrenceState: occ.state,
@@ -306,7 +313,7 @@ export async function adjudicateIntradayBundleMembers(
 
             if (predOccurrence) {
                 predecessorOccurrenceId = predOccurrence.occurrenceId;
-                const predExec = executions.find(e => e.execution.occurrenceId === predOccurrence.occurrenceId);
+                const predExec = executionsByOccurrenceId.get(predOccurrence.occurrenceId);
                 let immediateResponse = null;
                 if (predExec) {
                     predecessorExecutionId = predExec.execution.executionId;
