@@ -119,6 +119,8 @@ Architectural choices, system invariants, and technical trade-offs are documente
 ### 🔍 Reviews & Analysis
 Point-in-time assessments of the system as built, including gaps between documented decisions and implemented behaviour:
 
+* [**2026-10-12 Issue #897 — Post-merge acceptance audit**](./analysis/2026-10-12-issue-897-postmerge-acceptance.md) — Acceptance and status reconciliation following WP8.2 and WP6.6 delivery.
+* [**2026-10-08 Lane A: issue #897 implementation handoff**](./analysis/2026-10-08-lane-a-implementation-handoff.md) — Point-in-time analysis and handoff for issue #897.
 * [**2026-10-05 Event taxonomy recon — fitness-race / HYROX support**](./analysis/2026-10-05-event-taxonomy-fitness-race-hyrox.md) — Point-in-time architecture analysis for event taxonomy, HYROX Open Singles, exact coverage and executable sessions.
 * [**2026-10-05 Issue #895 WP2 + WP3 — lifecycle and exact-resume architecture analysis**](./analysis/2026-10-05-issue-895-wp2-wp3-lifecycle-resume.md) — Analysis covering WP2 lifecycle hardening and WP3 exact resume for structured execution as the canonical lossless training record.
 * [**2026-09-28 Issue #859 Date-Scoped Mechanical Spacing Analysis**](./analysis/2026-09-28-issue-859-date-scoped-mechanical-spacing-analysis.md) — Investigation into mechanical spacing of requirements constrained by specific date scopes.
