@@ -258,6 +258,7 @@ How agreed changes get made. Mutable, status-tracked, and expected to go stale �
 
 * [**Event taxonomy + HYROX fitness-race implementation plan**](./plans/2026-10-05-event-taxonomy-fitness-race-hyrox.md) — *Ready.* P0 implementation plan for fitness races and HYROX support following ADR-0048.
 * [**Issue #895 WP2 + WP3 — lifecycle and exact resume delivery**](./plans/2026-10-05-issue-895-wp2-wp3-lifecycle-resume.md) — *Implemented.* Scoped WP2/WP3 delivery for structured session resume state.
+* [**Firestore Security Rules Modularization & Budget Refactoring**](./plans/2026-10-08-firestore-rules-modularization-and-budget-refactor.md) — *In progress.* Rules and tooling refactoring.
 * [**Concurrent test-harness port isolation**](./plans/2026-10-concurrent-test-harness-port-isolation.md) — *In progress.* Plan for concurrent agent port conflicts.
 * [**Issue #953 — Implementation plan: rejected daily_recommendations writes**](./plans/2026-10-01-issue-953-recommendation-write-rejections.md) — *Implemented.* Plan regarding rejected daily_recommendations writes.
 * [**Issue #897 physical-capital assessment integration**](./plans/2026-09-30-issue-897-physical-capital-assessment-history.md) — *In progress.* Scoped implementation design for multidomain baseline testing, raw trial evidence, comparability, history/export and bounded goal/context reuse.
