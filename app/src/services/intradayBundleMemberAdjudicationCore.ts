@@ -197,6 +197,18 @@ export async function adjudicateIntradayBundleMembers(
         }
     }
 
+    const activePlanOccurrencesBySessionId = new Map<string, ExternalPlanSessionOccurrence[]>();
+    for (const occ of allOccurrences) {
+        if (isExternalPlanOccurrence(occ) && occ.externalPlanRef.planId === v4Plan.planId) {
+            const arr = activePlanOccurrencesBySessionId.get(occ.externalPlanRef.sessionId);
+            if (arr) {
+                arr.push(occ);
+            } else {
+                activePlanOccurrencesBySessionId.set(occ.externalPlanRef.sessionId, [occ]);
+            }
+        }
+    }
+
     // Build initial ledger inputs from today's occurrences & executions
     const currentLedgerInputs: OccurrenceLedgerInput[] = allOccurrences.map(occ => {
         let estimatedMinutes = 45;
@@ -286,12 +298,7 @@ export async function adjudicateIntradayBundleMembers(
             contentHash,
         };
 
-        const targetExistingOccurrences = allOccurrences.filter(
-            (occ): occ is ExternalPlanSessionOccurrence =>
-                isExternalPlanOccurrence(occ)
-                && occ.externalPlanRef.planId === v4Plan.planId
-                && occ.externalPlanRef.sessionId === targetSession.id,
-        );
+        const targetExistingOccurrences = activePlanOccurrencesBySessionId.get(targetSession.id) ?? [];
         const targetScheduledOccurrence = targetExistingOccurrences.find(occ => occ.state === 'scheduled');
         const targetSkippedOccurrence = targetExistingOccurrences.find(occ => occ.state === 'skipped');
         const targetActiveOrCompleted = targetExistingOccurrences.find(occ => occ.state === 'active' || occ.state === 'completed');
@@ -303,12 +310,8 @@ export async function adjudicateIntradayBundleMembers(
 
         if (targetSession.intraday.afterSessionId) {
             const predSessionId = targetSession.intraday.afterSessionId;
-            const predOccurrence = allOccurrences.find(
-                (occ): occ is ExternalPlanSessionOccurrence =>
-                    isExternalPlanOccurrence(occ)
-                    && occ.externalPlanRef.planId === v4Plan.planId
-                    && occ.externalPlanRef.sessionId === predSessionId
-                    && occ.state !== 'superseded',
+            const predOccurrence = (activePlanOccurrencesBySessionId.get(predSessionId) ?? []).find(
+                occ => occ.state !== 'superseded'
             );
 
             if (predOccurrence) {
