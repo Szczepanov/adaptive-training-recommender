@@ -95,3 +95,7 @@
 ## 2026-10-23 - Pre-compute filtered target collections into Maps to eliminate O(N) array scans inside nested iterations
 **Learning:** Calling `.filter()` and `.find()` repeatedly against the entire `allOccurrences` collection inside the `nonPrimaryBindings` loop to locate occurrences associated with a specific session ID causes O(N * M) performance scaling (where N is the number of total occurrences for the date and M is the number of bindings).
 **Action:** When filtering a unified collection by a sub-property (like `sessionId`) to process subsets in a loop, pre-compute a `Map<string, Item[]>` outside the loop, yielding O(1) constant-time access inside the loop instead of repeated array iteration.
+
+## 2026-10-25 - Avoid O(N*M) array filtering inside loops for dictionary construction
+**Learning:** Using `new Map(items.map(item => [item.id, entries.filter(e => e.parentId === item.id)]))` scales poorly, causing O(N * M) performance impact where N is the number of keys and M is the number of entries.
+**Action:** Pre-compute the grouped values using an O(N) loop approach (`for...of`) and a `Map.get() / arr.push()` pattern to build the grouped dictionary instead of calling `.filter()` inside `.map()`.
