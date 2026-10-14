@@ -167,6 +167,10 @@ function recommendation(
                       plannedDose: { volume: 1, intensity: 1 },
                       executionDose: { volume: 1, intensity: 1 },
                       droppedContributorObjectives: [],
+                      season: {
+                          policyVersion: '2026-10-season-roadmap-v1', primaryEventId: 'a', conflicts: [], supportingScale: null,
+                          entries: [{ eventId: 'a', title: 'A', date, role: 'primary_peak', daysToEvent: 5, status: 'upcoming', dateOwner: true }],
+                      },
                       externalPlan: {
                           planId: 'synthetic',
                           revision: 1,

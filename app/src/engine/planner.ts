@@ -2176,7 +2176,7 @@ export function generateWeekAheadPlan(
         const priorObjectiveIds = new Set(microcycle.objectives.map(objective => objective.id));
         const authority = activateAuthority(date);
         const reconciled = authority ? { microcycle, droppedContributorObjectives: resolveMultiEventObjectives(
-            events, date, periodization, microcycle.objectives).droppedContributorObjectives, historicalReplayObjectiveIds: [] }
+            events, date, periodization, microcycle.objectives, { trainThroughReplacement: !authority.evergreen }).droppedContributorObjectives, historicalReplayObjectiveIds: [] }
             : reconcileObjectivesForDate(microcycle, events, date, todayDate, periodization, creditMemory, projectionExposures, authoredPlanBlocks, suppliedPlanDefinition, eventStrengthSupportSessions);
         if (!authority) microcycle = reconciled.microcycle;
         if (!authority && seed.completedExposures) {

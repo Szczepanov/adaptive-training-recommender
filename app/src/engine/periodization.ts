@@ -622,7 +622,10 @@ export function resolveMultiEventObjectives(
     events: UserEvent[],
     currentDateStr: string,
     authorityResult: PeriodizationResult,
-    authorityObjectives: WeeklyObjective[]
+    authorityObjectives: WeeklyObjective[],
+    /** `trainThroughReplacement: false` for evergreen-programmed dates, whose executable week is
+     *  rebuilt from capacity-packed coverage roles; a replacement there would be recorded, not applied. */
+    options: { trainThroughReplacement?: boolean } = {},
 ): MultiEventObjectiveResolution {
     const merged: WeeklyObjective[] = authorityObjectives.map(objective => ({ ...objective }));
     const byKey = new Map<ObjectiveKey, WeeklyObjective>(merged.map(objective => [objective.key, objective]));
@@ -667,7 +670,8 @@ export function resolveMultiEventObjectives(
         // Issue #929 (ADR-0050 D3): a C race is race craft, never a layered objective set. A
         // nearby one stands in for one of the authority's quality sessions instead.
         if (roleByEventId.get(event.id) === 'train_through') {
-            if (daysToEvent > TRAIN_THROUGH_REPLACEMENT_LEAD_DAYS || authorityResult.phase.taperActive) continue;
+            if (options.trainThroughReplacement === false || daysToEvent > TRAIN_THROUGH_REPLACEMENT_LEAD_DAYS
+                || authorityResult.phase.taperActive) continue;
             const replaced = TRAIN_THROUGH_QUALITY_KEYS
                 .map(key => byKey.get(key))
                 .find((objective): objective is WeeklyObjective => objective !== undefined

@@ -267,13 +267,13 @@ it('explains each event role and the supporting-event dose limit from the persis
             { eventId: 'b-race', title: 'B race', date: '2026-07-04', role: 'benchmark', daysToEvent: 2, status: 'upcoming', dateOwner: true },
         ],
         conflicts: [],
-        supportingScale: { eventId: 'b-race', eventTitle: 'B race', role: 'benchmark', kind: 'taper', volumeScale: 0.91, intensityScale: 1 },
+        supportingScale: { eventId: 'b-race', eventTitle: 'B race', role: 'benchmark', kind: 'taper', volumeScale: 0.91, intensityScale: null },
     } };
     const text = enhanceContextBriefForPlanning(BASE, handoffInput({ recommendations: [rec] }));
     expect(text).toContain('Season roadmap (planning context; one event owns each date)');
     expect(text).toContain('A race (2026-09-12, in 80 day(s)): primary season target');
     expect(text).toContain('B race (2026-07-04, in 2 day(s)): benchmark (limited taper)');
-    expect(text).toContain('Supporting-event dose limit today: B race taper (volume x0.91, intensity x1.00)');
+    expect(text).toContain('Supporting-event dose limit today: B race taper (volume x0.91, intensity unchanged)');
     const morning = enhanceContextBriefForPlanning(BASE, handoffInput({ recommendations: [rec], purpose: 'morning' }));
     expect(morning).toContain('Season roadmap');
 });

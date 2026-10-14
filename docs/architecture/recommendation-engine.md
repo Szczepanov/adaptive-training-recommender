@@ -1429,7 +1429,8 @@ days at 0.8 / 0.6. The limit is ignored while the primary target tapers or recov
 nearer race never flattens the surrounding block or derails the primary trajectory. A C
 (`train_through`) race contributes no objectives; within 3 days of it one quality objective
 (threshold, VO2, surge, then race-specific) of the governing event loses one required credit,
-recorded as a `train_through_replaces_key_session` dropped contributor objective.
+recorded as a `train_through_replaces_key_session` dropped contributor objective. Evergreen-programmed
+dates (capacity-packed coverage roles) apply and record no replacement.
 `RecommendationAudit.season` (`SeasonTrace`) persists the roadmap, conflicts and the active
 dose limit when more than one event is involved, and the Context Brief renders each event's
 role from it. Current status of the behavioral increments is tracked on the plans board.

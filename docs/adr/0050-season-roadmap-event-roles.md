@@ -51,7 +51,12 @@ taper is prepared up to its date for the recovery-gap check. Conflicts never rew
   events get a short, bounded recovery. C events apply neither.
 - A C event does not contribute its own objectives; an upcoming C race within a short lead
   window reserves one quality slot by reducing the authority's quality requirement by one
-  (floor 0), recorded as a typed adjustment. The race itself is performed training credited
+  (floor 0), recorded as a typed adjustment. The replacement applies only to dates whose
+  executable week is built from objectives (structured plan and demand-derived programming);
+  evergreen-programmed dates (before the structured build, e.g. a distant A) rebuild the week
+  from capacity-packed coverage roles, so no replacement is applied or recorded there and a
+  C race still stops layering its own objectives. Replacing an evergreen quality role is a
+  separate follow-up. The race itself is performed training credited
   by the normal history path after the date.
 - The primary target and its development trajectory are never replaced by a nearer supporting event.
 

@@ -401,7 +401,7 @@ function renderSeasonRoadmap(input: ContextBriefPlanningHandoffInput): string[] 
         '- Season roadmap (planning context; one event owns each date):',
         ...describeSeasonRoadmap(season),
         ...(season.supportingScale
-            ? [`- Supporting-event dose limit today: ${season.supportingScale.eventTitle} ${season.supportingScale.kind} (volume x${season.supportingScale.volumeScale.toFixed(2)}, intensity x${season.supportingScale.intensityScale.toFixed(2)}).`]
+            ? [`- Supporting-event dose limit today: ${season.supportingScale.eventTitle} ${season.supportingScale.kind} (volume x${season.supportingScale.volumeScale.toFixed(2)}, intensity ${season.supportingScale.intensityScale === null ? 'unchanged' : `x${season.supportingScale.intensityScale.toFixed(2)}`}).`]
             : []),
     ];
 }

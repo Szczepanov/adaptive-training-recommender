@@ -133,7 +133,8 @@ function isEnduranceEvent(event: UserEvent | null | undefined): boolean {
 /** Attributes intent-aware ranking policies actually evaluated for the supplied plan state. */
 export function trainingIntentKnowledgeRefs(intent: {
     history: readonly unknown[];
-    periodization: { focusEvent: UserEvent | null; phase: { taperActive: boolean } };
+    periodization: { focusEvent: UserEvent | null; phase: { taperActive: boolean; supportingEventScale?: unknown } };
+    droppedContributorObjectives?: readonly { reason: string }[];
 }, options: { rollingLoadBudgetEvaluated?: boolean; olympicTaperPolicyEvaluated?: boolean } = {}): string[] {
     const refs: string[] = [
         KNOWLEDGE_CLAIM_IDS.enduranceIntensityDistribution,
@@ -158,6 +159,11 @@ export function trainingIntentKnowledgeRefs(intent: {
     }
     if (options.olympicTaperPolicyEvaluated) {
         refs.push(KNOWLEDGE_CLAIM_IDS.olympicTriathlonPlanBudgetPolicy);
+    }
+
+    if (intent.periodization.phase.supportingEventScale
+        || intent.droppedContributorObjectives?.some(drop => drop.reason === 'train_through_replaces_key_session')) {
+        refs.push(KNOWLEDGE_CLAIM_IDS.seasonRoadmapPolicy);
     }
 
     if (intent.periodization.phase.taperActive && isEnduranceEvent(intent.periodization.focusEvent)) {

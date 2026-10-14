@@ -237,7 +237,7 @@ export function resolvePlannedDose(
  * this event/date.
  */
 export function resolvePlannedDoseForDate(
-    phase: { volumeScale: number; intensityScale: number; supportingEventScale?: { volumeScale: number; intensityScale: number } },
+    phase: { volumeScale: number; intensityScale: number; supportingEventScale?: { volumeScale: number; intensityScale: number | null } },
     objectives: readonly WeeklyObjective[],
     unresolvedObjectives: readonly WeeklyObjective[],
     planDefinition: PlanDefinition | null | undefined,
@@ -462,7 +462,10 @@ export async function resolveTrainingIntent(
     // by today's decision (evaluateTrainingWithIntent), tomorrow's provisional plan
     // (evaluateNextDayPlanWithIntent), and the week-ahead strip
     // (generateWeekAheadPlanWithIntent) -- all three call resolveTrainingIntent.
-    const multiEventResolution = resolveMultiEventObjectives(events, date, periodization, builtMicrocycle.objectives);
+    // Evergreen programming rebuilds the executable week from capacity-packed coverage roles, so a
+    // train-through replacement here would be recorded but never applied; skip it there.
+    const multiEventResolution = resolveMultiEventObjectives(events, date, periodization, builtMicrocycle.objectives,
+        { trainThroughReplacement: !usesEvergreenProgramming(planningContext) });
     const microcycle: MicrocycleState = { ...builtMicrocycle, objectives: multiEventResolution.objectives };
     const unresolvedObjectives = getUnresolvedObjectives(microcycle);
     const branchInternalStrain = computeInternalResponseStrain(readiness);

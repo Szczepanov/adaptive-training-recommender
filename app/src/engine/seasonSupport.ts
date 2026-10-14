@@ -44,7 +44,8 @@ export interface SupportingEventScale {
     role: SupportingRole;
     kind: 'taper' | 'recovery';
     volumeScale: number;
-    intensityScale: number;
+    /** Null when the limit leaves intensity untouched (a taper only reduces volume). */
+    intensityScale: number | null;
 }
 
 function isSupportingRole(role: SeasonRoadmapEntry['role']): role is SupportingRole {
@@ -66,10 +67,12 @@ export function resolveSupportingEventScale(
             const progress = taper.durationDays > 0
                 ? Math.min(1, Math.max(0, 1 - entry.daysToEvent / taper.durationDays))
                 : 1;
+            // No reduction yet on the taper's first day: do not clip a Build/Specificity phase early.
+            if (progress <= 0) continue;
             candidates.push({
                 eventId: entry.eventId, eventTitle: entry.title, role: entry.role, kind: 'taper',
                 volumeScale: 1 - SUPPORTING_TAPER_MAX_VOLUME_REDUCTION[entry.role] * progress,
-                intensityScale: 1,
+                intensityScale: null,
             });
         } else {
             const policy = SUPPORTING_RECOVERY_POLICY[entry.role];
@@ -82,7 +85,7 @@ export function resolveSupportingEventScale(
         }
     }
     // Strongest limit wins; roadmap order breaks ties (sort is stable).
-    return candidates.sort((a, b) => a.volumeScale - b.volumeScale || a.intensityScale - b.intensityScale)[0] ?? null;
+    return candidates.sort((a, b) => a.volumeScale - b.volumeScale || (a.intensityScale ?? 1) - (b.intensityScale ?? 1))[0] ?? null;
 }
 
 /** Applies a supporting scale as a minimum -- the one place a phase is narrowed. */
@@ -91,7 +94,7 @@ export function applySupportingEventScale(phase: PhaseWeights, scale: Supporting
     return {
         ...phase,
         volumeScale: Math.min(phase.volumeScale, scale.volumeScale),
-        intensityScale: Math.min(phase.intensityScale, scale.intensityScale),
+        intensityScale: scale.intensityScale === null ? phase.intensityScale : Math.min(phase.intensityScale, scale.intensityScale),
         supportingEventScale: scale,
     };
 }
@@ -101,6 +104,7 @@ export function applySupportingEventScale(phase: PhaseWeights, scale: Supporting
 const TRACE_MAX_ENTRIES = 32;
 const TRACE_MAX_CONFLICTS = 64;
 const TRACE_MAX_TEXT = 400;
+const TRACE_MAX_EVENT_IDS = 8;
 
 export type SeasonTraceEntry = Pick<SeasonRoadmapEntry, 'eventId' | 'title' | 'date' | 'role' | 'daysToEvent' | 'status' | 'dateOwner'>;
 
@@ -126,7 +130,7 @@ export function seasonTrace(periodization: Pick<PeriodizationResult, 'seasonRoad
         entries: roadmap.entries.slice(0, TRACE_MAX_ENTRIES).map(({ eventId, title, date, role, daysToEvent, status, dateOwner }) =>
             ({ eventId, title: clip(title), date, role, daysToEvent, status, dateOwner })),
         conflicts: roadmap.conflicts.slice(0, TRACE_MAX_CONFLICTS).map(conflict =>
-            ({ ...conflict, eventIds: [...conflict.eventIds], message: clip(conflict.message) })),
+            ({ ...conflict, eventIds: conflict.eventIds.slice(0, TRACE_MAX_EVENT_IDS), message: clip(conflict.message) })),
         supportingScale: scale ? { ...scale, eventTitle: clip(scale.eventTitle) } : null,
     };
 }
@@ -154,13 +158,13 @@ export function isValidSeasonTrace(value: unknown): value is SeasonTrace {
         && hasExactKeys(conflict, ['kind', 'severity', 'date', 'eventIds', 'message'])
         && ['same_day_authority', 'inside_peak_taper', 'insufficient_peak_recovery'].includes(conflict.kind)
         && ['blocking', 'advisory'].includes(conflict.severity) && isDate(conflict.date)
-        && Array.isArray(conflict.eventIds) && conflict.eventIds.length <= 8 && conflict.eventIds.every(isText)
+        && Array.isArray(conflict.eventIds) && conflict.eventIds.length <= TRACE_MAX_EVENT_IDS && conflict.eventIds.every(isText)
         && isText(conflict.message));
     const scale = trace.supportingScale;
     const scaleValid = scale === null || (typeof scale === 'object'
         && hasExactKeys(scale, ['eventId', 'eventTitle', 'role', 'kind', 'volumeScale', 'intensityScale'])
         && isText(scale.eventId) && isText(scale.eventTitle) && ['benchmark_peak', 'benchmark'].includes(scale.role)
         && ['taper', 'recovery'].includes(scale.kind)
-        && [scale.volumeScale, scale.intensityScale].every(item => typeof item === 'number' && item > 0 && item <= 1));
+        && [scale.volumeScale, scale.intensityScale].every((item, index) => (index === 1 && item === null) || (typeof item === 'number' && item > 0 && item <= 1)));
     return entriesValid && conflictsValid && scaleValid;
 }

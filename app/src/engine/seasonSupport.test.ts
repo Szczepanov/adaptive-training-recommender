@@ -8,6 +8,7 @@ import {
     SUPPORTING_TAPER_MAX_VOLUME_REDUCTION,
     TRAIN_THROUGH_REPLACEMENT_LEAD_DAYS,
 } from './seasonSupport';
+import { trainingIntentKnowledgeRefs } from './knowledgeLineage';
 import { getActiveKnowledgeClaim, KNOWLEDGE_CLAIM_IDS } from '../knowledge/sportsKnowledgeRegistry';
 import type { UserEvent, WeeklyObjective } from './models';
 
@@ -37,6 +38,19 @@ describe('supporting-event dose limits', () => {
         expect(result.phase.volumeScale).toBeCloseTo(1 - SUPPORTING_TAPER_MAX_VOLUME_REDUCTION.benchmark * 0.6, 10);
         expect(result.phase.intensityScale).toBe(0.9);
         expect(result.phase.taperActive).toBe(false);
+    });
+
+    it('never clips intensity during a taper, including Specificity, and waits for real reduction', () => {
+        const aLater = event({ id: 'a-later', date: '2026-07-20', priority: 'A' });
+        const bNear = event({ id: 'b-near', date: '2026-07-10', priority: 'B' });
+        const first = evaluatePeriodizationPhase([aLater, bNear], '2026-07-05');
+        expect(first.phase.phaseName).toBe('Specificity');
+        expect(first.phase.supportingEventScale).toBeUndefined();
+        expect(first.phase.intensityScale).toBe(1.1);
+        const next = evaluatePeriodizationPhase([aLater, bNear], '2026-07-06');
+        expect(next.phase.supportingEventScale).toMatchObject({ kind: 'taper', intensityScale: null });
+        expect(next.phase.intensityScale).toBe(1.1);
+        expect(next.phase.volumeScale).toBeLessThan(1);
     });
 
     it('does not touch the dose outside the supporting taper or for a C race', () => {
@@ -103,6 +117,23 @@ describe('C race as key-session replacement', () => {
         expect(far.droppedContributorObjectives).toEqual([]);
     });
 
+    it('does not claim a replacement for evergreen-programmed dates', () => {
+        const authority = evaluatePeriodizationPhase([A, nearC], '2026-06-30');
+        const resolution = resolveMultiEventObjectives([A, nearC], '2026-06-30', authority, [objective('threshold_quality', 2)],
+            { trainThroughReplacement: false });
+        expect(resolution.objectives[0].requiredCredit).toBe(2);
+        expect(resolution.droppedContributorObjectives).toEqual([]);
+    });
+
+    it('records the season claim in the decision knowledge lineage', () => {
+        const base = { history: [], periodization: { focusEvent: null, phase: { taperActive: false } } };
+        expect(trainingIntentKnowledgeRefs(base)).not.toContain(KNOWLEDGE_CLAIM_IDS.seasonRoadmapPolicy);
+        expect(trainingIntentKnowledgeRefs({ ...base, periodization: { focusEvent: null, phase: { taperActive: false, supportingEventScale: {} } } }))
+            .toContain(KNOWLEDGE_CLAIM_IDS.seasonRoadmapPolicy);
+        expect(trainingIntentKnowledgeRefs({ ...base, droppedContributorObjectives: [{ reason: 'train_through_replaces_key_session' }] }))
+            .toContain(KNOWLEDGE_CLAIM_IDS.seasonRoadmapPolicy);
+    });
+
     it('does not mutate the authority objectives it was given', () => {
         const input = [objective('threshold_quality', 2)];
         const authority = evaluatePeriodizationPhase([A, nearC], '2026-06-30');
@@ -128,6 +159,10 @@ describe('season trace', () => {
         expect(isValidSeasonTrace({ ...trace, supportingScale: { ...trace.supportingScale!, volumeScale: 0 } })).toBe(false);
         expect(isValidSeasonTrace({ ...trace, conflicts: [{ kind: 'x' }] })).toBe(false);
         expect(isValidSeasonTrace(null)).toBe(false);
+        const crowded = Array.from({ length: 12 }, (_, index) => event({ id: `c-${index}`, date: '2026-07-10', priority: 'C' }));
+        const crowdedTrace = seasonTrace(evaluatePeriodizationPhase(crowded, '2026-07-02'))!;
+        expect(crowdedTrace.conflicts[0].eventIds).toHaveLength(8);
+        expect(isValidSeasonTrace(crowdedTrace)).toBe(true);
     });
 });
 
