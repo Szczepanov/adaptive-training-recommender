@@ -30,13 +30,15 @@ test('a validated v6 coach plan completes and Garmin enriches the same next-brie
   await page.getByRole('button', { name: 'More' }).click();
   await page.getByRole('button', { name: /Data/ }).click();
   await page.getByRole('button', { name: 'Activities', exact: true }).click();
-  // The canonical Activities read model is off by default in .env.e2e. Its
-  // service-level fallback exercises real reconciliation without fabricating linkage.
-  await page.evaluate(async ({ userId, today, through }) => {
+  // .env.e2e enables the canonical Activities read model, so opening Activities already
+  // sweeps; calling the window loader directly additionally pins the sweep to this date
+  // window without fabricating linkage.
+  const windowResult = await page.evaluate(async ({ userId, today, through }) => {
     const modulePath = '/src/training-occurrence/canonicalActivitiesWindow.ts';
     const { loadCanonicalActivitiesWindow } = await import(/* @vite-ignore */ modulePath);
-    await loadCanonicalActivitiesWindow(userId, today, through);
+    return loadCanonicalActivitiesWindow(userId, today, through);
   }, { userId: athlete.userId, today, through: addDaysToLocalDateString(today, 1) });
+  expect(windowResult).toMatchObject({ status: 'available', reconciliationSweep: 'completed' });
   await expect.poll(async () => (await readPerformedOccurrences(athlete, today)).map(item => ({ id: item.performedOccurrenceId, refs: item.sourceRefs }))).toEqual([
     { id: performed.performedOccurrenceId, refs: expect.arrayContaining([
       expect.objectContaining({ kind: 'structured_execution', executionId: execution.executionId }),
