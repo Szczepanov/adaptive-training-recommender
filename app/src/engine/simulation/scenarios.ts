@@ -355,6 +355,22 @@ export const LONG_HORIZON_DEVELOPMENT_SCENARIO: AthleteScenario = {
     })),
 };
 
+const seasonA = eventOn('season-a-gran-fondo', 70, 'cycling_event', 'gran_fondo', 'A');
+export const SEASON_ROADMAP_SCENARIO: AthleteScenario = {
+    id: 'season_a_b_c_cycling_roadmap', label: 'Cycling season with A, B+, B and C events (#929)',
+    description: 'A distant A gran fondo plus earlier C, B and B+ events: the A event keeps the macrocycle and taper, the B/B+ races get proportionate taper limits, and the C race reserves a quality slot instead of layering objectives.',
+    events: [
+        eventOn('season-c-crit', 14, 'cycling_event', 'criterium', 'C'),
+        eventOn('season-b-club', 28, 'cycling_event', 'road_race', 'B'),
+        { ...eventOn('season-b-plus-stage', 42, 'cycling_event', 'road_race', 'B'), starPriority: 4 },
+        seasonA,
+    ],
+    context: context({ indoor_bike: true, free_weights: true }, ['Cycling', 'Strength'], [], { weekdayMaxMinutes: 90, weekendMaxMinutes: 150 }),
+    startDate: START_DATE, weeks: 10, readinessForWeek: () => stableReadiness(),
+    initialHistory: capabilityReadyHistory(),
+    tags: ['season-roadmap'],
+};
+
 export const SCENARIOS: AthleteScenario[] = [
     {
         id: 'hyrox_generic_event_goal',
@@ -893,3 +909,4 @@ export const SCENARIOS: AthleteScenario[] = [
 ];
 
 SCENARIOS.push(LONG_HORIZON_DEVELOPMENT_SCENARIO);
+SCENARIOS.push(SEASON_ROADMAP_SCENARIO);

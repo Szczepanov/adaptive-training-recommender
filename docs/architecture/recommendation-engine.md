@@ -1430,7 +1430,11 @@ nearer race never flattens the surrounding block or derails the primary trajecto
 (`train_through`) race contributes no objectives; within 3 days of it one quality objective
 (threshold, VO2, surge, then race-specific) of the governing event loses one required credit,
 recorded as a `train_through_replaces_key_session` dropped contributor objective. Evergreen-programmed
-dates (capacity-packed coverage roles) apply and record no replacement.
+dates (capacity-packed coverage roles) apply and record no replacement. A completed or DNF
+supporting event inside an authored development block, after its last confirmed review, adds a
+non-blocking `supporting_outcome_review_advised:<eventId>` advisory (`supportingOutcomeReviewAdvisories`);
+the block stays executable and the existing scheduled-review gate forces the reviewed revision.
+No progression is inferred.
 `RecommendationAudit.season` (`SeasonTrace`) persists the roadmap, conflicts and the active
 dose limit when more than one event is involved, and the Context Brief renders each event's
 role from it. Current status of the behavioral increments is tracked on the plans board.

@@ -11,11 +11,14 @@ import { addDaysToLocalDateString, getDayDiff } from '../utils/localDate';
 import { workoutIdForTemplateId } from './coverage';
 import type { CompletedExposure } from './trainingHistory';
 import type { PlanningContext } from './planningMode';
+import type { SeasonRoadmap } from './seasonRoadmap';
 
 export const DEVELOPMENT_VO2_WORKOUT_IDS = ['cycling_vo2_6x3_01'] as const;
 export interface DevelopmentAuthority {
     block: IntentBlock | null;
     diagnostics: string[];
+    /** Non-blocking notes (#929): the block stays executable; surfaced in the trace and brief. */
+    advisories?: string[];
     executableEndDate?: string;
 }
 export interface DevelopmentTrace {
@@ -80,7 +83,7 @@ export function developmentTrace(context: PlanningContext, exposures: readonly C
                     : 'process-only intent; no comparable measured gap supplied'}.` };
         }) ?? [],
         recentCompletedExposures: exposures.length, evidenceLimitations: 'Completed exposure establishes process only; adaptation gaps and follow-up tolerance remain unverified without comparable assessments and response evidence.',
-        diagnostics: [...context.development.diagnostics] };
+        diagnostics: [...context.development.diagnostics, ...(context.development.advisories ?? [])] };
 }
 export function revalidateDevelopmentEvidence(context: PlanningContext, exposures: readonly CompletedExposure[], observedWindowDays: number,
     activeRestriction: boolean): PlanningContext {
@@ -122,7 +125,25 @@ function exactIds(objective: BlockObjectiveDefinition): readonly string[] {
     const ids = EVERGREEN_GENERAL_COVERAGE_SET.coverage.find(role => role.key === objective.coverageKey)?.workoutIds ?? [];
     return objective.sport === 'cycling' ? ids.filter(id => WORKOUTS_BY_ID.get(id)?.modality === 'cycling') : ids;
 }
-export function resolveDevelopmentAuthority(event: UserEvent, date: string, blocks: readonly IntentBlock[]): DevelopmentAuthority {
+/**
+ * Issue #929 (ADR-0050 D4): a completed or DNF supporting event is evidence the block was
+ * authored without. When one falls inside the block, after the review that last confirmed it
+ * (inferred as `nextReviewDate - reviewCadenceDays`), an advisory asks that the next scheduled
+ * review consider it. The block is NOT withheld: reviews are only accepted at their scheduled
+ * date, so the existing `block_review_due` gate is what forces the reviewed revision. No
+ * automatic progression or success claim is inferred. Only outcomes inside the roadmap's
+ * lookback are visible, and the inferred review date can be early when a reviewed
+ * revision's next date was capped at the block end, so this is a hint, never an authority.
+ */
+export function supportingOutcomeReviewAdvisories(block: IntentBlock, eventId: string, roadmap: SeasonRoadmap | undefined): string[] {
+    if (!roadmap) return [];
+    const lastReview = addDaysToLocalDateString(block.reviewSchedule.nextReviewDate, -block.reviewSchedule.reviewCadenceDays);
+    return roadmap.entries
+        .filter(entry => entry.status !== 'upcoming' && entry.eventId !== eventId
+            && entry.date >= block.dateRange.startDate && entry.date > lastReview)
+        .map(entry => `supporting_outcome_review_advised:${entry.eventId}`);
+}
+export function resolveDevelopmentAuthority(event: UserEvent, date: string, blocks: readonly IntentBlock[], roadmap?: SeasonRoadmap): DevelopmentAuthority {
     const candidates = blocks.filter(block => block.eventBinding?.eventId === event.id
         && block.dateRange.startDate <= date && date <= block.dateRange.endDate);
     if (candidates.length !== 1) return { block: null, diagnostics: [candidates.length ? 'conflicting_active_blocks' : 'no_active_event_bound_block'] };
@@ -151,7 +172,8 @@ export function resolveDevelopmentAuthority(event: UserEvent, date: string, bloc
         if ((objective.exitCriteria?.maxWeeksInBlock !== undefined && elapsedWeeks >= objective.exitCriteria.maxWeeksInBlock)
             || (objective.exitCriteria?.stagnationReviewAfterWeeks !== undefined && elapsedWeeks >= objective.exitCriteria.stagnationReviewAfterWeeks)) diagnostics.push(`objective_review_due:${objective.id}`);
     }
-    return { block: diagnostics.length ? null : block, diagnostics };
+    return { block: diagnostics.length ? null : block, diagnostics,
+        ...(diagnostics.length ? {} : { advisories: supportingOutcomeReviewAdvisories(block, event.id, roadmap) }) };
 }
 
 /** Authored intent replaces generic performance priors; safety withholding and health floors remain owned by Evergreen. */
