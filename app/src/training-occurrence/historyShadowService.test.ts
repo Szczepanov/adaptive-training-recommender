@@ -37,6 +37,31 @@ describe('computeHistoryShadowDiffForUser', () => {
         expect(diff).toBeNull();
     });
 
+    it.each([
+        [{ status: 'execution_unavailable' }, true],
+        [{ status: 'entries_unavailable' }, true],
+        [{ status: 'definition_unresolved', definition: 'UNAVAILABLE' }, true],
+        [{ status: 'execution_missing' }, false],
+        [{ status: 'execution_invalid' }, false],
+        [{ status: 'definition_unresolved', definition: 'MISSING' }, false],
+        [{ status: 'definition_unresolved', definition: 'INVALID' }, false],
+    ] as const)('structured read %j: transient failures skip the diff, persistent ones keep diffing (skipped=%s)', async (structured, skipped) => {
+        vi.mocked(activityService.getActivitiesInRange).mockResolvedValue({ status: 'AVAILABLE', data: [], revision: null });
+        vi.mocked(recommendationService.getRecommendationsInRange).mockResolvedValue({ status: 'AVAILABLE', data: [], revision: null });
+        vi.mocked(getCompletedWorkoutsInRange).mockResolvedValue([{
+            performedOccurrenceId: 'pto-1',
+            sourceKeys: [],
+            sourceBadge: { hasStructured: true, hasProvider: false, providers: [] },
+            reconciliation: { state: 'single_source' },
+            garminExerciseSetsAreDiagnosticOnly: true,
+            sourceReads: { ...completeReads, structured },
+        }]);
+
+        const diff = await computeHistoryShadowDiffForUser('user-1', '2026-08-20', '2026-08-27');
+
+        expect(diff === null).toBe(skipped);
+    });
+
     it('returns null instead of a false evidence-tier regression when a structured source could not be read', async () => {
         vi.mocked(activityService.getActivitiesInRange).mockResolvedValue({ status: 'AVAILABLE', data: [], revision: null });
         vi.mocked(recommendationService.getRecommendationsInRange).mockResolvedValue({ status: 'AVAILABLE', data: [], revision: null });

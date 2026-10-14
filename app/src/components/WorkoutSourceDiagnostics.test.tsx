@@ -143,6 +143,23 @@ describe('WorkoutSourceDiagnostics -- unknown never renders as empty, zero or he
     });
 });
 
+describe('matching-check wording agrees with the state-6 row for every sweep status', () => {
+    it.each([
+        ['completed', 'Latest matching check: completed.'],
+        ['incomplete', 'Latest matching check: ran but could not evaluate every recording.'],
+        ['failed', 'Latest matching check: failed.'],
+        ['not_run', 'Latest matching check: not run on this load.'],
+    ] as const)('%s', (sweep, line) => {
+        const html = render(structuredOnlyView({ sourceReads: { reconciliationSweep: sweep } }));
+        expect(html).toContain(line);
+        if (sweep === 'incomplete') {
+            // an incomplete check did run, so it must never be described as "not run"
+            expect(html).not.toContain('not run on this load');
+            expect(html).toContain('could not evaluate every recording, so it is unknown whether a counterpart exists');
+        }
+    });
+});
+
 describe('WorkoutWindowProjectionFailed', () => {
     it('names state 8 and refuses to look like an empty list', () => {
         const html = renderToStaticMarkup(<WorkoutWindowProjectionFailed range={{ from: '2026-08-20', toExclusive: '2026-08-27' }} />);

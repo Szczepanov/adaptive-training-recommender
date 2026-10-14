@@ -222,6 +222,49 @@ describe('getCompletedWorkoutsInRange multi-source and ambiguity caveats (#895 W
         expect(flag('pto-same-kind')).toBe(false); // the matcher only pairs opposite source kinds
     });
 
+    it('also sees an ambiguous partner one local day OUTSIDE the displayed window', async () => {
+        vi.mocked(sessionExecutionService.getExecution).mockResolvedValue({ status: 'MISSING' });
+        const inWindowFirstDay = occurrence({ performedOccurrenceId: 'pto-first-day', localDate: '2026-08-20' });
+        const inWindowLastDay = occurrence({ performedOccurrenceId: 'pto-last-day', localDate: '2026-08-26' });
+        const ambiguousBefore = occurrence({ performedOccurrenceId: 'pto-before', localDate: '2026-08-19', sourceRefs: [garminRef], reconciliation: { state: 'ambiguous' } });
+        const ambiguousAfter = occurrence({ performedOccurrenceId: 'pto-after', localDate: '2026-08-27', sourceRefs: [garminRef], reconciliation: { state: 'ambiguous' } });
+        vi.mocked(repo.queryActiveInDateWindow).mockImplementation(async (_user, from, to) => {
+            if (from === '2026-08-19' && to === '2026-08-19') return [ambiguousBefore];
+            if (from === '2026-08-27' && to === '2026-08-27') return [ambiguousAfter];
+            return [inWindowFirstDay, inWindowLastDay];
+        });
+
+        const views = await getCompletedWorkoutsInRange('user-1', '2026-08-20', '2026-08-27');
+
+        expect(views.map(view => view.performedOccurrenceId).sort()).toEqual(['pto-first-day', 'pto-last-day']);
+        expect(views.every(view => view.sourceReads.ambiguousCounterpart)).toBe(true);
+    });
+
+    it('does not flag a middle-of-window row because of an ambiguous partner outside the window', async () => {
+        vi.mocked(sessionExecutionService.getExecution).mockResolvedValue({ status: 'MISSING' });
+        const ambiguousBefore = occurrence({ performedOccurrenceId: 'pto-before', localDate: '2026-08-19', sourceRefs: [garminRef], reconciliation: { state: 'ambiguous' } });
+        vi.mocked(repo.queryActiveInDateWindow).mockImplementation(async (_user, from, to) => (
+            from === '2026-08-19' && to === '2026-08-19' ? [ambiguousBefore] : [occurrence({ localDate: '2026-08-23' })]
+        ));
+        const [view] = await getCompletedWorkoutsInRange('user-1', '2026-08-20', '2026-08-27');
+        expect(view.sourceReads.ambiguousCounterpart).toBe(false);
+    });
+
+    it('treats an unreadable edge as an unknown counterpart for edge-day rows only', async () => {
+        vi.mocked(sessionExecutionService.getExecution).mockResolvedValue({ status: 'MISSING' });
+        vi.mocked(repo.queryActiveInDateWindow).mockImplementation(async (_user, from, to) => {
+            if (from === to) throw new Error('edge read failed');
+            return [
+                occurrence({ performedOccurrenceId: 'pto-edge', localDate: '2026-08-20' }),
+                occurrence({ performedOccurrenceId: 'pto-middle', localDate: '2026-08-23' }),
+            ];
+        });
+        const views = await getCompletedWorkoutsInRange('user-1', '2026-08-20', '2026-08-27');
+        const flag = (id: string) => views.find(view => view.performedOccurrenceId === id)!.sourceReads.ambiguousCounterpart;
+        expect(flag('pto-edge')).toBe(true);
+        expect(flag('pto-middle')).toBe(false);
+    });
+
     it('does not mark anything when nothing is ambiguous', async () => {
         vi.mocked(sessionExecutionService.getExecution).mockResolvedValue({ status: 'MISSING' });
         vi.mocked(repo.queryActiveInDateWindow).mockResolvedValue([occurrence()]);

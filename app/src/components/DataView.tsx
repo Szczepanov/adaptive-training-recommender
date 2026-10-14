@@ -172,8 +172,11 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery', onNav
     let cancelled = false;
     const startInclusive = addDaysToLocalDateString(briefDate, -6);
     const throughExclusive = addDaysToLocalDateString(briefDate, 1);
-    loadCanonicalActivitiesWindow(userId, startInclusive, throughExclusive).then(({ workouts, reconciliationSweep }) => {
-      if (!cancelled) setCanonicalWorkoutWindow({ userId, asOfDate: briefDate, workouts, reconciliationSweep });
+    loadCanonicalActivitiesWindow(userId, startInclusive, throughExclusive).then((window) => {
+      if (cancelled) return;
+      setCanonicalWorkoutWindow(window.status === 'available'
+        ? { userId, asOfDate: briefDate, workouts: window.workouts, reconciliationSweep: window.reconciliationSweep }
+        : { userId, asOfDate: briefDate, workouts: null, error: true, reconciliationSweep: window.reconciliationSweep });
     }).catch(err => {
       console.warn('[training-occurrence] canonical activities read failed', err);
       if (!cancelled) setCanonicalWorkoutWindow({ userId, asOfDate: briefDate, workouts: null, error: true });

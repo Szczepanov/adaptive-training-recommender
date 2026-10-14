@@ -250,7 +250,7 @@ States are independent, so co-occurring failures are all reported.
 | 3 | `garmin_activity_absent` | `sourceReads.provider` | `no_provider_linked`; `activity_not_in_read_window` (the read window is bounded, so this is deliberately not "deleted"; also reported when one of several attached Garmin refs is missing); unreadable activities are `not_observable` |
 | 4 | `garmin_detail_unavailable` | `NormalizedGarminActivity.exerciseSets` | `exerciseSets` is written only when the detail endpoint succeeded. Present means `clear`. An omitted key on a strength activity is `not_observable` (`detail_fetch_outcome_not_persisted`): failed, rate-limited and never-attempted are not distinguishable because Python only logs fetch failures (follow-up #1051) |
 | 5 | `garmin_detail_empty` | `exerciseSets` | `[]` is durable proof of a successful fetch with zero sets, so it `holds`; absent detail cannot be called empty (`detail_not_stored`) |
-| 6 | `reconciliation_no_candidate` | `reconciliation.state` + sweep outcome | `single_source` after a *completed* sweep, or `manually_separated` from sticky exclusions. A failed, incomplete (unreadable Activities or a swallowed per-source error) or skipped sweep is `not_observable`, as is the unmarked other half of a persisted ambiguity (`counterpart_ambiguous`: ambiguous provenance marks only the side that was created and stores no candidate ids, so an opposite-kind single-source row within a day of an `ambiguous` one is never told "no candidate"). An unevaluated source is not "no candidate" |
+| 6 | `reconciliation_no_candidate` | `reconciliation.state` + sweep outcome | `single_source` after a *completed* sweep, or `manually_separated` from sticky exclusions. A failed, incomplete (unreadable Activities or a swallowed per-source error) or skipped sweep is `not_observable`, as is the unmarked other half of a persisted ambiguity (`counterpart_ambiguous`: ambiguous provenance marks only the side that was created and stores no candidate ids, so an opposite-kind single-source row within a day of an `ambiguous` one is never told "no candidate"; the two local days just outside the displayed window are read too, and an unreadable edge marks edge-day rows as possible counterparts). An unevaluated source is not "no candidate" |
 | 7 | `reconciliation_ambiguous` | persisted `ambiguous` | Distinct from 6; persisted ambiguity stays manual-only (WP4) |
 | 8 | `read_model_projection_failed` | `sourceReads` + window error | Per-workout reasons (`execution_unavailable`, `execution_invalid`, `definition_unresolved`, `entries_unavailable`, `provider_activities_unreadable`); a whole-window rejection renders a named alert and a failed export, never an empty list. Individual malformed entry documents are dropped by `getEntries` and are not counted (the `clear` wording says so) |
 
@@ -270,9 +270,15 @@ worded as "nothing recorded" only after a `completed` sweep, and its export head
 sweep status. `permission-denied` reads still fail the whole window rather than one row; other
 entries-read failures are confined to their row.
 
-`getCompletedWorkoutsInRange` callers that diff against the legacy pipeline
-(`computeHistoryShadowDiffForUser`) return `null` when a structured source could not be read,
-rather than logging a false evidence-tier regression.
+`computeHistoryShadowDiffForUser` returns `null` when a structured source is *transiently*
+unreadable (`execution_unavailable`, `entries_unavailable`, definition `UNAVAILABLE`), rather
+than logging a false evidence-tier regression. Persistent states (`execution_missing`,
+`execution_invalid`, definition `MISSING`/`INVALID`) keep diffing so one such row cannot silence
+the shadow diff for every window that contains it.
+
+`loadCanonicalActivitiesWindow` resolves to `available` or `projection_failed`; both carry the
+sweep outcome, so the failed-window export reports what actually happened. An export whose
+caller never observed the sweep says `unknown`, which is not the same as `not_run`.
 
 **Surface.** Real gaps and unreadable dependencies show a visible "Some data is missing or
 unknown" notice per card. Expected single-source facts (a structured session without a watch
