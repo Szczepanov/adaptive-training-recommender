@@ -104,10 +104,12 @@ class _MockDb:
         self.touched_user_ids: list[str] = []
         self.write_count: int = 0
         self.get_all_call_count: int = 0
+        self.get_all_batches: list[list[str]] = []
 
-    def get_all(self, refs: list[Any]) -> list[_Snapshot]:
+    def get_all(self, refs: list[_Ref]) -> list[_Snapshot]:
         self.get_all_call_count += 1
-        return [ref.get() for ref in refs]
+        self.get_all_batches.append([ref.id for ref in refs])
+        return [ref.get() for ref in reversed(refs)]
 
     def collection(self, name: str) -> Any:
         assert name == "users", "Top-level queries other than 'users' are disallowed"
@@ -149,6 +151,31 @@ def test_batch_read_failure_aborts_planning_and_audit(monkeypatch: pytest.Monkey
     for operation in (plan_training_occurrence_backfill, audit_training_occurrence_backfill):
         with pytest.raises(RuntimeError, match="batch read failed"):
             operation(db, "user1", "2026-07-01", "2026-07-01")
+    assert db.write_count == 0
+
+
+def test_preflight_batches_source_links_in_bounded_chunks() -> None:
+    occurrences = {
+        f"pto-{i}": {
+            "status": "active",
+            "localDate": "2026-07-01",
+            "sourceRefs": [
+                {"kind": "provider_activity", "provider": "garmin", "activityId": str(i)}
+            ],
+        }
+        for i in range(401)
+    }
+    db = _MockDb({"user1": {"performedTrainingOccurrences": occurrences}})
+
+    plan = plan_training_occurrence_backfill(db, "user1", "2026-07-01", "2026-07-01")
+
+    assert [len(batch) for batch in db.get_all_batches] == [400, 1]
+    assert {doc_id for batch in db.get_all_batches for doc_id in batch} == {
+        encode_source_key_for_doc_id(provider_activity_source_key("garmin", str(i)))
+        for i in range(401)
+    }
+    assert len(plan.anomalies) == 401
+    assert all(a.anomaly_type == "source_ref_without_source_link" for a in plan.anomalies)
     assert db.write_count == 0
 
 

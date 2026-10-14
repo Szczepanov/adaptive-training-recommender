@@ -300,3 +300,32 @@ def test_disabled_power_detail_flag_still_skips_cycling_detail():
 
     assert service.sync_daily("2026-08-23", force=True, resync_lookback_days=0)
     assert provider.detail_calls == []
+
+
+def test_fetched_exercise_sets_status_is_written_with_exercise_sets_in_same_payload():
+    provider = _StrengthProvider("strength_training")
+    service, repo = _service(provider)
+
+    assert service.sync_daily("2026-08-23", force=True, resync_lookback_days=0)
+    payload = repo.upsert_activities.call_args.args[0][0][1]
+    assert payload["detailStatus"]["exerciseSets"]["status"] == "fetched"
+    assert payload["exerciseSets"]
+
+
+def test_partial_hr_zone_rate_limit_with_sets_is_still_fetched():
+    provider = _StrengthProvider("strength_training", rate_limited=True)
+    service, repo = _service(provider)
+
+    assert service.sync_daily("2026-08-23", force=True, resync_lookback_days=0)
+    payload = repo.upsert_activities.call_args.args[0][0][1]
+    assert payload["detailStatus"]["exerciseSets"]["status"] == "fetched"
+    assert "exerciseSets" in payload
+
+
+def test_non_strength_activity_gets_no_detail_status():
+    provider = _StrengthProvider("cycling")
+    service, repo = _service(provider)
+
+    assert service.sync_daily("2026-08-23", force=True, resync_lookback_days=0)
+    payload = repo.upsert_activities.call_args.args[0][0][1]
+    assert "detailStatus" not in payload
