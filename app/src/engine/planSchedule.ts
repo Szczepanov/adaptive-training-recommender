@@ -3,7 +3,7 @@ import type { CapabilityPlacement } from './capabilityMaintenance.ts';
 import { EVERGREEN_GENERAL_COVERAGE_SET, SEPTEMBER_CYCLING_EVENT_COVERAGE_SET, SEPTEMBER_CYCLING_EVENT_SESSION_COVERAGE } from '../workouts/event-plan.ts';
 import type { DataIssue, DataState } from './dataState.ts';
 import type { AuthoredPlanBlock, ObjectiveKey, ObjectivePriority, UserEvent } from './models.ts';
-import { resolveEventTaper } from './taperPolicy';
+import { resolveEventPhaseHorizonPolicy, type EventPhaseHorizonPolicy } from './eventHorizonPolicy';
 import { addDaysToLocalDateString } from '../utils/localDate.ts';
 import type { EvidenceBackedStrategy, AdaptationDoseRequirement, AdaptationKey } from './evergreenStrategy.ts';
 import type { ResolvedTrainingCapacity } from './trainingCapacity.ts';
@@ -81,6 +81,8 @@ export interface PlanDefinition {
   sequencingRules: SequencingRule[];
   /** Absent for plans without coverage-only capability requirements. */
   coverageRequirements?: PlanCoverageRequirementDefinition[];
+  /** Issue #928: The resolved event phase horizon policy that governed this plan. */
+  horizonPolicy?: EventPhaseHorizonPolicy;
 }
 
 export function buildPlanDefinition(
@@ -92,6 +94,7 @@ export function buildPlanDefinition(
   id: string = `plan_${event.id}`,
   coverageSetId: CoverageSetId = SEPTEMBER_CYCLING_EVENT_COVERAGE_SET.id,
   coverageRequirements: PlanCoverageRequirementDefinition[] = [],
+  horizonPolicy?: EventPhaseHorizonPolicy,
 ): DataState<PlanDefinition> {
   const issues: DataIssue[] = [];
 
@@ -199,6 +202,7 @@ export function buildPlanDefinition(
     data: {
       id, eventId: event.id, coverageSetId, blocks: blockSchedule, objectives, sequencingRules,
       ...(coverageRequirements.length > 0 ? { coverageRequirements } : {}),
+      ...(horizonPolicy ? { horizonPolicy } : {}),
     },
   };
 }
@@ -276,30 +280,32 @@ export function buildCyclingEventPlan(
   /** Issue #801: build-block compact strength/power support occurrences beyond the one
    * authored primary-strength role (0 = pre-#801 plan). */
   strengthSupportSessions: number = 0,
+  horizonPolicy?: EventPhaseHorizonPolicy,
 ): DataState<PlanDefinition> {
   const raceDate = eventPlanningDate(event);
-  const taper = resolveEventTaper(event);
+  const horizon = horizonPolicy ?? resolveEventPhaseHorizonPolicy(event);
+  const taper = horizon.taper;
   const peakEnd = taper ? addDaysToLocalDateString(taper.startDate, -1) : addDaysToLocalDateString(raceDate, -1);
 
-  const travelBlocks: PlanBlock[] = authoredBlocks
-    .filter(block => block.phase === 'travel' && (!block.eventId || block.eventId === event.id))
+  const userAuthoredBlocks: PlanBlock[] = authoredBlocks
+    .filter(block => !block.eventId || block.eventId === event.id)
     .map(block => ({
-      id: `authored_${block.id}`, phase: 'travel' as const, startDate: block.startDate, endDate: block.endDate,
+      id: `authored_${block.id}`, phase: block.phase, startDate: block.startDate, endDate: block.endDate,
       volumeScale: block.volumeScale, intensityScale: block.intensityScale,
     }));
   // Authored blocks are first so their dates override a derived build/peak block in every
   // consumer that resolves the active block by ordered lookup.
   const blocks: PlanBlock[] = [
-    ...travelBlocks,
+    ...userAuthoredBlocks,
     {
       id: 'block_build', phase: 'build',
-      startDate: addDaysToLocalDateString(raceDate, -84),
-      endDate: addDaysToLocalDateString(raceDate, -36),
+      startDate: addDaysToLocalDateString(raceDate, -horizon.finalBuildStartDaysBefore),
+      endDate: addDaysToLocalDateString(raceDate, -(horizon.specificityStartDaysBefore + 1)),
       volumeScale: 1.0, intensityScale: 0.9,
     },
     {
       id: 'block_peak', phase: 'peak',
-      startDate: addDaysToLocalDateString(raceDate, -35),
+      startDate: addDaysToLocalDateString(raceDate, -horizon.specificityStartDaysBefore),
       endDate: peakEnd,
       volumeScale: 1.0, intensityScale: 1.1,
     },
@@ -318,7 +324,7 @@ export function buildCyclingEventPlan(
     {
       id: 'block_recovery', phase: 'recovery',
       startDate: addDaysToLocalDateString(raceDate, 1),
-      endDate: addDaysToLocalDateString(raceDate, 7),
+      endDate: addDaysToLocalDateString(raceDate, horizon.recoveryDaysAfter),
       volumeScale: 0.3, intensityScale: 0.5,
     },
   );
@@ -328,7 +334,7 @@ export function buildCyclingEventPlan(
     ...developmentalObjectives('block_peak', event),
   ];
 
-  for (const block of travelBlocks) {
+  for (const block of userAuthoredBlocks.filter(b => b.phase === 'travel')) {
     objectives.push(
       { key: 'zone2_aerobic', coverageKey: 'travel_aerobic', blockId: block.id, requiredCredit: 1, priority: 'must_have', role: 'primary_developmental', coverageMinimumSessions: 1, coverageTargetSessions: 1 },
       { key: 'strength_maintenance', coverageKey: 'travel_strength', blockId: block.id, requiredCredit: 1, priority: 'must_have', role: 'secondary_support', coverageMinimumSessions: 1, coverageTargetSessions: 1 },
@@ -355,7 +361,7 @@ export function buildCyclingEventPlan(
     );
   }
 
-  return buildPlanDefinition(SEPTEMBER_CYCLING_EVENT_SESSION_COVERAGE, blocks, event, objectives);
+  return buildPlanDefinition(SEPTEMBER_CYCLING_EVENT_SESSION_COVERAGE, blocks, event, objectives, [], `plan_${event.id}`, SEPTEMBER_CYCLING_EVENT_COVERAGE_SET.id, [], horizon);
 }
 
 /** Backward-compatible name retained for tests/docs written around the original fixture. */
@@ -486,9 +492,10 @@ export function resolvePlanDefinitionForEvent(
   event: UserEvent | null,
   authoredBlocks: readonly AuthoredPlanBlock[] = [],
   strengthSupportSessions: number = 0,
+  horizonPolicy?: EventPhaseHorizonPolicy,
 ): PlanDefinition | null {
   if (!event || event.category !== 'cycling_event') return null;
-  const result = buildCyclingEventPlan(event, authoredBlocks, strengthSupportSessions);
+  const result = buildCyclingEventPlan(event, authoredBlocks, strengthSupportSessions, horizonPolicy);
   return result.status === 'AVAILABLE' ? result.data : null;
 }
 
@@ -496,15 +503,16 @@ export function resolvePlanDefinitionForEvent(
  * PlanDefinition, but that plan owns the current decision only when one of its blocks
  * actually contains the date. This preserves event context without letting a distant
  * future block suppress Base/evergreen weekly programming. The first generated cycling
- * block is currently D-84, but this resolver depends on actual block ownership rather than
- * treating 84 as an architectural invariant (#927/#928). */
+ * block starts according to horizonPolicy (currently D-84 by default), but this resolver
+ * depends on actual block ownership rather than treating 84 as an architectural invariant (#927/#928). */
 export function resolveActivePlanDefinitionForEvent(
   event: UserEvent | null,
   date: string,
   authoredBlocks: readonly AuthoredPlanBlock[] = [],
   strengthSupportSessions: number = 0,
+  horizonPolicy?: EventPhaseHorizonPolicy,
 ): PlanDefinition | null {
-  const plan = resolvePlanDefinitionForEvent(event, authoredBlocks, strengthSupportSessions);
+  const plan = resolvePlanDefinitionForEvent(event, authoredBlocks, strengthSupportSessions, horizonPolicy);
   if (!plan) return null;
   return plan.blocks.some(block => block.startDate <= date && date <= block.endDate) ? plan : null;
 }

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { ENRICHED_TEMPLATES } from './templates';
 import { isTemplatePhaseEligible, type PeriodizationResult } from './periodization';
+import { resolveEventPhaseHorizonPolicy } from './eventHorizonPolicy';
 import { resolveDemandProfile } from './eventPresets';
 import { rankCandidates, resolveTimeCapDoseAdjustment, HEAVY_LOWER_BODY_STRENGTH_CATEGORIES, isCyclingDurabilityFocusEvent } from './optimizer';
 import { createEmptyFatigue } from './fatigue';
@@ -77,6 +78,15 @@ describe('Gran Fondo Durability & Anchor Protection Remediation (Issue #675)', (
             staleEvents: [],
             partialEffort: false,
             governingEventTie: [],
+            horizonPolicy: resolveEventPhaseHorizonPolicy({
+                id: 'e-gran-fondo',
+                category: 'cycling_event',
+                title: 'Gran Fondo Test',
+                date: '2026-09-20',
+                priority: 'A',
+                lifecycle: 'scheduled',
+                demandProfile: granFondoDemand,
+            }),
         };
 
         // Under Gran Fondo (0.3 surges < 0.6 min), end_crit_surges_01 must NOT be eligible in specific prep
@@ -106,6 +116,15 @@ describe('Gran Fondo Durability & Anchor Protection Remediation (Issue #675)', (
             staleEvents: [],
             partialEffort: false,
             governingEventTie: [],
+            horizonPolicy: resolveEventPhaseHorizonPolicy({
+                id: 'e-crit',
+                category: 'cycling_event',
+                title: 'Criterium Test',
+                date: '2026-09-20',
+                priority: 'A',
+                lifecycle: 'scheduled',
+                demandProfile: critDemand,
+            }),
         };
         expect(isTemplatePhaseEligible(critSurges, critPeriodization)).toBe(true);
     });

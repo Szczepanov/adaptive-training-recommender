@@ -12,10 +12,12 @@ import type {
     WeeklyObjective,
 } from './models';
 import { resolveEventTaper } from './taperPolicy';
+import { resolveEventPhaseHorizonPolicy, type EventPhaseHorizonPolicy } from './eventHorizonPolicy';
 // Re-exported for existing importers (e.g. planner.ts, trainingIntent.ts) -- the
 // canonical type definitions live in models.ts (see its own comment) so
 // decisionTrace/RecommendationAudit there can reference them without a circular import.
 export type { DroppedContributorObjective, ObjectiveDropReason };
+export type { EventPhaseHorizonPolicy };
 import { resolveDemandProfile } from './eventPresets';
 
 export interface PhaseWeights {
@@ -43,6 +45,8 @@ export interface PeriodizationResult {
      *  on the same day is a planning error, not something to blend; this surfaces it
      *  instead of silently picking one. Empty unless a genuine tie occurred. */
     governingEventTie: UserEvent[];
+    /** Issue #928: The resolved event phase horizon policy that governed this periodization result. */
+    horizonPolicy: EventPhaseHorizonPolicy;
 }
 
 /** Modalities that constitute sport-specific exposure for a governing event. This is
@@ -335,6 +339,7 @@ export function evaluatePeriodizationPhase(
     events: UserEvent[],
     currentDateStr: string,
     asOfDate?: string,
+    horizonPolicy?: EventPhaseHorizonPolicy,
 ): PeriodizationResult {
     const basePhase: PhaseWeights = {
         phaseName: 'Base',
@@ -380,6 +385,7 @@ export function evaluatePeriodizationPhase(
             staleEvents,
             partialEffort: false,
             governingEventTie: [],
+            horizonPolicy: horizonPolicy ?? resolveEventPhaseHorizonPolicy(null),
         };
     }
 
@@ -413,6 +419,9 @@ export function evaluatePeriodizationPhase(
     const governingEventTie = tiedWithTop.length > 1 ? tiedWithTop.map(({ event }) => event) : [];
 
     const { event: focusEvent, daysToEvent } = sortedEvents[0];
+    const resolvedHorizon = (horizonPolicy && (!horizonPolicy.eventId || horizonPolicy.eventId === focusEvent.id))
+        ? horizonPolicy
+        : resolveEventPhaseHorizonPolicy(focusEvent);
     const partialEffort = focusEvent.lifecycle === 'DNF';
     const demandVector = focusEvent.demandProfile ?? resolveDemandProfile(focusEvent.category, (focusEvent as { eventPreset?: string; sportSpecificDemand?: string }).eventPreset ?? (focusEvent as { eventPreset?: string; sportSpecificDemand?: string }).sportSpecificDemand);
     let phase: PhaseWeights;
@@ -431,7 +440,7 @@ export function evaluatePeriodizationPhase(
             phase = basePhase;
         }
     } else {
-        const taper = resolveEventTaper(focusEvent);
+        const taper = resolvedHorizon.taper;
 
         if (taper && currentDateStr >= taper.startDate) {
             const taperProgress = 1 - (daysToEvent / taper.durationDays);
@@ -442,7 +451,7 @@ export function evaluatePeriodizationPhase(
                 intensityScale: 1.0,
                 taperActive: true,
             };
-        } else if (daysToEvent <= 35) {
+        } else if (daysToEvent <= resolvedHorizon.specificityStartDaysBefore) {
             phase = {
                 phaseName: 'Specificity',
                 targetDemandVector: demandVector,
@@ -450,7 +459,7 @@ export function evaluatePeriodizationPhase(
                 intensityScale: 1.1,
                 taperActive: false,
             };
-        } else if (daysToEvent <= 84) {
+        } else if (daysToEvent <= resolvedHorizon.finalBuildStartDaysBefore) {
             phase = {
                 phaseName: 'Build',
                 targetDemandVector: blendDemand(DEFAULT_BASE_DEMAND, demandVector, 0.6),
@@ -476,6 +485,7 @@ export function evaluatePeriodizationPhase(
         staleEvents,
         partialEffort,
         governingEventTie,
+        horizonPolicy: resolvedHorizon,
     };
 }
 

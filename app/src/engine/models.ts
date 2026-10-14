@@ -437,6 +437,16 @@ export interface UserEvent {
     demandProfile: EventDemandProfile;
     timing?: EventTiming;
     taper?: EventTaperSpec;
+    /** Optional user- or coach-authored phase horizons for a dated event. Without it,
+     *  eventHorizonPolicy.ts supplies the category/policy default. */
+    phaseHorizons?: EventPhaseHorizonsSpec;
+}
+
+/** Optional user-authored phase horizons for a dated event. */
+export interface EventPhaseHorizonsSpec {
+    finalBuildStartDaysBefore?: number;
+    specificityStartDaysBefore?: number;
+    recoveryDaysAfter?: number;
 }
 
 /** Optional user-authored taper start for a dated event. Without it, taperPolicy.ts
@@ -1068,6 +1078,8 @@ export interface Recommendation {
         /** Runtime diagnostics; excluded from the compact persisted audit. */
         stimulusRecency?: import('./stimulusRecency').StimulusRecencyDecisionTrace;
         policyVersion: string;
+        /** Issue #928: The resolved event phase horizon policy that governed this decision. */
+        eventHorizon?: import('./eventHorizonPolicy').EventPhaseHorizonPolicy;
         candidateScores: Array<{
             templateId: string;
             utilityScore: number;

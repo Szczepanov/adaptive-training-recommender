@@ -8,6 +8,10 @@ import {
 } from './sportsKnowledgeRegistry';
 import { EVENT_PRESETS, resolveDemandProfile } from '../engine/eventPresets';
 import { evaluatePeriodizationPhase, objectivesFromDemand } from '../engine/periodization';
+import {
+    DEFAULT_CYCLING_FINAL_BUILD_DAYS,
+    DEFAULT_CYCLING_SPECIFICITY_DAYS,
+} from '../engine/eventHorizonPolicy';
 import { ENRICHED_TEMPLATES } from '../engine/templates';
 import type { UserEvent } from '../engine/models';
 
@@ -166,6 +170,9 @@ describe('periodization and event-demand evidence pack (SKR3 W1)', () => {
             const claim = getActiveKnowledgeClaim(KNOWLEDGE_CLAIM_IDS.phaseBoundariesScalesPolicy);
             expect(claim.statement).toContain('Specificity begins at <=35 days');
             expect(claim.statement).toContain('Build at <=84 days');
+
+            expect(DEFAULT_CYCLING_FINAL_BUILD_DAYS).toBe(84);
+            expect(DEFAULT_CYCLING_SPECIFICITY_DAYS).toBe(35);
 
             const event = (date: string): UserEvent => ({
                 id: 'a-race', title: 'A race', date, priority: 'A', lifecycle: 'scheduled',

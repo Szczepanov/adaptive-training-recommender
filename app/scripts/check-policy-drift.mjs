@@ -80,6 +80,7 @@ const decisionAffectingFiles = [
   'app/src/engine/optimizer.ts',
   'app/src/engine/microcycle.ts',
   'app/src/engine/periodization.ts',
+  'app/src/engine/eventHorizonPolicy.ts',
   'app/src/engine/fatigue.ts',
   // Occupational-load magnitudes and baseline discounts affect the live fatigue input.
   'app/src/engine/occupationalLoad.ts',

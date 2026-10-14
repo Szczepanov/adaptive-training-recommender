@@ -183,7 +183,7 @@ function resolveIntentAuthorities(
     const strengthSupportSessions = eventStrengthSupportSessions(planningContext, trainingIntentProfile);
     const planDefinition = planningContext.eventStrategy === 'structured_plan'
         ? resolveActivePlanDefinitionForEvent(
-            periodization.focusEvent, date, authoredPlanBlocks, strengthSupportSessions,
+            periodization.focusEvent, date, authoredPlanBlocks, strengthSupportSessions, periodization.horizonPolicy,
         )
         : null;
     const performedFactsCoverageDescriptor = planDefinition
