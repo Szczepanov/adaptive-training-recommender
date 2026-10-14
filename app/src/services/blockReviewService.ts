@@ -141,8 +141,10 @@ export class BlockReviewService {
         const evaluationCache = new Map<string, { evaluation: OutcomeEvaluationSnapshot | null; unreadable: boolean }>();
         if (ids.status === 'AVAILABLE') {
             if (ids.issues?.length) { sources[0].status = 'truncated'; limitations.push('intent_blocks:truncated'); }
-            for (const blockId of ids.data) {
-                const stored = await this.loadBlock(userId, blockId);
+            const storedBlocks = await Promise.all(ids.data.map(blockId => this.loadBlock(userId, blockId)));
+            for (let i = 0; i < ids.data.length; i++) {
+                const blockId = ids.data[i];
+                const stored = storedBlocks[i];
                 sources.push(stateSource(`block:${blockId}`, stored));
                 if (stored.status !== 'AVAILABLE' || stored.data.block.dateRange.startDate > asOfDate) continue;
                 const refs = stored.data.block.objectives.flatMap(o => o.successCriteria.evaluationRef ? [o.successCriteria.evaluationRef] : []);
