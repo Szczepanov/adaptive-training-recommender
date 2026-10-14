@@ -291,10 +291,14 @@ def export_training_occurrence_records(
     # An occurrence near the window edge may reference an activity whose provider date falls
     # just outside it; fetch those by ID so hydration does not report a false missing source.
     known = {document["id"] for document in activities}
-    for activity_id in sorted(referenced_activity_ids - known):
-        snapshot = user.collection("activities").document(activity_id).get()
-        if snapshot.exists:
-            activities.append(_document(snapshot))
+    missing_ids = sorted(referenced_activity_ids - known)
+    if missing_ids:
+        doc_refs = [
+            user.collection("activities").document(activity_id) for activity_id in missing_ids
+        ]
+        for snapshot in db.get_all(doc_refs):
+            if snapshot.exists:
+                activities.append(_document(snapshot))
 
     return {
         "schemaVersion": RECORD_EXPORT_SCHEMA_VERSION,

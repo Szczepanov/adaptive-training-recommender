@@ -163,7 +163,7 @@ WP5–WP7 and related #723/#724/#896 remain separate; #952 is already closed.
 
 ## WP5 — Failure observability
 
-**Status:** Implemented — pure projection, read-model read statuses, DataView surface and bounded export; Garmin detail-fetch status is `not_observable` pending #1051
+**Status:** Implemented — pure projection, read-model read statuses, DataView surface and bounded export; Garmin detail-fetch status is persisted per activity by #1051 (records with no stored status stay `not_observable`)
 **Blocked by:** None (WP1 and WP4 are delivered)
 **Purpose:** the diagnostic surface names which of the 8 #895 failure states holds, instead of "no data".
 
@@ -172,7 +172,7 @@ WP5–WP7 and related #723/#724/#896 remain separate; #952 is already closed.
 - **D7 — Derive, do not persist.** `ReconciliationOutcome` stays a return value. States 6/7 are derived from persisted `ReconciliationProvenance` and attached `sourceRefs`; the extra inputs are the window sweep outcome (`completed` / `incomplete` / `failed` / `not_run`) and an ambiguous-counterpart flag. `SweepSummary` gained `activitiesReadable` and `sourceErrors` (additive, no behaviour change) because a sweep can return normally without having evaluated every source, and ambiguous provenance marks only the side that was created.
 - **D8 — Read statuses travel with the view.** `CompletedWorkoutView.sourceReads` carries structured / provider / outbox / sweep statuses so "execution read failed", "execution absent" and "definition unresolved" are distinct (they all returned `undefined` before). The projection is pure; IO stays in `activitiesReadModelService`.
 - **D9 — Extend, do not fork, the source-completeness vocabulary (#914/#916).** `sourceCompletenessFor` maps each view's reads onto the existing `TrainingResponseSessionEvidence['sourceCompleteness']` shape (`not_linked` / `available` / `unavailable`) and the export carries it, so the finer WP5 reasons refine that vocabulary rather than replace it. Several attached provider sources are `ambiguous`, as in the planning path; `partial` needs per-source results the view does not keep, so an incomplete multi-source row stays `ambiguous` and state 3 carries the detail. Persisted reconciliation ambiguity is state 7. `ComparisonSourceCompleteness` consumers are untouched.
-- **D10 — States 4 and 5 use the one durable signal that exists.** Python writes `exerciseSets` only when the detail endpoint succeeded (`[]` = valid but empty), and only logs failures (`_fetch_activity_details`). So state 5 is observable; an omitted key on a strength activity makes state 4 `not_observable` (failed, rate-limited and never-attempted are indistinguishable). No Python or Firestore shape change here; persisting a detail-fetch status is #1051.
+- **D10 — States 4 and 5 read the durable detail signals.** Python writes `exerciseSets` only when the detail endpoint succeeded (`[]` = valid but empty), so state 5 is observable. ~~An omitted key made state 4 `not_observable`~~ superseded by #1051: Python also persists `detailStatus.exerciseSets` (`fetched` / `failed` / `rate_limited` / `not_attempted`), and state 4 reads it (stored sets are `clear`; `failed` / `rate_limited` hold; `not_attempted` is `not_applicable`). Only records with no stored status (pre-#1051 syncs, default `backfill`, activities only seen as older lookback), or `fetched` without sets, remain `not_observable` (`detail_fetch_outcome_not_persisted`).
 - **D11 — Outbox is per device.** Receipts live in `localStorage`; zero receipts is `not_observable`, never "synced". Window export reports the aggregate depth and the count of unreadable stores.
 - **D12 — Unknown is a first-class member.** Every state is a closed union (`holds` / `clear` / `not_applicable` / `not_observable`) with reason tables typed over the reasons, and copy tables that fail to compile when a reason lacks wording.
 
@@ -189,7 +189,7 @@ WP5–WP7 and related #723/#724/#896 remain separate; #952 is already closed.
 | 1 | SessionExecution absent | `workoutSourceDiagnostics.test.ts` (state 1); emulator "Garmin-only workout … state 1"; `activitiesReadModelService.sourceReads.test.ts` |
 | 2 | SessionEntry write pending/failed | `workoutSourceDiagnostics.test.ts` (state 2, co-occurrence); `activitiesReadModelService.sourceReads.test.ts` (receipt depth, unreadable) |
 | 3 | Garmin activity absent | `workoutSourceDiagnostics.test.ts` (state 3); `activitiesReadModelService.sourceReads.test.ts` (provider classification) |
-| 4 | Garmin detail unavailable | `workoutSourceDiagnostics.test.ts` (states 4 and 5) — `not_observable` by design, see D10 |
+| 4 | Garmin detail unavailable | `workoutSourceDiagnostics.test.ts` (states 4 and 5, persisted fetch-status matrix); `tests/test_sync_service.py` (status writer); records with no stored status stay `not_observable`, see D10 |
 | 5 | Garmin detail valid-but-empty | same, plus the `exerciseSets: []` mapping |
 | 6 | Reconciliation found no candidate | `workoutSourceDiagnostics.test.ts`; emulator "structured-only … state 6"; emulator "does not claim no candidate when the sweep did not complete" |
 | 7 | Reconciliation found ambiguous candidates | `workoutSourceDiagnostics.test.ts`; emulator "real ambiguous Garmin candidate … state 7" |
@@ -261,7 +261,7 @@ WP5–WP7 and related #723/#724/#896 remain separate; #952 is already closed.
 
 - Criterion 12 is narrowed, not closed: the Python path is shown to be non-writing for occurrences (daily sync) or create-only (explicit backfill) and the UI click wiring is unit-covered, but a browser-level link/unlink click against the emulator, real Garmin arrival timing and real-device behavior remain unproven.
 - Synthetic and emulator proofs cannot establish cold-offline launch, real-device storage durability, a real network drop mid-write, real Garmin arrival timing, or set-logging latency (see #897's real-device acceptance procedure).
-- Garmin detail-fetch status stays `not_observable` until #1051.
+- Garmin detail-fetch status is persisted from #1051 onward (see D10); activities with no stored status (synced before it, default `backfill`, or only seen as older lookback) stay `not_observable`. Live Garmin behavior of the status writer is not proven here.
 - Residuals: the #917 reserved-identity hydration row; history, fatigue and microcycle remain legacy and TO-owned (#872).
 
 ### Close #895 only when

@@ -163,11 +163,19 @@ describe('StrengthSessionService', () => {
                     { id: staleId2, ref: { path: `users/${USER_ID}/strength_sessions/${staleId2}` }, data: () => validSession({ sessionId: staleId2, startedAt: '2026-08-17T06:00:00Z' }) },
                 ],
             });
+            let resolveFirst!: (value: { exists: () => boolean; data: () => Record<string, unknown> }) => void;
+            let resolveSecond!: (value: { exists: () => boolean; data: () => Record<string, unknown> }) => void;
             firestore.getDoc
-                .mockResolvedValueOnce({ exists: () => true, data: () => validSession({ sessionId: staleId1, startedAt: '2026-08-17T05:00:00Z' }) })
-                .mockResolvedValueOnce({ exists: () => true, data: () => validSession({ sessionId: staleId2, startedAt: '2026-08-17T06:00:00Z' }) });
+                .mockImplementationOnce(() => new Promise(resolve => { resolveFirst = resolve; }))
+                .mockImplementationOnce(() => new Promise(resolve => { resolveSecond = resolve; }));
 
-            const abandoned = await service.reconcileStaleSessions(USER_ID, '2026-08-17T18:00:00Z');
+            const abandonedPromise = service.reconcileStaleSessions(USER_ID, '2026-08-17T18:00:00Z');
+            await Promise.resolve();
+            expect(firestore.getDoc).toHaveBeenCalledTimes(2);
+            resolveFirst({ exists: () => true, data: () => validSession({ sessionId: staleId1, startedAt: '2026-08-17T05:00:00Z' }) });
+            resolveSecond({ exists: () => true, data: () => validSession({ sessionId: staleId2, startedAt: '2026-08-17T06:00:00Z' }) });
+
+            const abandoned = await abandonedPromise;
 
             expect(abandoned).toHaveLength(2);
             expect(abandoned[0]).toMatchObject({ sessionId: staleId1, state: 'abandoned' });

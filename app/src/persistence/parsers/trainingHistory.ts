@@ -11,12 +11,13 @@ import type {
     DailyRecommendation,
     DailyRecommendationWithVerdict,
     FitWorkoutFingerprintKind,
+    GarminExerciseSetsFetchOutcome,
     HrMeasurement,
     NormalizedGarminActivity,
     RunningDynamics,
     ShadowVerdict,
 } from '../../engine/models';
-import { FIT_WORKOUT_FINGERPRINT_KINDS, SHADOW_VERDICTS } from '../../engine/models';
+import { FIT_WORKOUT_FINGERPRINT_KINDS, GARMIN_DETAIL_FETCH_STATUSES, SHADOW_VERDICTS } from '../../engine/models';
 import type { DataIssue, DataState } from '../../engine/dataState';
 import { validateRecommendation, isValidDate } from '../../engine/validation';
 
@@ -189,6 +190,38 @@ function parseExerciseSets(value: unknown): NormalizedGarminActivity['exerciseSe
     return parsed.every((entry) => entry !== undefined)
         ? parsed as NonNullable<NormalizedGarminActivity['exerciseSets']>
         : undefined;
+}
+
+/** Forward compatible: an unknown status or malformed shape is dropped (reads as a legacy
+ * record with no status) and never invalidates the activity. */
+const MAX_INSTANT_LENGTH = 40;
+const ISO_INSTANT_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/;
+
+// Date.parse rolls impossible calendar days (e.g. 2026-02-30) over to the next month, so the
+// calendar-day component is verified separately.
+function hasRealCalendarDay(value: string): boolean {
+    const year = Number(value.slice(0, 4));
+    const month = Number(value.slice(5, 7));
+    const day = Number(value.slice(8, 10));
+    const probe = new Date(Date.UTC(year, month - 1, day));
+    return probe.getUTCFullYear() === year && probe.getUTCMonth() === month - 1 && probe.getUTCDate() === day;
+}
+
+function isBoundedInstant(value: unknown): value is string {
+    return typeof value === 'string'
+        && value.length <= MAX_INSTANT_LENGTH
+        && ISO_INSTANT_PATTERN.test(value)
+        && hasRealCalendarDay(value)
+        && !Number.isNaN(Date.parse(value));
+}
+
+function parseDetailStatus(value: unknown): NormalizedGarminActivity['detailStatus'] | undefined {
+    if (!isObject(value) || !isObject(value.exerciseSets)) return undefined;
+    const status = enumValue(value.exerciseSets.status, GARMIN_DETAIL_FETCH_STATUSES);
+    const attemptedAt = value.exerciseSets.attemptedAt;
+    if (status === undefined || !isBoundedInstant(attemptedAt)) return undefined;
+    const exerciseSets: GarminExerciseSetsFetchOutcome = { status, attemptedAt };
+    return { exerciseSets };
 }
 
 const HR_SENSOR_TECHNOLOGIES = ['electrode_chest_strap', 'optical_armband', 'wrist_ppg', 'external_unknown', 'unknown'] as const;
@@ -566,6 +599,7 @@ export function parseNormalizedGarminActivity(
     const recoveryTimeHours = optionalNonNegativeNumber(raw.recoveryTimeHours);
     const maxHr = optionalNonNegativeNumber(raw.maxHr);
     const exerciseSets = parseExerciseSets(raw.exerciseSets);
+    const detailStatus = parseDetailStatus(raw.detailStatus);
     const hrMeasurement = parseHrMeasurement(raw.hrMeasurement);
     const activityResponse = parseActivityResponse(raw.activityResponse);
     const stimulusDomain = parseEnumValue(raw.stimulusDomain, STIMULUS_DOMAINS);
@@ -606,6 +640,7 @@ export function parseNormalizedGarminActivity(
             ...(laps !== undefined ? { laps } : {}),
             ...(runningDynamics !== undefined ? { runningDynamics } : {}),
             ...(exerciseSets !== undefined ? { exerciseSets } : {}),
+            ...(detailStatus !== undefined ? { detailStatus } : {}),
             ...(hrMeasurement !== undefined ? { hrMeasurement } : {}),
             ...(activityResponse !== undefined ? { activityResponse } : {}),
             ...(typeof raw.syncRunId === 'string' ? { syncRunId: raw.syncRunId } : {}),

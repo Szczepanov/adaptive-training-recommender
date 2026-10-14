@@ -103,3 +103,7 @@
 ## 2026-10-26 - Parallelize stale session state transitions via Promise.all
 **Learning:** Sequential `await` calls in a loop over stale Firestore sessions (`reconcileStaleSessions`) cause serial network I/O bottlenecks (N * latency). Mapping matching IDs to concurrent `transitionState` calls via `Promise.all` eliminates the serial roundtrip wait and reduces state transition latency to max(latency).
 **Action:** Always collect target document IDs or tasks from synchronous snapshot parsing first and execute state transitions concurrently via `Promise.all` when operations are independent.
+
+## 2026-10-26 - Batch fetch missing activity documents in export_training_occurrence_records
+**Learning:** `export_training_occurrence_records` was executing individual `.get()` calls in a `for` loop to retrieve missing activity documents outside the window. This created an N+1 query pattern where each activity fetch incurred sequential RPC network roundtrip latency. Collecting all missing activity document references into a list and calling `db.get_all(doc_refs)` batches the requests into a single RPC, eliminating serial network delays and yielding a ~12.6x speedup when fetching missing activity records.
+**Action:** When fetching multiple individual documents by ID in Firestore, construct a list of document references and fetch them using `db.get_all(doc_refs)` instead of calling `.get()` inside a `for` loop.

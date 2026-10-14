@@ -67,13 +67,17 @@ export const STATE_COPY: CopyTable = {
     garmin_detail_unavailable: {
         name: 'Garmin detail unavailable',
         clear: 'Garmin set detail is stored for this activity.',
-        holds: {},
+        holds: {
+            detail_fetch_failed: 'The last sync could not download Garmin set detail for this activity, so no sets are stored.',
+            detail_fetch_rate_limited: 'Garmin limited requests during the last sync, so set detail was not downloaded for this activity.',
+        },
         not_applicable: {
             no_garmin_activity: 'There is no Garmin activity, so there is no detail to check.',
             detail_not_expected_for_activity_type: 'Set detail is only collected for strength activities.',
+            detail_fetch_not_attempted: 'The last sync did not try to download Garmin set detail for this activity.',
         },
         not_observable: {
-            detail_fetch_outcome_not_persisted: 'No Garmin set detail is stored for this activity. Whether the download failed or never ran is not recorded.',
+            detail_fetch_outcome_not_persisted: 'No Garmin set detail or fetch status is stored for this activity, so whether the download failed or never ran is unknown.',
         },
     },
     garmin_detail_empty: {
