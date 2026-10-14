@@ -75,8 +75,13 @@ test('a conflicting offline correction remains failed with its attempted values 
   await openFixturePicker(page);
   await page.getByRole('button', { name: 'Start Session →', exact: true }).first().click();
   await page.getByRole('button', { name: 'Log repetition set' }).click();
-  await expect(page.locator('.sync-pill')).toHaveText('synced');
   const [execution] = await readSessionExecutions(athlete);
+  // The pill already reads `synced` before the click queues the entry, so it cannot prove the
+  // write landed; wait on the persisted entry itself before the remote client reads it.
+  await expect.poll(() => inspectAthlete(athlete, async db => (
+    await getDocs(collection(db, 'users', athlete.userId, 'session_executions', execution.executionId, 'entries'))
+  ).size)).toBe(1);
+  await expect(page.locator('.sync-pill')).toHaveText('synced');
   // The conflicting remote correction is written by an independent client as the same athlete.
   await inspectAthlete(athlete, async db => {
     const path = ['users', athlete.userId, 'session_executions', execution.executionId] as const;
