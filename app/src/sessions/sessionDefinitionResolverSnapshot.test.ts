@@ -49,6 +49,28 @@ describe('resolveSessionDefinition snapshot-first replay', () => {
         expect(result).toEqual({ status: 'AVAILABLE', data: historical, revision: 'rx-historical' });
     });
 
+    it('replays the definition pinned at start even though the live catalog workout has since changed', async () => {
+        // #895 criterion: later plan/template edits must not change what the athlete was shown.
+        const catalogSource: SessionSourceRef = { kind: 'catalog', workoutId: 'strength_full_body_maintenance_01', catalogVersion: 'v1' };
+        const pinned: SessionDefinition = { ...historical, id: 'strength_full_body_maintenance_01', title: 'Pinned at start (older edition)' };
+        mocks.getPrescription.mockResolvedValue(available({
+            schemaVersion: 1,
+            prescriptionHash: 'rx-pinned-catalog',
+            sessionSource: catalogSource,
+            definitionHash: await hashSessionDefinition(pinned),
+            blocks: pinned.blocks,
+            definitionSnapshot: snapshotSessionDefinition(pinned),
+            createdAt: '2026-10-05T10:00:00.000Z',
+        }));
+
+        const result = await resolveSessionDefinition('u1', catalogSource, 'rx-pinned-catalog');
+        expect(result.status).toBe('AVAILABLE');
+        if (result.status === 'AVAILABLE') {
+            expect(result.data.title).toBe('Pinned at start (older edition)');
+            expect(result.revision).toBe('rx-pinned-catalog');
+        }
+    });
+
     it('degrades a legacy fixture prescription instead of mixing it with current fixture bytes', async () => {
         mocks.getPrescription.mockResolvedValue(available({
             schemaVersion: 1,
