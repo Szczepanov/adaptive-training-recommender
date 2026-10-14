@@ -459,7 +459,13 @@ read-only ledgers (`contextBriefExposureLedger.ts` `deriveExposureLedger` /
   engine-recorded modality/intensity and cost row, because the engine's training history
   does not consume overrides.
 - **Deferred.** Taper/event-specific suppression is not yet represented, and the
-  #803–#806 capability families remain `unknown` until their canonical models land.
+  #803 (unilateral) and #806 (long aerobic anchor) capability families remain `unknown`:
+  #803 ships only an authored composition contract (no completed-exposure credit helper or
+  delivered-step evidence on performed facts), and #806's anchor is a history-derived planning
+  requirement whose per-athlete duration this export does not carry. Wiring either needs an
+  owner decision, not presentation. Remaining status and the Context Brief contract-version
+  decision (#894 D3: no bump for the #813 completion slice, which changes no rendered output)
+  are recorded in [the #813 plan](../plans/2026-10-issue-813-exposure-ledgers.md).
   Presentation only — `POLICY_VERSION` is unaffected.
 
 #### Recommendation feedback vs plan execution (issue #815)
