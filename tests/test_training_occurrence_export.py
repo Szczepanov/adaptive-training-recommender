@@ -80,6 +80,9 @@ class _FakeDb:
         self.users = users
         self.touched_users: list[str] = []
 
+    def get_all(self, refs: list[Any]) -> list[Any]:
+        return [ref.get() for ref in refs]
+
     def collection(self, name: str) -> Any:
         assert name == "users"
         db = self
