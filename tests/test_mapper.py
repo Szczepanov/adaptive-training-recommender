@@ -844,3 +844,35 @@ def test_normalize_activity_maps_exercise_sets():
     assert es["exerciseName"] == "BARBELL_BACK_SQUAT"
     assert es["durationSeconds"] == 40.0
     assert es["restDurationSeconds"] == 90.0
+
+
+def test_normalize_activity_writes_exercise_sets_fetch_outcome_only_when_set() -> None:
+    from garmin_sync.canonical import CanonicalDetailFetchOutcome
+
+    activity = CanonicalActivity(
+        activity_id="s1",
+        date="2026-08-23",
+        type="strength_training",
+        duration_min=45,
+        duration_seconds=2700,
+        training_effect_aerobic=1.0,
+        training_effect_anaerobic=1.0,
+        average_hr=110,
+        training_load=40.0,
+        intensity_tag="easy",
+    )
+
+    omitted = normalize_activity(activity, "run-1")
+    assert "detailStatus" not in omitted
+
+    written = normalize_activity(
+        activity,
+        "run-1",
+        exercise_sets_fetch_outcome=CanonicalDetailFetchOutcome(
+            "failed", "2026-08-23T10:00:00+00:00"
+        ),
+    )
+    assert written["detailStatus"] == {
+        "exerciseSets": {"status": "failed", "attemptedAt": "2026-08-23T10:00:00+00:00"}
+    }
+    assert "exerciseSets" not in written

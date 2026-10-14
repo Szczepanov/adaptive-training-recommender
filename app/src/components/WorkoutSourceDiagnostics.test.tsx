@@ -58,6 +58,8 @@ describe('WorkoutSourceDiagnostics -- every #895 section 10 state is named when 
         ['entry_write_unsettled', 'Diary writes pending or failed', workoutView({ sourceReads: { outbox: { status: 'read', queued: 0, failed: 1 } } })],
         ['garmin_activity_absent', 'Garmin activity absent', structuredOnlyView()],
         ['garmin_detail_unavailable', 'Garmin detail unavailable', garminOnlyView({ garmin: garminActivityWithoutSets() })],
+        ['garmin_detail_unavailable', 'Garmin detail unavailable', garminOnlyView({ garmin: garminActivityWithoutSets({ detailStatus: { exerciseSets: { status: 'failed', attemptedAt: '2026-08-26T08:00:00Z' } } }) })],
+        ['garmin_detail_unavailable', 'Garmin detail unavailable', garminOnlyView({ garmin: garminActivityWithoutSets({ detailStatus: { exerciseSets: { status: 'rate_limited', attemptedAt: '2026-08-26T08:00:00Z' } } }) })],
         ['garmin_detail_empty', 'Garmin detail empty', garminOnlyView({ garmin: garminActivity({ exerciseSets: [] }) })],
         ['reconciliation_no_candidate', 'No matching candidate found', structuredOnlyView()],
         ['reconciliation_ambiguous', 'Ambiguous matching candidates', structuredOnlyView({ reconciliation: { state: 'ambiguous' } })],
@@ -137,9 +139,9 @@ describe('WorkoutSourceDiagnostics -- unknown never renders as empty, zero or he
         expect(html).toContain('aria-label="Missing or unknown data"');
     });
 
-    it('says the Garmin detail download outcome is not recorded', () => {
+    it('says neutrally that no set detail or fetch status is stored', () => {
         const html = render(garminOnlyView({ garmin: garminActivityWithoutSets() }));
-        expect(html).toContain('Whether the download failed or never ran is not recorded');
+        expect(html).toContain('No Garmin set detail or fetch status is stored');
     });
 });
 
