@@ -206,6 +206,7 @@ export class BlockReviewService {
         const observationsByBinding: Record<string, CurrentObservation[]> = {};
         const attempts = new Map<string, AssessmentAttempt>();
         const attemptLists = new Map<string, Awaited<ReturnType<AssessmentAttemptService['listAttemptsForProtocolWithDiagnostics']>> | null>();
+        const declaredAttemptCache = new Map<string, Promise<AssessmentAttempt | null>>();
         const defaultWindow = { startDate: '0001-01-01', endDate: asOfDate };
         for (const binding of evaluation.bindings) {
             const name = `assessment:${binding.id}`;
@@ -237,8 +238,16 @@ export class BlockReviewService {
                         if (!revision || revision.observationKey !== key || revision.revision !== head.headRevision
                             || revision.metricId !== binding.metricId || head.metricId !== binding.metricId
                             || head.assessmentAttemptId !== revision.assessmentAttemptId) throw new Error('Head identity mismatch');
-                        const parent = selectedAttempts.find(a => a.id === revision.assessmentAttemptId)
-                            ?? (declared ? await this.deps.attempts.getAttempt(userId, revision.assessmentAttemptId) : null);
+                        let parent = selectedAttempts.find(a => a.id === revision.assessmentAttemptId) ?? null;
+                        if (!parent && declared) {
+                            if (!declaredAttemptCache.has(revision.assessmentAttemptId)) {
+                                declaredAttemptCache.set(
+                                    revision.assessmentAttemptId,
+                                    this.deps.attempts.getAttempt(userId, revision.assessmentAttemptId)
+                                );
+                            }
+                            parent = await declaredAttemptCache.get(revision.assessmentAttemptId)!;
+                        }
                         if (!parent) { if (declared) result.limitations.push(`declared_baseline_parent_missing:${binding.id}`); return; }
                         if (parent.id !== revision.assessmentAttemptId || parent.protocolRef.id !== revision.protocolRef.id
                             || parent.protocolRef.revision !== revision.protocolRef.revision) throw new Error('Parent identity mismatch');

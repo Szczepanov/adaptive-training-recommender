@@ -99,3 +99,7 @@
 ## 2026-10-25 - Avoid O(N*M) array filtering inside loops for dictionary construction
 **Learning:** Using `new Map(items.map(item => [item.id, entries.filter(e => e.parentId === item.id)]))` scales poorly, causing O(N * M) performance impact where N is the number of keys and M is the number of entries.
 **Action:** Pre-compute the grouped values using an O(N) loop approach (`for...of`) and a `Map.get() / arr.push()` pattern to build the grouped dictionary instead of calling `.filter()` inside `.map()`.
+
+## 2026-10-26 - Cache async attempt lookups in block review service
+**Learning:** In sequential observation reading loops (e.g., `BlockReviewService.loadReview`), calling `await getAttempt(userId, attemptId)` when an attempt is not present in `selectedAttempts` leads to N+1 duplicate async I/O lookups if multiple observations or bindings share declared baseline attempts.
+**Action:** Cache the outstanding `Promise<AssessmentAttempt | null>` in a per-request `Map` before `await`ing it, ensuring subsequent lookups for the same ID reuse the existing in-flight/resolved promise.
