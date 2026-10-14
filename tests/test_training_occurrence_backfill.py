@@ -131,6 +131,27 @@ class _MockDb:
         return _MockTransaction(self)
 
 
+def test_batch_read_failure_aborts_planning_and_audit(monkeypatch: pytest.MonkeyPatch) -> None:
+    db = _MockDb(
+        {
+            "user1": {
+                "activities": {
+                    "act1": {"activityId": "act1", "date": "2026-07-01", "type": "cycling"}
+                }
+            }
+        }
+    )
+
+    def fail_batch(_refs: list[Any]) -> list[_Snapshot]:
+        raise RuntimeError("batch read failed")
+
+    monkeypatch.setattr(db, "get_all", fail_batch)
+    for operation in (plan_training_occurrence_backfill, audit_training_occurrence_backfill):
+        with pytest.raises(RuntimeError, match="batch read failed"):
+            operation(db, "user1", "2026-07-01", "2026-07-01")
+    assert db.write_count == 0
+
+
 def test_contract_vectors_parity() -> None:
     """Verify Python primitives against the shared training_occurrence_contract_vectors.json fixture."""
     fixture_path = (

@@ -59,12 +59,8 @@ def _batch_get_docs(db: Any, doc_refs: list[Any]) -> dict[str, Any]:
         chunk = doc_refs[i : i + chunk_size]
         get_all_fn = getattr(db, "get_all", None)
         if callable(get_all_fn):
-            try:
-                for snap in get_all_fn(chunk):
-                    snapshots_by_id[snap.id] = snap
-            except Exception:
-                for ref in chunk:
-                    snapshots_by_id[ref.id] = ref.get()
+            for snap in get_all_fn(chunk):
+                snapshots_by_id[snap.id] = snap
         else:
             for ref in chunk:
                 snapshots_by_id[ref.id] = ref.get()
