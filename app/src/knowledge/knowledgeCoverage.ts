@@ -65,6 +65,14 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'Explicit software authoring and authority policy; no physiological dose multiplier or automatic success/progression claim.',
     },
     {
+        id: 'periodization.season_roadmap', domain: 'periodization_taper', title: 'Season roadmap event roles and conflicts',
+        currentRule: 'The first upcoming event in authority order is the primary season target; other events are benchmark peaks (A or 4-star B), benchmarks (B) or train-through (C). One event owns each date; shared dates, events inside a peak taper and peaks closer than 7 days to the next peak taper produce typed conflicts.',
+        classification: 'product_heuristic', coverage: 'partial', decisionImpact: 'moderate', safetyImpact: 'moderate', researchPriority: 'p2',
+        codeRefs: ['engine/seasonRoadmap.ts:resolveSeasonRoadmap', 'engine/periodization.ts:goalToUserEvent'],
+        knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.seasonRoadmapPolicy],
+        coverageRationale: 'Explicit product-policy claim for deterministic role classification; no sports-science literature addresses season-level event coordination in a planning system. Partial at P2 because the 4-star B+ cut, the 7-day peak recovery gap and the 28-day outcome lookback remain uncalibrated.',
+    },
+    {
         id: 'workout_catalog.strength_warmup_invariant', domain: 'workout_catalog', title: 'Catalog strength warm-up invariant',
         currentRule: 'Every active non-manual catalog strength workout begins with a non-empty warm-up block that remains inside its advertised session duration.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'moderate', safetyImpact: 'low', researchPriority: 'none',

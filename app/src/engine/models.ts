@@ -430,6 +430,9 @@ export interface UserEvent {
     title: string;
     date: string; // YYYY-MM-DD
     priority: EventPriority;
+    /** The originating 1-5 star control, kept only so a 4-star B can be classed B+ by the season
+     *  roadmap (seasonRoadmap.ts); absent for events not derived from a goal. */
+    starPriority?: number;
     lifecycle: EventLifecycle;
     category: 'running_race' | 'cycling_event' | 'triathlon' | 'strength_meet' | 'general_target' | 'fitness_race';
     /** Stable format identity retained from the goal; never inferred from its title or demand. */

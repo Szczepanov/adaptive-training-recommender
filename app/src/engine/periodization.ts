@@ -561,6 +561,7 @@ export function goalToUserEvent(goal: UserGoal & { id?: string }): UserEvent | n
         title: goal.title,
         date: goal.targetDate,
         priority: deriveEventPriority(goal.priority),
+        starPriority: goal.priority,
         lifecycle: goal.eventLifecycle ?? 'scheduled',
         category: goal.eventCategory,
         ...(goal.eventPreset ? { presetId: goal.eventPreset } : {}),

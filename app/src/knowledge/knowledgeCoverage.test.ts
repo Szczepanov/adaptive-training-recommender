@@ -212,10 +212,11 @@ describe('engine knowledge coverage inventory', () => {
         // #805 adds one covered periodic athletic-capability maintenance item.
         // #931 adds one covered performed stimulus-domain quality anti-repetition item.
         // #927 adds one covered explicit event-development authority product policy.
+        // #929 adds one partial/p2 season-roadmap event-role and conflict item.
         const summary = summarizeKnowledgeCoverage();
-        expect(summary.total).toBe(85);
-        expect(summary.byCoverage).toEqual({ covered: 59, partial: 19, uncovered: 1, not_applicable: 6 });
-        expect(summary.byPriority).toEqual({ p0: 8, p1: 9, p2: 3, p3: 0, none: 65 });
+        expect(summary.total).toBe(86);
+        expect(summary.byCoverage).toEqual({ covered: 59, partial: 20, uncovered: 1, not_applicable: 6 });
+        expect(summary.byPriority).toEqual({ p0: 8, p1: 9, p2: 4, p3: 0, none: 65 });
         expect(byId('periodization.event_development_authority')).toMatchObject({
             classification: 'product_heuristic', coverage: 'covered',
             knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.developmentAuthorityPolicy],
