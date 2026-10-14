@@ -217,8 +217,9 @@ describe('#895 WP6 per-consumer double-count inventory', () => {
     });
 
     describe('daily ledger (dedupeByOccurrence via computeDailyLedger)', () => {
-        // Keyed by the authored session occurrence and fed only by executions: provider
-        // activities are not an input, so structured+Garmin cannot double-spend by construction.
+        // Keyed by the authored session occurrence; the input mapper takes session occurrences
+        // plus optional linked execution facts and no provider activity, so structured+Garmin
+        // cannot double-spend through this path. Replay/dedupe depth: dailyLedger.test.ts.
         const ceilings = { dailyMinuteCeiling: 120, dailySystemicCostCeiling: 1 };
 
         it('a reservation replayed with its completed execution counts the occurrence once', () => {
@@ -245,17 +246,30 @@ describe('#895 WP6 per-consumer double-count inventory', () => {
     describe('unmigrated consumers are labeled legacy, not asserted canonical', () => {
         // These read the legacy completed-training pipeline; dual authority is monitored by
         // training-occurrence/historyShadowDiff and cut over only under TO / #872.
-        const importLines = (relative: string) => readFileSync(new URL(relative, import.meta.url), 'utf8')
-            .split(/\r?\n/)
-            .filter(line => /^\s*(import|export)\b.*\bfrom\b/.test(line));
+        // Every static or dynamic module specifier in the file, regardless of how
+        // Prettier wrapped the import (multi-line, type-only, single or double quotes).
+        const importedModules = (relative: string): string[] => {
+            const source = readFileSync(new URL(relative, import.meta.url), 'utf8');
+            return [...source.matchAll(/(?:\bfrom|\bimport\s*\(|\brequire\s*\()\s*['"]([^'"]+)['"]/g)].map(match => match[1]);
+        };
+        const CANONICAL = /training-occurrence|performedTrainingFacts/;
+
+        it('the module scanner sees multi-line and dynamic-style imports', () => {
+            const modules = importedModules('./perConsumerDoubleCountInventory.test.ts');
+            expect(modules).toContain('../performedTrainingFacts');
+            expect(modules).toContain('../../training-occurrence/trainingResponseEvidence');
+        });
 
         it.each(['../completedTraining.ts', '../fatigue.ts'])('%s does not import canonical occurrence authority', (file) => {
-            const offending = importLines(file).filter(line => /training-occurrence|performedTrainingFacts/.test(line));
+            expect(importedModules(file).length).toBeGreaterThan(0);
+            const offending = importedModules(file).filter(module => CANONICAL.test(module));
             expect(offending).toEqual([]);
         });
 
         it('the daily-ledger input mapper takes no provider or canonical-occurrence imports', () => {
-            const offending = importLines('../intradayLedgerInputs.ts').filter(line => /training-occurrence|performedTrainingFacts|from '\.\/models'/.test(line));
+            const modules = importedModules('../intradayLedgerInputs.ts');
+            expect(modules.length).toBeGreaterThan(0);
+            const offending = modules.filter(module => CANONICAL.test(module) || module === './models');
             expect(offending).toEqual([]);
         });
     });

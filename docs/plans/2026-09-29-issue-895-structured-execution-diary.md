@@ -204,19 +204,25 @@ WP5–WP7 and related #723/#724/#896 remain separate; #952 is already closed.
 
 ## WP6 — Per-consumer double-count closure
 
-**Status:** Implemented — inventory test `engine/tests/perConsumerDoubleCountInventory.test.ts` and the architecture table in `docs/architecture/session-execution.md`; no defect found, no behavior change, `POLICY_VERSION` unchanged
-**Blocked by:** None remaining (WP4 identity convergence shipped as #1046; WP5 vocabulary shipped as #1053/#1054)
-**Unlocks:** #813 (lower-body / physical-capital ledgers) and WP7
-**Purpose:** satisfy the #895 double-count criterion for each consumer already under canonical authority, without a big-bang migration. Tests plus a labeled inventory; no behavior change is expected.
+**Status:** Implemented — no defect found, no behavior change, `POLICY_VERSION` unchanged
+**Blocked by:** None (WP4 and WP5 were prerequisites and are merged)
+**Unlocks:** #813 and WP7
+**Purpose:** satisfy the #895 double-count criterion for each consumer already under canonical authority, without a big-bang migration.
 
-### Handoff for the implementing agent
+### Delivered
 
-Read first: `AGENTS.md`, `CLAUDE.md` (invariants I1-I6), this plan sections 3-4 (decisions D5, D6), `docs/architecture/session-execution.md`, ADR-0034. Use symbols, never line numbers, in any doc or commit text. Verify every row below against current source before writing a test; the inventory was assembled from a grep, not from a full read.
+- `engine/tests/perConsumerDoubleCountInventory.test.ts` pushes one structured-execution plus matched-Garmin fixture through weekly coverage credit, the planning/diagnostic brief table, the response summary and the daily ledger. Each counts or renders the occurrence once; two genuine same-day sessions stay two.
+- Source guards pin completed-training history and fatigue (`completedTraining.ts`, `fatigue.ts`) as legacy, and keep the ledger input mapper free of provider and canonical-occurrence imports.
+- The inventory table, including the morning-brief D-1 section, is in `docs/architecture/session-execution.md`. Arrival order, ambiguity and pending reconciliation are proven by the suites cited there.
+- The daily-ledger `occurrenceId` was confirmed to be the authored session occurrence, never a per-source or performed-occurrence id.
 
-**Consumer inventory to confirm (one row per consumer, authority = canonical or legacy):**
+### Residual (not proven here)
 
-| Consumer | Entry symbol (verify) | Expected authority | Proof to add or locate |
-|---|---|---|---|
+- The reserved-identity hydration path hardened under #917 has no dedicated inventory row.
+- No test covers a late provider update to a revision that coverage has already credited.
+- Broad history, fatigue, microcycle and the engine's D-1 path remain legacy and TO-owned (gated by #872).
+
+---|---|---|---|
 | Weekly coverage credit | `coverage.ts` `resolveCoverageHistory` / `coverageHistoryFromFacts`; callers `rules.ts`, `optimizer.ts`, `planner.ts` | canonical when `performedTrainingFacts` is supplied (even empty); legacy fallback only when null/undefined | existing `engine/tests/canonicalCoverageCreditCutover.test.ts` ("app+Garmin exact full-body -> one credit, not two", arrival-order test); confirm it also covers a late provider update to a revision already credited |
 | Planning / diagnostic brief table | `contextBrief.ts` `renderCanonicalTrainingTable`, `contextBriefActivityTelemetry.ts`, `contextBriefExposureLedger.ts` | canonical, with explicit raw-provenance fallback | one occurrence renders once, Totals use canonical facts, the `Provider-count note` appears on a raw/canonical mismatch; two same-day genuine workouts stay two rows |
 | Response summary path (#914) | `contextBriefResponseSummary.ts` (`contextBriefResponseSummary`), `contextBriefResponseFeatures.ts` | canonical occurrence evidence with `provider_fallback` identity level when unreconciled | must be in the inventory per the #895 related-issues note; prove structured+Garmin does not yield two response summaries; reuse the WP5 / #914 source-completeness vocabulary, do not invent states |
