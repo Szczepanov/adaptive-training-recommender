@@ -44,6 +44,9 @@ const INTERNALS_IMPORTERS = new Set([WRITE_AUTHORITY]);
  * evaluators; remove an entry here when the adapter stops depending on the service. */
 const STATIC_REACH_ADAPTERS = new Set(['engine/firestoreTrainingHistory.ts']);
 
+/** The only engine modules CLAUDE.md lets lazily import a service as a default provider. */
+const LAZY_IO_ENTRY_POINTS = new Set(['engine/rules.ts', 'engine/trainingIntent.ts', 'engine/replay.ts']);
+
 const NON_DIARY_DOMAINS = ['engine/', 'responses/', 'observations/', 'outcomes/', 'knowledge/'];
 
 function productionFiles(directory = SRC_DIR): string[] {
@@ -83,7 +86,7 @@ function resolveSpecifier(fromAbsolute: string, specifier: string): string | nul
  * points (`trainingIntent.ts`, `rules.ts`, `replay.ts`) lazily import services as a default
  * provider, so transitive reachability is asserted on static edges only while DIRECT
  * imports are asserted including dynamic ones. */
-function runtimeImportGraph(includeDynamic: boolean): Map<string, string[]> {
+function runtimeImportGraph(includeDynamic: boolean, dynamicSources?: (file: string) => boolean): Map<string, string[]> {
     const graph = new Map<string, string[]>();
     for (const absolutePath of productionFiles()) {
         const edges: string[] = [];
@@ -101,7 +104,7 @@ function runtimeImportGraph(includeDynamic: boolean): Map<string, string[]> {
                 if (runtime) specifier = node.moduleSpecifier.text;
             } else if (ts.isExportDeclaration(node) && node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier) && !node.isTypeOnly) {
                 specifier = node.moduleSpecifier.text;
-            } else if (includeDynamic && ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword
+            } else if (includeDynamic && (dynamicSources?.(rel(absolutePath)) ?? true) && ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword
                 && node.arguments[0] && ts.isStringLiteral(node.arguments[0])) {
                 specifier = node.arguments[0].text;
             }
@@ -127,18 +130,55 @@ interface DiaryReference {
     node: ts.CallExpression;
 }
 
-/** Every `doc(...)` / `collection(...)` / `collectionGroup(...)` call naming a diary collection. */
+const DIARY_PATH_SEGMENT = /(^|\/)(session_executions|session_execution_locks|diaryMutations)(\/|$)/;
+/** Diary subcollections, which can be reached directly through a collection group query. */
+const DIARY_GROUP_NAMES = new Set(['entries', 'restEvents', 'diaryMutations']);
+
+/** Text pieces of a path-like argument: plain strings, template heads/spans, and a same-file
+ * `const NAME = '...'` that an identifier argument points at. */
+function literalPieces(argument: ts.Expression): string[] {
+    if (ts.isStringLiteral(argument) || ts.isNoSubstitutionTemplateLiteral(argument)) return [argument.text];
+    if (ts.isTemplateExpression(argument)) {
+        return [argument.head.text, ...argument.templateSpans.map(span => span.literal.text)];
+    }
+    if (ts.isIdentifier(argument)) {
+        const pieces: string[] = [];
+        const visit = (node: ts.Node): void => {
+            if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.name.text === argument.text
+                && node.initializer && !ts.isIdentifier(node.initializer)) {
+                pieces.push(...literalPieces(node.initializer));
+            }
+            ts.forEachChild(node, visit);
+        };
+        visit(argument.getSourceFile());
+        return pieces;
+    }
+    return [];
+}
+
+function namedCollection(call: ts.CallExpression): string | undefined {
+    const builder = calleeName(call) ?? '';
+    for (const argument of call.arguments) {
+        for (const piece of literalPieces(argument)) {
+            if (DIARY_COLLECTIONS.has(piece)) return piece;
+            const match = DIARY_PATH_SEGMENT.exec(piece);
+            if (match) return match[2];
+            if (builder === 'collectionGroup' && DIARY_GROUP_NAMES.has(piece)) return piece;
+        }
+    }
+    return undefined;
+}
+
+/** Every `doc(...)` / `collection(...)` / `collectionGroup(...)` call naming a diary collection,
+ * whether by literal, slash-joined or interpolated path, same-file constant, or group name. */
 function diaryReferences(): DiaryReference[] {
     const references: DiaryReference[] = [];
     for (const absolutePath of productionFiles()) {
         const source = parse(absolutePath);
         const visit = (node: ts.Node): void => {
             if (ts.isCallExpression(node) && REFERENCE_BUILDERS.has(calleeName(node) ?? '')) {
-                for (const argument of node.arguments) {
-                    if ((ts.isStringLiteral(argument) || ts.isNoSubstitutionTemplateLiteral(argument)) && DIARY_COLLECTIONS.has(argument.text)) {
-                        references.push({ file: rel(absolutePath), collection: argument.text, node });
-                    }
-                }
+                const collection = namedCollection(node);
+                if (collection) references.push({ file: rel(absolutePath), collection, node });
             }
             ts.forEachChild(node, visit);
         };
@@ -224,6 +264,22 @@ describe('canonical execution diary authority (#895 WP7)', () => {
         expect(isReadOnlyUse(probe!)).toBe(false);
     });
 
+    it.each([
+        ['an interpolated template path', "doc(db, `users/${u}/session_executions/${id}`)"],
+        ['a slash-joined string path', "doc(db, 'users/u1/session_executions/e1')"],
+        ['a same-file constant', "const C = 'session_executions'; collection(db, 'users', u, C)"],
+        ['a collection group over a diary subcollection', "collectionGroup(db, 'entries')"],
+    ])('the reference scanner catches %s', (_label, code) => {
+        const source = ts.createSourceFile('probe.ts', code, ts.ScriptTarget.Latest, true);
+        let found: string | undefined;
+        const visit = (node: ts.Node): void => {
+            if (ts.isCallExpression(node) && REFERENCE_BUILDERS.has(calleeName(node) ?? '')) found ??= namedCollection(node);
+            ts.forEachChild(node, visit);
+        };
+        visit(source);
+        expect(found).toBeDefined();
+    });
+
     it('diary-write internals are imported only by the execution service', () => {
         const graph = runtimeImportGraph(true);
         const importers = [...graph.entries()]
@@ -245,8 +301,9 @@ describe('canonical execution diary authority (#895 WP7)', () => {
         expect(violations).toEqual([]);
     });
 
-    it('those domains cannot reach the diary-write path through static imports (evaluators stay pure)', () => {
-        const graph = runtimeImportGraph(false);
+    it('those domains cannot reach the diary-write path, except through the sanctioned lazy entry points and read adapter', () => {
+        // Lazy `import()` counts everywhere EXCEPT from the three orchestration entry points.
+        const graph = runtimeImportGraph(true, file => !LAZY_IO_ENTRY_POINTS.has(file));
         const protectedTargets = new Set([...DIARY_WRITE_INTERNALS, WRITE_AUTHORITY]);
         const violations = [...graph.keys()]
             .filter(file => NON_DIARY_DOMAINS.some(prefix => file.startsWith(prefix)))
@@ -254,6 +311,22 @@ describe('canonical execution diary authority (#895 WP7)', () => {
             .filter(file => [...reachable(file, graph)].some(target => protectedTargets.has(target)))
             .sort();
         expect(violations).toEqual([]);
+    });
+
+    it('the allowlisted history adapter only calls read methods on the history services', () => {
+        const source = parse(join(SRC_DIR, 'engine/firestoreTrainingHistory.ts'));
+        const called = new Set<string>();
+        const visit = (node: ts.Node): void => {
+            if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)
+                && ts.isIdentifier(node.expression.expression)
+                && ['strengthHistoryReadService', 'executionService', 'sessionExecutionService'].includes(node.expression.expression.text)) {
+                called.add(`${node.expression.expression.text}.${node.expression.name.text}`);
+            }
+            ts.forEachChild(node, visit);
+        };
+        visit(source);
+        expect([...called].filter(call => !/^(get|list|read)/i.test(call.split('.')[1] ?? ''))).toEqual([]);
+        expect(called.size).toBeGreaterThan(0);
     });
 
     it('the static-reach adapter allowlist has no stale entries', () => {

@@ -8,9 +8,12 @@ import type { PerformedTrainingOccurrence } from './models';
 
 /**
  * #895 acceptance: "Structured exercise identity wins over conflicting Garmin exercise
- * recognition." Provider recognition is fallback/diagnostic evidence; it must not change
- * the exposure identity, modality or weekly-role coverage credit of an occurrence that has
- * a structured execution.
+ * recognition." Provider recognition is fallback/diagnostic evidence; it must not change the
+ * session identity, modality, cost/stimulus semantics or weekly-role coverage credit of an
+ * occurrence that has a structured execution. This file pins the SESSION-level derivation
+ * (`deriveFactsFromOccurrence` never reads provider exercise sets); exercise/set-level
+ * authority is pinned by `CompletedWorkoutList.test.tsx` (Garmin sets diagnostic-only),
+ * `activitiesReadModelService.test.ts` and `engine/contextBriefResponseFeatures.test.ts`.
  */
 
 const DATE = '2026-09-01';
@@ -96,6 +99,14 @@ describe('structured identity over conflicting provider recognition (#895)', () 
         expect(facts.exposure.workoutId).toBe('strength_full_body_maintenance_01');
         expect(facts.exposure.templateId).toBe('str_full_01');
         expect(facts.exposure.sourceKinds).toEqual(['structured_execution', 'provider_activity']);
+    });
+
+    it('the whole exposure is identical to the structured-only exposure apart from source provenance', () => {
+        const withProvider = deriveFactsFromOccurrence(occurrence, { structured, provider: provider({ override: conflictingOverride }) }, descriptor);
+        const withoutProvenance = (exposure: typeof withProvider.exposure) => ({ ...exposure, sourceKinds: undefined, providerActivityIds: undefined });
+        expect(withProvider.exposure.sourceKinds).toEqual(['structured_execution', 'provider_activity']);
+        expect(structuredOnly.exposure.sourceKinds).toEqual(['structured_execution']);
+        expect(withoutProvenance(withProvider.exposure)).toEqual(withoutProvenance(structuredOnly.exposure));
     });
 
     it('weekly-role credits are identical with and without the conflicting provider evidence', () => {

@@ -5,7 +5,7 @@
 | **Status** | **In progress** — WP0–WP7 implemented; acceptance closure pending operational evidence |
 | **Source** | [Issue #895](https://github.com/Szczepanov/adaptive-training-recommender/issues/895) |
 | **Baseline** | `origin/main` at `e63517a7` (fetch 2026-09-29; includes #901, #910, #911, #912, #913, #914). The local checkout at plan-writing time was behind by 4 commits; all findings below were verified against the fetched tip (`git show FETCH_HEAD:<path>`), not the stale worktree. |
-| **Blocked by** | No code blocker for WP5; it reuses the implemented diary and reconciliation harness. Per-item dependencies are listed below. |
+| **Blocked by** | Nothing outstanding; WP0-WP7 are implemented and only the closure evidence listed under WP7 remains. |
 | **Unlocks** | Closure of #895; a lossless diary substrate that later history/fatigue cutovers (owned by TO, not this plan) can consume without re-litigating write authority. |
 | **Policy effect** | None. All work is persistence/reconciliation/observability plumbing. `POLICY_VERSION` must not change unless scope is explicitly widened in a separately reviewed policy change. |
 
@@ -13,7 +13,7 @@
 
 Make the structured SessionRunner the lossless, resumable, auditable source of truth for performed session semantics, with Garmin/provider activities attached as secondary measurement evidence for the same physical occurrence.
 
-The 2026-09-29 audit identified durable entry, correction and rest-write gaps. WP1 now batches diary targets, immutable audit records and execution touches into the SDK persistent-cache queue. Tombstones and durable receipts retain deletion and rejected intent across reload. Lifecycle and exact prescription resume are delivered by WP2/WP3. WP4 adds transactional source refresh and real arrival-order convergence proofs. WP5 adds the named failure-state diagnostics and export. WP6 adds the per-consumer double-count inventory and proofs for the consumers already under canonical authority; governance and closure remain with WP7.
+The 2026-09-29 audit identified durable entry, correction and rest-write gaps. WP1 now batches diary targets, immutable audit records and execution touches into the SDK persistent-cache queue. Tombstones and durable receipts retain deletion and rejected intent across reload. Lifecycle and exact prescription resume are delivered by WP2/WP3. WP4 adds transactional source refresh and real arrival-order convergence proofs. WP5 adds the named failure-state diagnostics and export. WP6 adds the per-consumer double-count inventory and proofs for the consumers already under canonical authority; governance guards and the acceptance ledger are WP7; closure evidence remains open.
 
 ## 2. Non-goals
 
@@ -193,11 +193,11 @@ WP5–WP7 and related #723/#724/#896 remain separate; #952 is already closed.
 | 5 | Garmin detail valid-but-empty | same, plus the `exerciseSets: []` mapping |
 | 6 | Reconciliation found no candidate | `workoutSourceDiagnostics.test.ts`; emulator "structured-only … state 6"; emulator "does not claim no candidate when the sweep did not complete" |
 | 7 | Reconciliation found ambiguous candidates | `workoutSourceDiagnostics.test.ts`; emulator "real ambiguous Garmin candidate … state 7" |
-| 8 | Read-model projection failed | `workoutSourceDiagnostics.test.ts`; `DataView.test.tsx` (window failure is neither loading nor empty); `WorkoutSourceDiagnostics.test.tsx` |
+| 8 | Read-model projection failed | `workoutSourceDiagnostics.test.ts`; `DataView.test.tsx` (window failure is neither loading nor empty); `components/WorkoutSourceDiagnostics.test.tsx` |
 
 ### Acceptance
 
-- Every incomplete canonical view can explain its source/reconciliation state ✔ (`WorkoutSourceDiagnostics.test.tsx`, `DataView.test.tsx`);
+- Every incomplete canonical view can explain its source/reconciliation state ✔ (`components/WorkoutSourceDiagnostics.test.tsx`, `DataView.test.tsx`);
 - export supports debugging without exposing fabricated certainty ✔ (`workoutSourceDiagnosticsExport.test.ts`: stable schema, bounds, ordering, canary-value privacy assertions).
 
 ---
@@ -231,31 +231,31 @@ WP5–WP7 and related #723/#724/#896 remain separate; #952 is already closed.
 
 ### Delivered
 
-- `sessions/diaryAuthority.architecture.test.ts`: only `sessionExecutionService` builds references into the diary collections (one audited read-only exception); the diary-write internals are imported only by the service; engine, response, observation, outcome and knowledge modules never import the write path directly and cannot reach it through static imports (one named read adapter is allowlisted); allowlists are checked for staleness.
+- `sessions/diaryAuthority.architecture.test.ts`: only `sessionExecutionService` builds references into the diary collections (one audited read-only exception); the diary-write internals are imported only by the service; engine, response, observation, outcome and knowledge modules never import the write path directly and cannot reach it through static or lazy imports, except from the three orchestration entry points and one named read adapter that is checked to call read methods only; allowlists are checked for staleness.
 - `training-occurrence/structuredIdentityAuthority.test.ts`: provider recognition or a provider modality override cannot change the identity, modality or weekly-role credit of an occurrence that has a structured execution.
-- Raw-trace containment for planning payloads was already pinned by `engine/contextBriefResponseArchitecture.test.ts`; it is referenced, not duplicated.
+- Containment of normalized response telemetry (no raw 1 Hz trace fields) was already pinned by `engine/contextBriefResponseArchitecture.test.ts`; it is referenced, not duplicated.
 - Two acceptance gaps closed with tests: a pinned definition replays after the live catalog workout changes (`sessions/sessionDefinitionResolverSnapshot.test.ts`), and a late provider update to an already-credited occurrence keeps one credit (`engine/tests/perConsumerDoubleCountInventory.test.ts`).
-- `docs/architecture/session-execution.md` gains the authority-guard, arrival-order and limits section; the status board and #895 issue body are updated.
+- `docs/architecture/session-execution.md` gains the authority-guard, arrival-order and limits section, and the status board is updated. The #895 issue body checklist is ticked from this ledger only after this package merges.
 
 ### Acceptance ledger (against `origin/main` after this package)
 
 | # | Criterion | Proof | Tier |
 |---|---|---|---|
-| 1 | offline sets, reload, reconnect, exactly once | `tests/e2e/session-diary-offline.pw.ts` | browser E2E (shell is online at reload; cold-offline unproven) |
+| 1 | offline sets, reload, reconnect, exactly once | `app/tests/e2e/session-diary-offline.pw.ts` | browser E2E (shell is online at reload; cold-offline unproven) |
 | 2 | retry cannot duplicate | `emulator/sessionExecutionDiary.emulator.test.ts` | emulator |
 | 3 | completing twice | `services/sessionExecutionLifecycle.test.ts`, `emulator/sessionLifecycleResumeRules.emulator.test.ts` | unit + emulator |
 | 4 | abandon retains sets | `emulator/sessionExecutionDiary.emulator.test.ts`, `emulator/sessionLifecycleResumeRules.emulator.test.ts` | emulator |
-| 5 | reload restores execution and entries | `tests/e2e/session-diary-offline.pw.ts`, `sessions/sessionDiaryResume.test.ts` | browser + unit |
+| 5 | reload restores execution and entries | `app/tests/e2e/session-diary-offline.pw.ts`, `sessions/sessionDiaryResume.test.ts` | browser + unit |
 | 6 | prescription hash survives source change | `sessions/sessionDefinitionResolverSnapshot.test.ts` | unit |
-| 7 | structured identity beats Garmin recognition | `training-occurrence/structuredIdentityAuthority.test.ts` | unit |
-| 8 | Garmin HR enriches without replacing sets | `emulator/reconciliationOrdering.emulator.test.ts`, `CompletedWorkoutList.test.tsx` | emulator + component |
-| 9 | matched pair is one history row | `CompletedWorkoutList.test.tsx`, `training-occurrence/completedWorkoutView.test.ts` | unit |
+| 7 | structured identity beats Garmin recognition | `training-occurrence/structuredIdentityAuthority.test.ts` (session identity, modality, cost semantics, credits); `components/CompletedWorkoutList.test.tsx` and `training-occurrence/activitiesReadModelService.test.ts` (Garmin exercise sets diagnostic-only); `engine/contextBriefResponseFeatures.test.ts` (structured vs provider-recognized identity) | unit + component |
+| 8 | Garmin HR enriches without replacing sets | `emulator/reconciliationOrdering.emulator.test.ts`, `components/CompletedWorkoutList.test.tsx` | emulator + component |
+| 9 | matched pair is one history row | `components/CompletedWorkoutList.test.tsx`, `training-occurrence/completedWorkoutView.test.ts` | unit |
 | 10 | two same-day sessions do not merge | `emulator/reconciliationOrdering.emulator.test.ts`, `training-occurrence/reconciliationService.test.ts` | emulator + unit |
 | 11 | late provider arrival enriches | `emulator/reconciliationOrdering.emulator.test.ts` | emulator (synthetic timing) |
 | 12 | manual link/unlink survives sync | `emulator/reconciliationOrdering.emulator.test.ts`, `training-occurrence/reconciliationService.test.ts` | **partial**: repository-seeded decisions and the reconciliation sweep only; no Python Garmin re-sync, no UI-driven link/unlink |
 | 13 | no double-count for canonical consumers | `engine/tests/perConsumerDoubleCountInventory.test.ts` | unit, scoped to consumers already canonical |
-| 14 | ten integration scenarios | emulator suites above plus `emulator/sessionExecutionConcurrentStart.emulator.test.ts` | emulator + browser |
-| 15 | diagnostics explain source state | `emulator/workoutSourceDiagnostics.emulator.test.ts`, `WorkoutSourceDiagnostics.test.tsx`, `training-occurrence/workoutSourceDiagnosticsExport.test.ts` | emulator + unit |
+| 14 | ten integration scenarios | offline queueing and retry: `emulator/sessionExecutionDiary.emulator.test.ts`; concurrent start: `emulator/sessionExecutionConcurrentStart.emulator.test.ts`; reload: that suite plus the browser test; completion and abandonment: `emulator/sessionLifecycleResumeRules.emulator.test.ts`; correction: the diary emulator suite; provider-first, execution-first and ambiguous: `emulator/reconciliationOrdering.emulator.test.ts` | emulator + browser |
+| 15 | diagnostics explain source state | `emulator/workoutSourceDiagnostics.emulator.test.ts`, `components/WorkoutSourceDiagnostics.test.tsx`, `training-occurrence/workoutSourceDiagnosticsExport.test.ts` | emulator + unit |
 
 ### Not established, and why #895 stays open
 
