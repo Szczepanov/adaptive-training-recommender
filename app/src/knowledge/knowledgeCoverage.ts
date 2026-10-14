@@ -66,11 +66,11 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
     },
     {
         id: 'periodization.season_roadmap', domain: 'periodization_taper', title: 'Season roadmap event roles and conflicts',
-        currentRule: 'The first upcoming event in authority order is the primary season target; other events are benchmark peaks (A or 4-star B), benchmarks (B) or train-through (C). One event owns each date; shared dates, events inside a peak taper and peaks closer than 7 days to the next peak taper produce typed conflicts.',
-        classification: 'product_heuristic', coverage: 'partial', decisionImpact: 'moderate', safetyImpact: 'moderate', researchPriority: 'p2',
-        codeRefs: ['engine/seasonRoadmap.ts:resolveSeasonRoadmap', 'engine/periodization.ts:goalToUserEvent'],
+        currentRule: 'The first upcoming event in authority order is the primary season target; other events are benchmark peaks (A or 4-star B), benchmarks (B) or train-through (C). One event owns each date; shared dates, events inside a peak taper and peaks closer than 7 days to the next peak taper produce typed conflicts. Supporting events limit dose as a minimum (B taper to 0.85 volume, B+ 0.75; 1-2 recovery days at 0.8/0.6) except while the primary tapers or recovers; a C race within 3 days reduces one quality requirement by one instead of adding objectives (not on evergreen-programmed dates).',
+        classification: 'product_heuristic', coverage: 'partial', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'p1',
+        codeRefs: ['engine/seasonRoadmap.ts:resolveSeasonRoadmap', 'engine/seasonSupport.ts:resolveSupportingEventScale', 'engine/periodization.ts:resolveMultiEventObjectives', 'engine/periodization.ts:goalToUserEvent'],
         knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.seasonRoadmapPolicy],
-        coverageRationale: 'Explicit product-policy claim for deterministic role classification; no sports-science literature addresses season-level event coordination in a planning system. Partial at P2 because the 4-star B+ cut, the 7-day peak recovery gap and the 28-day outcome lookback remain uncalibrated.',
+        coverageRationale: 'Explicit product-policy claim for deterministic role classification; no sports-science literature addresses season-level event coordination in a planning system. Partial at P1 now that it alters dose: the 4-star B+ cut, the 7-day peak recovery gap, the 28-day outcome lookback, the 0.15/0.25 supporting-taper reductions, the recovery scales and the 3-day C-race lead remain uncalibrated product choices.',
     },
     {
         id: 'workout_catalog.strength_warmup_invariant', domain: 'workout_catalog', title: 'Catalog strength warm-up invariant',

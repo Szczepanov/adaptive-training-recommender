@@ -9,6 +9,7 @@
  */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { isValidDevelopmentTrace } from './developmentAuthority';
+import { isValidSeasonTrace } from './seasonSupport';
 import type {
     DailySubjectiveCheckin,
     DailyRecommendation,
@@ -1547,12 +1548,13 @@ export function validateRecommendation(raw: any): ValidationResult<DailyRecommen
             && Number.isSafeInteger(audit.decisionContext.revision) && audit.decisionContext.revision >= 1
             && typeof audit.decisionContext.contentHash === 'string' && /^[a-f0-9]{64}$/.test(audit.decisionContext.contentHash)
         );
-        const validAudit = hasExactKeys(audit, ['policyVersion', 'evaluatedAt', 'decisionContextRevision', 'decisionContext', 'safetyStatus', 'history', 'envelope', 'plannedDose', 'executionDose', 'candidateScores', 'droppedContributorObjectives', 'externalPlan', 'externalRest', 'authoredOccurrence', 'primarySession', 'additionalSessions', 'subjectiveDrift', 'identityDecision', 'knowledgeLineage', 'athleteEvidenceLineage', 'development'].filter(key => audit?.[key] !== undefined))
+        const validAudit = hasExactKeys(audit, ['policyVersion', 'evaluatedAt', 'decisionContextRevision', 'decisionContext', 'safetyStatus', 'history', 'envelope', 'plannedDose', 'executionDose', 'candidateScores', 'droppedContributorObjectives', 'externalPlan', 'externalRest', 'authoredOccurrence', 'primarySession', 'additionalSessions', 'subjectiveDrift', 'identityDecision', 'knowledgeLineage', 'athleteEvidenceLineage', 'development', 'season'].filter(key => audit?.[key] !== undefined))
             && typeof audit.policyVersion === 'string'
             && typeof audit.evaluatedAt === 'string'
             && typeof audit.decisionContextRevision === 'string'
             && validDecisionContext
             && (audit.development === undefined || isValidDevelopmentTrace(audit.development))
+            && (audit.season === undefined || isValidSeasonTrace(audit.season))
             && audit.safetyStatus === 'complete'
             && hasExactKeys(audit.history, ['completedEventCount', 'unmatchedEventCount', 'sourceStatuses'])
             && Number.isInteger(audit.history.completedEventCount) && audit.history.completedEventCount >= 0

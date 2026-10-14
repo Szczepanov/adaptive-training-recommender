@@ -39,6 +39,7 @@ import { POLICY_VERSION } from './policy';
 import { resolveExecutionDose } from './dose';
 import type { IntentBlock } from './blockIntent';
 import { developmentTemplateEligible, developmentTrace } from './developmentAuthority';
+import { seasonTrace } from './seasonSupport';
 import { isTemplatePhaseEligible } from './periodization';
 import { resolveMinimumDaysAfterHardLowerBody, resolveRecoveryHoursForTemplate } from './planningCandidate';
 import { adjudicateExternalSession } from './externalSession';
@@ -612,6 +613,7 @@ function adjudicatedExternalRecommendation(
             policyVersion: POLICY_VERSION,
             eventHorizon: intent.periodization.horizonPolicy,
             development: developmentTrace(intent.planningContext, intent.history),
+            season: seasonTrace(intent.periodization),
             candidateScores: [],
             droppedContributorObjectives: intent.droppedContributorObjectives,
             externalPlan: { planId, revision, sessionId: session.id, contentHash },
@@ -644,6 +646,7 @@ function authoredRestRecommendation(
             policyVersion: POLICY_VERSION,
             eventHorizon: intent.periodization.horizonPolicy,
             development: developmentTrace(intent.planningContext, intent.history),
+            season: seasonTrace(intent.periodization),
             candidateScores: [],
             droppedContributorObjectives: intent.droppedContributorObjectives,
             externalRest: { planId, revision, contentHash, restDirectiveId: directive.id, date } satisfies ExternalRestProvenance,
@@ -913,6 +916,7 @@ export async function evaluateTrainingWithIntent(
                 policyVersion: POLICY_VERSION,
                 eventHorizon: intent.periodization.horizonPolicy,
                 development: developmentTrace(intent.planningContext, intent.history),
+            season: seasonTrace(intent.periodization),
                 stimulusRecency: rankingResult.stimulusRecency,
                 candidateScores: rankingResult.all.map(candidate => ({ templateId: candidate.template.id, utilityScore: candidate.utilityScore, benefitScore: candidate.benefitScore, costPenalty: candidate.costPenalty, excludedReasons: candidate.excludedReasons, stimulusRecency: candidate.stimulusRecency })),
                 droppedContributorObjectives: intent.droppedContributorObjectives,
@@ -950,6 +954,7 @@ export async function evaluateTrainingWithIntent(
             policyVersion: POLICY_VERSION,
             eventHorizon: intent.periodization.horizonPolicy,
             development: developmentTrace(intent.planningContext, intent.history),
+            season: seasonTrace(intent.periodization),
             stimulusRecency: rankingResult.stimulusRecency,
             candidateScores: rankingResult.all.map(candidate => ({ templateId: candidate.template.id, utilityScore: candidate.utilityScore, benefitScore: candidate.benefitScore, costPenalty: candidate.costPenalty, excludedReasons: candidate.excludedReasons, stimulusRecency: candidate.stimulusRecency })),
             droppedContributorObjectives: intent.droppedContributorObjectives,

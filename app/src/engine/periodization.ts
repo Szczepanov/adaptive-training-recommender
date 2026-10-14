@@ -12,7 +12,14 @@ import type {
     WeeklyObjective,
 } from './models';
 import { resolveEventTaper } from './taperPolicy';
-import { compareEventAuthority } from './seasonRoadmap';
+import { compareEventAuthority, resolveSeasonRoadmap, type SeasonRoadmap } from './seasonRoadmap';
+import {
+    applySupportingEventScale,
+    resolveSupportingEventScale,
+    TRAIN_THROUGH_QUALITY_KEYS,
+    TRAIN_THROUGH_REPLACEMENT_LEAD_DAYS,
+    type SupportingEventScale,
+} from './seasonSupport';
 import { resolveEventPhaseHorizonPolicy, type EventPhaseHorizonPolicy } from './eventHorizonPolicy';
 // Re-exported for existing importers (e.g. planner.ts, trainingIntent.ts) -- the
 // canonical type definitions live in models.ts (see its own comment) so
@@ -27,6 +34,9 @@ export interface PhaseWeights {
     volumeScale: number;    // 0.5 - 1.2
     intensityScale: number; // 0.5 - 1.2
     taperActive: boolean;
+    /** Issue #929: set when a supporting season event (B/B+/secondary A) narrowed this phase's
+     *  dose; the scales above already include it (as a minimum, never stacked). */
+    supportingEventScale?: SupportingEventScale;
 }
 
 /** The policy result for a single evaluation date, plus event-status information the
@@ -48,6 +58,9 @@ export interface PeriodizationResult {
     governingEventTie: UserEvent[];
     /** Issue #928: The resolved event phase horizon policy that governed this periodization result. */
     horizonPolicy: EventPhaseHorizonPolicy;
+    /** Issue #929: the season roadmap for this evaluation date (ADR-0050). Optional only for
+     *  legacy fixtures that build a result by hand. */
+    seasonRoadmap?: SeasonRoadmap;
 }
 
 /** Modalities that constitute sport-specific exposure for a governing event. This is
@@ -364,6 +377,7 @@ export function evaluatePeriodizationPhase(
     // In forward plan projections (asOfDate provided), an event scheduled on or after
     // asOfDate that has now passed in the simulated timeline (daysToEvent < 0 && daysToEvent >= -3)
     // enters Post-Event Recovery as a projected completion.
+    const seasonRoadmap = resolveSeasonRoadmap(events, currentDateStr);
     const eligibleEvents = datedEvents.filter(({ event, daysToEvent, targetDate }) =>
         (event.lifecycle === 'scheduled' && daysToEvent >= 0)
         || ((event.lifecycle === 'completed' || event.lifecycle === 'DNF') && daysToEvent < 0 && daysToEvent >= -3)
@@ -387,6 +401,7 @@ export function evaluatePeriodizationPhase(
             partialEffort: false,
             governingEventTie: [],
             horizonPolicy: horizonPolicy ?? resolveEventPhaseHorizonPolicy(null),
+            seasonRoadmap,
         };
     }
 
@@ -468,13 +483,14 @@ export function evaluatePeriodizationPhase(
     }
 
     return {
-        phase,
+        phase: applySupportingEventScale(phase, resolveSupportingEventScale(seasonRoadmap, phase.phaseName)),
         focusEvent,
         daysToEvent,
         staleEvents,
         partialEffort,
         governingEventTie,
         horizonPolicy: resolvedHorizon,
+        seasonRoadmap,
     };
 }
 
@@ -606,7 +622,10 @@ export function resolveMultiEventObjectives(
     events: UserEvent[],
     currentDateStr: string,
     authorityResult: PeriodizationResult,
-    authorityObjectives: WeeklyObjective[]
+    authorityObjectives: WeeklyObjective[],
+    /** `trainThroughReplacement: false` for evergreen-programmed dates, whose executable week is
+     *  rebuilt from capacity-packed coverage roles; a replacement there would be recorded, not applied. */
+    options: { trainThroughReplacement?: boolean } = {},
 ): MultiEventObjectiveResolution {
     const merged: WeeklyObjective[] = authorityObjectives.map(objective => ({ ...objective }));
     const byKey = new Map<ObjectiveKey, WeeklyObjective>(merged.map(objective => [objective.key, objective]));
@@ -644,7 +663,32 @@ export function resolveMultiEventObjectives(
             return a.event.id < b.event.id ? -1 : a.event.id > b.event.id ? 1 : 0;
         });
 
-    for (const { event } of contributors) {
+    const roadmap = authorityResult.seasonRoadmap ?? resolveSeasonRoadmap(events, currentDateStr);
+    const roleByEventId = new Map(roadmap.entries.map(entry => [entry.eventId, entry.role]));
+
+    for (const { event, daysToEvent } of contributors) {
+        // Issue #929 (ADR-0050 D3): a C race is race craft, never a layered objective set. A
+        // nearby one stands in for one of the authority's quality sessions instead.
+        if (roleByEventId.get(event.id) === 'train_through') {
+            if (options.trainThroughReplacement === false || daysToEvent > TRAIN_THROUGH_REPLACEMENT_LEAD_DAYS
+                || authorityResult.phase.taperActive) continue;
+            const replaced = TRAIN_THROUGH_QUALITY_KEYS
+                .map(key => byKey.get(key))
+                .find((objective): objective is WeeklyObjective => objective !== undefined
+                    && (objective.requiredCredit ?? objective.targetExposures) > 0);
+            if (!replaced) continue;
+            const required = replaced.requiredCredit ?? replaced.targetExposures;
+            replaced.requiredCredit = Math.max(0, required - 1);
+            droppedContributorObjectives.push({
+                eventId: event.id,
+                eventTitle: event.title,
+                objectiveKey: replaced.key,
+                reason: 'train_through_replaces_key_session',
+                message: `${event.title} (${event.timing?.planningDate ?? event.date}) is a train-through race, so it replaces one ${replaced.title} session this week instead of adding to it.`,
+                date: currentDateStr,
+            });
+            continue;
+        }
         // `resolveEventTaper` is the single taper policy authority for both governing and
         // contributor events. Do not duplicate A/B day windows here: that would bypass
         // cycling-A race-week alignment and athlete-authored taper start dates.

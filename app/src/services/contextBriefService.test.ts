@@ -180,7 +180,7 @@ describe('ContextBriefService', () => {
         expect(json.content).toBe(markdown);
         expect(json.unavailableSources).toEqual(result.unavailableSources);
         expect(json.schemaVersion).toBe('context_brief_export_v2');
-        expect(json.contractVersion).toBe('2026-10-context-brief-contract-v6');
+        expect(json.contractVersion).toBe('2026-10-context-brief-contract-v7');
         expect(markdown).toContain(`Contract version: ${json.contractVersion}`);
     });
 
@@ -252,7 +252,7 @@ describe('ContextBriefService', () => {
         expect(markdown).toContain('comparable raw change +5 kg (+3.3%); status insufficient_evidence');
         expect(markdown).toContain('source derived');
         expect(json.content).toBe(markdown);
-        expect(json.contractVersion).toBe('2026-10-context-brief-contract-v6');
+        expect(json.contractVersion).toBe('2026-10-context-brief-contract-v7');
         expect(result.unavailableSources).not.toContain('assessment benchmarks (incomplete or unavailable sources)');
     });
 
@@ -321,7 +321,7 @@ describe('ContextBriefService', () => {
 
     it('emits the planning round-trip section and preserves unavailable source reads as unknown', async () => {
         const empty = await new ContextBriefService().build('u1', AS_OF, 14, 'full');
-        expect(empty.contractVersion).toBe('2026-10-context-brief-contract-v6');
+        expect(empty.contractVersion).toBe('2026-10-context-brief-contract-v7');
         expect(empty.text).toContain('External-plan execution round trip (14-day window)');
         expect(empty.text).toContain('Missing activity is not treated as a missed session.');
 

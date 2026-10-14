@@ -237,7 +237,7 @@ export function resolvePlannedDose(
  * this event/date.
  */
 export function resolvePlannedDoseForDate(
-    phase: { volumeScale: number; intensityScale: number },
+    phase: { volumeScale: number; intensityScale: number; supportingEventScale?: { volumeScale: number; intensityScale: number | null } },
     objectives: readonly WeeklyObjective[],
     unresolvedObjectives: readonly WeeklyObjective[],
     planDefinition: PlanDefinition | null | undefined,
@@ -245,7 +245,13 @@ export function resolvePlannedDoseForDate(
 ): PlannedDose {
     const activeBlock = planDefinition?.blocks.find(block => block.startDate <= date && date <= block.endDate);
     if (activeBlock) {
-        return boundedPlannedDose(activeBlock.volumeScale, activeBlock.intensityScale);
+        // Issue #929: a supporting season event narrows an authored block as a minimum; the
+        // plan is event-relative to the primary target and cannot know about nearer races.
+        const supporting = phase.supportingEventScale;
+        return boundedPlannedDose(
+            Math.min(activeBlock.volumeScale, supporting?.volumeScale ?? Infinity),
+            Math.min(activeBlock.intensityScale, supporting?.intensityScale ?? Infinity),
+        );
     }
     return resolvePlannedDose(phase, objectives, unresolvedObjectives);
 }
@@ -456,7 +462,10 @@ export async function resolveTrainingIntent(
     // by today's decision (evaluateTrainingWithIntent), tomorrow's provisional plan
     // (evaluateNextDayPlanWithIntent), and the week-ahead strip
     // (generateWeekAheadPlanWithIntent) -- all three call resolveTrainingIntent.
-    const multiEventResolution = resolveMultiEventObjectives(events, date, periodization, builtMicrocycle.objectives);
+    // Evergreen programming rebuilds the executable week from capacity-packed coverage roles, so a
+    // train-through replacement here would be recorded but never applied; skip it there.
+    const multiEventResolution = resolveMultiEventObjectives(events, date, periodization, builtMicrocycle.objectives,
+        { trainThroughReplacement: !usesEvergreenProgramming(planningContext) });
     const microcycle: MicrocycleState = { ...builtMicrocycle, objectives: multiEventResolution.objectives };
     const unresolvedObjectives = getUnresolvedObjectives(microcycle);
     const branchInternalStrain = computeInternalResponseStrain(readiness);

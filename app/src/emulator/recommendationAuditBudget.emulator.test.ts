@@ -167,6 +167,10 @@ function recommendation(
                       plannedDose: { volume: 1, intensity: 1 },
                       executionDose: { volume: 1, intensity: 1 },
                       droppedContributorObjectives: [],
+                      season: {
+                          policyVersion: '2026-10-season-roadmap-v1', primaryEventId: 'a', conflicts: [], supportingScale: null,
+                          entries: [{ eventId: 'a', title: 'A', date, role: 'primary_peak', daysToEvent: 5, status: 'upcoming', dateOwner: true }],
+                      },
                       externalPlan: {
                           planId: 'synthetic',
                           revision: 1,
@@ -789,6 +793,25 @@ emulatorDescribe('Recommendation audit budget', () => {
             delete auditWithoutLineage.knowledgeLineage;
             await assertFails(
                 setDoc(doc(db, path), { ...rec, recommendationAudit: auditWithoutLineage }),
+            );
+        });
+
+        it('accepts a compact season trace and rejects an oversized one (#929)', async () => {
+            await environment.clearFirestore();
+            const db = environment.authenticatedContext(owner).firestore();
+            const rec = recommendation(0, false);
+            const entry = { eventId: 'a', title: 'A', date, role: 'primary_peak', daysToEvent: 5, status: 'upcoming', dateOwner: true };
+            const season = (entries: unknown[]) => ({
+                policyVersion: '2026-10-season-roadmap-v1', primaryEventId: 'a', entries, conflicts: [], supportingScale: null,
+            });
+            await assertSucceeds(
+                setDoc(doc(db, path), { ...rec, recommendationAudit: { ...rec.recommendationAudit, season: season([entry]) } }),
+            );
+            await assertFails(
+                setDoc(doc(db, path), {
+                    ...rec,
+                    recommendationAudit: { ...rec.recommendationAudit, season: season(Array.from({ length: 33 }, () => entry)) },
+                }),
             );
         });
 
