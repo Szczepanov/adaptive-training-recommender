@@ -712,3 +712,17 @@ class CanonicalActivityDetail:
     variability_index: float | None = None
     laps: list[CanonicalLapSummary] | None = None
     exercise_sets: list[CanonicalExerciseSet] | None = None
+
+
+# Bounded, normalized outcome of the per-activity strength ``exerciseSets`` fetch (#1051).
+# ``fetched`` is only valid when ``exerciseSets`` is written in the same payload.
+DetailFetchStatus = Literal["fetched", "failed", "rate_limited", "not_attempted"]
+
+
+@dataclass(frozen=True)
+class CanonicalDetailFetchOutcome:
+    """Outcome of one detail fetch. ``attempted_at`` is a UTC ISO instant recording the
+    sync decision time shared by the whole run, not a per-request time."""
+
+    status: DetailFetchStatus
+    attempted_at: str

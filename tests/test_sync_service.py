@@ -1,6 +1,7 @@
 import logging
 from datetime import datetime, timedelta
 from functools import partial
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -13,6 +14,7 @@ from garmin_sync.canonical import (
     CanonicalActivity,
     CanonicalActivityDetail,
     CanonicalDailyMetrics,
+    CanonicalExerciseSet,
     CanonicalPerformanceTargets,
     CanonicalZoneBucket,
 )
@@ -2207,3 +2209,230 @@ def test_garminconnect_version_initialization(monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.setattr("importlib.metadata.version", mock_version_not_found)
     service_missing = GarminSyncService(settings=settings, repository=MagicMock(db=None))
     assert service_missing.garminconnect_version is None
+
+
+class StrengthDetailProvider(DetailFakeProvider):
+    """Per-activity scripted strength detail outcomes for exerciseSets status tests."""
+
+    def __init__(
+        self,
+        scripts: dict[str, Any],
+        activity_dates: dict[str, str] | None = None,
+        types: dict[str, str] | None = None,
+    ):
+        super().__init__(activity_count=0)
+        self.scripts = scripts
+        self.activities = [
+            CanonicalActivity(
+                activity_id=activity_id,
+                date=(activity_dates or {}).get(activity_id, "2026-08-06"),
+                type=(types or {}).get(activity_id, "strength_training"),
+                duration_min=45,
+                duration_seconds=2700,
+                training_effect_aerobic=1.0,
+                training_effect_anaerobic=1.0,
+                average_hr=110,
+                training_load=40.0,
+                intensity_tag="easy",
+            )
+            for activity_id in scripts
+        ]
+
+    def fetch_activity_detail(self, activity_id: str) -> ProviderActivityDetailResult:
+        self.detail_calls.append(activity_id)
+        script = self.scripts[activity_id]
+        if isinstance(script, Exception):
+            raise script
+        sets, rate_limited = script
+        return ProviderActivityDetailResult(
+            canonical=CanonicalActivityDetail(activity_id=activity_id, exercise_sets=sets),
+            raw_payloads={},
+            rate_limited=rate_limited,
+        )
+
+
+_ONE_SET = [CanonicalExerciseSet(set_order=0, repetition_count=5)]
+
+
+def _statuses(repo: MagicMock) -> dict[str, Any]:
+    return {
+        str(activity_id): payload.get("detailStatus")
+        for activity_id, payload in repo.upsert_activities.call_args.args[0]
+    }
+
+
+def _sets_status(statuses: dict[str, Any], activity_id: str) -> str | None:
+    entry = statuses[activity_id]
+    return None if entry is None else entry["exerciseSets"]["status"]
+
+
+def test_exercise_sets_status_fetched_and_empty_list_is_fetched():
+    provider = StrengthDetailProvider({"a": (_ONE_SET, False), "b": ([], False)})
+    service, repo = _detail_service(provider)
+
+    assert service.sync_daily("2026-08-06", force=True, resync_lookback_days=0)
+    statuses = _statuses(repo)
+    assert _sets_status(statuses, "a") == "fetched"
+    assert _sets_status(statuses, "b") == "fetched"
+    payloads = dict(repo.upsert_activities.call_args.args[0])
+    assert payloads["b"]["exerciseSets"] == []
+
+
+def test_exercise_sets_status_failed_for_exception_and_missing_payload():
+    provider = StrengthDetailProvider({"a": RuntimeError("secret-detail-text"), "b": (None, False)})
+    service, repo = _detail_service(provider)
+
+    assert service.sync_daily("2026-08-06", force=True, resync_lookback_days=0)
+    statuses = _statuses(repo)
+    assert _sets_status(statuses, "a") == "failed"
+    assert _sets_status(statuses, "b") == "failed"
+    payloads = dict(repo.upsert_activities.call_args.args[0])
+    assert "exerciseSets" not in payloads["b"]
+    assert "secret-detail-text" not in repr(payloads)
+
+
+def test_exercise_sets_status_rate_limit_marks_that_and_later_strength_activities():
+    provider = StrengthDetailProvider(
+        {
+            "ok": (_ONE_SET, False),
+            "hit": GarminConnectTooManyRequestsError("rate limited"),
+            "later": (_ONE_SET, False),
+            "ride": (_ONE_SET, False),
+        },
+        types={"ride": "cycling"},
+    )
+    service, repo = _detail_service(provider, enabled=False)
+
+    assert service.sync_daily("2026-08-06", force=True, resync_lookback_days=0)
+    assert provider.detail_calls == ["ok", "hit"]
+    statuses = _statuses(repo)
+    assert _sets_status(statuses, "ok") == "fetched"
+    assert _sets_status(statuses, "hit") == "rate_limited"
+    assert _sets_status(statuses, "later") == "rate_limited"
+    assert _sets_status(statuses, "ride") is None
+
+
+def test_exercise_sets_status_partial_rate_limit_with_sets_is_fetched_then_later_limited():
+    provider = StrengthDetailProvider({"a": (_ONE_SET, True), "b": (_ONE_SET, False)})
+    service, repo = _detail_service(provider)
+
+    assert service.sync_daily("2026-08-06", force=True, resync_lookback_days=0)
+    assert provider.detail_calls == ["a"]
+    statuses = _statuses(repo)
+    assert _sets_status(statuses, "a") == "fetched"
+    assert _sets_status(statuses, "b") == "rate_limited"
+
+
+def test_exercise_sets_status_not_attempted_without_detail_capability():
+    provider = StrengthDetailProvider({"a": (_ONE_SET, False), "ride": (_ONE_SET, False)})
+    provider.capabilities = ProviderCapabilities(
+        daily_summary=True, sleep=True, hrv=True, activities=True, activity_details=False
+    )
+    provider.activities[1].type = "cycling"
+    service, repo = _detail_service(provider)
+
+    assert service.sync_daily("2026-08-06", force=True, resync_lookback_days=0)
+    assert provider.detail_calls == []
+    statuses = _statuses(repo)
+    assert _sets_status(statuses, "a") == "not_attempted"
+    assert _sets_status(statuses, "ride") is None
+
+
+def test_exercise_sets_status_omitted_for_lookback_activities_and_uses_one_instant():
+    provider = StrengthDetailProvider(
+        {"old": (_ONE_SET, False), "t1": (_ONE_SET, False), "t2": RuntimeError("x")},
+        activity_dates={"old": "2026-08-05", "t1": "2026-08-06", "t2": "2026-08-06"},
+    )
+    service, repo = _detail_service(provider)
+
+    assert service.sync_daily("2026-08-06", force=True, resync_lookback_days=0)
+    statuses = _statuses(repo)
+    assert statuses["old"] is None
+    instants = {statuses[key]["exerciseSets"]["attemptedAt"] for key in ("t1", "t2")}
+    assert len(instants) == 1
+    assert datetime.fromisoformat(instants.pop()).tzinfo is not None
+
+
+def test_backfill_exercise_sets_status_follows_same_rules():
+    provider = StrengthDetailProvider(
+        {
+            "a": (_ONE_SET, False),
+            "b": RuntimeError("boom"),
+            "c": GarminConnectTooManyRequestsError("slow"),
+            "d": (_ONE_SET, False),
+            "ride": (_ONE_SET, False),
+        },
+        types={"ride": "cycling"},
+    )
+    service, repo = _detail_service(provider, enabled=False)
+    day = datetime.fromisoformat("2026-08-06").date()
+
+    service._fetch_and_archive_backfill_activities(
+        provider, day, day, include_details=True, run_id="r", stop_on_rate_limit=False
+    )
+    statuses = _statuses(repo)
+    assert {key: _sets_status(statuses, key) for key in statuses} == {
+        "a": "fetched",
+        "b": "failed",
+        "c": "rate_limited",
+        "d": "rate_limited",
+        "ride": None,
+    }
+    assert provider.detail_calls == ["a", "b", "c"]
+
+
+def test_backfill_partial_rate_limit_keeps_fetched_and_limits_later_activities():
+    provider = StrengthDetailProvider({"a": (_ONE_SET, True), "b": (_ONE_SET, False)})
+    service, repo = _detail_service(provider)
+    day = datetime.fromisoformat("2026-08-06").date()
+
+    service._fetch_and_archive_backfill_activities(
+        provider, day, day, include_details=True, run_id="r", stop_on_rate_limit=False
+    )
+    statuses = _statuses(repo)
+    assert _sets_status(statuses, "a") == "fetched"
+    assert _sets_status(statuses, "b") == "rate_limited"
+    assert provider.detail_calls == ["a"]
+
+
+def test_backfill_without_details_writes_no_status_so_stored_fetched_survives():
+    provider = StrengthDetailProvider({"a": (_ONE_SET, False)})
+    service, repo = _detail_service(provider)
+    day = datetime.fromisoformat("2026-08-06").date()
+
+    service._fetch_and_archive_backfill_activities(
+        provider, day, day, include_details=False, run_id="r"
+    )
+    assert provider.detail_calls == []
+    assert _statuses(repo) == {"a": None}
+
+
+def _deep_merge(target: dict[str, Any], source: dict[str, Any]) -> None:
+    for key, value in source.items():
+        if isinstance(value, dict) and isinstance(target.get(key), dict):
+            _deep_merge(target[key], value)
+        else:
+            target[key] = value
+
+
+def test_status_merge_semantics_failed_then_fetched_and_non_attempt_keeps_fetched():
+    store: dict[str, dict[str, Any]] = {}
+    provider = StrengthDetailProvider({"a": RuntimeError("x")})
+    service, repo = _detail_service(provider)
+    repo.upsert_activities.side_effect = lambda items: [
+        _deep_merge(store.setdefault(str(i), {}), p) for i, p in items
+    ]
+    day = datetime.fromisoformat("2026-08-06").date()
+
+    assert service.sync_daily("2026-08-06", force=True, resync_lookback_days=0)
+    assert store["a"]["detailStatus"]["exerciseSets"]["status"] == "failed"
+
+    provider.scripts["a"] = (_ONE_SET, False)
+    assert service.sync_daily("2026-08-06", force=True, resync_lookback_days=0)
+    assert store["a"]["detailStatus"]["exerciseSets"]["status"] == "fetched"
+    assert store["a"]["exerciseSets"]
+
+    service._fetch_and_archive_backfill_activities(
+        provider, day, day, include_details=False, run_id="r"
+    )
+    assert store["a"]["detailStatus"]["exerciseSets"]["status"] == "fetched"
