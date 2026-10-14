@@ -8,7 +8,7 @@ import {
 } from './workoutSourceDiagnosticsExport';
 import type { ReconciliationSweepStatus } from './completedWorkoutView';
 import { FAILURE_STATE_CODES } from './workoutSourceDiagnostics';
-import { garminActivity, garminOnlyView, structuredOnlyView, workoutView } from './workoutSourceDiagnostics.fixtures';
+import { garminActivity, garminActivityWithoutSets, garminOnlyView, structuredOnlyView, workoutView } from './workoutSourceDiagnostics.fixtures';
 
 const window = { from: '2026-08-20', toExclusive: '2026-08-27' } as const;
 const generatedAt = '2026-08-27T08:00:00.000Z';
@@ -44,6 +44,18 @@ describe('buildWorkoutDiagnosticsExport', () => {
         expect(entry.states.garmin_activity_absent).toEqual({ number: 3, status: 'holds', reasons: ['no_provider_linked'] });
         expect(entry.states.garmin_detail_unavailable).toEqual({ number: 4, status: 'not_applicable', reason: 'no_garmin_activity' });
         expect(entry.states.reconciliation_no_candidate).toEqual({ number: 6, status: 'holds', reasons: ['no_candidate_after_sweep'] });
+    });
+
+    it('exports the persisted detail fetch status reasons for state 4 (#1051)', () => {
+        const attemptedAt = '2026-08-26T08:00:00Z';
+        const reasonFor = (status: 'failed' | 'rate_limited' | 'not_attempted') =>
+            buildAvailable({
+                status: 'available',
+                workouts: [workoutView({ garmin: garminActivityWithoutSets({ detailStatus: { exerciseSets: { status, attemptedAt } } }) })],
+            }).workouts[0].states.garmin_detail_unavailable;
+        expect(reasonFor('failed')).toEqual({ number: 4, status: 'holds', reasons: ['detail_fetch_failed'] });
+        expect(reasonFor('rate_limited')).toEqual({ number: 4, status: 'holds', reasons: ['detail_fetch_rate_limited'] });
+        expect(reasonFor('not_attempted')).toEqual({ number: 4, status: 'not_applicable', reason: 'detail_fetch_not_attempted' });
     });
 
     it('orders workouts deterministically, newest first with id as the tie-break, whatever the input order', () => {

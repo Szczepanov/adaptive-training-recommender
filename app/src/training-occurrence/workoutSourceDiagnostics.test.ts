@@ -147,6 +147,49 @@ describe('states 4 and 5 -- Garmin detail unavailable / valid-but-empty', () => 
         expect(result.garmin_detail_empty).toEqual({ status: 'not_observable', reason: 'detail_not_stored' });
     });
 
+    describe('state 4 from the persisted exerciseSets fetch status (#1051)', () => {
+        const attemptedAt = '2026-08-26T08:00:00.000Z';
+        const withStatus = (status: 'fetched' | 'failed' | 'rate_limited' | 'not_attempted') =>
+            ({ detailStatus: { exerciseSets: { status, attemptedAt } } });
+
+        it.each([
+            ['failed', { status: 'holds', reasons: ['detail_fetch_failed'] }],
+            ['rate_limited', { status: 'holds', reasons: ['detail_fetch_rate_limited'] }],
+            ['not_attempted', { status: 'not_applicable', reason: 'detail_fetch_not_attempted' }],
+            // `fetched` without sets contradicts the writer invariant, so it is not guessed at.
+            ['fetched', { status: 'not_observable', reason: 'detail_fetch_outcome_not_persisted' }],
+        ] as const)('no sets and status %s', (status, expected) => {
+            const view = workoutView({ garmin: garminActivityWithoutSets(withStatus(status)) });
+            expect(states(view).garmin_detail_unavailable).toEqual(expected);
+            expect(states(view).garmin_detail_empty).toEqual({ status: 'not_observable', reason: 'detail_not_stored' });
+        });
+
+        it.each(['failed', 'rate_limited', 'not_attempted', 'fetched'] as const)('stored sets are clear whatever the status says (%s)', (status) => {
+            const view = workoutView({ garmin: garminActivity(withStatus(status)) });
+            expect(states(view).garmin_detail_unavailable).toEqual({ status: 'clear' });
+        });
+
+        it('a stored empty list stays clear even when the status is failed', () => {
+            const view = workoutView({ garmin: garminActivity({ exerciseSets: [], ...withStatus('failed') }) });
+            expect(states(view).garmin_detail_unavailable).toEqual({ status: 'clear' });
+        });
+
+        it('a status never applies to non-strength activities or a missing activity', () => {
+            expect(states(workoutView({ garmin: garminActivityWithoutSets({ type: 'cycling', ...withStatus('failed') }) })).garmin_detail_unavailable)
+                .toEqual({ status: 'not_applicable', reason: 'detail_not_expected_for_activity_type' });
+            expect(states(structuredOnlyView()).garmin_detail_unavailable)
+                .toEqual({ status: 'not_applicable', reason: 'no_garmin_activity' });
+        });
+
+        it('a failed or rate-limited fetch raises an attention notice', () => {
+            const view = garminOnlyView({ garmin: garminActivityWithoutSets(withStatus('failed')) });
+            expect(projectWorkoutSourceDiagnostics(view).attention).toContain('garmin_detail_unavailable');
+            // With structured sets recorded Garmin detail is diagnostic only (ADR-0034).
+            const diagnosticOnly = workoutView({ garmin: garminActivityWithoutSets(withStatus('failed')) });
+            expect(projectWorkoutSourceDiagnostics(diagnosticOnly).attention).not.toContain('garmin_detail_unavailable');
+        });
+    });
+
     it('treats fitness_equipment like strength_training for detail expectations', () => {
         expect(states(workoutView({ garmin: garminActivityWithoutSets({ type: 'fitness_equipment' }) })).garmin_detail_unavailable)
             .toEqual({ status: 'not_observable', reason: 'detail_fetch_outcome_not_persisted' });
