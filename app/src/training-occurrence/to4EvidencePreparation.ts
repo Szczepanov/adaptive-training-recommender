@@ -362,14 +362,23 @@ function pair(
         { status: 'AVAILABLE', data: recommendations, revision: 'to4-export' },
         '1970-01-01T00:00:00.000Z',
     );
+    const entriesByExecutionId = new Map<string, typeof parsed.entries>();
+    for (const execution of parsed.executions) {
+        entriesByExecutionId.set(execution.executionId, []);
+    }
+    for (const entry of parsed.entries) {
+        const arr = entriesByExecutionId.get(entry.executionId);
+        if (arr) {
+            arr.push(entry);
+        }
+    }
+
     const sources: CanonicalHistorySources = {
         // Hydration may use the wider exported activity set (an occurrence near the window edge
         // can reference an activity whose provider date is just outside it).
         activitiesById: new Map(parsed.activities.map(activity => [activity.activityId, activity])),
         executionsById: new Map(parsed.executions.map(execution => [execution.executionId, execution])),
-        entriesByExecutionId: new Map(parsed.executions.map(execution => [
-            execution.executionId, parsed.entries.filter(entry => entry.executionId === execution.executionId),
-        ])),
+        entriesByExecutionId,
         prescriptionsByHash: new Map(parsed.prescriptions.map(prescription => [prescription.prescriptionHash, prescription])),
         recommendationsByDate: new Map(parsed.recommendations.map(recommendation => [recommendation.date, recommendation])),
         manualDefinitionRevisions,
