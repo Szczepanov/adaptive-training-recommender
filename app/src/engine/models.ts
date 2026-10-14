@@ -2024,6 +2024,16 @@ export interface RunningDynamics {
     maxRunningPowerWatts?: number | null;
 }
 
+export const GARMIN_DETAIL_FETCH_STATUSES = ['fetched', 'failed', 'rate_limited', 'not_attempted'] as const;
+export type GarminDetailFetchStatus = (typeof GARMIN_DETAIL_FETCH_STATUSES)[number];
+
+/** `attemptedAt` is the UTC instant of the sync decision shared by the whole run, not a
+ * per-request time and not a calendar date. */
+export interface GarminExerciseSetsFetchOutcome {
+    status: GarminDetailFetchStatus;
+    attemptedAt: string;
+}
+
 export interface ActivityExerciseSet {
     setOrder: number;
     setType?: string;
@@ -2082,6 +2092,10 @@ export interface NormalizedGarminActivity {
     laps?: ActivityLapSummary[];
     runningDynamics?: RunningDynamics;
     exerciseSets?: ActivityExerciseSet[];
+    /** Issue #1051: normalized outcome of the Garmin strength `exerciseSets` fetch. Absent on
+     * records synced before the status was stored and on activities the sync made no decision
+     * about (older lookback, non-strength). Diagnostic evidence only; no engine decision reads it. */
+    detailStatus?: { exerciseSets?: GarminExerciseSetsFetchOutcome };
     /** Issue #850: bounded, provider-neutral features derived from the transient native
      * FIT trace. Raw samples are never persisted. Display/analysis evidence only. */
     activityResponse?: ActivityResponseTelemetry;

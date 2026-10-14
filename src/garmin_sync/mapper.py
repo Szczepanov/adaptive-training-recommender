@@ -11,6 +11,7 @@ from .canonical import (
     CanonicalActivityDetail,
     CanonicalActivityResponseTelemetry,
     CanonicalDailyMetrics,
+    CanonicalDetailFetchOutcome,
     CanonicalHrMeasurementQuality,
 )
 from .dates import get_date_string, n_days_ago, parse_date_string
@@ -164,11 +165,16 @@ def normalize_activity(
     fit_workout_fingerprint: str | None = None,
     activity_response: CanonicalActivityResponseTelemetry | None = None,
     fit_workout_fingerprint_kind: str | None = None,
+    exercise_sets_fetch_outcome: CanonicalDetailFetchOutcome | None = None,
 ) -> dict[str, Any]:
     """Normalize a canonical activity into the standalone per-activity record stored at
     users/{userId}/activities/{activityId} -- decoupled from any one day's recovery
     snapshot so full activity history isn't lost/truncated by the 3-day window used for
-    yesterdayTraining/last3DaysHardSessionsCount."""
+    yesterdayTraining/last3DaysHardSessionsCount.
+
+    ``exercise_sets_fetch_outcome`` (#1051) writes ``detailStatus.exerciseSets`` only
+    when this pass made a decision; None omits the key so the merge write keeps any
+    previously stored status."""
     payload: dict[str, Any] = {
         "activityId": activity.activity_id,
         "date": activity.date or None,
@@ -251,6 +257,14 @@ def normalize_activity(
 
     if activity_response is not None:
         payload["activityResponse"] = serialize_activity_response(activity_response)
+
+    if exercise_sets_fetch_outcome is not None:
+        payload["detailStatus"] = {
+            "exerciseSets": {
+                "status": exercise_sets_fetch_outcome.status,
+                "attemptedAt": exercise_sets_fetch_outcome.attempted_at,
+            }
+        }
 
     if detail is None:
         return payload

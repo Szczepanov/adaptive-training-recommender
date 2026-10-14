@@ -50,10 +50,15 @@ documents.
 
 **D-DETAIL-GATE:** the additional detail fetch is default-off
 (`GARMIN_ACTIVITY_DETAIL_ENABLED=false`) and requires a non-easy, power-bearing activity
-with an ID. It runs only during the target-date pass of `sync_daily`; lookback resync,
-`backfill`, and `rebuild` issue zero detail calls. The live endpoint budget is up to
+with an ID. Each `sync_daily` date pass (the target date and every D-1..D-N lookback resync
+date) fetches details only for activities on that pass's own date; older activities in the
+fetched window are skipped. `rebuild` issues zero detail calls, and `backfill` issues none unless `--include-details`
+is passed (it then fetches details sequentially and records the strength status). The live endpoint budget is up to
 three calls per qualifying activity (power zones, HR zones, splits), and an exhausted 429
 abandons the remaining detail work without failing core ingestion.
+
+The per-activity `detailStatus.exerciseSets` fetch outcome (#1051, ADR-0026 section 9) is
+normalized activity metadata, not an archived payload: raw detail payloads stay unarchived.
 
 ---
 

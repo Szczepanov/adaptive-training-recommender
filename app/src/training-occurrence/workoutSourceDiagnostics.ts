@@ -61,9 +61,9 @@ export const STATE_REASONS = {
         not_applicable: ['non_garmin_provider_only'],
     },
     garmin_detail_unavailable: {
-        holds: [],
+        holds: ['detail_fetch_failed', 'detail_fetch_rate_limited'],
         not_observable: ['detail_fetch_outcome_not_persisted'],
-        not_applicable: DETAIL_NOT_EXPECTED,
+        not_applicable: [...DETAIL_NOT_EXPECTED, 'detail_fetch_not_attempted'],
     },
     garmin_detail_empty: {
         holds: ['exercise_sets_reported_empty'],
@@ -206,11 +206,19 @@ function garminDetailUnavailable(view: CompletedWorkoutView): StateAssessment<'g
     const expectation = detailExpectation(view);
     const notApplicable = notApplicableDetail(expectation);
     if (notApplicable) return notApplicable;
-    // `exerciseSets` is written only when the detail endpoint succeeded (`mapper.py`); an
-    // omitted key is "failed OR never attempted OR rate-limited", which is not persisted (#1051).
-    return expectation.kind === 'sets'
-        ? { status: 'clear' }
-        : { status: 'not_observable', reason: 'detail_fetch_outcome_not_persisted' };
+    // `exerciseSets` is written only when the detail endpoint succeeded (`mapper.py`), so
+    // stored sets are clear whatever the status says. Without sets the persisted
+    // `detailStatus.exerciseSets` (#1051) says why; a legacy record has no status, and
+    // `fetched` without sets contradicts the writer invariant, so neither is guessed at.
+    if (expectation.kind === 'sets') return { status: 'clear' };
+    switch (view.garmin?.detailStatus?.exerciseSets?.status) {
+        case 'failed': return holds('detail_fetch_failed');
+        case 'rate_limited': return holds('detail_fetch_rate_limited');
+        case 'not_attempted': return { status: 'not_applicable', reason: 'detail_fetch_not_attempted' };
+        case 'fetched':
+        case undefined:
+            return { status: 'not_observable', reason: 'detail_fetch_outcome_not_persisted' };
+    }
 }
 
 function garminDetailEmpty(view: CompletedWorkoutView): StateAssessment<'garmin_detail_empty'> {
