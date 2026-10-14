@@ -256,7 +256,7 @@ emulatorDescribe('SessionExecutionService diary harness (#895 WP0)', () => {
         expect(audit.docs.map(item => item.data().kind).sort()).toEqual(['delete', 'log', 'restore']);
     });
 
-    it('double complete fails closed at rules: the second write is rejected, state stays completed (WP2 must make it a client no-op)', async () => {
+    it('double complete fails closed at rules: the second write is rejected, state stays completed (the client path is a no-op, see sessionExecutionLifecycle.test)', async () => {
         const service = new SessionExecutionService(db);
         const execution = await startInProgress(db, 'exec-diary-complete', 'occ-diary-complete');
         await service.logEntry(USER_ID, execution.executionId, entry('entry-dc-1', execution.executionId, 8, '2026-09-29T06:00:00.000Z'));

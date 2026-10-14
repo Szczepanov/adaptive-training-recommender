@@ -305,7 +305,19 @@ One physical workout (a structured execution plus a matched Garmin recording) mu
 
 Unmigrated consumers are labeled, not asserted canonical. Moving one onto canonical facts is a separate change that must re-run this inventory.
 
-Residuals not proven by this inventory: the reserved-identity hydration path hardened under #917 has no dedicated row, and no test covers a late provider update to a revision that coverage has already credited (arrival-order swap is covered). Neither is a known defect.
+Residual not proven by this inventory: the reserved-identity hydration path hardened under #917 has no dedicated row (not a known defect). A late provider update to an already-credited occurrence is proven in the inventory test.
+
+## Diary authority guards and arrival-order guarantees (#895 WP7)
+
+**Write authority.** `services/sessionExecutionService.ts` is the only production module that builds Firestore references into `session_executions`, `session_execution_locks` or `diaryMutations`. `manualRecommendationReplacementService.ts` is the single audited exception and may only `get` the deterministic execution lock. `sessionDiaryWrite.ts` and `sessionDiaryReceipts.ts` are imported only by the execution service. Engine, response, observation, outcome and knowledge modules never import the diary-write path directly; their static import graph cannot reach it, except the engine's `firestoreTrainingHistory.ts` read adapter, which is allowlisted by name. `sessions/diaryAuthority.architecture.test.ts` enforces all of this, including stale-allowlist checks.
+
+**Structured identity.** When a structured execution exists, its workout identity, modality and weekly-role credit are not changed by provider recognition or a provider modality override (`training-occurrence/structuredIdentityAuthority.test.ts`). Provider exercise sets are diagnostic only (`garminExerciseSetsAreDiagnosticOnly`).
+
+**Planning payloads.** Raw 1 Hz traces cannot enter planning payloads: the telemetry types are pinned to normalized summary fields by `engine/contextBriefResponseArchitecture.test.ts`.
+
+**Arrival order and manual decisions.** Execution-first, provider-first, late provider detail, late offline execution, same-source device updates, concurrent enrichment, two genuine same-day workouts and persisted ambiguity converge to the same stable occurrence identity (`emulator/reconciliationOrdering.emulator.test.ts`). Manual link, unlink and keep-separate decisions survive source enrichment, retry and repeated reconciliation sweeps. That proof drives the reconciliation sweep with decisions seeded through the repository; it does not exercise the Python Garmin re-sync or the UI action.
+
+**Limits.** Synthetic and emulator proofs do not establish cold-offline app launch, real-device storage durability, a real network drop mid-write, real Garmin arrival timing, or set-logging latency between sets.
 
 ## Custom-template lifecycle
 

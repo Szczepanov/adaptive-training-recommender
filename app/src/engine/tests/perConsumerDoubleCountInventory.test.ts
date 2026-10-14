@@ -125,6 +125,30 @@ describe('#895 WP6 per-consumer double-count inventory', () => {
             expect(req?.credits).toHaveLength(1);
         });
 
+        it('a late provider update to an already-credited occurrence keeps one credit', () => {
+            // rev-1: the structured execution alone was credited. rev-2: the Garmin recording
+            // arrives and is reconciled into the SAME performed occurrence.
+            const structuredOnly = deriveFactsFromOccurrence(
+                { ...occurrence('occ-shared', 'exec-shared', 'garmin-shared'), sourceRefs: [{ kind: 'structured_execution', executionId: 'exec-shared' }] },
+                { structured: hydrated('exec-shared', 'garmin-shared').structured },
+                descriptor,
+            );
+            const snapshot = (revision: string, facts: typeof shared) => resolveCoverageHistory({
+                asOfDate: AS_OF, windowDays: 7, revision,
+                exposures: [facts.exposure], coverageCredits: facts.coverageCredits,
+            });
+            const credits = (revision: string, facts: typeof shared) => buildCoverageState(planDef, AS_OF, snapshot(revision, facts), descriptor)
+                .requirements.find(r => r.key === 'primary_strength');
+
+            const before = credits('rev-1', structuredOnly);
+            const after = credits('rev-2', shared);
+            expect(before?.completedSessions).toBe(1);
+            expect(after?.completedSessions).toBe(1);
+            expect(after?.credits).toHaveLength(1);
+            expect(after?.credits[0]).toMatchObject({ workoutId: 'strength_full_body_maintenance_01' });
+            expect(structuredOnly.exposure.performedOccurrenceId).toBe(shared.exposure.performedOccurrenceId);
+        });
+
         it('two genuine same-day sessions stay two credited occurrences', () => {
             const second = deriveFactsFromOccurrence(
                 occurrence('occ-second', 'exec-second', 'garmin-second'),
