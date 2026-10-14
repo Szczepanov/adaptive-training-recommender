@@ -64,10 +64,14 @@ taper is prepared up to its date for the recovery-gap check. Conflicts never rew
 
 A completed or DNF supporting event inside the 28-day lookback that falls inside the active
 development block and after its last confirmed review (inferred as `nextReviewDate` minus
-`reviewCadenceDays`) withholds the block with a `supporting_outcome_review_due:<eventId>`
-diagnostic until a reviewed revision exists (Evergreen fallback meanwhile). Results older than
-the lookback are not visible, so a review cadence longer than 28 days can miss an old result. No automatic
-progression or success claim is inferred from a result.
+`reviewCadenceDays`) adds a non-blocking `supporting_outcome_review_advised:<eventId>` advisory
+to the development authority, shown in the trace and Context Brief. The block stays
+executable: reviews are only accepted at their scheduled date, so withholding on a result
+would be unrecoverable until then, and the existing `block_review_due` gate already forces a
+reviewed revision. Results older than the lookback are not visible, and the inferred review
+date can be early when a reviewed revision's next date was capped at the block end, so the
+advisory is a hint, never an authority. No automatic progression or success claim is inferred
+from a result.
 
 ### D5 — Explainability
 

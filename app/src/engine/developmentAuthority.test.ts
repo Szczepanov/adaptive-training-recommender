@@ -53,18 +53,22 @@ describe('date-local development authority (#927)', () => {
             development: { block: { id: 'vo2-block' } } });
         expect(resolve([]).eventStrategy).toBe('evergreen_fallback');
     });
-    it('withholds an unreviewed block after a supporting event result until a reviewed revision (#929)', () => {
+    it('keeps the block executable but advises review after a supporting event result (#929)', () => {
         const supporting: UserEvent = { ...developmentEvent, id: 'b-stage', priority: 'B', date: '2026-10-20', lifecycle: 'completed' };
         const withResult = (block: IntentBlock) => resolvePlanningContext(developmentProfile,
             evaluatePeriodizationPhase([developmentEvent, supporting], '2026-10-22'), '2026-10-22', null, [], [block]);
         const unreviewed = withResult(developmentBlock());
-        expect(unreviewed.eventStrategy).toBe('evergreen_fallback');
-        expect(unreviewed.development?.diagnostics).toContain('supporting_outcome_review_due:b-stage');
+        expect(unreviewed.eventStrategy).toBe('development_block');
+        expect(unreviewed.development?.advisories).toEqual(['supporting_outcome_review_advised:b-stage']);
         const reviewed = { ...developmentBlock(), revision: 2, dateRange: { startDate: '2026-10-21', endDate: '2026-11-10' } };
-        expect(withResult(reviewed).eventStrategy).toBe('development_block');
+        expect(withResult(reviewed).development?.advisories).toEqual([]);
         const reviewedSameStart = { ...developmentBlock(), revision: 2, reviewSchedule: { reviewCadenceDays: 28, nextReviewDate: '2026-11-17' } };
         reviewedSameStart.dateRange = { startDate: '2026-10-14', endDate: '2026-11-17' };
-        expect(withResult(reviewedSameStart).eventStrategy).toBe('development_block');
+        expect(withResult(reviewedSameStart).development?.advisories).toEqual([]);
+        // The scheduled review gate, not the advisory, withholds the block once the review is due.
+        const overdue = resolvePlanningContext(developmentProfile, evaluatePeriodizationPhase([developmentEvent, supporting], '2026-11-11'),
+            '2026-11-11', null, [], [{ ...developmentBlock(), dateRange: { startDate: '2026-10-14', endDate: '2026-11-30' } }]);
+        expect(overdue.development?.diagnostics).toContain('block_review_due');
     });
     it('never promotes future blocks, unrelated blocks, or ambiguous active blocks', () => {
         expect(resolve([developmentBlock()], '2026-10-13').eventStrategy).toBe('evergreen_fallback');

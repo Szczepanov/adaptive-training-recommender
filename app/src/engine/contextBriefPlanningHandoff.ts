@@ -384,7 +384,7 @@ function renderDevelopmentAuthority(input: ContextBriefPlanningHandoffInput): st
     return [
         `- Long-horizon target: ${development.eventId} on ${development.eventDate}; event demand ${JSON.stringify(development.eventDemand)}.`,
         development.blockId
-            ? `- Executable development authority: ${development.blockId}@${development.blockRevision}, ${development.executableDates?.startDate}–${development.executableDates?.endDate}; review ${development.nextReviewDate}.`
+            ? `- Executable development authority: ${development.blockId}@${development.blockRevision}, ${development.executableDates?.startDate}–${development.executableDates?.endDate}; review ${development.nextReviewDate}.${development.diagnostics.length ? ` Review should consider: ${development.diagnostics.join(', ')}.` : ''}`
             : `- Development authority withheld; Evergreen fallback: ${development.diagnostics.join(', ')}.`,
         ...development.objectives.flatMap(objective => [
             `- ${objective.adaptationScope}: ${objective.intent}; authored dose ${objective.doseEnvelope.min}/${objective.doseEnvelope.target}/${objective.doseEnvelope.max} ${objective.doseEnvelope.unit}${objective.coverageKey ? `; exact role ${objective.coverageKey}` : ''}.`,
