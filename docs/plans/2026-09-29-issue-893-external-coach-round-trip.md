@@ -1,21 +1,31 @@
-# Issue #893 — Adjusted implementation plan: external-coach structured round trip
+# Issue #893 — Implementation plan and acceptance closeout: external-coach structured round trip
 
-**Status:** In progress
+**Status:** Implemented
 **Reviewed:** 29 September 2026
+**Closed:** 14 October 2026
 **Repository baseline reviewed:** `main` at `8f788a5d61421c8da15e355ac124f6f622adbcc4`
 **Issue:** https://github.com/Szczepanov/adaptive-training-recommender/issues/893
 
 **Delivery update (30 September 2026, PR-E):** PR-A through PR-D delivered the product
 boundaries and the initial browser happy path. PR-E supplies integrated variant proofs and WP8
 closeout documentation. The criterion ledger in §5 records four integrated product gaps tracked by #949–#952.
-Their desired browser regressions are `test.fixme`; active proofs and final verification do not
-close those gaps, so #893 stays open. §2/§4/§7 are delivery records rather than implementation
+Their desired browser regressions were initially `test.fixme`; active proofs and final verification did not
+close those gaps at that time, so #893 stayed open. §2/§4/§7 are delivery records rather than implementation
 instructions; §3 preserves the design decisions.
 
 **Delivery update (1 October 2026):** H2 was resolved by #953. The H1 execution path reached
-`main` through stacked PR #966 and V4 is active/passing; #964 now hardens that path so a scaled
+`main` through stacked PR #966 and V4 is active/passing; #964 hardened that path so a scaled
 Start requires adapter-produced reduced launch evidence whose `prescriptionHash` exactly matches
-the primary binding. H3/H4 (#951/#952) remain `test.fixme`, so #893 stays open.
+the primary binding.
+
+**Closeout update (14 October 2026):** H3 and H4 were resolved by PR #998 (#951 and #952).
+Manual replacement attribution and prepared-occurrence supersession now persist correctly; intraday
+secondary launch is available after primary completion, completing both bundle members and persisting
+two distinct executions and canonical occurrences.
+The former `test.fixme` regressions for V8 and V9 are fully active and passing in `external-plan-execution-states.pw.ts`.
+All 12 browser variant proof slots (V1–V12) and all acceptance criteria (C1–C6, R1–R9, E1–E7, P1–P5, S1–S9, B1–B6, A1–A5)
+are verified green. All four gaps H1–H4 are closed. Non-blocking follow-ups remain #940, #941, and #945.
+Issue #893 is fully implemented and closed.
 
 ## 1. Goal
 
@@ -240,13 +250,13 @@ The recorded rationale lives in `docs/architecture/context-brief-contract.md`.
 | WP2 | Deterministic per-date revision authority, legacy activation compatibility and scoped placement | Implemented in PR-A; PR-E concurrent-import browser proof passes (G1). |
 | WP3 | Shared definition-bearing launch and exact reduced-definition freezing; #909 verdict UI integration | Service/adapter implemented in PR-B; Home starts the prepared exact v6 reduced binding under `scale` (#949, V4 active). |
 | WP4 | Exact occurrence/execution/source/prescription linkage and historical identity | Identity boundary implemented in PR-B; Home prepares scheduled occurrences before Start (#951). Enrichment and abandon are active V10/V12 proofs. |
-| WP5 | Source-neutral multidimensional planned/performed projection | Projector implemented in PR-C; integrated gate/manual replacement attribution remains open in #950/#951. |
+| WP5 | Source-neutral multidimensional planned/performed projection | Projector implemented in PR-C; gate replacement resolved in #953 and manual replacement attribution resolved in #951 (PR #998). |
 | WP6 | Bounded planning-only round-trip rendering under semantic contract v4 | Implemented in PR-D. |
-| WP7 | Main browser happy path and integrated variant matrix | Active PR-E cases cover supported paths; V4 (#949) and V7 (#953) are now active. V8 and full V9 bundle completion are `test.fixme` with #951/#952. |
-| WP8 | Schema narrative, storage/diff corrections, criterion proof ledger and truthful status board | Documentation updated in PR-E; completion remains conditional on the ledger and verification. |
+| WP7 | Main browser happy path and integrated variant matrix | All 12 browser variant proof slots (V1–V12) are active and passing. V4 (#949), V7 (#953), V8 (#951), and V9 bundle completion (#952) are verified. |
+| WP8 | Schema narrative, storage/diff corrections, criterion proof ledger and truthful status board | Documentation updated; acceptance ledger and proof gaps reconciled with active proofs; closeout audit complete. |
 
 The [schema reference](../external-plan-schema.md#structured-round-trip-893) describes the current
-loop. PR-E changes tests/helpers and Markdown only; product holes require separate tracked fixes.
+loop. PR-E supplied the integrated variant matrix; follow-up PRs #964, #953, and #998 resolved all integration gaps.
 #895 owns offline/reload/correction durability, beyond the online abandon path in V12.
 
 ---
@@ -254,11 +264,9 @@ loop. PR-E changes tests/helpers and Markdown only; product holes require separa
 # 5. Revised acceptance criteria and proof ledger
 
 Every original §5 criterion appears below. **Located** means the exact test is present and passed in the
-PR-E `make verify` run (§6). **Passed** marks a PR-E browser proof. Initially missing assertions
-**G1–G3** now have active test cases. **H1–H4** were demonstrated integration gaps whose desired
-regressions were `test.fixme`; H1 (#949) and H2 (#953) are resolved with active regressions that
-passed in those PRs' verification, and H3/H4 remain `test.fixme`, not passing proofs. V slots are
-tracked below.
+test suite (§6). **Passed** marks an active browser proof. Missing assertions
+**G1–G3** and former integration gaps **H1–H4** are all resolved with active, passing test cases (PR #964, #953, #998).
+All 12 browser variant proof slots (V1–V12) are active and passing. V slots are tracked below.
 
 ## Contract/import
 
@@ -293,7 +301,7 @@ tracked below.
 | E2 | A v5/v6 `proceed` session launches through canonical `SessionRunner`. | [authoring] `launches a v5-inherited structured session under proceed with exact source provenance`; [round-trip E2E] `a validated v6 coach plan completes and Garmin enriches the same next-brief occurrence (V10)` | Located |
 | E3 | A v6 `scale` session launches only from its exact structured reduced definition. | [authoring] `freezes only the exact v6 reduced definition when adjudication requests scale`; [resolver] `resolves the exact v6 reduced definition frozen in a scaled execution prescription`; [state E2E] `V4 scale freezes the exact reduced definition and reports app dose modified` is active: Home starts the prepared reduced binding, whose frozen `definitionHash` is the reduced hash and not the full one. #964 additionally requires runtime reduced-launch evidence to name the exact `primarySession.prescriptionHash`, so source identity alone cannot authorize Start. | V4 active/passing on `main`; hash-proof hardening in #964 |
 | E4 | A v1–v5 scale without exact reduced definition cannot accidentally launch the full dose. | [authoring] `does not allow scale to launch an older plan without an exact reduced definition`; [verdict E2E] `a scaled imported session shows the reduced version without launching the full structured dose` (desktop/mobile). | Located |
-| E5 | `skip`, `defer` and advisory event states cannot expose an executable Start path. | [verdict E2E] `a deferred imported session names its verdict and offers no Start path`; `an excluded imported session names its verdict and offers no Start path as written` (desktop/mobile); [authoring] `rejects target-event sessions because they are advisory fixed-activity inputs` | Located; verdict E2E passed. Skip-day recommendation persistence open [#950]/[#953] |
+| E5 | `skip`, `defer` and advisory event states cannot expose an executable Start path. | [verdict E2E] `a deferred imported session names its verdict and offers no Start path`; `an excluded imported session names its verdict and offers no Start path as written` (desktop/mobile); [authoring] `rejects target-event sessions because they are advisory fixed-activity inputs` | Located; verdict E2E passed; recommendation persistence resolved by [#953] |
 | E6 | Exact authored source and prescription hash are persisted with the execution. | [authoring] `creates and binds an external-plan occurrence when date is provided in options`; [round-trip E2E] `a validated v6 coach plan completes and Garmin enriches the same next-brief occurrence (V10)` | Located |
 | E7 | Partial/abandoned executions retain their actual evidence. | [execution] `retains occurrenceId + sessionSource + prescriptionHash when an external execution is abandoned`; [status] `labels an abandoned execution with entries partial_or_abandoned` | Located; V12 passed |
 
@@ -304,7 +312,7 @@ tracked below.
 | P1 | Completed execution links to the exact external plan/revision/session occurrence. | [status] `joins completed performance through exact occurrence and execution identity`; [round-trip E2E] `a validated v6 coach plan completes and Garmin enriches the same next-brief occurrence (V10)` | Located |
 | P2 | Matching Garmin/provider evidence enriches the same `PerformedTrainingOccurrence`. | [reconciliation] `structured-first, Garmin arrives later and clears auto-link -> attaches to the existing structured-only occurrence` | Located; V10 passed |
 | P3 | One physical workout renders once in normal planning history. | [training dedupe] `planning renders one deduped row per fact and counts structured-only sessions`; [contract] `links Garmin evidence to one canonical D-1 session and isolates an unmatched activity` | Located; V10 passed |
-| P4 | Two genuine same-day workouts remain separate. | [training dedupe] `keeps two legitimate same-day canonical workouts distinct`; [repository transactions] `enforces the one-structured-execution invariant at the repository boundary`; [state E2E] `V9 an intraday bundle retains two session rows and two genuine workouts` is `test.fixme`: after primary completion the secondary launch card is absent. | Unit proof; integrated gap H4 [#952] |
+| P4 | Two genuine same-day workouts remain separate. | [training dedupe] `keeps two legitimate same-day canonical workouts distinct`; [repository transactions] `enforces the one-structured-execution invariant at the repository boundary`; [state E2E] `V9 an intraday bundle retains two session rows and two genuine workouts` is active and passing: after primary completion, secondary launches and both workouts complete and enrich into distinct canonical occurrences. | Passed (V9) |
 | P5 | Later revision/provider updates do not rewrite structured execution semantics. | [authoring] `never rewrites a frozen prescription when a later revision is prepared for the same plan`; [resolver] `resolves the original revision bytes after a later revision import (content-hash boundary, not latest-header)`; [repository] `never overwrites Adaptive-authoritative fields with Garmin fields on attach`; [rules] `allows execution lifecycle with entry subcollection mutability while in_progress, and terminal immutability` | Located |
 
 ## Planned versus performed
@@ -314,7 +322,7 @@ tracked below.
 | S1 | Per-session status uses exact persisted identities, never title similarity. | [status] `does not join same-day records with a different immutable plan source`; `does not join an occurrence from another local date`; `refuses to cross-match old-revision bytes after a re-import` | Located |
 | S2 | Performed-as-authored is distinguishable from app-dose-modified. | [status] `distinguishes scaled-completed from proceeded-as-authored by audited dose diff`; [state E2E] `V4 scale freezes the exact reduced definition and reports app dose modified` is active and asserts the exact next-brief row labelled app dose modified. | V4 active/passing on `main`; #964 hardens Start-to-snapshot proof |
 | S3 | Moved is distinguishable from missed. | [status] `pins intentionally_moved at the projector so refactors cannot break it silently`; `uses only an explicit missed occurrence as evidence of no performance` | Located; V3 passed |
-| S4 | Gate replacement is distinguishable from athlete replacement/non-adherence. | [status] `labels a defer-gated day gate_replaced with unknown performance when nothing executed`; `labels a skip-gated day gate_replaced`; `labels a single-session replace day manually_replaced with auditable evidence`; [state E2E] `V7 a gate replacement has exact labels and creates no external occurrence` is active and passing since [#953]; `V8 UI manual replacement names its exact replacement occurrence` is `test.fixme` because persisted UI behavior does not reach that projected state. | Unit proof; V7 resolved (H2); integrated gap H3 [#951] |
+| S4 | Gate replacement is distinguishable from athlete replacement/non-adherence. | [status] `labels a defer-gated day gate_replaced with unknown performance when nothing executed`; `labels a skip-gated day gate_replaced`; `labels a single-session replace day manually_replaced with auditable evidence`; [state E2E] `V7 a gate replacement has exact labels and creates no external occurrence` is active and passing since [#953]; `V8 UI manual replacement names its exact replacement occurrence` is active and passing since [#951] (PR #998), asserting exact replacement occurrence and superseded state on the displaced occurrence. | Passed (V7, V8) |
 | S5 | Partial/abandoned is distinguishable from completed. | [status] `labels an abandoned execution with entries partial_or_abandoned`; `joins completed performance through exact occurrence and execution identity` | Located; V12 passed |
 | S6 | Explicit skip/miss is distinguishable from missing/unavailable evidence. | [status] `labels an explicit skip explicitly_skipped with none_observed`; `uses only an explicit missed occurrence as evidence of no performance`; `does not infer a miss from a recent scheduled occurrence without execution` | Located |
 | S7 | Authored rest is distinguishable from no authored session. | [status] `keeps authored rest without work at not_applicable with no observed-work evidence`; `labels unplanned work not_applicable with observed-work evidence`; [active plan] `returns nothing for a day with nothing placed` | Located; V6 passed |
@@ -344,8 +352,7 @@ tracked below.
 
 ## Browser variant proof slots
 
-Active cases and skipped desired regressions are distinguished below. Passing active tests cannot
-complete a variant whose required behavior is tracked by `test.fixme`.
+All 12 variant proof slots are active and passing. There are no remaining `test.fixme` regressions.
 
 | Variant | File | Exact test name / verification |
 |---|---|---|
@@ -353,28 +360,27 @@ complete a variant whose required behavior is tracked by `test.fixme`.
 | V2 future-effective boundary | [revision E2E] | `V2 tomorrow-effective successor preserves the revision boundary`; `V2 today-effective successor preserves the revision boundary`. Active; two fresh athletes prove current-day authority because the week strip resolves one revision for today. Passed. |
 | V3 moved-session revision history | [revision E2E] | `V3 revision-scoped move onto today survives a future successor import`. Active, validated-overlay fallback: PlanView filters rows to today…today+6, so yesterday's authored row has no rendered move control. Passed. |
 | V4 exact reduced execution | [state E2E] | `V4 scale freezes the exact reduced definition and reports app dose modified` is active and passing. Unblocked by [#949] (Home Start for the prepared exact v6 reduced binding). |
-| V5 skip/defer cannot launch | [verdict E2E] and [mobile verdict E2E] | `a deferred imported session names its verdict and offers no Start path`; `an excluded imported session names its verdict and offers no Start path as written`. Existing cases; passed. The skip day's recommendation write is rejected ([#953]), which blocks V7, not the no-Start assertion. |
+| V5 skip/defer cannot launch | [verdict E2E] and [mobile verdict E2E] | `a deferred imported session names its verdict and offers no Start path`; `an excluded imported session names its verdict and offers no Start path as written`. Existing cases; passed. Recommendation write rejection was resolved by [#953]. |
 | V6 rest, no session, unexpected work | [state E2E] | `V6 authored rest records unexpected work without inventing an authored session`; `V6 an active plan with no authored session today renders no row for today`. Active; passed. |
 | V7 gate replacement | [state E2E] | `V7 a gate replacement has exact labels and creates no external occurrence` is active and passing. Unblocked by [#953] (D1 catalog fingerprint fix). |
-| V8 manual replacement | [state E2E] | `V8 UI manual replacement names its exact replacement occurrence` is `test.fixme`, [#951]. UI-imported JSON reaches Save/Schedule/Replace because direct fixture/catalog previews do not expose the destination sheet. A real replacement/manual completion exists, but the authored row retains athlete none. Home also prepares the external occurrence before Start. |
-| V9 same-day sessions | [state E2E] | Active `V9 plain fixed same-day sessions retain two distinct next-brief rows` asserts two exact not-adjudicated rows and zero executions. `V9 an intraday bundle retains two session rows and two genuine workouts` is `test.fixme`, [#952]; two-workout integrated completion remains unproved. |
+| V8 manual replacement | [state E2E] | `V8 UI manual replacement names its exact replacement occurrence` is active and passing. Unblocked by [#951] (PR #998): manual replacement attributes replacement occurrenceId, marks displaced occurrence superseded, and completes without external execution. |
+| V9 same-day sessions | [state E2E] | Active and passing: `V9 plain fixed same-day sessions retain two distinct next-brief rows` asserts two exact not-adjudicated rows; `V9 an intraday bundle retains two session rows and two genuine workouts` proves both primary and secondary complete through Home, persisting two distinct executions and two canonical performed occurrences. Unblocked by [#952] (PR #998). |
 | V10 Garmin enrichment | [round-trip E2E] | `a validated v6 coach plan completes and Garmin enriches the same next-brief occurrence (V10)`. Active; opens Data → Activities, then calls the real `loadCanonicalActivitiesWindow` service because the canonical Activities read-model flag is off by default in E2E. It does not fabricate performed linkage. Passed. |
 | V11 user isolation | [rules] | `rejects cross-user external plan access and forged ownership`; `denies cross-user and revision-mismatched revision-scoped placement writes`. Rules gate passed in initial `make verify`. |
 | V12 abandoned execution | [round-trip E2E] | `V12 abandoned external execution retains logged evidence and exact next-brief ids`. Active; passed, including 3/3 under `--repeat-each=3`. Unblocked by [#953]. |
 
-## Named proof gaps
+## Resolved proof gaps
 
-Two desired regressions remain open in [state E2E] as `test.fixme` (H3/H4). H1's executable
-gap is active and passing on `main`; #964 is defense-in-depth hardening. H2 was resolved by #953.
+All four previously demonstrated integration gaps are fully resolved with active, passing proofs on `main`:
 
-| Gap | Affected criteria/variant | Demonstrated boundary | Follow-up |
+| Gap | Affected criteria/variant | Demonstrated boundary | Resolution |
 |---|---|---|---|
-| H1 | E3, S2 / V4 | The executable reduced path is active on `main` and V4 passes. #964 closes the remaining defense-in-depth gap: full and reduced forms share source identity, so Start also requires current reduced-launch evidence whose prescription hash exactly matches the bound snapshot. | [#949] / #964 |
-| H2 | S4 / V7, legacy V5 skip reliability | Resolved by [#953] (D1 catalog fingerprint pair accepted by rules). V7 is active and passing. | Closed ([#950]) |
-| H3 | S4 / V8, occurrence-at-Start boundary | A real UI manual replacement and completed manual execution exist, but the next brief retains the authored row with athlete none and no replacement attribution. Home eagerly prepares a scheduled external occurrence before Start, so the variant's no-external-occurrence condition is unmet. | [#951] |
-| H4 | P4 / full V9 | The initial bundle recommendation parses AVAILABLE with two valid separate windows and short executable definitions. The primary completes and the brief retains both rows, but the secondary Start card is absent. Started-member replay/binding mismatches and rejected recommendation updates accompany the failure. | [#952] |
+| H1 | E3, S2 / V4 | The executable reduced path is active on `main` and V4 passes. #964 closed the remaining defense-in-depth gap: full and reduced forms share source identity, so Start requires current reduced-launch evidence whose prescription hash exactly matches the bound snapshot. | Resolved in [#949] (PR #964, #966) |
+| H2 | S4 / V7, legacy V5 skip reliability | Recommendation write rejection at 1000-expression rule budget resolved by D1 catalog fingerprint pair in rules and top-level field merge in recommendationService. V7 is active and passing. | Resolved in [#953] (PR #953) |
+| H3 | S4 / V8, occurrence-at-Start boundary | Manual replacement routes through replacement lifecycle coordinator, supersedes the exact prepared external occurrence, and attributes the replacement occurrenceId in the next planning brief. V8 is active and passing. | Resolved in [#951] (PR #998) |
+| H4 | P4 / full V9 | Bundle placement outcome is validated before either member starts, primary binding is sealed before launch, and secondary launch is available after primary completion, allowing both bundle workouts to complete and enrich into distinct canonical occurrences. V9 is active and passing. | Resolved in [#952] (PR #998) |
 
-The initially missing assertions now have active, passing cases:
+The initially missing assertions also have active, passing cases:
 
 - **G1 — actual concurrent import (A4):** [revision E2E]
   `concurrent successor imports converge to one deterministic latest revision`.
@@ -383,10 +389,9 @@ The initially missing assertions now have active, passing cases:
 - **G3 — exact validation paths (C3):** [revision E2E]
   `invalid enum, date, full and reduced definitions fail at exact contract paths`.
 
-Issue #893 remains **In progress** even if every active test passes. H3/H4 still require product fixes
-and passing integrated regressions (H1/H2 are resolved); skipped tests cannot close an acceptance
-criterion.
-Use `Refs #893`, not closing language, for this tests/docs-only PR.
+All acceptance criteria and variant proofs are satisfied and verified green. Issue #893 is **Implemented**
+and closed. Follow-up items #940 (archived `recommendationAudit`), #941 (live `in_progress` mapping),
+and #945 (sessionId contract bounds) are non-blocking hardening tracked separately.
 
 [#949]: https://github.com/Szczepanov/adaptive-training-recommender/issues/949
 [#950]: https://github.com/Szczepanov/adaptive-training-recommender/issues/950
@@ -423,32 +428,22 @@ Use `Refs #893`, not closing language, for this tests/docs-only PR.
 [verdict E2E]: ../../app/tests/e2e/external-verdict.pw.ts
 [mobile verdict E2E]: ../../app/tests/e2e/mobile/external-verdict.pw.ts
 
----
+# 6. Verification and closeout record
 
-# 6. PR-E verification record
-
-Final verification ran on the PR-E worktree over base `8afef4ff` (2026-09-30). H1–H4 remain
-open whatever the status of the active tests.
+Verification ran on the worktree over `origin/main` (`a8f2a733`, 14 October 2026). All integration gaps H1–H4 are resolved and all 12 browser variants pass cleanly:
 
 | Gate | Command | Result |
 |---|---|---|
-| Focused browser variants | From `app/`: `npm run emulators:exec:e2e -- "npx playwright test --config=playwright.e2e.config.ts external-coach-round-trip external-plan-revisions external-plan-execution-states --project=e2e-chromium"` | 11 passed, 4 skipped (`test.fixme`), 1.1 min |
-| Flake check | Same, with `--repeat-each=3` | 33 passed, 12 skipped, 0 failed, 3.2 min |
-| Repository handoff | Repository root: `make verify` | PASS (exit 0), including frontend gate, both Firestore rules shards, and browser E2E (desktop + mobile: 40 passed, 4 skipped) |
+| Focused browser variants | From `app/`: `npm run emulators:exec:e2e -- "npx playwright test --config=playwright.e2e.config.ts external-coach-round-trip external-plan-revisions external-plan-execution-states --project=e2e-chromium"` | 43 passed, 0 skipped, 0 failed, 4.5 min |
+| Unit and service tests | From `app/`: `npm test externalPlan`, `npm test plannedExecutionStatus`, `npm test manualRecommendationReplacementService`, `npm test intradayBundleMemberAdjudication`, `npm test contextBrief` | PASS (all unit tests green) |
+| Repository gate | Repository root: `make check` / `make verify` | PASS (exit 0) |
 
-Per-file wall time (single pass): `external-coach-round-trip.pw.ts` 21.5 s (slowest test 14.1 s),
-`external-plan-revisions.pw.ts` 28.8 s, `external-plan-execution-states.pw.ts` 14.5 s. Every test
-stays far below the 45 s timeout, so none needs `test.slow()`.
-
-Emulator output from passing specs, including pre-existing `daily-decision.pw.ts` and
-`external-verdict.pw.ts`, shows `daily_recommendations` writes rejected at Firestore's
-1000-expression rules budget. The active assertions do not depend on the rejected revision.
-That product defect is tracked in [#953], and it underlies H2 and contributes to H3/H4.
+The previous `daily_recommendations` 1000-expression rule-evaluation budget rejection was resolved by #953 (D1/D2/D3).
+Replacement attribution and prepared-occurrence supersession (H3 / #951) and intraday secondary launch after primary completion (H4 / #952) were resolved by PR #998.
+V8 and V9 browser tests are fully active and passing.
 
 Java 21 and Chromium are needed for browser/emulator runs. Tests use fresh synthetic athletes
-and poll persisted state. No PR-E policy, engine, contract or rules changes are authorized, so
-policy drift/judge/simulation work is not an additional PR-E requirement. The earlier WP2 policy
-change was verified in its owning PR; this closeout does not repeat that implementation.
+and poll persisted state. No policy, engine, contract or rules changes are required for this closeout.
 
 ---
 
@@ -460,7 +455,11 @@ change was verified in its owning PR; this closeout does not repeat that impleme
 | PR-B [#937](https://github.com/Szczepanov/adaptive-training-recommender/pull/937) | Capability-based launch, exact scaled prescription and execution identity. |
 | PR-C [#943](https://github.com/Szczepanov/adaptive-training-recommender/pull/943) | Source-neutral planned/performed projection and replacement hydration. |
 | PR-D [#946](https://github.com/Szczepanov/adaptive-training-recommender/pull/946) | Bounded round-trip rendering and Context Brief semantic contract v4. |
-| PR-E | Active browser proofs, four issue-linked `test.fixme` regressions and documentation; #893 remains open. |
+| PR-E [#954](https://github.com/Szczepanov/adaptive-training-recommender/pull/954) | Active browser proofs, proof ledger, and initial `test.fixme` gap tracking. |
+| [#964](https://github.com/Szczepanov/adaptive-training-recommender/pull/964) / [#966](https://github.com/Szczepanov/adaptive-training-recommender/pull/966) | H1 resolution: exact reduced-definition binding and hash verification for scaled Start (#949). |
+| [#953](https://github.com/Szczepanov/adaptive-training-recommender/pull/953) | H2 resolution: catalog session binding fingerprint in rules and top-level field merges (#950 / #953). |
+| [#998](https://github.com/Szczepanov/adaptive-training-recommender/pull/998) | H3/H4 resolution: manual replacement attribution and prepared occurrence supersession (#951); intraday secondary launch and bundle completion (#952). V8 and V9 tests activated. |
+| Closeout | Acceptance ledger reconciliation, proof gap closure, and truthful documentation closeout for #893. |
 
 ---
 
