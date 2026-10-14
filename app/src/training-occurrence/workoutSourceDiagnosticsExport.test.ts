@@ -116,6 +116,11 @@ describe('buildWorkoutDiagnosticsExport', () => {
         expect(empty.workouts).toEqual([]);
     });
 
+    it('exports an unobserved sweep as unknown, which is not the same as not_run', () => {
+        const exported = buildWorkoutDiagnosticsExport({ window, generatedAt, reconciliationSweep: 'unknown', result: { status: 'projection_failed' } });
+        expect(exported.reconciliationSweep).toBe('unknown');
+    });
+
     it.each(['completed', 'incomplete', 'failed', 'not_run'] as const)(
         'records the window sweep status (%s) so an empty export is not read as "nothing happened"',
         sweep => {

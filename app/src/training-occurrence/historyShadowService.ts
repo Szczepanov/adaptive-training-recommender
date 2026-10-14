@@ -19,7 +19,23 @@ import { activityService } from '../services/activityService';
 import { recommendationService } from '../services/recommendationService';
 import { reconcileCompletedTrainingEvents } from '../engine/completedTraining';
 import { getCompletedWorkoutsInRange, hydrationWindowFor } from './activitiesReadModelService';
+import type { CompletedWorkoutView } from './completedWorkoutView';
 import { diffCompletedTrainingHistory, recordHistoryShadowDiff, type HistoryShadowDiff } from './historyShadowDiff';
+
+function hasTransientStructuredReadFailure(read: CompletedWorkoutView['sourceReads']['structured']): boolean {
+    switch (read.status) {
+        case 'execution_unavailable':
+        case 'entries_unavailable':
+            return true;
+        case 'definition_unresolved':
+            return read.definition === 'UNAVAILABLE';
+        case 'not_linked':
+        case 'available':
+        case 'execution_missing':
+        case 'execution_invalid':
+            return false;
+    }
+}
 
 export async function computeHistoryShadowDiffForUser(
     userId: string,
@@ -44,9 +60,11 @@ export async function computeHistoryShadowDiffForUser(
     );
     const liveEvents = reconcileCompletedTrainingEvents(exactRangeActivities, recommendationsState.data);
     const canonicalWorkouts = await getCompletedWorkoutsInRange(userId, fromDateInclusive, toDateExclusive, activitiesState.data);
-    // A structured source that could not be read is missing evidence, not a downgraded tier:
-    // diffing it would log a false ADR-0034 regression. Same fail-closed contract as above.
-    if (canonicalWorkouts.some(workout => !['available', 'not_linked'].includes(workout.sourceReads.structured.status))) return null;
+    // A *temporarily* unreadable structured source is missing evidence, not a downgraded tier:
+    // diffing it would log a false ADR-0034 regression. Persistent states (a deleted execution,
+    // an invalid document, a definition that is MISSING/INVALID) are real data and keep diffing,
+    // otherwise one such row would silence the shadow diff for every window containing it.
+    if (canonicalWorkouts.some(workout => hasTransientStructuredReadFailure(workout.sourceReads.structured))) return null;
     const diff = diffCompletedTrainingHistory(liveEvents, canonicalWorkouts);
     recordHistoryShadowDiff(userId, diff);
     return diff;
