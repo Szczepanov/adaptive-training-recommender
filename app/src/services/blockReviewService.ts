@@ -268,22 +268,53 @@ export class BlockReviewService {
         let sessionOutcomes: SessionOutcome[] = [];
         const start = evaluation.revision.startDate;
         const through = addDaysToLocalDateString(processEnd, 1);
+        const fetchCompetitions = async (): Promise<void> => {
+            try {
+                const read = await this.deps.competitions.listOutcomesWithDiagnostics(userId, evaluation, asOfDate, 100);
+                ecologicalOutcomes = read.outcomes.filter(o => dateOf(o.occurredAt) <= asOfDate);
+                if (read.scanLimitReached) result.limitations.push(`ecological_outcomes:scan_limit_${COMPETITION_OUTCOME_MAX_SCANNED_RECORDS}`);
+                result.sources.push(source('ecological_outcomes', ecologicalOutcomes.length, read.unreadableCount, read.truncated));
+            } catch { result.sources.push({ source: 'ecological_outcomes', status: 'unreadable', recordCount: 0 }); }
+        };
+
         if (processEnd < start || getDayDiff(processEnd, start) >= BLOCK_REVIEW_MAX_PROCESS_DAYS) {
             result.sources.push({ source: 'process_window', status: 'truncated', recordCount: 0 });
+            await fetchCompetitions();
         } else {
-            try {
-                const state = await this.deps.recommendations.getRecommendationsInRange(userId, start, through, BLOCK_REVIEW_MAX_RECORDS);
-                result.sources.push(stateSource('recommendations', state, state.status === 'AVAILABLE' ? state.data.length : 0));
-                if (state.status === 'AVAILABLE') recommendations = state.data;
-            } catch { result.sources.push({ source: 'recommendations', status: 'unreadable', recordCount: 0 }); }
-            try {
-                const read = await this.deps.executions.getExecutionHeadersInRange(userId, start, through, BLOCK_REVIEW_MAX_RECORDS);
-                executions = read.executions.filter(e => e.state !== 'in_progress'
-                    && dateOf(e.completedAt ?? e.updatedAt) <= asOfDate);
-                result.sources.push(source('executions', executions.length, read.invalidRecords, read.truncated));
-            } catch { result.sources.push({ source: 'executions', status: 'unreadable', recordCount: 0 }); }
-            try {
-                const occurrences = await this.deps.occurrences.queryActiveInDateWindow(userId, start, processEnd, BLOCK_REVIEW_MAX_RECORDS);
+            const fetchRecommendations = async (): Promise<void> => {
+                try {
+                    const state = await this.deps.recommendations.getRecommendationsInRange(userId, start, through, BLOCK_REVIEW_MAX_RECORDS);
+                    result.sources.push(stateSource('recommendations', state, state.status === 'AVAILABLE' ? state.data.length : 0));
+                    if (state.status === 'AVAILABLE') recommendations = state.data;
+                } catch { result.sources.push({ source: 'recommendations', status: 'unreadable', recordCount: 0 }); }
+            };
+
+            const fetchExecutions = async (): Promise<void> => {
+                try {
+                    const read = await this.deps.executions.getExecutionHeadersInRange(userId, start, through, BLOCK_REVIEW_MAX_RECORDS);
+                    executions = read.executions.filter(e => e.state !== 'in_progress'
+                        && dateOf(e.completedAt ?? e.updatedAt) <= asOfDate);
+                    result.sources.push(source('executions', executions.length, read.invalidRecords, read.truncated));
+                } catch { result.sources.push({ source: 'executions', status: 'unreadable', recordCount: 0 }); }
+            };
+
+            const fetchOccurrences = async (): Promise<Awaited<ReturnType<PerformedTrainingOccurrenceRepository['queryActiveInDateWindow']>> | null> => {
+                try {
+                    return await this.deps.occurrences.queryActiveInDateWindow(userId, start, processEnd, BLOCK_REVIEW_MAX_RECORDS);
+                } catch (error) {
+                    result.sources.push({ source: 'performed_occurrences', status: String(error).includes('truncated') ? 'truncated' : 'unreadable', recordCount: 0 });
+                    return null;
+                }
+            };
+
+            const [, , occurrences] = await Promise.all([
+                fetchRecommendations(),
+                fetchExecutions(),
+                fetchOccurrences(),
+                fetchCompetitions(),
+            ]);
+
+            if (occurrences !== null) {
                 const completedExecutionIds = new Set(executions.filter(e => e.state === 'completed').map(e => e.executionId));
                 completedSessions = occurrences.filter(o => o.localDate && (!o.endedAt || dateOf(o.endedAt) <= asOfDate)
                     && (o.sourceRefs.some(ref => ref.kind === 'provider_activity')
@@ -291,15 +322,10 @@ export class BlockReviewService {
                     .map(o => ({ id: o.performedOccurrenceId, date: o.localDate! }));
                 if (occurrences.some(o => o.reconciliation.state === 'ambiguous')) result.limitations.push('performed_occurrences:ambiguous_reconciliation');
                 result.sources.push(source('performed_occurrences', completedSessions.length));
-            } catch (error) { result.sources.push({ source: 'performed_occurrences', status: String(error).includes('truncated') ? 'truncated' : 'unreadable', recordCount: 0 }); }
+            }
+
             sessionOutcomes = await this.loadResponses(userId, executions, start, processEnd, asOfDate, result);
         }
-        try {
-            const read = await this.deps.competitions.listOutcomesWithDiagnostics(userId, evaluation, asOfDate, 100);
-            ecologicalOutcomes = read.outcomes.filter(o => dateOf(o.occurredAt) <= asOfDate);
-            if (read.scanLimitReached) result.limitations.push(`ecological_outcomes:scan_limit_${COMPETITION_OUTCOME_MAX_SCANNED_RECORDS}`);
-            result.sources.push(source('ecological_outcomes', ecologicalOutcomes.length, read.unreadableCount, read.truncated));
-        } catch { result.sources.push({ source: 'ecological_outcomes', status: 'unreadable', recordCount: 0 }); }
         result.sources.push({ source: 'weekly_roles', status: 'unsupported', recordCount: 0 });
         result.limitations.push('weekly_roles:no_frozen_occurrence_binding', 'reliability:no_series_estimate_reader', 'performed_comparison:not_loaded',
             `tissue_followup_bound:${TISSUE_LOOKAHEAD_DAYS}_days`);
@@ -348,33 +374,59 @@ export class BlockReviewService {
         const end = addDaysToLocalDateString(endDate, TISSUE_LOOKAHEAD_DAYS);
         const checkinEnd = end < asOfDate ? end : asOfDate;
         // shortcut: follow-ups beyond seven days require an explicit bounded linkage reader.
+        const checkinDates: string[] = [];
         for (let date = startDate; date <= checkinEnd; date = addDaysToLocalDateString(date, 1)) {
-            try {
-                const state = await this.deps.checkins.getCheckinState(userId, date);
-                if (state.status === 'AVAILABLE') {
-                    readCount++;
-                    for (const tissue of Object.values(state.data.tissueResponses ?? {})) {
-                        if (tissue.sourceSessionRef?.kind !== 'execution') continue;
-                        const items = tissueByExecution.get(tissue.sourceSessionRef.id) ?? [];
-                        items.push(tissue); tissueByExecution.set(tissue.sourceSessionRef.id, items);
-                    }
-                } else if (state.status !== 'MISSING') unreadable++;
-            } catch { unreadable++; }
+            checkinDates.push(date);
         }
+
+        const checkinStates = await Promise.all(
+            checkinDates.map(async date => {
+                try {
+                    return await this.deps.checkins.getCheckinState(userId, date);
+                } catch {
+                    return null;
+                }
+            })
+        );
+
+        for (const state of checkinStates) {
+            if (!state) {
+                unreadable++;
+            } else if (state.status === 'AVAILABLE') {
+                readCount++;
+                for (const tissue of Object.values(state.data.tissueResponses ?? {})) {
+                    if (tissue.sourceSessionRef?.kind !== 'execution') continue;
+                    const items = tissueByExecution.get(tissue.sourceSessionRef.id) ?? [];
+                    items.push(tissue); tissueByExecution.set(tissue.sourceSessionRef.id, items);
+                }
+            } else if (state.status !== 'MISSING') unreadable++;
+        }
+
         const outcomes: SessionOutcome[] = [];
+        const windows = ['immediate', 'later_day', 'next_morning'] as ResponseWindow[];
+
         for (const execution of executions) {
             const sourceSession = { kind: 'execution' as const, id: execution.executionId, date: execution.date };
+            const responseStates = await Promise.all(
+                windows.map(async window => {
+                    try {
+                        return { window, state: await this.deps.responses.getResponse(userId, sessionResponseDocId(sourceSession, window)) };
+                    } catch {
+                        return { window, state: null };
+                    }
+                })
+            );
+
             const responses: SessionResponse[] = [];
-            for (const window of ['immediate', 'later_day', 'next_morning'] as ResponseWindow[]) {
-                try {
-                    const state = await this.deps.responses.getResponse(userId, sessionResponseDocId(sourceSession, window));
-                    if (state.status === 'AVAILABLE') {
-                        const r = state.data;
-                        if (r.userId !== userId || r.sourceSession.kind !== 'execution' || r.sourceSession.id !== execution.executionId
-                            || r.sourceSession.date !== execution.date || r.window !== window) { unreadable++; continue; }
-                        if (r.date <= asOfDate && dateOf(r.createdAt) <= asOfDate) { responses.push(r); readCount++; }
-                    } else if (state.status !== 'MISSING') unreadable++;
-                } catch { unreadable++; }
+            for (const { window, state } of responseStates) {
+                if (!state) {
+                    unreadable++;
+                } else if (state.status === 'AVAILABLE') {
+                    const r = state.data;
+                    if (r.userId !== userId || r.sourceSession.kind !== 'execution' || r.sourceSession.id !== execution.executionId
+                        || r.sourceSession.date !== execution.date || r.window !== window) { unreadable++; continue; }
+                    if (r.date <= asOfDate && dateOf(r.createdAt) <= asOfDate) { responses.push(r); readCount++; }
+                } else if (state.status !== 'MISSING') unreadable++;
             }
             outcomes.push(deriveSessionOutcome({ sourceSession, responses, tissueResponses: tissueByExecution.get(execution.executionId) ?? [] }));
         }

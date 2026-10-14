@@ -242,6 +242,24 @@ describe('BlockReviewService assessment evidence', () => {
 });
 
 describe('BlockReviewService exports and process joins', () => {
+    it('loads independent process sources concurrently', async () => {
+        const { service, deps } = await setup();
+        let release!: () => void;
+        const readsReady = new Promise<void>(resolve => { release = resolve; });
+        deps.recommendations.getRecommendationsInRange.mockImplementation(() => readsReady.then(() => ({ status: 'AVAILABLE', data: [], revision: null })));
+        deps.executions.getExecutionHeadersInRange.mockImplementation(() => readsReady.then(() => ({ executions: [], invalidRecords: 0, truncated: false })));
+        deps.occurrences.queryActiveInDateWindow.mockImplementation(() => readsReady.then(() => []));
+        deps.competitions.listOutcomesWithDiagnostics.mockImplementation(() => readsReady.then(() => ({ outcomes: [], unreadableCount: 0, truncated: false })));
+
+        const reviewPromise = service.loadReview('u1', selection, asOfDate);
+        await vi.waitFor(() => expect(deps.recommendations.getRecommendationsInRange).toHaveBeenCalledTimes(1));
+        expect(deps.executions.getExecutionHeadersInRange).toHaveBeenCalledTimes(1);
+        expect(deps.occurrences.queryActiveInDateWindow).toHaveBeenCalledTimes(1);
+        expect(deps.competitions.listOutcomesWithDiagnostics).toHaveBeenCalledTimes(1);
+        release();
+
+        await reviewPromise;
+    });
     it('passes the exact evaluation and as-of scope to the bounded ecological reader', async () => {
         const { service, deps, evaluation } = await setup();
         deps.competitions.listOutcomesWithDiagnostics.mockResolvedValue({ outcomes: [], unreadableCount: 0,
