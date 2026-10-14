@@ -25,6 +25,7 @@ import { buildStructuredStepDetails } from './structuredSetDetail';
 import { compareActivitiesReadModels, recordActivitiesReadModelComparison } from './activitiesReadModelDiagnostics';
 import { isProviderActivityRef, isStructuredExecutionRef, type PerformedTrainingOccurrence, type ProviderActivitySourceRef } from './models';
 import { sourceKeyForRef } from './sourceIdentity';
+import { performedTrainingOccurrenceRepository } from './repository';
 import { hydrateOccurrenceSourcesInRange, type HydratedProviderSource } from './occurrenceSourcesHydration';
 
 interface StructuredHydration {
@@ -120,15 +121,66 @@ function providerReadFor(
 /** Conservative: ambiguous provenance records no candidate ids and marks only the side that
  * was created, so an opposite-kind single-source row within a day of an ambiguous one may be
  * the competing candidate and must not be told "no candidate was found". */
-function withAmbiguousCounterparts(views: readonly CompletedWorkoutView[]): CompletedWorkoutView[] {
-    const ambiguous = views.filter(view => view.reconciliation.state === 'ambiguous');
+interface AmbiguousProbe {
+    performedOccurrenceId: string;
+    hasStructured: boolean;
+    localDate?: string;
+}
+
+/** An ambiguous partner can sit one local day outside the displayed window, where no row is
+ * hydrated, so those two edge days are read separately. If that read fails the answer for the
+ * rows it could affect is unknown, which is reported as a possible counterpart. */
+async function readEdgeAmbiguities(
+    userId: string,
+    fromDateInclusive: string,
+    toDateExclusive: string,
+): Promise<{ probes: AmbiguousProbe[]; failed: boolean }> {
+    const dayBefore = addDaysToLocalDateString(fromDateInclusive, -1);
+    try {
+        const [before, after] = await Promise.all([
+            performedTrainingOccurrenceRepository.queryActiveInDateWindow(userId, dayBefore, dayBefore),
+            performedTrainingOccurrenceRepository.queryActiveInDateWindow(userId, toDateExclusive, toDateExclusive),
+        ]);
+        return {
+            probes: [...before, ...after]
+                .filter(occurrence => occurrence.reconciliation.state === 'ambiguous')
+                .map(occurrence => ({
+                    performedOccurrenceId: occurrence.performedOccurrenceId,
+                    hasStructured: sourceBadgeFor(occurrence).hasStructured,
+                    localDate: occurrence.localDate,
+                })),
+            failed: false,
+        };
+    } catch {
+        return { probes: [], failed: true };
+    }
+}
+
+function withAmbiguousCounterparts(
+    views: readonly CompletedWorkoutView[],
+    edge: { probes: readonly AmbiguousProbe[]; failed: boolean },
+    window: { fromDateInclusive: string; toDateExclusive: string },
+): CompletedWorkoutView[] {
+    const probes: AmbiguousProbe[] = [
+        ...views.filter(view => view.reconciliation.state === 'ambiguous').map(view => ({
+            performedOccurrenceId: view.performedOccurrenceId,
+            hasStructured: view.sourceBadge.hasStructured,
+            localDate: view.localDate,
+        })),
+        ...edge.probes,
+    ];
     const withinOneDay = (a: string | undefined, b: string | undefined): boolean =>
         a === undefined || b === undefined
         || (a >= addDaysToLocalDateString(b, -1) && a <= addDaysToLocalDateString(b, 1));
+    const lastDay = addDaysToLocalDateString(window.toDateExclusive, -1);
+    // Only a row on the first or last displayed day can have an unseen partner outside the window.
+    const touchesEdge = (date: string | undefined): boolean =>
+        date === undefined || date <= window.fromDateInclusive || date >= lastDay;
     return views.map(view => {
-        const counterpart = view.reconciliation.state === 'single_source' && ambiguous.some(other =>
+        if (view.reconciliation.state !== 'single_source') return view;
+        const counterpart = (edge.failed && touchesEdge(view.localDate)) || probes.some(other =>
             other.performedOccurrenceId !== view.performedOccurrenceId
-            && other.sourceBadge.hasStructured !== view.sourceBadge.hasStructured
+            && other.hasStructured !== view.sourceBadge.hasStructured
             && withinOneDay(view.localDate, other.localDate));
         return counterpart ? { ...view, sourceReads: { ...view.sourceReads, ambiguousCounterpart: true } } : view;
     });
@@ -225,8 +277,12 @@ export async function getCompletedWorkoutsInRange(
         activitiesReadable: sourceHydration.activitiesReadable,
         reconciliationSweep: options.reconciliationSweep ?? 'not_run',
     } as const;
-    const views = withAmbiguousCounterparts(await Promise.all(sourceHydration.rows.map(({ occurrence, providerSources }) =>
-        hydrateOccurrence(userId, occurrence, providerSources, context))));
+    const [hydrated, edgeAmbiguities] = await Promise.all([
+        Promise.all(sourceHydration.rows.map(({ occurrence, providerSources }) =>
+            hydrateOccurrence(userId, occurrence, providerSources, context))),
+        readEdgeAmbiguities(userId, fromDateInclusive, toDateExclusive),
+    ]);
+    const views = withAmbiguousCounterparts(hydrated, edgeAmbiguities, { fromDateInclusive, toDateExclusive });
     const sortedViews = views.sort((a, b) => (b.startedAt ?? b.localDate ?? '').localeCompare(a.startedAt ?? a.localDate ?? ''));
 
     // Own the dual-read comparison where both inputs are guaranteed to be available. The

@@ -136,6 +136,12 @@ describe('DataView canonical Activities states (#895 WP5: loading != failed != e
     expect(html).not.toMatch(/\b0 workouts\b/);
   });
 
+  it('hands the real sweep outcome to the failed-window alert so its export does not claim "not_run"', () => {
+    const html = renderToStaticMarkup(<CanonicalActivitiesPanel workouts={null} failed range={range} reconciliationSweep="incomplete" />);
+    expect(html).toContain('Copy source diagnostics');
+    expect(html).toContain('Read-model projection failed');
+  });
+
   it('keeps the failure visible even if stale workouts are still cached', () => {
     const html = renderToStaticMarkup(<CanonicalActivitiesPanel workouts={[workoutView()]} failed range={range} />);
     expect(html).toContain('Read-model projection failed');

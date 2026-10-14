@@ -66,7 +66,7 @@ interface ExportEnvelope {
     window: { from: string; toExclusive: string };
     /** Whether the window's reconciliation sweep evaluated every source; only `completed`
      * licenses reading an empty or single-source window as "nothing / no candidate". */
-    reconciliationSweep: ReconciliationSweepStatus;
+    reconciliationSweep: ReconciliationSweepStatus | 'unknown';
     scopeNotes: readonly string[];
 }
 
@@ -187,7 +187,8 @@ function outboxDepth(workouts: readonly CompletedWorkoutView[]): AvailableWorkou
 export function buildWorkoutDiagnosticsExport(input: {
     window: { from: string; toExclusive: string };
     generatedAt: string;
-    reconciliationSweep: ReconciliationSweepStatus;
+    /** `unknown` when the caller never observed the sweep (not the same as `not_run`). */
+    reconciliationSweep: ReconciliationSweepStatus | 'unknown';
     result: WorkoutDiagnosticsResult;
 }): WorkoutDiagnosticsExport {
     const envelope: ExportEnvelope = {

@@ -42,9 +42,17 @@ function OutboxLine({ outbox }: { outbox: Diagnostics['outbox'] }) {
     }
 }
 
+/** Exhaustive over `ReconciliationSweepStatus`: an incomplete check did run, and says so. */
+const SWEEP_TEXT: Record<ReconciliationSweepStatus, string> = {
+    completed: 'completed',
+    incomplete: 'ran but could not evaluate every recording',
+    failed: 'failed',
+    not_run: 'not run on this load',
+};
+
 function ReconciliationLine({ diagnostics }: { diagnostics: Diagnostics }) {
     const { reconciliationOutcome: outcome, reconciliationSweep: sweep } = diagnostics;
-    const sweepText = sweep === 'completed' ? 'completed' : sweep === 'failed' ? 'failed' : 'not run on this load';
+    const sweepText = SWEEP_TEXT[sweep];
     const outcomeText = outcome.status === 'observed'
         ? outcome.outcome
         : 'unknown, a manual decision replaced the automatic result';
@@ -97,13 +105,13 @@ type CopyFeedback = 'idle' | 'copied' | 'failed';
 export function DiagnosticsExportButton({ range, result, sweep }: {
     range: DiagnosticsWindow;
     result: WorkoutDiagnosticsResult;
-    /** The window sweep outcome; omitted means the caller has none, i.e. `not_run`. */
+    /** The window sweep outcome; omitted means the caller does not know it. */
     sweep?: ReconciliationSweepStatus;
 }) {
     const [feedback, setFeedback] = useState<CopyFeedback>('idle');
     const copy = async () => {
         try {
-            const exported = buildWorkoutDiagnosticsExport({ window: range, generatedAt: new Date().toISOString(), reconciliationSweep: sweep ?? 'not_run', result });
+            const exported = buildWorkoutDiagnosticsExport({ window: range, generatedAt: new Date().toISOString(), reconciliationSweep: sweep ?? 'unknown', result });
             await navigator.clipboard.writeText(serializeWorkoutDiagnosticsExport(exported));
             setFeedback('copied');
         } catch (error) {

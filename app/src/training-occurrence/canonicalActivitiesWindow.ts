@@ -12,10 +12,11 @@ import { getCompletedWorkoutsInRange } from './activitiesReadModelService';
 import type { CompletedWorkoutView, ReconciliationSweepStatus } from './completedWorkoutView';
 import { reconcileDateRangeForUser } from './reconciliationService';
 
-export interface CanonicalActivitiesWindow {
-    workouts: CompletedWorkoutView[];
-    reconciliationSweep: Exclude<ReconciliationSweepStatus, 'not_run'>;
-}
+export type CanonicalActivitiesWindow =
+    | { status: 'available'; workouts: CompletedWorkoutView[]; reconciliationSweep: Exclude<ReconciliationSweepStatus, 'not_run'> }
+    /** The read-model projection itself rejected (#895 state 8). The sweep outcome is kept: the
+     * sweep usually ran, and the export must say what actually happened. */
+    | { status: 'projection_failed'; reconciliationSweep: Exclude<ReconciliationSweepStatus, 'not_run'> };
 
 export async function loadCanonicalActivitiesWindow(
     userId: string,
@@ -30,6 +31,11 @@ export async function loadCanonicalActivitiesWindow(
         reconciliationSweep = 'failed';
         console.warn('[training-occurrence] activities window reconciliation failed', error);
     }
-    const workouts = await getCompletedWorkoutsInRange(userId, fromDateInclusive, toDateExclusive, undefined, { reconciliationSweep });
-    return { workouts, reconciliationSweep };
+    try {
+        const workouts = await getCompletedWorkoutsInRange(userId, fromDateInclusive, toDateExclusive, undefined, { reconciliationSweep });
+        return { status: 'available', workouts, reconciliationSweep };
+    } catch (error) {
+        console.warn('[training-occurrence] canonical activities read failed', error);
+        return { status: 'projection_failed', reconciliationSweep };
+    }
 }
