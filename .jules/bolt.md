@@ -99,3 +99,7 @@
 ## 2026-10-25 - Avoid O(N*M) array filtering inside loops for dictionary construction
 **Learning:** Using `new Map(items.map(item => [item.id, entries.filter(e => e.parentId === item.id)]))` scales poorly, causing O(N * M) performance impact where N is the number of keys and M is the number of entries.
 **Action:** Pre-compute the grouped values using an O(N) loop approach (`for...of`) and a `Map.get() / arr.push()` pattern to build the grouped dictionary instead of calling `.filter()` inside `.map()`.
+
+## 2026-10-26 - Parallelize independent async I/O in BlockReviewService using Promise.all
+**Learning:** In `BlockReviewService`, sequentially awaiting independent read operations (`recommendations`, `executions`, `occurrences`, `competitions`, checkin states, and session responses) accumulates network/I/O latency. Wrapping independent async operations in `Promise.all` reduced `loadReview` wall-clock latency by 74.6% (from 313ms down to 79ms).
+**Action:** When a service method needs to aggregate multiple independent data sources across different services or date ranges, group independent async queries into concurrent `Promise.all` batches rather than awaiting each sequential network request.
