@@ -1411,6 +1411,18 @@ week-ahead pipeline for any athlete with more than one active dated event; a no-
 otherwise (`simulate:diff` confirms zero semantic change against the committed baseline).
 The plan-derived path (`PlanDefinition`) is not wired to contributors in this increment.
 
+### Season roadmap: event roles and conflicts (#929, ADR-0050, `seasonRoadmap.ts`)
+
+`resolveSeasonRoadmap(events, asOfDate)` is a pure classification of every upcoming
+scheduled event (and recently completed/DNF events, 28 days) relative to the season's
+primary target, which equals `PeriodizationResult.focusEvent` whenever the
+focus is an upcoming scheduled event (both sort with `compareEventAuthority`). Roles: `primary_peak`, `benchmark_peak` (another A or a
+4-star B, "B+"), `benchmark` (B) and `train_through` (C). It grants no execution authority:
+one event owns each calendar date, and `same_day_authority`, `inside_peak_taper` and
+`insufficient_peak_recovery` conflicts are typed and surfaced rather than blended.
+`UserEvent.starPriority` carries the star control from `goalToUserEvent`. Current status of
+the behavioral increments is tracked on the plans board.
+
 ---
 
 ## Candidate ranking (`optimizer.ts`)

@@ -70,7 +70,8 @@ ownership segments and the production Evergreen seed, verified by live-parity,
 accounting and terminal-recovery simulation regressions. Projected work may seed forecast
 strategy/dose/capability evidence but never fabricates canonical performed-stimulus recency.
 See [`recommendation-engine.md`](../architecture/recommendation-engine.md) for the contract;
-long-horizon development (#927), season coordination (#929), and
+long-horizon development (#927, delivered), season coordination (#929, in progress: see
+[ADR-0050](../adr/0050-season-roadmap-event-roles.md)), and
 post-event focus eligibility remain outside this change (policy ownership of phase horizons
 delivered in #928).
 

@@ -12,6 +12,7 @@ import type {
     WeeklyObjective,
 } from './models';
 import { resolveEventTaper } from './taperPolicy';
+import { compareEventAuthority } from './seasonRoadmap';
 import { resolveEventPhaseHorizonPolicy, type EventPhaseHorizonPolicy } from './eventHorizonPolicy';
 // Re-exported for existing importers (e.g. planner.ts, trainingIntent.ts) -- the
 // canonical type definitions live in models.ts (see its own comment) so
@@ -395,19 +396,7 @@ export function evaluatePeriodizationPhase(
     // (3) planning date ascending; (4) event id, lexicographic. (4) is not a real
     // criterion -- it is a determinism backstop for a genuine tie, commented as such
     // rather than left to look like a meaningful ranking signal.
-    const sortedEvents = [...eligibleEvents].sort((a, b) => {
-        const prioMap = { A: 1, B: 2, C: 3 };
-        if (prioMap[a.event.priority] !== prioMap[b.event.priority]) {
-            return prioMap[a.event.priority] - prioMap[b.event.priority];
-        }
-        if (a.daysToEvent !== b.daysToEvent) {
-            return a.daysToEvent - b.daysToEvent;
-        }
-        if (a.targetDate !== b.targetDate) {
-            return a.targetDate < b.targetDate ? -1 : 1;
-        }
-        return a.event.id < b.event.id ? -1 : a.event.id > b.event.id ? 1 : 0;
-    });
+    const sortedEvents = [...eligibleEvents].sort(compareEventAuthority);
 
     // Two A-events on the same day is a planning error, not something to blend --
     // surfaced here rather than silently resolved by the id backstop above. Empty
@@ -561,6 +550,7 @@ export function goalToUserEvent(goal: UserGoal & { id?: string }): UserEvent | n
         title: goal.title,
         date: goal.targetDate,
         priority: deriveEventPriority(goal.priority),
+        starPriority: goal.priority,
         lifecycle: goal.eventLifecycle ?? 'scheduled',
         category: goal.eventCategory,
         ...(goal.eventPreset ? { presetId: goal.eventPreset } : {}),

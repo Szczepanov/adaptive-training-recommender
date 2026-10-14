@@ -15,6 +15,7 @@ import type { KnowledgeClaim, KnowledgeSource } from './sportsKnowledge';
  */
 export const PERIODIZATION_EVENT_DEMAND_CLAIM_IDS = {
     developmentAuthorityPolicy: 'policy.periodization.development_authority_v1',
+    seasonRoadmapPolicy: 'policy.periodization.season_roadmap_v1',
     blockStructuredProgression: 'performance.periodization.block_structured_progression',
     eventDurationLimiterShift: 'performance.event_demand.duration_intensity_limiter_shift',
     phaseBoundariesScalesPolicy: 'policy.periodization.phase_boundaries_scales_v1',
@@ -144,6 +145,15 @@ export const PERIODIZATION_EVENT_DEMAND_CLAIMS: readonly KnowledgeClaim[] = [
         applicability: { contexts: ['training_periodization', 'macrocycle_planning'], sports: ['cycling'], populations: ['app_users_with_target_events'], outcomes: ['planner_authority'], horizon: 'chronic' },
         evidence: [{ sourceId: PERIODIZATION_EVENT_DEMAND_PRODUCT_POLICY_SOURCE, directness: 'direct' }],
         limitations: ['Software authority and explicit authoring policy only; no dose multiplier, clinical clearance, physiological success or automatic progression is inferred.'],
+        reviewedOn: '2026-10-14', version: 1,
+    },
+    {
+        id: PERIODIZATION_EVENT_DEMAND_CLAIM_IDS.seasonRoadmapPolicy,
+        statement: 'Product season roadmap v1: among upcoming scheduled events, the first in the engine authority order (priority A>B>C, then proximity, planning date, id) is the primary season target and owns the macrocycle; every other event gets one role -- another A event or a 4-star-or-higher B event is a benchmark peak (B+), any other B event is a benchmark, and a C event is train-through race craft. Exactly one event owns any calendar date. The roadmap reports a typed conflict when two events share a planning date, when an event falls inside the resolved taper window of a peak-role event (blocking for A/B/B+ events, advisory for C), and when fewer than 7 days (the post-event recovery length) separate one peak-role event from the taper start of the next peak (its date if it has no taper); a same-day conflict is advisory only when every yielding event is train-through. Completed or DNF events stay in the roadmap for 28 days so their outcome can revalidate later development.',
+        claimType: 'heuristic', maturity: 'heuristic', status: 'active', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional', safetyImpact: 'moderate',
+        applicability: { contexts: ['training_periodization', 'multi_event_planning', 'macrocycle_planning'], sports: ['all_supported_sports'], populations: ['app_users_with_multiple_target_events'], outcomes: ['season_event_role', 'season_conflict_report'], horizon: 'chronic' },
+        evidence: [{ sourceId: PERIODIZATION_EVENT_DEMAND_PRODUCT_POLICY_SOURCE, directness: 'direct' }],
+        limitations: ['Event-role classification and conflict reporting are deterministic planning-context logic, not a physiological claim; the 4-star B+ cut, the 7-day peak recovery gap and the 28-day outcome lookback are uncalibrated product choices, and the evidence found does not support a specific value for any of them. The roadmap grants no execution authority and never sums per-event requirements.'],
         reviewedOn: '2026-10-14', version: 1,
     },
     {
