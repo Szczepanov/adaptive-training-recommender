@@ -111,6 +111,7 @@ import {
 import './Home.css';
 
 import type { Screen } from '../types/navigation';
+import type { IntentBlock } from '../engine/blockIntent';
 
 interface HomeProps {
   userId: string;
@@ -142,7 +143,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
   const WEEK_AHEAD_DAYS = 7;
   const [decisionInput, setDecisionInput] = useState<ComposedDailyDecisionInput | null>(null);
   const [recommendation, setRecommendation] = useState<Recommendation | null>(null);
-  const [intentBlocks, setIntentBlocks] = useState<readonly import('../engine/blockIntent').IntentBlock[]>([]);
+  const [intentBlocks, setIntentBlocks] = useState<readonly IntentBlock[]>([]);
   const [decisionContextCapture, setDecisionContextCapture] = useState<{
     evaluatedAt: string;
     evaluatorInputs: SameDayRecommendationInputs;
