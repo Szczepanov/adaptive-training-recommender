@@ -113,7 +113,7 @@ export function resolvePlanningContext(
             : 'evergreen_fallback')
         : 'demand_derived';
     const development = eventStrategy === 'evergreen_fallback'
-        ? resolveDevelopmentAuthority(focusEvent, date, intentBlocks) : undefined;
+        ? resolveDevelopmentAuthority(focusEvent, date, intentBlocks, periodization.seasonRoadmap) : undefined;
     if (development?.block) {
         const structuredStart = addDaysToLocalDateString(focusEvent.timing?.planningDate ?? focusEvent.date,
             -periodization.horizonPolicy.finalBuildStartDaysBefore);

@@ -62,9 +62,11 @@ taper is prepared up to its date for the recovery-gap check. Conflicts never rew
 
 ### D4 — Outcomes revalidate, they do not auto-progress
 
-A completed or DNF supporting event inside the 28-day lookback that falls after the active
-development block's last review forces the block's executable end to the day after the event
-(a reviewed revision is then required), recorded as a development diagnostic. No automatic
+A completed or DNF supporting event inside the 28-day lookback that falls inside the active
+development block and after its last confirmed review (inferred as `nextReviewDate` minus
+`reviewCadenceDays`) withholds the block with a `supporting_outcome_review_due:<eventId>`
+diagnostic until a reviewed revision exists (Evergreen fallback meanwhile). Results older than
+the lookback are not visible, so a review cadence longer than 28 days can miss an old result. No automatic
 progression or success claim is inferred from a result.
 
 ### D5 — Explainability

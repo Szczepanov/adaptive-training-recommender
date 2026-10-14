@@ -11,6 +11,7 @@ import { addDaysToLocalDateString, getDayDiff } from '../utils/localDate';
 import { workoutIdForTemplateId } from './coverage';
 import type { CompletedExposure } from './trainingHistory';
 import type { PlanningContext } from './planningMode';
+import type { SeasonRoadmap } from './seasonRoadmap';
 
 export const DEVELOPMENT_VO2_WORKOUT_IDS = ['cycling_vo2_6x3_01'] as const;
 export interface DevelopmentAuthority {
@@ -122,7 +123,22 @@ function exactIds(objective: BlockObjectiveDefinition): readonly string[] {
     const ids = EVERGREEN_GENERAL_COVERAGE_SET.coverage.find(role => role.key === objective.coverageKey)?.workoutIds ?? [];
     return objective.sport === 'cycling' ? ids.filter(id => WORKOUTS_BY_ID.get(id)?.modality === 'cycling') : ids;
 }
-export function resolveDevelopmentAuthority(event: UserEvent, date: string, blocks: readonly IntentBlock[]): DevelopmentAuthority {
+/**
+ * Issue #929 (ADR-0050 D4): a completed or DNF supporting event is evidence the block was
+ * authored without. When one falls inside the block, after the review that last confirmed it
+ * (inferred as `nextReviewDate - reviewCadenceDays`), the block is withheld until a reviewed
+ * revision exists -- no automatic progression or success claim is inferred from the result.
+ * Only outcomes inside the roadmap's lookback are visible.
+ */
+export function supportingOutcomeReviewDiagnostics(block: IntentBlock, eventId: string, roadmap: SeasonRoadmap | undefined): string[] {
+    if (!roadmap) return [];
+    const lastReview = addDaysToLocalDateString(block.reviewSchedule.nextReviewDate, -block.reviewSchedule.reviewCadenceDays);
+    return roadmap.entries
+        .filter(entry => entry.status !== 'upcoming' && entry.eventId !== eventId
+            && entry.date >= block.dateRange.startDate && entry.date > lastReview)
+        .map(entry => `supporting_outcome_review_due:${entry.eventId}`);
+}
+export function resolveDevelopmentAuthority(event: UserEvent, date: string, blocks: readonly IntentBlock[], roadmap?: SeasonRoadmap): DevelopmentAuthority {
     const candidates = blocks.filter(block => block.eventBinding?.eventId === event.id
         && block.dateRange.startDate <= date && date <= block.dateRange.endDate);
     if (candidates.length !== 1) return { block: null, diagnostics: [candidates.length ? 'conflicting_active_blocks' : 'no_active_event_bound_block'] };
@@ -133,6 +149,7 @@ export function resolveDevelopmentAuthority(event: UserEvent, date: string, bloc
     if (binding.eventDate !== event.date || JSON.stringify(canonicalise(binding.demandProfile)) !== JSON.stringify(canonicalise(event.demandProfile))
         || JSON.stringify(canonicalise(binding.phaseHorizons ?? null)) !== JSON.stringify(canonicalise(event.phaseHorizons ?? null))) diagnostics.push('event_context_changed');
     if (date > block.reviewSchedule.nextReviewDate) diagnostics.push('block_review_due');
+    diagnostics.push(...supportingOutcomeReviewDiagnostics(block, event.id, roadmap));
     const adaptations = new Set<AdaptationKey>();
     for (const objective of block.objectives) {
         const adaptation = developmentAdaptation(objective);
