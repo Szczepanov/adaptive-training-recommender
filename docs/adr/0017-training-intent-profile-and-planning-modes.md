@@ -262,8 +262,10 @@ Non-cycling eligible events continue to use `demand_derived`.
 This is an authority correction, not a new persisted planning mode and not permission to
 fabricate a Base block. `evergreen_fallback` is a safe executable fallback for dates not
 owned by a structured block; it is **not** the final long-horizon event-periodization model.
-Long-horizon event-directed mesocycle authority is tracked in #927, policy ownership of the
-current D-84/D-35 horizons in #928, and season-level A/B/C event coordination in #929.
+Long-horizon event-directed mesocycle authority is tracked in #927, and season-level
+A/B/C event coordination in #929. Policy ownership of the event-build and specificity
+horizons is delivered in #928 (`eventHorizonPolicy.ts`), establishing a single source of
+truth for `periodization.ts` and `planSchedule.ts` with explicit provenance and override support.
 ADR-0016 exact-role coverage remains unchanged: provider semantic labels may preserve
 physiological provenance, but they do not manufacture exact workout identity or weekly role
 credit.

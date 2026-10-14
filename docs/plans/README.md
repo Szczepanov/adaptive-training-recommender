@@ -63,8 +63,9 @@ ownership segments and the production Evergreen seed, verified by live-parity,
 accounting and terminal-recovery simulation regressions. Projected work may seed forecast
 strategy/dose/capability evidence but never fabricates canonical performed-stimulus recency.
 See [`recommendation-engine.md`](../architecture/recommendation-engine.md) for the contract;
-long-horizon development (#927), phase horizons (#928), season coordination (#929), and
-post-event focus eligibility remain outside this change.
+long-horizon development (#927), season coordination (#929), and
+post-event focus eligibility remain outside this change (policy ownership of phase horizons
+delivered in #928).
 
 The implementation plan for GitHub issue [#953](https://github.com/Szczepanov/adaptive-training-recommender/issues/953)
 (rejected `daily_recommendations` writes: catalog bindings, expression budget, wholesale audit replacement) is

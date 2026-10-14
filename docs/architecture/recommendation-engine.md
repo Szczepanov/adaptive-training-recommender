@@ -574,8 +574,13 @@ daily. Simulation reports retain segment seeds; the deferred beam-search compari
 `sequenceSearch.ts` remains a separate experimental planner (ADR-0015).
 
 This fallback fixes the authority gap without claiming to solve long-horizon
-mesocycle planning (#927), ownership of the D-84/D-35 phase horizons (#928), or season-level
-A/B/C event coordination (#929). Running, triathlon, strength, and general
+mesocycle planning (#927) or season-level A/B/C event coordination (#929). Centralized
+policy ownership of the event-build and specificity horizons is established in #928 via
+`eventHorizonPolicy.ts`: `evaluatePeriodizationPhase` and `buildCyclingEventPlan` consume
+the exact same policy owner (`EventPhaseHorizonPolicy`), ensuring phase boundaries and
+generated block dates cannot silently drift apart. Defaults remain D-84 (build) and D-35
+(specificity) for the current cycling plan, but are now policy-resolved and overridable per
+event (`event.phaseHorizons`) or caller options. Running, triathlon, strength, and general
 events retain demand-derived planning. Running race-specific objectives are modality-scoped
 and half-marathon/marathon demand adds a long-run durability objective; the generic
 single-sport aerobic-base objective intentionally remains cross-training-creditable.

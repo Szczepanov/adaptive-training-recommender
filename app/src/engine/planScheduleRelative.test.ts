@@ -17,11 +17,12 @@ function event(date: string, priority: UserEvent['priority'] = 'A'): UserEvent {
 }
 
 describe('Phase 6.2c event-relative cycling PlanDefinition', () => {
-    it('authors blocks from an arbitrary event date and does not fabricate travel', () => {
+    it('authors blocks from an arbitrary event date and policy-owned horizon defaults without fabricating travel', () => {
         const target = event('2026-09-13', 'A');
         const result = buildCyclingEventPlan(target);
         if (result.status !== 'AVAILABLE') throw new Error(JSON.stringify(result));
 
+        // Default cycling horizon policy starts final build at D-84 and peak/specificity at D-35
         const byId = new Map(result.data.blocks.map(block => [block.id, block]));
         expect(byId.get('block_build')).toMatchObject({
             startDate: addDaysToLocalDateString(target.date, -84),

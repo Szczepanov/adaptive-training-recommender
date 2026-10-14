@@ -578,10 +578,15 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
     },
     {
         id: 'periodization.phase_boundaries_scales', domain: 'periodization_taper', title: 'Base/Build/Specificity phase boundaries and dose scales',
-        currentRule: 'Specificity begins <=35 days; Build <=84 days; farther dates are Base. Build uses 0.6 event-demand blend, volume 1.1/intensity 0.9; Base uses 0.3 blend, volume 1.0/intensity 0.8; Specificity uses volume 1.0/intensity 1.1.',
+        currentRule: 'Policy-owned event horizon defaults place Specificity at <=35 days and Build at <=84 days; farther dates are Base (overridable per event via phaseHorizons). Build uses 0.6 event-demand blend, volume 1.1/intensity 0.9; Base uses 0.3 blend, volume 1.0/intensity 0.8; Specificity uses volume 1.0/intensity 1.1.',
         classification: 'product_heuristic', coverage: 'partial', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'p1',
-        codeRefs: ['engine/periodization.ts:evaluatePeriodizationPhase'], knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.blockStructuredProgression, KNOWLEDGE_CLAIM_IDS.phaseBoundariesScalesPolicy],
-        coverageRationale: 'Evidence Pack 6 registers low-certainty mixed evidence that block periodization is a viable organization model but is not consistently superior to progressively loaded traditional periodization, plus an explicit product-policy record of the exact scalars. Coverage stays partial at P1 because the 35/84-day boundaries, 0.6/0.3 blend weights and volume/intensity scalars remain uncalibrated product choices; comparative cyclist evidence does not establish one universally optimal periodization sequence.',
+        codeRefs: [
+            'engine/eventHorizonPolicy.ts:resolveEventPhaseHorizonPolicy',
+            'engine/periodization.ts:evaluatePeriodizationPhase',
+            'engine/planSchedule.ts:buildCyclingEventPlan',
+        ],
+        knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.blockStructuredProgression, KNOWLEDGE_CLAIM_IDS.phaseBoundariesScalesPolicy],
+        coverageRationale: 'Evidence Pack 6 registers low-certainty mixed evidence that block periodization is a viable organization model but is not consistently superior to progressively loaded traditional periodization, plus an explicit product-policy record of the exact scalars. Coverage stays partial at P1 because the default 35/84-day boundaries, 0.6/0.3 blend weights and volume/intensity scalars remain uncalibrated product choices resolved via eventHorizonPolicy; comparative cyclist evidence does not establish one universally optimal periodization sequence.',
     },
     {
         id: 'periodization.taper_windows_volume', domain: 'periodization_taper', title: 'Event taper windows and volume reduction',

@@ -608,6 +608,7 @@ function adjudicatedExternalRecommendation(
         externalVerdict: verdict,
         decisionTrace: {
             policyVersion: POLICY_VERSION,
+            eventHorizon: intent.periodization.horizonPolicy,
             candidateScores: [],
             droppedContributorObjectives: intent.droppedContributorObjectives,
             externalPlan: { planId, revision, sessionId: session.id, contentHash },
@@ -638,6 +639,7 @@ function authoredRestRecommendation(
         ),
         decisionTrace: {
             policyVersion: POLICY_VERSION,
+            eventHorizon: intent.periodization.horizonPolicy,
             candidateScores: [],
             droppedContributorObjectives: intent.droppedContributorObjectives,
             externalRest: { planId, revision, contentHash, restDirectiveId: directive.id, date } satisfies ExternalRestProvenance,
@@ -904,6 +906,7 @@ export async function evaluateTrainingWithIntent(
             } : {}),
             decisionTrace: {
                 policyVersion: POLICY_VERSION,
+                eventHorizon: intent.periodization.horizonPolicy,
                 stimulusRecency: rankingResult.stimulusRecency,
                 candidateScores: rankingResult.all.map(candidate => ({ templateId: candidate.template.id, utilityScore: candidate.utilityScore, benefitScore: candidate.benefitScore, costPenalty: candidate.costPenalty, excludedReasons: candidate.excludedReasons, stimulusRecency: candidate.stimulusRecency })),
                 droppedContributorObjectives: intent.droppedContributorObjectives,
@@ -939,6 +942,7 @@ export async function evaluateTrainingWithIntent(
         } : {}),
         decisionTrace: {
             policyVersion: POLICY_VERSION,
+            eventHorizon: intent.periodization.horizonPolicy,
             stimulusRecency: rankingResult.stimulusRecency,
             candidateScores: rankingResult.all.map(candidate => ({ templateId: candidate.template.id, utilityScore: candidate.utilityScore, benefitScore: candidate.benefitScore, costPenalty: candidate.costPenalty, excludedReasons: candidate.excludedReasons, stimulusRecency: candidate.stimulusRecency })),
             droppedContributorObjectives: intent.droppedContributorObjectives,

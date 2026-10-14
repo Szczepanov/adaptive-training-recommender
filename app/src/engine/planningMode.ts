@@ -103,7 +103,7 @@ export function resolvePlanningContext(
 
     const focusEvent = periodization.focusEvent!;
     const eventStrategy = focusEvent.category === 'cycling_event'
-        ? (resolveActivePlanDefinitionForEvent(focusEvent, date, authoredPlanBlocks)
+        ? (resolveActivePlanDefinitionForEvent(focusEvent, date, authoredPlanBlocks, 0, periodization.horizonPolicy)
             ? 'structured_plan'
             : 'evergreen_fallback')
         : 'demand_derived';
