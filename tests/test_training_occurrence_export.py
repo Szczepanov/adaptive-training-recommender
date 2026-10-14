@@ -79,11 +79,11 @@ class _FakeDb:
     def __init__(self, users: dict[str, dict[str, dict[str, dict[str, Any]]]]) -> None:
         self.users = users
         self.touched_users: list[str] = []
+        self.get_all_batches: list[list[str]] = []
 
     def get_all(self, references: list[Any]) -> list[_Snapshot]:
-        snapshots = []
-        for ref in references:
-            snapshots.append(ref.get())
+        snapshots = [ref.get() for ref in references]
+        self.get_all_batches.append([snap.id for snap in snapshots])
         return snapshots
 
     def collection(self, name: str) -> Any:
@@ -157,9 +157,11 @@ def _db() -> _FakeDb:
 
 def test_record_export_is_bounded_to_one_user_and_window() -> None:
     db = _db()
+    db.users["u1"]["activities"]["edge"]["date"] = "2026-06-01"
     records = export_training_occurrence_records(db, "u1", "2026-08-01", "2026-08-08")
 
     assert set(db.touched_users) == {"u1"}
+    assert db.get_all_batches == [["e1"], ["edge"]]
     assert [doc["id"] for doc in records["performedTrainingOccurrences"]] == ["old", "p1"]
     assert [doc["id"] for doc in records["sessionExecutions"]] == ["e1"]
     assert [doc["id"] for doc in records["sessionEntries"]] == ["set-1"]

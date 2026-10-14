@@ -184,6 +184,13 @@ class FirestoreRecoveryRepository:
 
         return snapshots
 
+    def get_snapshots_by_dates(self, date_isos: list[str]) -> dict[str, dict[str, Any]]:
+        """Fetch multiple recovery snapshots efficiently by dates, avoiding N+1 queries.
+
+        Delegates to get_snapshots_batch for concurrent batch fetching across date chunks.
+        """
+        return self.get_snapshots_batch(date_isos)
+
     def is_fresh(
         self,
         date_iso: str,

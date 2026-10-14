@@ -307,6 +307,19 @@ future UI idea imply that its underlying provider data already exists.
 
 ---
 
+### 9. Amendment (#1051): the strength detail-fetch outcome is normalized metadata
+
+Optional enrichment stays failure-isolated (section 4), but its outcome for the one detail
+the diagnostics depend on is now observable. Each target-date strength activity carries
+`detailStatus.exerciseSets = { status, attemptedAt }` with `status` in `fetched`, `failed`,
+`rate_limited` or `not_attempted`. `fetched` means `exerciseSets` is written in the same
+payload; after a rate-limit abort the remaining qualifying target-date strength activities are
+recorded as `rate_limited` and `attemptedAt` is the sync decision time shared by the run, not a
+per-request time. Activities the pass made no decision about (older lookback, non-strength,
+backfill without details) get no status key, so the merge write keeps any earlier outcome. The
+status is diagnostic only: it contains no exception text or provider payload, and no engine
+decision reads it (so no `POLICY_VERSION` change).
+
 ## Consequences
 
 ### Positive

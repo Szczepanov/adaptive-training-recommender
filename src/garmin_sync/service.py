@@ -22,8 +22,10 @@ from .canonical import (
     CanonicalActivityDetail,
     CanonicalActivityResponseTelemetry,
     CanonicalDailyMetrics,
+    CanonicalDetailFetchOutcome,
     CanonicalHrMeasurementQuality,
     CanonicalHrSourceEvidence,
+    DetailFetchStatus,
 )
 from .config import Settings
 from .dates import get_date_range, get_date_string, local_today, n_days_ago, parse_date_string
@@ -71,6 +73,24 @@ class SnapshotContext:
     canonical_activities: list[CanonicalActivity]
     raw_memory_store: dict[str, dict[str, Any]]
     activities_through_iso: str | None = None
+
+
+@dataclass(frozen=True)
+class ActivityDetailFetchResult:
+    """Fetched details plus the per-activity strength ``exerciseSets`` fetch outcomes."""
+
+    details: dict[str, CanonicalActivityDetail]
+    exercise_sets_outcomes: dict[str, CanonicalDetailFetchOutcome]
+
+
+def _utc_instant_now() -> str:
+    """UTC ISO instant (not a calendar date), taken once per detail-fetch pass."""
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _exercise_sets_status(detail: CanonicalActivityDetail) -> DetailFetchStatus:
+    """``fetched`` only when ``exerciseSets`` will be written in the same payload."""
+    return "fetched" if detail.exercise_sets is not None else "failed"
 
 
 def _new_sync_run_id(target_iso: str) -> str:
@@ -196,6 +216,7 @@ class GarminSyncService:
         activity_responses_by_activity_id: dict[str, CanonicalActivityResponseTelemetry]
         | None = None,
         fit_workout_fingerprint_kinds_by_activity_id: dict[str, str] | None = None,
+        exercise_sets_outcomes_by_activity_id: dict[str, CanonicalDetailFetchOutcome] | None = None,
     ) -> None:
         """Write a normalized standalone record per activity to users/{userId}/activities/.
         Safe to call unconditionally (no-op for an empty list). Activities without a
@@ -216,6 +237,9 @@ class GarminSyncService:
                 fit_workout_fingerprint_kind=(
                     fit_workout_fingerprint_kinds_by_activity_id or {}
                 ).get(activity.activity_id),
+                exercise_sets_fetch_outcome=(exercise_sets_outcomes_by_activity_id or {}).get(
+                    activity.activity_id
+                ),
             )
             activities_to_upsert.append((activity.activity_id, payload))
 
@@ -230,8 +254,13 @@ class GarminSyncService:
         canonical_activities: list[CanonicalActivity],
         target_iso: str,
         include_power_details: bool = False,
-    ) -> dict[str, CanonicalActivityDetail]:
+    ) -> ActivityDetailFetchResult:
         """Best-effort target-date activity enrichment.
+
+        Also returns the normalized ``exerciseSets`` fetch outcome (#1051) for every
+        target-date strength activity; other activities get no outcome. One timestamp
+        is taken per call, so ``attemptedAt`` is the sync decision time, not a
+        per-request time.
 
         Strength exercise sets (plus that session's HR time-in-zone) are always eligible
         because they are the core data of a strength session and cost two endpoints. The existing cycling power
@@ -243,13 +272,27 @@ class GarminSyncService:
         logical date, while these payloads require an activity-ID key. A failed detail
         fetch never prevents the base activity or daily snapshot from being written.
         """
-        if not provider.capabilities.activity_details:
-            return {}
-        fetch_detail: Any = getattr(provider, "fetch_activity_detail", None)
+        attempted_at = _utc_instant_now()
+        outcomes: dict[str, CanonicalDetailFetchOutcome] = {}
+        fetch_detail: Any = (
+            getattr(provider, "fetch_activity_detail", None)
+            if provider.capabilities.activity_details
+            else None
+        )
         if not callable(fetch_detail):
-            return {}
+            return ActivityDetailFetchResult(
+                {},
+                {
+                    activity.activity_id: CanonicalDetailFetchOutcome("not_attempted", attempted_at)
+                    for activity in canonical_activities
+                    if activity.date == target_iso
+                    and activity.activity_id is not None
+                    and qualifies_for_strength_exercise_sets(activity)
+                },
+            )
 
         details: dict[str, CanonicalActivityDetail] = {}
+        rate_limit_reached = False
         for activity in canonical_activities:
             # fetch_activities returns a lookback window. Only enrich the date currently
             # being processed; otherwise the same D-1/D-2 activity would be re-fetched
@@ -261,9 +304,21 @@ class GarminSyncService:
             if not (wants_strength_sets or wants_power_detail):
                 continue
             assert activity.activity_id is not None
+            if rate_limit_reached:
+                # After a rate-limit abort no further request is made; the remaining
+                # strength targets are recorded as rate limited (sync decision time).
+                if wants_strength_sets:
+                    outcomes[activity.activity_id] = CanonicalDetailFetchOutcome(
+                        "rate_limited", attempted_at
+                    )
+                continue
             try:
                 result: Any = fetch_detail(activity.activity_id)
                 details[activity.activity_id] = result.canonical
+                if wants_strength_sets:
+                    outcomes[activity.activity_id] = CanonicalDetailFetchOutcome(
+                        _exercise_sets_status(result.canonical), attempted_at
+                    )
                 if getattr(result, "rate_limited", False):
                     # The core detail arrived before an optional endpoint hit the rate
                     # limit: keep it, then stop exactly as for a raised 429.
@@ -271,19 +326,27 @@ class GarminSyncService:
                         f"[{target_iso}] Garmin activity-detail rate limit reached after "
                         "partial detail; abandoning remaining detail fetches for this run"
                     )
-                    break
+                    rate_limit_reached = True
             except GarminConnectTooManyRequestsError as error:
                 logger.warning(
                     f"[{target_iso}] Garmin activity-detail rate limit reached; "
                     f"abandoning remaining detail fetches for this run: {error}"
                 )
-                break
+                rate_limit_reached = True
+                if wants_strength_sets:
+                    outcomes[activity.activity_id] = CanonicalDetailFetchOutcome(
+                        "rate_limited", attempted_at
+                    )
             except Exception as error:
                 logger.warning(
                     f"[{target_iso}] Garmin activity detail failed for "
                     f"activity=<ID-redacted>, continuing with the base record: {error}"
                 )
-        return details
+                if wants_strength_sets:
+                    outcomes[activity.activity_id] = CanonicalDetailFetchOutcome(
+                        "failed", attempted_at
+                    )
+        return ActivityDetailFetchResult(details, outcomes)
 
     def _fetch_activity_hr_fidelity(
         self,
@@ -497,7 +560,7 @@ class GarminSyncService:
         # the existing opt-in cycling power-detail branch. This also means the normal
         # D-1 lookback can pick up an evening strength workout missed by the prior
         # morning sync without enabling power detail globally.
-        details_by_activity_id = self._fetch_activity_details(
+        detail_fetch = self._fetch_activity_details(
             provider,
             activities_result.canonical,
             target_iso,
@@ -516,7 +579,8 @@ class GarminSyncService:
         self._archive_activities(
             activities_result.canonical,
             sync_run_id,
-            details_by_activity_id=details_by_activity_id,
+            details_by_activity_id=detail_fetch.details,
+            exercise_sets_outcomes_by_activity_id=detail_fetch.exercise_sets_outcomes,
             hr_measurements_by_activity_id=hr_measurements_by_activity_id,
             fit_workout_fingerprints_by_activity_id=fit_workout_fingerprints_by_activity_id,
             activity_responses_by_activity_id=activity_responses_by_activity_id,
@@ -1021,13 +1085,23 @@ class GarminSyncService:
         logger.info(f"Retrieved {len(all_activities_raw)} activities in window.")
 
         details_by_activity_id: dict[str, CanonicalActivityDetail] = {}
+        # Without include_details no status is written at all, so a stored `fetched`
+        # (or any earlier outcome) is not clobbered by a pass that never tried.
+        outcomes: dict[str, CanonicalDetailFetchOutcome] = {}
         if include_details:
+            attempted_at = _utc_instant_now()
             fetch_detail = (
                 getattr(provider, "fetch_activity_detail", None)
                 if provider.capabilities.activity_details
                 else None
             )
-            if callable(fetch_detail):
+            if not callable(fetch_detail):
+                outcomes = {
+                    a.activity_id: CanonicalDetailFetchOutcome("not_attempted", attempted_at)
+                    for a in all_activities_canonical
+                    if a.activity_id is not None and qualifies_for_strength_exercise_sets(a)
+                }
+            else:
                 qualifying = [
                     a
                     for a in all_activities_canonical
@@ -1036,15 +1110,27 @@ class GarminSyncService:
                 logger.info(
                     f"Fetching activity details for {len(qualifying)} qualifying activities in backfill window..."
                 )
+                rate_limit_reached = False
                 # Keep enrichment sequential so a 429 stops every subsequent
                 # upstream detail request immediately; cancelling futures cannot
                 # stop requests that have already started.
                 for activity in qualifying:
                     if activity.activity_id is None:
                         continue
+                    wants_strength_sets = qualifies_for_strength_exercise_sets(activity)
+                    if rate_limit_reached:
+                        if wants_strength_sets:
+                            outcomes[activity.activity_id] = CanonicalDetailFetchOutcome(
+                                "rate_limited", attempted_at
+                            )
+                        continue
                     try:
                         result: Any = fetch_detail(activity.activity_id)
                         details_by_activity_id[activity.activity_id] = result.canonical
+                        if wants_strength_sets:
+                            outcomes[activity.activity_id] = CanonicalDetailFetchOutcome(
+                                _exercise_sets_status(result.canonical), attempted_at
+                            )
                         if getattr(result, "rate_limited", False):
                             # Partial detail arrived before an optional endpoint hit the
                             # rate limit: stop exactly as for a raised 429 below.
@@ -1058,7 +1144,13 @@ class GarminSyncService:
                         )
                         if stop_on_rate_limit:
                             raise
-                        break
+                        rate_limit_reached = True
+                        if wants_strength_sets:
+                            # A partial result already recorded fetched/failed above.
+                            outcomes.setdefault(
+                                activity.activity_id,
+                                CanonicalDetailFetchOutcome("rate_limited", attempted_at),
+                            )
                     except GarminConnectAuthenticationError:
                         raise
                     except Exception as error:
@@ -1069,11 +1161,16 @@ class GarminSyncService:
                             context={"date": activity.date},
                             level=logging.WARNING,
                         )
+                        if wants_strength_sets:
+                            outcomes[activity.activity_id] = CanonicalDetailFetchOutcome(
+                                "failed", attempted_at
+                            )
 
         self._archive_activities(
             all_activities_canonical,
             run_id,
             details_by_activity_id=details_by_activity_id,
+            exercise_sets_outcomes_by_activity_id=outcomes,
         )
         return all_activities_raw
 

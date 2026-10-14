@@ -401,6 +401,42 @@ describe('training-history persistence parsers', () => {
         });
     });
 
+    describe('detailStatus (#1051)', () => {
+        const parse = (detailStatus: unknown) => {
+            const parsed = parseNormalizedGarminActivity({ ...activity, type: 'strength_training', detailStatus }, 'users/u1/activities/a-1', 'a-1');
+            expect(parsed).toMatchObject({ status: 'AVAILABLE', data: { activityId: 'a-1' } });
+            if (parsed.status !== 'AVAILABLE') throw new Error('expected available activity');
+            return parsed.data.detailStatus;
+        };
+
+        it.each(['fetched', 'failed', 'rate_limited', 'not_attempted'])('parses %s', (status) => {
+            expect(parse({ exerciseSets: { status, attemptedAt: '2026-08-26T08:00:00+00:00' } }))
+                .toEqual({ exerciseSets: { status, attemptedAt: '2026-08-26T08:00:00+00:00' } });
+        });
+
+        it.each([
+            ['unknown status', { exerciseSets: { status: 'later_value', attemptedAt: '2026-08-26T08:00:00Z' } }],
+            ['missing attemptedAt', { exerciseSets: { status: 'failed' } }],
+            ['too long attemptedAt', { exerciseSets: { status: 'failed', attemptedAt: `2026-08-26T08:00:00.${'0'.repeat(60)}Z` } }],
+            ['non-date attemptedAt', { exerciseSets: { status: 'failed', attemptedAt: 'not-a-date-at-all' } }],
+            ['impossible date attemptedAt', { exerciseSets: { status: 'failed', attemptedAt: '2026-13-45T99:00:00Z' } }],
+            ['rolled-over calendar day attemptedAt', { exerciseSets: { status: 'failed', attemptedAt: '2026-02-30T08:00:00Z' } }],
+            ['non-leap Feb 29 attemptedAt', { exerciseSets: { status: 'failed', attemptedAt: '2027-02-29T08:00:00Z' } }],
+            ['non-string attemptedAt', { exerciseSets: { status: 'failed', attemptedAt: 5 } }],
+            ['non-object exerciseSets', { exerciseSets: 'failed' }],
+            ['non-object detailStatus', 'failed'],
+            ['array detailStatus', []],
+        ])('drops %s without invalidating the activity', (_label, value) => {
+            expect(parse(value)).toBeUndefined();
+        });
+
+        it('legacy documents without detailStatus have none', () => {
+            const parsed = parseNormalizedGarminActivity({ ...activity, type: 'strength_training' }, 'users/u1/activities/a-1', 'a-1');
+            if (parsed.status !== 'AVAILABLE') throw new Error('expected available activity');
+            expect('detailStatus' in parsed.data).toBe(false);
+        });
+    });
+
     it('drops corrupt exercise sets while preserving the base activity', () => {
         const parsed = parseNormalizedGarminActivity({
             ...activity,
