@@ -154,6 +154,27 @@ describe('StrengthSessionService', () => {
             expect(firestore.setDoc).toHaveBeenCalledTimes(1);
         });
 
+        it('abandons multiple stale sessions concurrently in parallel', async () => {
+            const staleId1 = 'stale-session-1';
+            const staleId2 = 'stale-session-2';
+            firestore.getDocs.mockResolvedValueOnce({
+                docs: [
+                    { id: staleId1, ref: { path: `users/${USER_ID}/strength_sessions/${staleId1}` }, data: () => validSession({ sessionId: staleId1, startedAt: '2026-08-17T05:00:00Z' }) },
+                    { id: staleId2, ref: { path: `users/${USER_ID}/strength_sessions/${staleId2}` }, data: () => validSession({ sessionId: staleId2, startedAt: '2026-08-17T06:00:00Z' }) },
+                ],
+            });
+            firestore.getDoc
+                .mockResolvedValueOnce({ exists: () => true, data: () => validSession({ sessionId: staleId1, startedAt: '2026-08-17T05:00:00Z' }) })
+                .mockResolvedValueOnce({ exists: () => true, data: () => validSession({ sessionId: staleId2, startedAt: '2026-08-17T06:00:00Z' }) });
+
+            const abandoned = await service.reconcileStaleSessions(USER_ID, '2026-08-17T18:00:00Z');
+
+            expect(abandoned).toHaveLength(2);
+            expect(abandoned[0]).toMatchObject({ sessionId: staleId1, state: 'abandoned' });
+            expect(abandoned[1]).toMatchObject({ sessionId: staleId2, state: 'abandoned' });
+            expect(firestore.setDoc).toHaveBeenCalledTimes(2);
+        });
+
         it('never deletes -- an abandoned session keeps every set it already logged', async () => {
             const staleId = 'stale-with-work';
             const loggedExercises = [{ exerciseId: 'front_squat', sets: [{ setIndex: 1, reps: 5, weightKg: 100, isWarmup: false, completedAt: '2026-08-17T06:10:00Z' }] }];

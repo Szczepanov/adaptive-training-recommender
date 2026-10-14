@@ -99,3 +99,7 @@
 ## 2026-10-25 - Avoid O(N*M) array filtering inside loops for dictionary construction
 **Learning:** Using `new Map(items.map(item => [item.id, entries.filter(e => e.parentId === item.id)]))` scales poorly, causing O(N * M) performance impact where N is the number of keys and M is the number of entries.
 **Action:** Pre-compute the grouped values using an O(N) loop approach (`for...of`) and a `Map.get() / arr.push()` pattern to build the grouped dictionary instead of calling `.filter()` inside `.map()`.
+
+## 2026-10-26 - Parallelize stale session state transitions via Promise.all
+**Learning:** Sequential `await` calls in a loop over stale Firestore sessions (`reconcileStaleSessions`) cause serial network I/O bottlenecks (N * latency). Mapping matching IDs to concurrent `transitionState` calls via `Promise.all` eliminates the serial roundtrip wait and reduces state transition latency to max(latency).
+**Action:** Always collect target document IDs or tasks from synchronous snapshot parsing first and execute state transitions concurrently via `Promise.all` when operations are independent.

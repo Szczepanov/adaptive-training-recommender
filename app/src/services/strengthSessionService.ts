@@ -148,15 +148,16 @@ export class StrengthSessionService {
         const collRef = collection(getDb(), 'users', userId, this.collectionPath);
         const q = query(collRef, where('state', '==', 'in_progress'), orderBy('startedAt', 'asc'));
         const querySnapshot = await getDocs(q);
-        const abandoned: StrengthSession[] = [];
+        const staleDocIds: string[] = [];
         for (const docSnap of querySnapshot.docs) {
             const parsed = parseStrengthSession(docSnap.data(), docSnap.ref.path, docSnap.id, userId);
             if (parsed.status !== 'AVAILABLE') continue;
             if (isStaleInProgressSession(parsed.data, nowIso)) {
-                abandoned.push(await this.transitionState(userId, docSnap.id, 'abandoned', nowIso));
+                staleDocIds.push(docSnap.id);
             }
         }
-        return abandoned;
+        if (staleDocIds.length === 0) return [];
+        return Promise.all(staleDocIds.map(id => this.transitionState(userId, id, 'abandoned', nowIso)));
     }
 
     /** Resumable session, if any -- the most recent `in_progress` session regardless of its
