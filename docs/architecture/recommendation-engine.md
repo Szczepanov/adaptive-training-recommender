@@ -579,8 +579,8 @@ policy ownership of the event-build and specificity horizons is established in #
 `eventHorizonPolicy.ts`: `evaluatePeriodizationPhase` and `buildCyclingEventPlan` consume
 the exact same policy owner (`EventPhaseHorizonPolicy`), ensuring phase boundaries and
 generated block dates cannot silently drift apart. Defaults remain D-84 (build) and D-35
-(specificity) for the current cycling plan, but are now policy-resolved and overridable per
-event (`event.phaseHorizons`) or caller options. Running, triathlon, strength, and general
+(specificity) for the current cycling plan, but are now policy-resolved (resolver
+supports overrides; no persisted input path yet). Running, triathlon, strength, and general
 events retain demand-derived planning. Running race-specific objectives are modality-scoped
 and half-marathon/marathon demand adds a long-run durability objective; the generic
 single-sport aerobic-base objective intentionally remains cross-training-creditable.

@@ -76,6 +76,64 @@ describe('eventHorizonPolicy', () => {
         expect(policy.finalBuildStartDaysBefore).toBe(56);
         expect(policy.specificityStartDaysBefore).toBe(21);
         expect(policy.source).toBe('plan_override');
+        expect(policy.provenanceNote).toContain('Plan override');
+    });
+
+    it('rejects negative, NaN, and fractional horizon values and falls back safely', () => {
+        const invalidEvent: UserEvent = {
+            ...baseEvent,
+            phaseHorizons: {
+                finalBuildStartDaysBefore: -10,
+                specificityStartDaysBefore: Number.NaN,
+                recoveryDaysAfter: 0.5,
+            },
+        };
+
+        const policy = resolveEventPhaseHorizonPolicy(invalidEvent);
+        // Falls back to safe default positive integers
+        expect(policy.finalBuildStartDaysBefore).toBe(DEFAULT_CYCLING_FINAL_BUILD_DAYS);
+        expect(policy.specificityStartDaysBefore).toBe(DEFAULT_CYCLING_SPECIFICITY_DAYS);
+        expect(policy.recoveryDaysAfter).toBe(DEFAULT_POST_EVENT_RECOVERY_DAYS);
+    });
+
+    it('ensures specificity is at least the taper duration and finalBuild exceeds specificity', () => {
+        // Cycling A-event has race-week taper (minimum 3 days)
+        const eventWithTaper: UserEvent = {
+            ...baseEvent,
+            taper: { startDate: '2026-09-24' }, // 7 days taper
+            phaseHorizons: {
+                finalBuildStartDaysBefore: 5,
+                specificityStartDaysBefore: 2, // Less than taper duration (7 days)
+            },
+        };
+
+        const policy = resolveEventPhaseHorizonPolicy(eventWithTaper);
+        // Specificity is clamped up to taper duration (7)
+        expect(policy.specificityStartDaysBefore).toBe(7);
+        // Final build is adjusted to strictly exceed specificity (8)
+        expect(policy.finalBuildStartDaysBefore).toBe(8);
+    });
+
+    it('emits non-misleading provenance when only options.source is passed', () => {
+        const policy = resolveEventPhaseHorizonPolicy(baseEvent, { source: 'plan_override' });
+        expect(policy.provenanceNote).not.toContain('Authored horizon override');
+        expect(policy.provenanceNote).toContain('Policy source plan_override');
+    });
+
+    it('falls back to focusEvent policy if injected horizonPolicy belongs to another event', () => {
+        const eventA: UserEvent = { ...baseEvent, id: 'event-A', priority: 'A', date: '2026-10-01' };
+        const eventB: UserEvent = { ...baseEvent, id: 'event-B', priority: 'B', date: '2026-10-05' };
+
+        const policyForB = resolveEventPhaseHorizonPolicy(eventB, { finalBuildStartDaysBefore: 50 });
+        expect(policyForB.eventId).toBe('event-B');
+        expect(policyForB.finalBuildStartDaysBefore).toBe(50);
+
+        // evaluatePeriodizationPhase evaluates eventA as focus event
+        const periodization = evaluatePeriodizationPhase([eventA, eventB], '2026-09-01', undefined, policyForB);
+        expect(periodization.focusEvent?.id).toBe('event-A');
+        // policyForB must NOT govern eventA! It resolves fresh for eventA
+        expect(periodization.horizonPolicy.eventId).toBe('event-A');
+        expect(periodization.horizonPolicy.finalBuildStartDaysBefore).toBe(DEFAULT_CYCLING_FINAL_BUILD_DAYS);
     });
 });
 

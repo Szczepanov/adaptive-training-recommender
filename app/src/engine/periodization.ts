@@ -419,7 +419,9 @@ export function evaluatePeriodizationPhase(
     const governingEventTie = tiedWithTop.length > 1 ? tiedWithTop.map(({ event }) => event) : [];
 
     const { event: focusEvent, daysToEvent } = sortedEvents[0];
-    const resolvedHorizon = horizonPolicy ?? resolveEventPhaseHorizonPolicy(focusEvent);
+    const resolvedHorizon = (horizonPolicy && (!horizonPolicy.eventId || horizonPolicy.eventId === focusEvent.id))
+        ? horizonPolicy
+        : resolveEventPhaseHorizonPolicy(focusEvent);
     const partialEffort = focusEvent.lifecycle === 'DNF';
     const demandVector = focusEvent.demandProfile ?? resolveDemandProfile(focusEvent.category, (focusEvent as { eventPreset?: string; sportSpecificDemand?: string }).eventPreset ?? (focusEvent as { eventPreset?: string; sportSpecificDemand?: string }).sportSpecificDemand);
     let phase: PhaseWeights;

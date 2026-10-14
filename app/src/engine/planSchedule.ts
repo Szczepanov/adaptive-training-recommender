@@ -283,14 +283,14 @@ export function buildCyclingEventPlan(
   horizonPolicy?: EventPhaseHorizonPolicy,
 ): DataState<PlanDefinition> {
   const raceDate = eventPlanningDate(event);
-  const horizon = horizonPolicy ?? resolveEventPhaseHorizonPolicy(event, { authoredBlocks });
+  const horizon = horizonPolicy ?? resolveEventPhaseHorizonPolicy(event);
   const taper = horizon.taper;
   const peakEnd = taper ? addDaysToLocalDateString(taper.startDate, -1) : addDaysToLocalDateString(raceDate, -1);
 
   const userAuthoredBlocks: PlanBlock[] = authoredBlocks
     .filter(block => !block.eventId || block.eventId === event.id)
     .map(block => ({
-      id: `authored_${block.id}`, phase: block.phase as PlanPhase, startDate: block.startDate, endDate: block.endDate,
+      id: `authored_${block.id}`, phase: block.phase, startDate: block.startDate, endDate: block.endDate,
       volumeScale: block.volumeScale, intensityScale: block.intensityScale,
     }));
   // Authored blocks are first so their dates override a derived build/peak block in every

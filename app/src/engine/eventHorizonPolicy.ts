@@ -11,7 +11,7 @@
  * owns executable prescription (evergreen_fallback).
  */
 
-import type { UserEvent, AuthoredPlanBlock, EventPhaseHorizonsSpec } from './models';
+import type { UserEvent, EventPhaseHorizonsSpec } from './models';
 import { resolveEventTaper, type ResolvedTaper } from './taperPolicy';
 
 export const EVENT_HORIZON_POLICY_VERSION = '2026-10-event-horizon-policy-v1';
@@ -32,21 +32,25 @@ export type EventPhaseHorizonSource =
 export interface EventPhaseHorizonPolicy {
     policyVersion: string;
     source: EventPhaseHorizonSource;
+    eventId?: string;
     finalBuildStartDaysBefore: number;
     specificityStartDaysBefore: number;
     recoveryDaysAfter: number;
-    longHorizonAuthority: 'evergreen_fallback';
+    longHorizonAuthority: typeof DEFAULT_LONG_HORIZON_AUTHORITY;
     taper: ResolvedTaper | null;
     provenanceNote: string;
 }
 
 export interface ResolveEventPhaseHorizonOptions {
     authoredHorizons?: EventPhaseHorizonsSpec;
-    authoredBlocks?: readonly AuthoredPlanBlock[];
     finalBuildStartDaysBefore?: number;
     specificityStartDaysBefore?: number;
     recoveryDaysAfter?: number;
     source?: EventPhaseHorizonSource;
+}
+
+function isValidHorizonInt(val: number | undefined): val is number {
+    return val !== undefined && Number.isInteger(val) && Number.isFinite(val);
 }
 
 /**
@@ -65,28 +69,61 @@ export function resolveEventPhaseHorizonPolicy(
     const explicitSpecificity = options?.specificityStartDaysBefore ?? authored?.specificityStartDaysBefore;
     const explicitRecovery = options?.recoveryDaysAfter ?? authored?.recoveryDaysAfter;
 
-    if (
-        explicitFinalBuild !== undefined
+    const hasExplicitOverride = explicitFinalBuild !== undefined
         || explicitSpecificity !== undefined
-        || explicitRecovery !== undefined
-        || options?.source
-    ) {
-        const finalBuild = explicitFinalBuild ?? DEFAULT_CYCLING_FINAL_BUILD_DAYS;
-        const requestedSpecificity = explicitSpecificity ?? DEFAULT_CYCLING_SPECIFICITY_DAYS;
-        // Specificity must strictly precede final build start so block_build (which ends at specificity + 1)
-        // never produces an inverted date range.
-        const specificity = Math.min(requestedSpecificity, Math.max(0, finalBuild - 1));
-        const recovery = explicitRecovery ?? DEFAULT_POST_EVENT_RECOVERY_DAYS;
-        const source = options?.source ?? 'event_authored';
+        || explicitRecovery !== undefined;
+
+    if (hasExplicitOverride || options?.source) {
+        const taperDuration = taper?.durationDays ?? 0;
+
+        // Specificity must be at least taper duration, default 35
+        const rawSpecificity = isValidHorizonInt(explicitSpecificity)
+            ? explicitSpecificity
+            : DEFAULT_CYCLING_SPECIFICITY_DAYS;
+        const specificity = Math.max(taperDuration, rawSpecificity);
+
+        // Final build must be a positive integer, default 84, and strictly exceed specificity
+        let finalBuild = isValidHorizonInt(explicitFinalBuild) && explicitFinalBuild > 0
+            ? explicitFinalBuild
+            : DEFAULT_CYCLING_FINAL_BUILD_DAYS;
+
+        if (finalBuild <= specificity) {
+            if (explicitSpecificity !== undefined && explicitFinalBuild === undefined) {
+                // When only specificity was increased beyond default build
+                finalBuild = specificity + 1;
+            } else if (explicitFinalBuild !== undefined && explicitFinalBuild <= taperDuration) {
+                // When finalBuild is too small even for taper duration
+                finalBuild = specificity + 1;
+            } else {
+                // Clamping specificity to stay below finalBuild
+                // (handled below)
+            }
+        }
+
+        const clampedSpecificity = Math.max(taperDuration, Math.min(specificity, finalBuild - 1));
+        const resolvedFinalBuild = Math.max(finalBuild, clampedSpecificity + 1);
+
+        // Recovery days must be at least 1, default 7
+        const recovery = isValidHorizonInt(explicitRecovery) && explicitRecovery >= 1
+            ? explicitRecovery
+            : DEFAULT_POST_EVENT_RECOVERY_DAYS;
+
+        const source = options?.source ?? (hasExplicitOverride ? 'event_authored' : 'cycling_default');
+
+        const provenanceNote = hasExplicitOverride
+            ? `${source === 'plan_override' ? 'Plan override' : 'Authored horizon override'}: final build starts D-${resolvedFinalBuild}, specificity starts D-${clampedSpecificity}, recovery extends D+${recovery}.`
+            : `Policy source ${source}: final build starts D-${resolvedFinalBuild}, specificity starts D-${clampedSpecificity}.`;
+
         return {
             policyVersion: EVENT_HORIZON_POLICY_VERSION,
             source,
-            finalBuildStartDaysBefore: finalBuild,
-            specificityStartDaysBefore: specificity,
+            ...(event ? { eventId: event.id } : {}),
+            finalBuildStartDaysBefore: resolvedFinalBuild,
+            specificityStartDaysBefore: clampedSpecificity,
             recoveryDaysAfter: recovery,
             longHorizonAuthority: DEFAULT_LONG_HORIZON_AUTHORITY,
             taper,
-            provenanceNote: `${source === 'plan_override' ? 'Plan override' : 'Authored horizon override'}: final build starts D-${finalBuild}, specificity starts D-${specificity}, recovery extends D+${recovery}.`,
+            provenanceNote,
         };
     }
 
@@ -94,6 +131,7 @@ export function resolveEventPhaseHorizonPolicy(
         return {
             policyVersion: EVENT_HORIZON_POLICY_VERSION,
             source: 'cycling_default',
+            eventId: event.id,
             finalBuildStartDaysBefore: DEFAULT_CYCLING_FINAL_BUILD_DAYS,
             specificityStartDaysBefore: DEFAULT_CYCLING_SPECIFICITY_DAYS,
             recoveryDaysAfter: DEFAULT_POST_EVENT_RECOVERY_DAYS,
@@ -106,6 +144,7 @@ export function resolveEventPhaseHorizonPolicy(
     return {
         policyVersion: EVENT_HORIZON_POLICY_VERSION,
         source: 'generic_default',
+        ...(event ? { eventId: event.id } : {}),
         finalBuildStartDaysBefore: DEFAULT_CYCLING_FINAL_BUILD_DAYS,
         specificityStartDaysBefore: DEFAULT_CYCLING_SPECIFICITY_DAYS,
         recoveryDaysAfter: DEFAULT_POST_EVENT_RECOVERY_DAYS,

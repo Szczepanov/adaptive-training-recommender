@@ -265,7 +265,8 @@ owned by a structured block; it is **not** the final long-horizon event-periodiz
 Long-horizon event-directed mesocycle authority is tracked in #927, and season-level
 A/B/C event coordination in #929. Policy ownership of the event-build and specificity
 horizons is delivered in #928 (`eventHorizonPolicy.ts`), establishing a single source of
-truth for `periodization.ts` and `planSchedule.ts` with explicit provenance and override support.
+truth for `periodization.ts` and `planSchedule.ts` with explicit provenance (the resolver
+supports overrides; no persisted input path exists yet).
 ADR-0016 exact-role coverage remains unchanged: provider semantic labels may preserve
 physiological provenance, but they do not manufacture exact workout identity or weekly role
 credit.
