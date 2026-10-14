@@ -85,6 +85,41 @@ describe('exposure ledger (#813)', () => {
         expect(ledger.stressors.find(s => s.date === '2026-09-13')!.sessionCost).toBe('very high session cost');
     });
 
+    it('a long Z2 ride contributes aerobic dose and cost but is not a high-intensity stressor', () => {
+        const z2 = mixedWeek[2];
+        const ledger = deriveExposureLedger(input({ activities: [z2] }));
+        expect(ledger.stressors).toHaveLength(1);
+        const row = ledger.stressors[0];
+        expect(row.family).toBe('cycling high-dose aerobic — not a high-intensity stimulus');
+        expect(row.family).not.toMatch(/quality|race/);
+        expect(row.stimulus).toBe('easy stimulus (endurance)');
+        expect(row.sessionCost).toBe('high session cost');
+        expect(row.systemic).not.toBe('systemic 0.0 · cardiovascular 0.0');
+        const aerobic = cap(ledger.capabilities, 'aerobic_endurance');
+        expect(aerobic.status).toBe('confirmed');
+        expect(aerobic.lastConfirmed).toBe('2026-09-21');
+        const quality = cap(ledger.capabilities, 'cycling_quality');
+        expect(quality.status).toBe('unknown');
+        expect(quality.lastConfirmed).toBeNull();
+    });
+
+    it('keeps hamstring/calf/grip, unilateral and long-anchor explicitly unknown with no fabricated date', () => {
+        const strengthFact: PerformedExposureFact = {
+            performedOccurrenceId: 'occ-u', localDate: '2026-09-23', modality: 'Strength', category: 'Lower-body Strength',
+            confidence: 'exact', sourceKinds: ['structured_execution'], evidenceTier: 'completedStructuredWorkout',
+        };
+        const ledger = deriveExposureLedger(input({ activities: mixedWeek, performedFacts: [strengthFact] }));
+        expect(cap(ledger.capabilities, 'strength').lastConfirmed).toBe('2026-09-23');
+        for (const key of ['hamstring_calf_grip', 'unilateral_lower_body', 'long_aerobic_anchor']) {
+            const entry = cap(ledger.capabilities, key);
+            expect(entry.status).toBe('unknown');
+            expect(entry.lastConfirmed).toBeNull();
+            expect(entry.lastConfirmedProvenance).toBeNull();
+            expect(entry.nextPlanned).toBeNull();
+            expect(entry.note).toContain('no canonical exposure model yet');
+        }
+    });
+
     it('reports the engine cost vector split into systemic and mechanical parts, unchanged', () => {
         const ledger = deriveExposureLedger(input({ activities: mixedWeek }));
         const engineEvent = reconcileCompletedTrainingEvents([mixedWeek[0]], [])[0];
