@@ -44,6 +44,9 @@ export async function computeHistoryShadowDiffForUser(
     );
     const liveEvents = reconcileCompletedTrainingEvents(exactRangeActivities, recommendationsState.data);
     const canonicalWorkouts = await getCompletedWorkoutsInRange(userId, fromDateInclusive, toDateExclusive, activitiesState.data);
+    // A structured source that could not be read is missing evidence, not a downgraded tier:
+    // diffing it would log a false ADR-0034 regression. Same fail-closed contract as above.
+    if (canonicalWorkouts.some(workout => !['available', 'not_linked'].includes(workout.sourceReads.structured.status))) return null;
     const diff = diffCompletedTrainingHistory(liveEvents, canonicalWorkouts);
     recordHistoryShadowDiff(userId, diff);
     return diff;

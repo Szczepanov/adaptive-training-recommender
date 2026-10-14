@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import type { SessionEntry } from '../sessions/models';
 import type { CompletedWorkoutView } from '../training-occurrence/completedWorkoutView';
+import { completeReads } from '../training-occurrence/workoutSourceDiagnostics.fixtures';
 import { CompletedWorkoutList } from './CompletedWorkoutList';
 
 const squatWarmup = { kind: 'repetition', setIndex: 0, reps: 5, weightKg: 60, isWarmup: true } as const;
@@ -54,6 +55,7 @@ const structuredOnly: CompletedWorkoutView = {
         performedRest: 'recorded',
     },
     garminExerciseSetsAreDiagnosticOnly: true,
+    sourceReads: { ...completeReads, provider: 'not_linked' },
 };
 
 const matched: CompletedWorkoutView = {
@@ -62,6 +64,7 @@ const matched: CompletedWorkoutView = {
     sourceKeys: ['structured_execution:exec-1', 'provider_activity:garmin:act-1'],
     sourceBadge: { hasStructured: true, hasProvider: true, providers: ['garmin'] },
     reconciliation: { state: 'matched', matcherVersion: 'matcher-v1', confidence: 0.9 },
+    sourceReads: completeReads,
     garmin: {
         activityId: 'act-1', date: '2026-08-26', type: 'strength_training', durationMin: 40,
         trainingEffectAerobic: 2.1, trainingEffectAnaerobic: 1.0, averageHr: 120, maxHr: 158,

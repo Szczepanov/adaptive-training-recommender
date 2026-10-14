@@ -11,46 +11,134 @@ import { resolveSessionDefinition } from '../sessions/sessionDefinitionResolver'
 import { comparePlannedVsPerformed } from '../sessions/performedComparison';
 import { addDaysToLocalDateString } from '../utils/localDate';
 import type { NormalizedGarminActivity } from '../engine/models';
-import type { CompletedWorkoutView, PerformedRestAvailability } from './completedWorkoutView';
+import type {
+    CompletedWorkoutSourceReads,
+    CompletedWorkoutView,
+    OutboxSnapshot,
+    PerformedRestAvailability,
+    ProviderSourceRead,
+    ReconciliationSweepStatus,
+    StructuredSourceRead,
+} from './completedWorkoutView';
 import { sourceBadgeFor } from './completedWorkoutView';
 import { buildStructuredStepDetails } from './structuredSetDetail';
 import { compareActivitiesReadModels, recordActivitiesReadModelComparison } from './activitiesReadModelDiagnostics';
-import { isProviderActivityRef, isStructuredExecutionRef, type PerformedTrainingOccurrence } from './models';
+import { isProviderActivityRef, isStructuredExecutionRef, type PerformedTrainingOccurrence, type ProviderActivitySourceRef } from './models';
 import { sourceKeyForRef } from './sourceIdentity';
 import { hydrateOccurrenceSourcesInRange, type HydratedProviderSource } from './occurrenceSourcesHydration';
 
+interface StructuredHydration {
+    structured?: CompletedWorkoutView['structured'];
+    read: StructuredSourceRead;
+}
+
+/** A denied read is an authorization defect, not a transient source failure: keep failing the
+ * whole window (the pre-WP5 contract) instead of rendering it as one row's "unavailable". */
+function isPermissionDenied(error: unknown): boolean {
+    return (error as { code?: string } | null)?.code === 'permission-denied';
+}
+
+/** Every early return names *why* structured detail is missing (#895 WP5); the legacy
+ * `undefined` conflated an absent execution, a failed read and an unresolvable definition. */
 async function resolveStructuredDetail(
     userId: string,
     executionId: string,
-): Promise<CompletedWorkoutView['structured']> {
+): Promise<StructuredHydration> {
     const executionState = await sessionExecutionService.getExecution(userId, executionId);
-    if (executionState.status !== 'AVAILABLE') return undefined;
+    switch (executionState.status) {
+        case 'MISSING': return { read: { status: 'execution_missing' } };
+        case 'INVALID': return { read: { status: 'execution_invalid' } };
+        case 'UNAVAILABLE': return { read: { status: 'execution_unavailable' } };
+        case 'AVAILABLE': break;
+    }
     const execution = executionState.data;
 
     const definitionState = await resolveSessionDefinition(userId, execution.sessionSource, execution.prescriptionHash);
-    if (definitionState.status !== 'AVAILABLE') return undefined;
+    if (definitionState.status !== 'AVAILABLE') {
+        return { read: { status: 'definition_unresolved', definition: definitionState.status } };
+    }
 
-    const [entries, restEvents] = await Promise.all([
-        sessionExecutionService.getEntries(userId, executionId),
-        // Performed rest is enrichment: a failed read still renders the sets, just without
-        // actual rest -- and is reported as `unavailable`, never as "not recorded".
-        sessionExecutionService.getRestEvents(userId, executionId).catch(() => null),
-    ]);
+    // Performed rest is enrichment: a failed read still renders the sets, just without
+    // actual rest -- and is reported as `unavailable`, never as "not recorded".
+    const restEventsRead = sessionExecutionService.getRestEvents(userId, executionId).catch(() => null);
+    let entries: Awaited<ReturnType<typeof sessionExecutionService.getEntries>>;
+    try {
+        entries = await sessionExecutionService.getEntries(userId, executionId);
+    } catch (error) {
+        if (isPermissionDenied(error)) throw error;
+        return { read: { status: 'entries_unavailable' } };
+    }
+    const restEvents = await restEventsRead;
     const performedRest: PerformedRestAvailability = restEvents === null
         ? 'unavailable'
         : restEvents.length > 0 ? 'recorded' : 'not_recorded';
     return {
-        title: definitionState.data.title,
-        comparison: comparePlannedVsPerformed(definitionState.data, entries),
-        steps: buildStructuredStepDetails(definitionState.data, entries, restEvents ?? []),
-        performedRest,
+        read: { status: 'available' },
+        structured: {
+            title: definitionState.data.title,
+            comparison: comparePlannedVsPerformed(definitionState.data, entries),
+            steps: buildStructuredStepDetails(definitionState.data, entries, restEvents ?? []),
+            performedRest,
+        },
     };
+}
+
+/** Diary receipts are per-device localStorage; a malformed store throws and must read as
+ * unreadable, never as an empty outbox. */
+function readOutbox(userId: string, executionId: string): OutboxSnapshot {
+    try {
+        const receipts = sessionExecutionService.getDiaryReceipts(userId, executionId);
+        return {
+            status: 'read',
+            queued: receipts.filter(receipt => receipt.state === 'queued').length,
+            failed: receipts.filter(receipt => receipt.state === 'failed').length,
+        };
+    } catch {
+        return { status: 'unreadable' };
+    }
+}
+
+function isGarminProvider(provider: string): boolean {
+    return provider.toLowerCase() === 'garmin';
+}
+
+function providerReadFor(
+    providerRefs: readonly ProviderActivitySourceRef[],
+    providerSources: readonly HydratedProviderSource[],
+    activitiesReadable: boolean,
+): ProviderSourceRead {
+    if (providerRefs.length === 0) return 'not_linked';
+    const garminRefs = providerRefs.filter(ref => isGarminProvider(ref.provider));
+    if (garminRefs.length === 0) return 'non_garmin_only';
+    if (!activitiesReadable) return 'activities_unreadable';
+    const everyGarminRefHydrated = garminRefs.every(ref => providerSources.some(source =>
+        isGarminProvider(source.ref.provider) && source.ref.activityId === ref.activityId && source.activity));
+    if (providerRefs.length > 1) return everyGarminRefHydrated ? 'multiple_available' : 'multiple_incomplete';
+    return everyGarminRefHydrated ? 'available' : 'activity_not_in_read_window';
+}
+
+/** Conservative: ambiguous provenance records no candidate ids and marks only the side that
+ * was created, so an opposite-kind single-source row within a day of an ambiguous one may be
+ * the competing candidate and must not be told "no candidate was found". */
+function withAmbiguousCounterparts(views: readonly CompletedWorkoutView[]): CompletedWorkoutView[] {
+    const ambiguous = views.filter(view => view.reconciliation.state === 'ambiguous');
+    const withinOneDay = (a: string | undefined, b: string | undefined): boolean =>
+        a === undefined || b === undefined
+        || (a >= addDaysToLocalDateString(b, -1) && a <= addDaysToLocalDateString(b, 1));
+    return views.map(view => {
+        const counterpart = view.reconciliation.state === 'single_source' && ambiguous.some(other =>
+            other.performedOccurrenceId !== view.performedOccurrenceId
+            && other.sourceBadge.hasStructured !== view.sourceBadge.hasStructured
+            && withinOneDay(view.localDate, other.localDate));
+        return counterpart ? { ...view, sourceReads: { ...view.sourceReads, ambiguousCounterpart: true } } : view;
+    });
 }
 
 async function hydrateOccurrence(
     userId: string,
     occurrence: PerformedTrainingOccurrence,
     providerSources: readonly HydratedProviderSource[],
+    context: { activitiesReadable: boolean; reconciliationSweep: ReconciliationSweepStatus },
 ): Promise<CompletedWorkoutView> {
     const structuredRef = occurrence.sourceRefs.find(isStructuredExecutionRef);
     // The domain is provider-neutral and may contain multiple provider sources, but the
@@ -59,15 +147,23 @@ async function hydrateOccurrence(
     // isProviderActivityRef is an explicit type predicate (see models.ts) rather than an
     // inline `ref.kind === '...'` check, so the narrowing survives `.find`/`.filter`
     // across TypeScript toolchains that don't infer it from an arrow-function body.
-    const garminRef = occurrence.sourceRefs
-        .filter(isProviderActivityRef)
-        .find(ref => ref.provider.toLowerCase() === 'garmin');
+    const providerRefs = occurrence.sourceRefs.filter(isProviderActivityRef);
+    const garminRef = providerRefs.find(ref => ref.provider.toLowerCase() === 'garmin');
 
-    const structured = structuredRef ? await resolveStructuredDetail(userId, structuredRef.executionId) : undefined;
+    const structuredHydration: StructuredHydration = structuredRef
+        ? await resolveStructuredDetail(userId, structuredRef.executionId)
+        : { read: { status: 'not_linked' } };
     const garmin = garminRef
         ? providerSources.find(source => source.ref.provider.toLowerCase() === 'garmin'
             && source.ref.activityId === garminRef.activityId)?.activity
         : undefined;
+    const sourceReads: CompletedWorkoutSourceReads = {
+        structured: structuredHydration.read,
+        provider: providerReadFor(providerRefs, providerSources, context.activitiesReadable),
+        outbox: structuredRef ? readOutbox(userId, structuredRef.executionId) : { status: 'not_linked' },
+        reconciliationSweep: context.reconciliationSweep,
+        ambiguousCounterpart: false,
+    };
 
     return {
         performedOccurrenceId: occurrence.performedOccurrenceId,
@@ -78,9 +174,10 @@ async function hydrateOccurrence(
         endedAt: occurrence.endedAt,
         sourceBadge: sourceBadgeFor(occurrence),
         reconciliation: occurrence.reconciliation,
-        structured,
+        structured: structuredHydration.structured,
         garmin,
         garminExerciseSetsAreDiagnosticOnly: !!structuredRef,
+        sourceReads,
     };
 }
 
@@ -114,13 +211,22 @@ export async function getCompletedWorkoutsInRange(
     fromDateInclusive: string,
     toDateExclusive: string,
     preloadedActivities?: readonly NormalizedGarminActivity[],
+    options: {
+        /** The window sweep outcome the caller observed. Omitted means no sweep ran, so no
+         * source was freshly evaluated and "no candidate" cannot be asserted (#895 WP5). */
+        reconciliationSweep?: ReconciliationSweepStatus;
+    } = {},
 ): Promise<CompletedWorkoutView[]> {
     const sourceHydration = await hydrateOccurrenceSourcesInRange(userId, fromDateInclusive, toDateExclusive, {
         preloadedActivities,
         activityDatePaddingDays: 1,
     });
-    const views = await Promise.all(sourceHydration.rows.map(({ occurrence, providerSources }) =>
-        hydrateOccurrence(userId, occurrence, providerSources)));
+    const context = {
+        activitiesReadable: sourceHydration.activitiesReadable,
+        reconciliationSweep: options.reconciliationSweep ?? 'not_run',
+    } as const;
+    const views = withAmbiguousCounterparts(await Promise.all(sourceHydration.rows.map(({ occurrence, providerSources }) =>
+        hydrateOccurrence(userId, occurrence, providerSources, context))));
     const sortedViews = views.sort((a, b) => (b.startedAt ?? b.localDate ?? '').localeCompare(a.startedAt ?? a.localDate ?? ''));
 
     // Own the dual-read comparison where both inputs are guaranteed to be available. The

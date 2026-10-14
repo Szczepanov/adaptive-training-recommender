@@ -403,6 +403,67 @@
   min-height: 44px;
 }
 
+/* Source completeness (#895 WP5). Status is always spelled out in text; the border is a
+   secondary cue only. Stacked <dl> rows keep long explanations from forcing horizontal scroll. */
+.workout-source-diagnostics {
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.workout-source-notice {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border-color, currentColor);
+  border-left-width: 4px;
+  border-radius: 6px;
+}
+
+.workout-source-notice h5 {
+  margin: 0 0 0.25rem;
+  text-transform: none;
+}
+
+.workout-source-notice ul {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.workout-source-line,
+.workout-source-check dd {
+  margin: 0.25rem 0 0;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.workout-source-checklist {
+  margin: 0.5rem 0 0;
+}
+
+.workout-source-check {
+  margin-bottom: 0.5rem;
+}
+
+.workout-source-check dt {
+  overflow-wrap: anywhere;
+}
+
+.workout-source-export {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.workout-source-export button {
+  min-height: 44px;
+  width: auto;
+}
+
+.workout-source-export-status {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
 @media (max-width: 640px) {
   .activity-response-summary {
     display: block;

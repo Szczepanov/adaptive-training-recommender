@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | **In progress** — WP0–WP4 implemented; WP5–WP7 remain |
+| **Status** | **In progress** — WP0–WP5 implemented; WP6–WP7 remain |
 | **Source** | [Issue #895](https://github.com/Szczepanov/adaptive-training-recommender/issues/895) |
 | **Baseline** | `origin/main` at `e63517a7` (fetch 2026-09-29; includes #901, #910, #911, #912, #913, #914). The local checkout at plan-writing time was behind by 4 commits; all findings below were verified against the fetched tip (`git show FETCH_HEAD:<path>`), not the stale worktree. |
 | **Blocked by** | No code blocker for WP5; it reuses the implemented diary and reconciliation harness. Per-item dependencies are listed below. |
@@ -13,7 +13,7 @@
 
 Make the structured SessionRunner the lossless, resumable, auditable source of truth for performed session semantics, with Garmin/provider activities attached as secondary measurement evidence for the same physical occurrence.
 
-The 2026-09-29 audit identified durable entry, correction and rest-write gaps. WP1 now batches diary targets, immutable audit records and execution touches into the SDK persistent-cache queue. Tombstones and durable receipts retain deletion and rejected intent across reload. Lifecycle and exact prescription resume are delivered by WP2/WP3. WP4 adds transactional source refresh and real arrival-order convergence proofs. Diagnostic UI, consumer inventory and closure remain with WP5–WP7.
+The 2026-09-29 audit identified durable entry, correction and rest-write gaps. WP1 now batches diary targets, immutable audit records and execution touches into the SDK persistent-cache queue. Tombstones and durable receipts retain deletion and rejected intent across reload. Lifecycle and exact prescription resume are delivered by WP2/WP3. WP4 adds transactional source refresh and real arrival-order convergence proofs. WP5 adds the named failure-state diagnostics and export. The per-consumer double-count inventory and closure remain with WP6–WP7.
 
 ## 2. Non-goals
 
@@ -142,7 +142,7 @@ WP5–WP7 and related #723/#724/#896 remain separate; #952 is already closed.
 
 ## WP4 — Arrival-ordering convergence
 
-**Status:** Implemented — real reconciliation-service/emulator proofs and same-source metadata refresh
+**Status:** Implemented ([PR #1046](https://github.com/Szczepanov/adaptive-training-recommender/pull/1046)) — real reconciliation-service/emulator proofs and same-source metadata refresh
 **Blocked by:** None
 **Purpose:** reconciliation converges to one stable occurrence regardless of arrival order.
 
@@ -163,20 +163,42 @@ WP5–WP7 and related #723/#724/#896 remain separate; #952 is already closed.
 
 ## WP5 — Failure observability
 
-**Status:** Not started
-**Blocked by:** WP1 (needs queued/acknowledged/failed states), WP4 (needs outcome vocabulary)
-**Purpose:** the diagnostic surface can name which of the 8 #895 failure states holds, instead of "no data".
+**Status:** Implemented — pure projection, read-model read statuses, DataView surface and bounded export; Garmin detail-fetch status is `not_observable` pending #1051
+**Blocked by:** None (WP1 and WP4 are delivered)
+**Purpose:** the diagnostic surface names which of the 8 #895 failure states holds, instead of "no data".
+
+### Decisions
+
+- **D7 — Derive, do not persist.** `ReconciliationOutcome` stays a return value. States 6/7 are derived from persisted `ReconciliationProvenance` and attached `sourceRefs`; the extra inputs are the window sweep outcome (`completed` / `incomplete` / `failed` / `not_run`) and an ambiguous-counterpart flag. `SweepSummary` gained `activitiesReadable` and `sourceErrors` (additive, no behaviour change) because a sweep can return normally without having evaluated every source, and ambiguous provenance marks only the side that was created.
+- **D8 — Read statuses travel with the view.** `CompletedWorkoutView.sourceReads` carries structured / provider / outbox / sweep statuses so "execution read failed", "execution absent" and "definition unresolved" are distinct (they all returned `undefined` before). The projection is pure; IO stays in `activitiesReadModelService`.
+- **D9 — Extend, do not fork, the source-completeness vocabulary (#914/#916).** `sourceCompletenessFor` maps each view's reads onto the existing `TrainingResponseSessionEvidence['sourceCompleteness']` shape (`not_linked` / `available` / `unavailable`) and the export carries it, so the finer WP5 reasons refine that vocabulary rather than replace it. Several attached provider sources are `ambiguous`, as in the planning path; `partial` needs per-source results the view does not keep, so an incomplete multi-source row stays `ambiguous` and state 3 carries the detail. Persisted reconciliation ambiguity is state 7. `ComparisonSourceCompleteness` consumers are untouched.
+- **D10 — States 4 and 5 use the one durable signal that exists.** Python writes `exerciseSets` only when the detail endpoint succeeded (`[]` = valid but empty), and only logs failures (`_fetch_activity_details`). So state 5 is observable; an omitted key on a strength activity makes state 4 `not_observable` (failed, rate-limited and never-attempted are indistinguishable). No Python or Firestore shape change here; persisting a detail-fetch status is #1051.
+- **D11 — Outbox is per device.** Receipts live in `localStorage`; zero receipts is `not_observable`, never "synced". Window export reports the aggregate depth and the count of unreadable stores.
+- **D12 — Unknown is a first-class member.** Every state is a closed union (`holds` / `clear` / `not_applicable` / `not_observable`) with reason tables typed over the reasons, and copy tables that fail to compile when a reason lacks wording.
 
 ### Changes
 
-- A diagnostic projection (read-model + UI/export, detail design in implementation) distinguishing: execution absent / entry pending-or-failed / Garmin absent / detail unavailable / detail valid-but-empty / no candidate / ambiguous candidates / projection failed — plus outbox depth from WP1 and `ReconciliationOutcome` (`created_single_source` / `attached_auto_link` / `ambiguous` / `already_linked` / `error`).
-- Read-model failure stays fail-closed and explicit (`activitiesReadable`, `canonicalWorkoutWindow.error`, shadow-diff `null` on `UNAVAILABLE` — already the pattern; extend to the new surface).
-- No false certainty: unknown stays unknown; never rendered as empty or zero (same missingness discipline as #901).
+- `app/src/training-occurrence/workoutSourceDiagnostics.ts` (pure projection, state/reason catalogue), `workoutSourceDiagnosticsExport.ts` (bounded allow-list export), `completedWorkoutView.ts` (`sourceReads`), `activitiesReadModelService.ts` (per-source statuses; a non-permission entries failure no longer blanks the window), `canonicalActivitiesWindow.ts` (sweep outcome).
+- `app/src/components/WorkoutSourceDiagnostics.tsx`, `workoutSourceDiagnosticsCopy.ts`, `CanonicalActivitiesPanel.tsx`; `CompletedWorkoutList` renders the section per card and `DataView` renders a named state-8 alert instead of "temporarily unavailable". The canonical view stays behind `VITE_TRAINING_OCCURRENCE_ACTIVITIES_POLICY=canonical-v1`.
+- Reference: [`session-execution.md`](../architecture/session-execution.md) "Failure observability for canonical workouts".
+
+### Coverage of the eight states
+
+| # | State | Proving tests |
+|---|---|---|
+| 1 | SessionExecution absent | `workoutSourceDiagnostics.test.ts` (state 1); emulator "Garmin-only workout … state 1"; `activitiesReadModelService.sourceReads.test.ts` |
+| 2 | SessionEntry write pending/failed | `workoutSourceDiagnostics.test.ts` (state 2, co-occurrence); `activitiesReadModelService.sourceReads.test.ts` (receipt depth, unreadable) |
+| 3 | Garmin activity absent | `workoutSourceDiagnostics.test.ts` (state 3); `activitiesReadModelService.sourceReads.test.ts` (provider classification) |
+| 4 | Garmin detail unavailable | `workoutSourceDiagnostics.test.ts` (states 4 and 5) — `not_observable` by design, see D10 |
+| 5 | Garmin detail valid-but-empty | same, plus the `exerciseSets: []` mapping |
+| 6 | Reconciliation found no candidate | `workoutSourceDiagnostics.test.ts`; emulator "structured-only … state 6"; emulator "does not claim no candidate when the sweep did not complete" |
+| 7 | Reconciliation found ambiguous candidates | `workoutSourceDiagnostics.test.ts`; emulator "real ambiguous Garmin candidate … state 7" |
+| 8 | Read-model projection failed | `workoutSourceDiagnostics.test.ts`; `DataView.test.tsx` (window failure is neither loading nor empty); `WorkoutSourceDiagnostics.test.tsx` |
 
 ### Acceptance
 
-- Every incomplete canonical view can explain its source/reconciliation state;
-- export supports debugging without exposing fabricated certainty.
+- Every incomplete canonical view can explain its source/reconciliation state ✔ (`WorkoutSourceDiagnostics.test.tsx`, `DataView.test.tsx`);
+- export supports debugging without exposing fabricated certainty ✔ (`workoutSourceDiagnosticsExport.test.ts`: stable schema, bounds, ordering, canary-value privacy assertions).
 
 ---
 
@@ -224,7 +246,7 @@ Every acceptance box is checked against `origin/main` behavior with emulator + u
 1. **PR1** — WP0 harness (failing/thin fixtures, no behavior change).
 2. **PR2** — WP1 outbox + idempotent retry.
 3. **PR3** — WP2 lifecycle + WP3 resume (both ride the outbox).
-4. **PR4** — WP4 ordering convergence + WP5 observability.
+4. **PR4** — WP4 ordering convergence (shipped as #1046), then WP5 observability as its own PR.
 5. **PR5** — WP6 per-consumer closure + WP7 docs/guards/closure.
 
 Keep review units narrow; do not squash the outbox with the diagnostics.
@@ -239,7 +261,7 @@ Expected; exact names may evolve.
 - `app/firestore.rules` (outbox/tombstone/revision gates — needs `test:rules`)
 - `app/src/training-occurrence/reconciliationService.ts`, `repository.ts`, `reconciliationCandidates.ts` (ordering/stickiness proofs; threshold changes out of scope)
 - `app/src/emulator/*.emulator.test.ts` (WP0/WP2/WP4 proofs)
-- new diagnostic read-model + surface (WP5; name decided in implementation)
+- `app/src/training-occurrence/workoutSourceDiagnostics*.ts`, `app/src/components/WorkoutSourceDiagnostics.tsx` (WP5)
 - `docs/architecture/session-execution.md`, `docs/plans/README.md`, `docs/README.md`, this plan
 
 ## 8. Verification matrix
@@ -255,7 +277,7 @@ Expected; exact names may evolve.
 
 - WP1's queue uses existing SDK persistence, with additive mutation audit and entry metadata. No historical backfill is required. Deploy compatible rules before the new frontend.
 - Keep audit/tombstone records on rollback. Old clients may be unable to edit audited entries under the integrity rules; prefer a forward fix instead of removing the audit protection. Readers tolerate absent metadata on legacy entries.
-- WP4/WP5 are additive diagnostics; rollback removes the surface, not the data.
+- WP5 is an additive diagnostic surface over unchanged data; rollback removes the surface (and the `sourceReads` field), not the data. WP4's refresh behavior is separate.
 - No raw-telemetry persistence changes, so rollback deletes no large data.
 
 ## 10. Review checklist

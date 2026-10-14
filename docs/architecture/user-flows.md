@@ -405,7 +405,11 @@ Completed Workout read model is enabled with `VITE_TRAINING_OCCURRENCE_ACTIVITIE
 Garmin-only recording to a structured-only workout), so the screen must not be described as
 strictly read-only. In that read model a structured strength workout shows its prescription,
 every logged set (warm-up/work, reps × load, logged RIR/RPE) and actual vs. target rest, with the
-linked watch recording's HR summary and HR zones alongside.
+linked watch recording's HR summary and HR zones alongside. Each workout card also carries a
+"Source completeness" section: gaps and unreadable dependencies show a named notice, a collapsed
+list always shows all eight failure-state checks, a failed window read is a named alert (never
+an empty list), and "Copy source diagnostics" copies a bounded id/state/timestamp export. See
+[`session-execution.md`](./session-execution.md) "Failure observability for canonical workouts".
 
 The `brief` route is the same `DataView` component opened on `Context brief`, and it is
 the canonical Export-for-AI surface. From the Data screen, the Context brief tab and the

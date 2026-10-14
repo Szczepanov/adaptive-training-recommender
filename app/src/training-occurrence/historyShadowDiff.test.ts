@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { CompletedTrainingEvent } from '../engine/models';
 import type { CompletedWorkoutView } from './completedWorkoutView';
 import { diffCompletedTrainingHistory, estimateCanonicalEvidenceTier } from './historyShadowDiff';
+import { completeReads } from './workoutSourceDiagnostics.fixtures';
 
 function liveEvent(overrides: Partial<CompletedTrainingEvent> = {}): CompletedTrainingEvent {
     return {
@@ -31,6 +32,7 @@ function workout(overrides: Partial<CompletedWorkoutView> = {}): CompletedWorkou
         sourceBadge: { hasStructured: false, hasProvider: true, providers: ['garmin'] },
         reconciliation: { state: 'single_source' },
         garminExerciseSetsAreDiagnosticOnly: false,
+        sourceReads: completeReads,
         ...overrides,
     };
 }

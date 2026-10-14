@@ -1,7 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { CanonicalActivitiesPanel } from './CanonicalActivitiesPanel';
 import { DataView } from './DataView';
 import type { DailyDecisionInput } from '../engine/models';
+import { garminOnlyView, structuredOnlyView, workoutView } from '../training-occurrence/workoutSourceDiagnostics.fixtures';
 
 /**
  * Minimal fixture for the recovery tab (the component's default `initialTab`) only.
@@ -93,6 +95,87 @@ describe('DataView gated recovery metrics (#588 review follow-up)', () => {
 
     expect(html).not.toContain('Not available yet');
     expect(html).toContain('7d med 85 · 28d med 83'); // Body Battery Wake candidate baseline
+  });
+});
+
+describe('DataView canonical Activities states (#895 WP5: loading != failed != empty)', () => {
+  const range = { from: '2026-09-11', toExclusive: '2026-09-18' };
+
+  it('renders a loading state while the canonical window has not resolved', () => {
+    const html = renderToStaticMarkup(<CanonicalActivitiesPanel workouts={null} failed={false} range={range} />);
+    expect(html).toContain('Loading recent activities');
+    expect(html).not.toContain('Read-model projection failed');
+    expect(html).not.toContain('No workouts were recorded');
+  });
+
+  it('renders a genuinely empty window as empty, not as a failure', () => {
+    const html = renderToStaticMarkup(<CanonicalActivitiesPanel workouts={[]} failed={false} range={range} reconciliationSweep="completed" />);
+    expect(html).toContain('No workouts were recorded');
+    expect(html).not.toContain('Read-model projection failed');
+  });
+
+  it.each(['incomplete', 'failed', 'not_run'] as const)(
+    'does not claim "nothing recorded" for an empty window whose matching check is %s',
+    (sweep) => {
+      const html = renderToStaticMarkup(<CanonicalActivitiesPanel workouts={[]} failed={false} range={range} reconciliationSweep={sweep} />);
+      expect(html).not.toContain('No workouts were recorded');
+      expect(html).toContain('newly synced activities may be missing');
+      // an empty window can still be exported, with the sweep status in its header
+      expect(html).toContain('Copy source diagnostics');
+    },
+  );
+
+  it('names a failed read as state 8 and never as an empty list, a loading spinner or zero', () => {
+    const html = renderToStaticMarkup(<CanonicalActivitiesPanel workouts={null} failed range={range} />);
+    expect(html).toContain('Read-model projection failed');
+    expect(html).toContain('State 8');
+    expect(html).toContain('not an empty list');
+    expect(html).toContain('role="alert"');
+    expect(html).not.toContain('Loading recent activities');
+    expect(html).not.toContain('No workouts were recorded');
+    expect(html).not.toMatch(/\b0 workouts\b/);
+  });
+
+  it('keeps the failure visible even if stale workouts are still cached', () => {
+    const html = renderToStaticMarkup(<CanonicalActivitiesPanel workouts={[workoutView()]} failed range={range} />);
+    expect(html).toContain('Read-model projection failed');
+    expect(html).not.toContain('activity-telemetry-card');
+  });
+
+  it('offers the user-initiated diagnostics export with the displayed window', () => {
+    const html = renderToStaticMarkup(<CanonicalActivitiesPanel workouts={[workoutView()]} failed={false} range={range} />);
+    expect(html).toContain('Copy source diagnostics');
+  });
+
+  it('explains each incomplete workout in the list with named states', () => {
+    const html = renderToStaticMarkup(
+      <CanonicalActivitiesPanel
+        workouts={[
+          structuredOnlyView({ performedOccurrenceId: 'ambiguous', reconciliation: { state: 'ambiguous' } }),
+          garminOnlyView({ performedOccurrenceId: 'orphan' }),
+          structuredOnlyView({ performedOccurrenceId: 'unreadable', sourceReads: { structured: { status: 'execution_unavailable' } } }),
+        ]}
+        failed={false}
+        range={range}
+      />,
+    );
+    expect(html).toContain('Ambiguous matching candidates');
+    expect(html).toContain('No Adaptive session record is linked to this workout.');
+    expect(html).toContain('The Adaptive session record could not be loaded.');
+    expect(html).not.toContain('No structured or telemetry detail is available');
+  });
+
+  describe('through DataView with the canonical read model enabled', () => {
+    afterEach(() => vi.unstubAllEnvs());
+
+    it('shows the loading state, not a failure, before the canonical window resolves', () => {
+      vi.stubEnv('VITE_TRAINING_OCCURRENCE_ACTIVITIES_POLICY', 'canonical-v1');
+      const html = renderToStaticMarkup(
+        <DataView decisionInput={recoveryDecisionInput(5)} userId="athlete-1" onBack={() => {}} initialTab="activities" />,
+      );
+      expect(html).toContain('Loading recent activities');
+      expect(html).not.toContain('Read-model projection failed');
+    });
   });
 });
 

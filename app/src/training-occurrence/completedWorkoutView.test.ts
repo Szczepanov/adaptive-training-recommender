@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { manualLinkCandidatesFor, sourceBadgeFor, type CompletedWorkoutView } from './completedWorkoutView';
+import { completeReads } from './workoutSourceDiagnostics.fixtures';
 
 describe('sourceBadgeFor', () => {
     it('reports structured-only', () => {
@@ -38,6 +39,7 @@ describe('manualLinkCandidatesFor', () => {
         sourceBadge: { hasStructured: true, hasProvider: false, providers: [] },
         reconciliation: { state: 'single_source' },
         garminExerciseSetsAreDiagnosticOnly: true,
+        sourceReads: completeReads,
     };
     const garminOnly: CompletedWorkoutView = {
         performedOccurrenceId: 'pto-garmin',
@@ -48,6 +50,7 @@ describe('manualLinkCandidatesFor', () => {
         reconciliation: { state: 'ambiguous' },
         garmin: garminActivity,
         garminExerciseSetsAreDiagnosticOnly: false,
+        sourceReads: completeReads,
     };
 
     it('offers a same-day Garmin-only workout for a structured-only workout', () => {
