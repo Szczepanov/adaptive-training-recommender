@@ -36,7 +36,7 @@ export function generateWeeklyObjectives(
 ): MicrocycleState {
     const activeBlock = planDefinition?.blocks
         .find((block) => block.startDate <= asOfDate && asOfDate <= block.endDate);
-    if (planDefinition && activeBlock && planDefinition.objectives.length > 0) {
+    if (planDefinition && activeBlock && (planDefinition.objectives.length > 0 || planDefinition.developmentBlock)) {
         const objectives: WeeklyObjective[] = [];
         const blockMap = new Map<string, typeof planDefinition.blocks[0]>();
         for (const b of planDefinition.blocks) {
@@ -136,7 +136,7 @@ export function generateWeeklyObjectives(
             }
 
             objectives.push({
-                id: `obj_plan_${objDef.key}_${idx}`,
+                id: planDefinition.developmentBlock ? `obj_${activeBlock.id}_${objDef.key}_${idx}` : `obj_plan_${objDef.key}_${idx}`,
                 key: objDef.key,
                 title,
                 requiredCredit: objDef.requiredCredit,

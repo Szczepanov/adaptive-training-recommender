@@ -19,6 +19,7 @@ describe('same-day recommendation call shape', () => {
         const overlays = [] as never[];
         const progression = new Map<string, number>();
         const checkins = [] as never[];
+        const intentBlocks = [{ id: 'bound-development-block' }] as never[];
 
         expect(sameDayRecommendationArguments({
             userId, readiness, context, events, date: '2026-09-28', previousMode,
@@ -26,10 +27,11 @@ describe('same-day recommendation call shape', () => {
             fixedActivities, authoredPlanBlocks: planBlocks, trainingIntentProfile: profile,
             preferences, externalPlan, externalRest, scheduleOverlays: overlays,
             confirmedProgressionOverrides: progression, mechanicalCheckinHistory: checkins,
+            intentBlocks,
         })).toEqual([
             userId, readiness, context, events, '2026-09-28', previousMode, provider, snapshot,
             fixedActivities, planBlocks, profile, preferences, 'max', externalPlan,
-            undefined, undefined, externalRest, false, overlays, progression, undefined, checkins,
+            undefined, undefined, externalRest, false, overlays, progression, undefined, checkins, intentBlocks,
         ]);
     });
 });

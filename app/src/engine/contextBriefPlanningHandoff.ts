@@ -83,7 +83,7 @@ export interface ContextBriefPlanningHandoffInput {
      * own external-plan read failed (occupancy or plan-state), so a null resolved session
      * reflects an unreadable day rather than a confirmed absence. */
     externalFallbackUncertain: boolean;
-    eventStrategy: 'structured_plan' | 'demand_derived' | 'evergreen_fallback' | null;
+    eventStrategy: import('./planningMode').PlanningContext['eventStrategy'];
     goals: readonly UserGoal[];
     upcomingFixedActivities: readonly FixedActivity[];
     upcomingPlanBlocks: readonly AuthoredPlanBlock[];
@@ -377,6 +377,22 @@ function resolveTodayAuthority(input: ContextBriefPlanningHandoffInput): { autho
 
 type TodayAuthority = ReturnType<typeof resolveTodayAuthority>;
 
+function renderDevelopmentAuthority(input: ContextBriefPlanningHandoffInput): string[] {
+    const development = input.recommendations.find(item => item.date === input.asOfDate)?.recommendationAudit?.development;
+    if (!development) return [];
+    return [
+        `- Long-horizon target: ${development.eventId} on ${development.eventDate}; event demand ${JSON.stringify(development.eventDemand)}.`,
+        development.blockId
+            ? `- Executable development authority: ${development.blockId}@${development.blockRevision}, ${development.executableDates?.startDate}–${development.executableDates?.endDate}; review ${development.nextReviewDate}.`
+            : `- Development authority withheld; Evergreen fallback: ${development.diagnostics.join(', ')}.`,
+        ...development.objectives.flatMap(objective => [
+            `- ${objective.adaptationScope}: ${objective.intent}; authored dose ${objective.doseEnvelope.min}/${objective.doseEnvelope.target}/${objective.doseEnvelope.max} ${objective.doseEnvelope.unit}${objective.coverageKey ? `; exact role ${objective.coverageKey}` : ''}.`,
+            ...(objective.demandRationale ? [`- Development rationale: ${objective.demandRationale}`] : []),
+        ]),
+        `- Recent completed exposure: ${development.recentCompletedExposures} sessions. ${development.evidenceLimitations}`,
+    ];
+}
+
 function renderDataHandoff(input: ContextBriefPlanningHandoffInput, today: TodayAuthority): string {
     const latestSnapshot = latestByDate(input.snapshots);
     const latestCheckin = latestByDate(input.checkins);
@@ -397,6 +413,8 @@ function renderDataHandoff(input: ContextBriefPlanningHandoffInput, today: Today
         `- Planning date: ${input.asOfDate} (Europe/Warsaw calendar date).`,
         `- Effective planning mode today: ${modeDetail}.`,
     ];
+
+    lines.push(...renderDevelopmentAuthority(input));
 
     lines.push(...renderSensorEvidence(input.trainingSettings, input.preferences, input.activities, input.asOfDate));
     if (input.preferences) {
@@ -738,6 +756,7 @@ export function buildMorningCoachBrief(input: ContextBriefPlanningHandoffInput):
     }
 
     lines.push('', todayAuthority.block);
+    lines.push(...renderDevelopmentAuthority(input));
 
     // 1. Today's Status & Check-in
     lines.push('', '## 1. Today\'s Status & Check-in', '');

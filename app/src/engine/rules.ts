@@ -37,6 +37,8 @@ import { resolveMechanicalCheckinHistory } from './mechanicalCheckinHistory';
 import type { CheckinRecord } from './mechanicalProgression';
 import { POLICY_VERSION } from './policy';
 import { resolveExecutionDose } from './dose';
+import type { IntentBlock } from './blockIntent';
+import { developmentTemplateEligible, developmentTrace } from './developmentAuthority';
 import { isTemplatePhaseEligible } from './periodization';
 import { resolveMinimumDaysAfterHardLowerBody, resolveRecoveryHoursForTemplate } from './planningCandidate';
 import { adjudicateExternalSession } from './externalSession';
@@ -609,6 +611,7 @@ function adjudicatedExternalRecommendation(
         decisionTrace: {
             policyVersion: POLICY_VERSION,
             eventHorizon: intent.periodization.horizonPolicy,
+            development: developmentTrace(intent.planningContext, intent.history),
             candidateScores: [],
             droppedContributorObjectives: intent.droppedContributorObjectives,
             externalPlan: { planId, revision, sessionId: session.id, contentHash },
@@ -640,6 +643,7 @@ function authoredRestRecommendation(
         decisionTrace: {
             policyVersion: POLICY_VERSION,
             eventHorizon: intent.periodization.horizonPolicy,
+            development: developmentTrace(intent.planningContext, intent.history),
             candidateScores: [],
             droppedContributorObjectives: intent.droppedContributorObjectives,
             externalRest: { planId, revision, contentHash, restDirectiveId: directive.id, date } satisfies ExternalRestProvenance,
@@ -674,15 +678,16 @@ export async function evaluateTrainingWithIntent(
      * imported default provider, unless an injected `historyProvider` makes this call
      * self-contained (then none, which holds stage advancement). */
     mechanicalCheckinHistory?: readonly CheckinRecord[],
+    intentBlocks: readonly IntentBlock[] = [],
 ): Promise<Recommendation> {
     const envelopeState = evaluateReadinessAndSafetyEnvelope(readiness, context, date, previousMode, subjectiveDriftPolicy, subjectiveDriftWeights);
     const { mode, envelopes, telemetry } = envelopeState;
     // #804: the check-in read does not depend on the intent, so it runs alongside it.
     const mechanicalCheckinsRead = mechanicalCheckinHistory
-        ?? (preferences && !historyProvider && mechanicalEvidenceRequiredFor(trainingIntentProfile, events, date, authoredPlanBlocks)
+        ?? (preferences && !historyProvider && mechanicalEvidenceRequiredFor(trainingIntentProfile, events, date, authoredPlanBlocks, intentBlocks)
             ? resolveMechanicalCheckinHistory(userId, date)
             : []);
-    let intent = await resolveTrainingIntent(userId, events, date, readiness, DEFAULT_OPERATIONAL_HISTORY_WINDOW_DAYS, historyProvider, preparedHistorySnapshot, authoredPlanBlocks, trainingIntentProfile, fatigueFusionPolicy, undefined, carriedInternalStrain);
+    let intent = await resolveTrainingIntent(userId, events, date, readiness, DEFAULT_OPERATIONAL_HISTORY_WINDOW_DAYS, historyProvider, preparedHistorySnapshot, authoredPlanBlocks, trainingIntentProfile, fatigueFusionPolicy, undefined, carriedInternalStrain, intentBlocks);
 
     let externalEventAdvisory: {
         prescription: NonNullable<Recommendation['externalPrescription']>;
@@ -807,7 +812,7 @@ export async function evaluateTrainingWithIntent(
         .filter(template => template.systemicCost <= maxCost)
         .filter(template => mode !== 'recover' || template.category === 'Rest' || template.category === 'Mobility/Recovery')
         .filter(template => mode !== 'modify' || template.systemicCost <= MODIFY_MAX_SYSTEMIC_COST)
-        .filter(template => isTemplatePhaseEligible(template, intent.periodization))
+        .filter(template => developmentTemplateEligible(template, evergreen?.planDefinition, isTemplatePhaseEligible(template, intent.periodization), date, intent.history))
         .filter(template => !availability.environmentOverride || template.environment === 'either' || template.environment === availability.environmentOverride);
 
     const rankingFatigue = applyCompletedSessionLoad(intent.fatigue, date, availability.reservedCapacityCostProfile, fatigueFusionPolicy);
@@ -907,6 +912,7 @@ export async function evaluateTrainingWithIntent(
             decisionTrace: {
                 policyVersion: POLICY_VERSION,
                 eventHorizon: intent.periodization.horizonPolicy,
+                development: developmentTrace(intent.planningContext, intent.history),
                 stimulusRecency: rankingResult.stimulusRecency,
                 candidateScores: rankingResult.all.map(candidate => ({ templateId: candidate.template.id, utilityScore: candidate.utilityScore, benefitScore: candidate.benefitScore, costPenalty: candidate.costPenalty, excludedReasons: candidate.excludedReasons, stimulusRecency: candidate.stimulusRecency })),
                 droppedContributorObjectives: intent.droppedContributorObjectives,
@@ -943,6 +949,7 @@ export async function evaluateTrainingWithIntent(
         decisionTrace: {
             policyVersion: POLICY_VERSION,
             eventHorizon: intent.periodization.horizonPolicy,
+            development: developmentTrace(intent.planningContext, intent.history),
             stimulusRecency: rankingResult.stimulusRecency,
             candidateScores: rankingResult.all.map(candidate => ({ templateId: candidate.template.id, utilityScore: candidate.utilityScore, benefitScore: candidate.benefitScore, costPenalty: candidate.costPenalty, excludedReasons: candidate.excludedReasons, stimulusRecency: candidate.stimulusRecency })),
             droppedContributorObjectives: intent.droppedContributorObjectives,
@@ -1403,10 +1410,11 @@ export async function evaluateNextDayPlanWithIntent(
     /** #804 structured tissue check-ins; same default as `evaluateTrainingWithIntent`,
      * resolved once for all three branches. */
     mechanicalCheckinHistory?: readonly CheckinRecord[],
+    intentBlocks: readonly IntentBlock[] = [],
 ): Promise<NextDayPotentialPlan> {
     const scenarios = buildNextDayScenarios(todayReadiness, context, todayDate, todayRec);
     const mechanicalCheckins = mechanicalCheckinHistory
-        ?? (preferences && !historyProvider && mechanicalEvidenceRequiredFor(trainingIntentProfile, events, scenarios.date, authoredPlanBlocks)
+        ?? (preferences && !historyProvider && mechanicalEvidenceRequiredFor(trainingIntentProfile, events, scenarios.date, authoredPlanBlocks, intentBlocks)
             ? await resolveMechanicalCheckinHistory(userId, scenarios.date)
             : []);
     const projectedProvider = await projectedProviderForTomorrow(
@@ -1428,7 +1436,7 @@ export async function evaluateNextDayPlanWithIntent(
             userId, scenario.readiness, context, events, scenarios.date, todayRec.mode, projectedProvider, null,
             fixedActivities, authoredPlanBlocks, trainingIntentProfile, preferences, fatigueFusionPolicy, null,
             subjectiveDriftPolicy, subjectiveDriftWeights, null, false, scheduleOverlays, new Map(), scenario.carriedInternalStrain,
-            mechanicalCheckins,
+            mechanicalCheckins, intentBlocks,
         ),
     );
     const [green, yellow, red] = await Promise.all([

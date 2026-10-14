@@ -14,6 +14,7 @@ import type { KnowledgeClaim, KnowledgeSource } from './sportsKnowledge';
  * `partial`.
  */
 export const PERIODIZATION_EVENT_DEMAND_CLAIM_IDS = {
+    developmentAuthorityPolicy: 'policy.periodization.development_authority_v1',
     blockStructuredProgression: 'performance.periodization.block_structured_progression',
     eventDurationLimiterShift: 'performance.event_demand.duration_intensity_limiter_shift',
     phaseBoundariesScalesPolicy: 'policy.periodization.phase_boundaries_scales_v1',
@@ -136,6 +137,15 @@ export const PERIODIZATION_EVENT_DEMAND_SOURCES: readonly KnowledgeSource[] = [
 ];
 
 export const PERIODIZATION_EVENT_DEMAND_CLAIMS: readonly KnowledgeClaim[] = [
+    {
+        id: PERIODIZATION_EVENT_DEMAND_CLAIM_IDS.developmentAuthorityPolicy,
+        statement: 'One explicitly event-bound, date-active, review-current validated intent block may own distant cycling-event development before structured build. Authored supported dose envelopes replace generic quality priors before capacity packing; VO2 uses exact VO2 identities even in Base. Strength maintenance and embedded power/mechanical support retain exact identity and existing evidence/safety gates. Conflicts, changed event context, unmet prerequisites and unsupported mappings fall back to Evergreen. Future blocks never own current dose or coverage.',
+        claimType: 'heuristic', maturity: 'heuristic', status: 'active', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional', safetyImpact: 'moderate',
+        applicability: { contexts: ['training_periodization', 'macrocycle_planning'], sports: ['cycling'], populations: ['app_users_with_target_events'], outcomes: ['planner_authority'], horizon: 'chronic' },
+        evidence: [{ sourceId: PERIODIZATION_EVENT_DEMAND_PRODUCT_POLICY_SOURCE, directness: 'direct' }],
+        limitations: ['Software authority and explicit authoring policy only; no dose multiplier, clinical clearance, physiological success or automatic progression is inferred.'],
+        reviewedOn: '2026-10-14', version: 1,
+    },
     {
         id: PERIODIZATION_EVENT_DEMAND_CLAIM_IDS.blockStructuredProgression,
         statement: 'Concentrated block periodization is a viable way to organize selected endurance-training qualities and has produced favorable adaptations in some trained-athlete studies, but cyclist-specific 8-12-week evidence does not establish consistent superiority over a progressively loaded traditional organization. It should therefore be treated as one workable periodization model rather than a uniquely optimal sequence.',

@@ -17,7 +17,7 @@ import type { BriefPurpose } from './contextBriefPurpose';
  * omit it for deterministic unit tests. `ContextBriefService.build` is the
  * complete export boundary and always supplies it.
  */
-export const CONTEXT_BRIEF_CONTRACT_VERSION = '2026-10-context-brief-contract-v5';
+export const CONTEXT_BRIEF_CONTRACT_VERSION = '2026-10-context-brief-contract-v6';
 
 export interface BriefContractMetadata {
     purpose: BriefPurpose;

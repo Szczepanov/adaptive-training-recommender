@@ -2,6 +2,9 @@ import type { AuthoredPlanBlock, ExternalPlanSession, PlanningMode, TrainingInte
 import type { PeriodizationResult } from './periodization';
 import { resolveActivePlanDefinitionForEvent } from './planSchedule';
 import { DEFAULT_TRAINING_INTENT_PROFILE } from './evergreenStrategy';
+import type { IntentBlock } from './blockIntent';
+import { resolveDevelopmentAuthority, type DevelopmentAuthority } from './developmentAuthority';
+import { addDaysToLocalDateString } from '../utils/localDate';
 
 export interface PlanningContext {
     mode: PlanningMode;
@@ -11,7 +14,8 @@ export interface PlanningContext {
     /** Date-local event programming authority. A cycling event can remain the focus
      * context while its authored plan is not yet active; in that case evergreen owns the
      * executable week until a structured block starts. */
-    eventStrategy: 'structured_plan' | 'demand_derived' | 'evergreen_fallback' | null;
+    eventStrategy: 'structured_plan' | 'demand_derived' | 'evergreen_fallback' | 'development_block' | null;
+    development?: DevelopmentAuthority;
     /** The imported session placed on this date, present only in `externally_planned`
      * mode. Callers adjudicate it instead of ranking candidates (ADR-0019 D-EXT). */
     externalSession: ExternalPlanSession | null;
@@ -25,7 +29,7 @@ export interface PlanningContext {
 export function usesEvergreenProgramming(planningContext: PlanningContext): boolean {
     return planningContext.mode === 'evergreen'
         || (planningContext.mode === 'event_directed'
-            && planningContext.eventStrategy === 'evergreen_fallback');
+            && (planningContext.eventStrategy === 'evergreen_fallback' || planningContext.eventStrategy === 'development_block'));
 }
 
 export { DEFAULT_TRAINING_INTENT_PROFILE } from './evergreenStrategy';
@@ -75,6 +79,7 @@ export function resolvePlanningContext(
      * its current generated build window, so authority resolution must see the same authored
      * blocks as trainingIntent. The current D-84 cycling boundary is plan policy, not a mode invariant. */
     authoredPlanBlocks: readonly AuthoredPlanBlock[] = [],
+    intentBlocks: readonly IntentBlock[] = [],
 ): PlanningContext {
     const resolvedProfile = fallbackProfile(profile);
 
@@ -102,16 +107,30 @@ export function resolvePlanningContext(
     if (!eventDirected) return { mode: 'evergreen', profile: resolvedProfile, focusEvent: null, eventStrategy: null, externalSession: null, externalFallback: false };
 
     const focusEvent = periodization.focusEvent!;
-    const eventStrategy = focusEvent.category === 'cycling_event'
+    let eventStrategy: PlanningContext['eventStrategy'] = focusEvent.category === 'cycling_event'
         ? (resolveActivePlanDefinitionForEvent(focusEvent, date, authoredPlanBlocks, 0, periodization.horizonPolicy)
             ? 'structured_plan'
             : 'evergreen_fallback')
         : 'demand_derived';
+    const development = eventStrategy === 'evergreen_fallback'
+        ? resolveDevelopmentAuthority(focusEvent, date, intentBlocks) : undefined;
+    if (development?.block) {
+        const structuredStart = addDaysToLocalDateString(focusEvent.timing?.planningDate ?? focusEvent.date,
+            -periodization.horizonPolicy.finalBuildStartDaysBefore);
+        const upcomingTravel = authoredPlanBlocks.filter(block => (!block.eventId || block.eventId === focusEvent.id)
+            && block.startDate > date).map(block => block.startDate).sort()[0];
+        development.executableEndDate = [development.block.dateRange.endDate,
+            addDaysToLocalDateString(structuredStart, -1),
+            ...(upcomingTravel ? [addDaysToLocalDateString(upcomingTravel, -1)] : []),
+            development.block.reviewSchedule.nextReviewDate].sort()[0];
+    }
+    if (development?.block) eventStrategy = 'development_block';
     return {
         mode: 'event_directed',
         profile: resolvedProfile,
         focusEvent,
         eventStrategy,
+        ...(development ? { development } : {}),
         externalSession: null,
         externalFallback: false,
     };

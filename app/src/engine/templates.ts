@@ -817,6 +817,13 @@ export const TEMPLATES: SessionTemplate[] = [
     }
 ];
 
+// The legacy hard-bike family resolves to threshold; this alias binds the existing VO2 prescription exactly.
+TEMPLATES.push({
+    ...TEMPLATES.find(template => template.id === 'end_hard_02')!,
+    id: 'end_vo2_development_01',
+    phaseEligibility: { requiresDevelopmentBlock: true },
+});
+
 function canonicalizeStimulus(s: Partial<WorkoutStimulusProfile> | Record<string, unknown>): WorkoutStimulusProfile {
     const raw = s as Record<string, unknown>;
     const numberOrZero = (...values: unknown[]): number => {

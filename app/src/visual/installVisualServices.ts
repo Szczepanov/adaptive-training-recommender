@@ -146,6 +146,7 @@ export function installVisualServices(fixture: VisualFixture): void {
   fixedActivityService.getActivitiesInRangeState = async () => ({ status: 'AVAILABLE', data: [], revision: null });
   planBlockService.getBlocksInRangeState = async () => ({ status: 'AVAILABLE', data: [], revision: null });
   intentBlockService.getActiveBlocks = async () => ({ status: 'AVAILABLE', data: [], revision: null });
+  intentBlockService.getActiveBlocksWithDiagnostics = async () => ({ blocks: [], unreadableCount: 0, truncated: false });
   intentBlockService.listBlockIds = async () => ({ status: 'AVAILABLE', data: [], revision: null });
   intentBlockService.getHeaderState = async () => ({ status: 'MISSING' });
   intentBlockService.getRevisionState = async () => ({ status: 'MISSING' });

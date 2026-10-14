@@ -7,7 +7,7 @@
  */
 
 import type { PlanCoverageKey } from '../workouts/event-plan';
-import type { ObjectiveKey, ObjectivePriority } from './models';
+import type { ObjectiveKey, ObjectivePriority, UserEvent } from './models';
 
 export type BlockIntent = 'develop' | 'maintain';
 export type BlockSport = 'cycling' | 'strength' | 'running' | 'swimming' | 'multisport' | 'cross_training';
@@ -36,7 +36,7 @@ export const SUPPORTED_PLAN_COVERAGE_KEYS: readonly PlanCoverageKey[] = [
     'aerobic_volume', 'long_aerobic_anchor', 'recovery_spin', 'sustained_quality', 'short_surges', 'gap_closing',
     'outdoor_event_specific', 'primary_strength', 'compact_strength', 'upper_body_trunk',
     'field_maintenance', 'walk_run', 'recovery_or_rest', 'travel_aerobic', 'travel_strength',
-    'taper_sharpening', 'pre_race_openers', 'race_week_strength', 'race_day',
+    'taper_sharpening', 'pre_race_openers', 'race_week_strength', 'race_day', 'power_exposure', 'mechanical_exposure',
 ] as const;
 
 export interface DoseEnvelope {
@@ -125,6 +125,8 @@ export interface IntentBlock {
     revision: number;
     sourcePlanId: string;
     sourcePlanRevision: number;
+    /** Explicit target snapshot; changes require a reviewed block revision. Legacy blocks stay unbound. */
+    eventBinding?: Pick<UserEvent, 'demandProfile' | 'phaseHorizons'> & { eventId: string; eventDate: string };
     dateRange: { startDate: string; endDate: string };
     objectives: readonly BlockObjectiveDefinition[];
     reviewSchedule: { reviewCadenceDays: number; nextReviewDate: string };
@@ -605,6 +607,17 @@ function validateObjective(objective: BlockObjectiveDefinition, path: string): V
 export function validateIntentBlock(block: IntentBlock): IntentBlockValidationResult {
     const issues: ValidationIssue[] = [];
     const rootPath = `intentBlock[${block.id || 'unknown'}]`;
+    if (block.eventBinding !== undefined) {
+        const binding = block.eventBinding;
+        if (!binding || !isNonEmptyString(binding.eventId) || !isValidLocalDateString(binding.eventDate)
+            || !binding.demandProfile || !['aerobicEndurance', 'thresholdPower', 'vo2MaxPower', 'repeatedSurges',
+                'sprintPower', 'fatigueResistance', 'neuromuscular'].every(key => {
+                const value = binding.demandProfile[key as keyof UserEvent['demandProfile']];
+                return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1;
+            })) {
+            issues.push({ code: 'INVALID_EVENT_BINDING', message: 'Event binding requires an exact event/date and valid demand snapshot', path: `${rootPath}.eventBinding` });
+        }
+    }
 
     if (!isNonEmptyString(block.id)) {
         issues.push({ code: 'MISSING_BLOCK_ID', message: 'Block ID must be non-empty', path: `${rootPath}.id` });

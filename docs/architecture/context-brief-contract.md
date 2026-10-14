@@ -4,7 +4,7 @@ The Context Brief is the read-only handoff between the athlete record and an ext
 It is treated as a versioned API even though the wire format remains human/LLM-readable
 Markdown.
 
-This document describes the current v5 contract. Issue #894 established the versioned export
+This document describes the current v6 contract. Issue #894 established the versioned export
 contract through v3: purpose/window identity, source state and currency, canonical performed
 training, missingness semantics, purpose budgets, golden fixtures and service-built regression
 coverage. Issue #893 advanced that contract to v4 for the planning-only external-plan execution
@@ -14,6 +14,14 @@ around that same content. Morning D-1 adherence keeps its purpose-specific debri
 canonical performed-training facts; diagnostic preserves separately labelled raw provider provenance.
 
 ## Export boundary
+
+Issue #927 advances the contract to v6. Morning, planning and diagnostic handoffs include
+the persisted long-horizon target and development authority when a decision audit carries
+them: block/revision, executable dates, authored develop/maintain purpose and dose bounds,
+review checkpoint, completed-exposure limitations and fallback reasons. The exporter does
+not reload the latest mutable block or infer physiological gap closure/tolerance from
+completed sessions. Legacy audits without this optional readout retain their existing
+rendering. `eventStrategy` may now be `development_block` while generic event context is Base.
 
 `ContextBriefService.build` is the complete export boundary. It owns data reads, chooses the
 purpose from the requested preset, injects the generation timestamp, builds the retrospective
@@ -58,7 +66,7 @@ create a second planning engine.
 
 ## Contract identity block
 
-Contract version `2026-10-context-brief-contract-v5` currently exposes one field per line so
+Contract version `2026-10-context-brief-contract-v6` currently exposes one field per line so
 each field is independently machine-readable:
 
 - `Contract version`;

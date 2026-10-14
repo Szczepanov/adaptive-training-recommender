@@ -8,6 +8,7 @@ import { BODY_REGIONS, TISSUE_LEVELS, type BodyRegion, type DailySubjectiveCheck
 import type { PerformedTrainingFactsSnapshot } from './performedTrainingFacts';
 import { POLICY_VERSION } from './policy';
 import type { MinimumSafetyCheckinStatus } from './safetyCheckin';
+import { validateIntentBlock } from './blockIntent';
 import type { SameDayRecommendationInputs } from './sameDayRecommendation';
 
 export const DECISION_CONTEXT_SCHEMA_VERSION = 1 as const;
@@ -146,7 +147,9 @@ function validPayload(value: unknown): value is Omit<DecisionContextRecord, 'con
             'readiness', 'context', 'events', 'fixedActivities', 'authoredPlanBlocks',
             'trainingIntentProfile', 'preferences', 'externalPlan', 'externalRest',
             'scheduleOverlays', 'confirmedProgressionOverrides',
-        ], ['previousMode'])) return false;
+        ], ['previousMode', 'intentBlocks'])) return false;
+        if (inputs.intentBlocks !== undefined && (!Array.isArray(inputs.intentBlocks)
+            || !inputs.intentBlocks.every(block => { try { return validateIntentBlock(block).valid; } catch { return false; } }))) return false;
         if (!isObject(inputs.readiness) || !isObject(inputs.readiness.subjective)
             || !isObject(inputs.readiness.objective) || !isObject(inputs.context)
             || !Array.isArray(inputs.events) || !Array.isArray(inputs.fixedActivities)
@@ -216,6 +219,7 @@ export async function createDecisionContext(input: CreateDecisionContextInput): 
             ...(evaluator.previousMode === undefined ? {} : { previousMode: evaluator.previousMode }),
             fixedActivities: evaluator.fixedActivities,
             authoredPlanBlocks: evaluator.authoredPlanBlocks,
+            ...(evaluator.intentBlocks === undefined ? {} : { intentBlocks: evaluator.intentBlocks }),
             trainingIntentProfile: evaluator.trainingIntentProfile,
             preferences: evaluator.preferences,
             externalPlan: evaluator.externalPlan,

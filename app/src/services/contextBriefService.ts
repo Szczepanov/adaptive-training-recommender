@@ -1125,7 +1125,8 @@ export class ContextBriefService {
             effectivePlanningMode: planningContext.mode,
             externalFallback: planningContext.externalFallback,
             externalFallbackUncertain,
-            eventStrategy: planningContext.eventStrategy,
+            eventStrategy: recommendations.find(item => item.date === targetDate)?.recommendationAudit?.development?.blockId
+                ? 'development_block' : planningContext.eventStrategy,
             goals,
             upcomingFixedActivities,
             upcomingPlanBlocks,

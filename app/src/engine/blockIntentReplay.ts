@@ -95,6 +95,7 @@ export interface TreatmentIntentReplayPayloadV1 {
     block: {
         id: string;
         revision: number;
+        eventBinding?: IntentBlock['eventBinding'];
         dateRange: { startDate: string; endDate: string };
         objectives: readonly CanonicalReplayObjective[];
         reviewSchedule: { reviewCadenceDays: number; nextReviewDate: string };
@@ -245,6 +246,7 @@ export function buildTreatmentIntentReplayPayloadV1(
         block: {
             id: block.id,
             revision: block.revision,
+            ...(block.eventBinding ? { eventBinding: block.eventBinding } : {}),
             dateRange: { startDate: block.dateRange.startDate, endDate: block.dateRange.endDate },
             objectives: sortedObjectives,
             reviewSchedule: {

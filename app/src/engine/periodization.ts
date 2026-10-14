@@ -501,6 +501,7 @@ export function isTemplatePhaseEligible(
 ): boolean {
     const rule = template.phaseEligibility;
     if (!rule) return true;
+    if (rule.requiresDevelopmentBlock) return false;
 
     if (rule.requiresFocusEvent && !result.focusEvent) return false;
     if (rule.requiresTaper && !result.phase.taperActive) return false;

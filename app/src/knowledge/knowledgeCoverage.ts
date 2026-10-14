@@ -57,6 +57,14 @@ export interface KnowledgeCoverageSummary {
  */
 export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] = [
     {
+        id: 'periodization.event_development_authority', domain: 'periodization_taper', title: 'Event-bound development intent authority',
+        currentRule: 'A single active reviewed event-bound block maps supported exact objectives/dose before Evergreen capacity packing; structured event/travel authority wins, future blocks are context only, changed event/entry evidence and unsupported maps fall back. VO2 exact identities override generic Base phase eligibility; volume intent removes generic quality priors. Existing safety and embedded capability gates remain authoritative.',
+        classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'none',
+        codeRefs: ['engine/developmentAuthority.ts:resolveDevelopmentAuthority', 'engine/developmentAuthority.ts:applyDevelopmentDose', 'engine/planningMode.ts:resolvePlanningContext', 'engine/evergreenPlanning.ts:resolveEvergreenPlan'],
+        knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.developmentAuthorityPolicy],
+        coverageRationale: 'Explicit software authoring and authority policy; no physiological dose multiplier or automatic success/progression claim.',
+    },
+    {
         id: 'workout_catalog.strength_warmup_invariant', domain: 'workout_catalog', title: 'Catalog strength warm-up invariant',
         currentRule: 'Every active non-manual catalog strength workout begins with a non-empty warm-up block that remains inside its advertised session duration.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'moderate', safetyImpact: 'low', researchPriority: 'none',

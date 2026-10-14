@@ -240,6 +240,24 @@ function handoffInput(overrides: Partial<ContextBriefPlanningHandoffInput> = {})
     };
 }
 
+it('exports persisted long-horizon development authority, authored purpose and evidence limits', () => {
+    const rec = recommendation();
+    rec.recommendationAudit = { ...rec.recommendationAudit!, development: {
+        eventId: 'road-race', eventDate: '2027-06-16',
+        eventDemand: { aerobicEndurance: 0.8, thresholdPower: 0.8, vo2MaxPower: 0.7, repeatedSurges: 0.7, sprintPower: 0.3, fatigueResistance: 0.8, neuromuscular: 0.3 },
+        blockId: 'vo2-block', blockRevision: 2, executableDates: { startDate: AS_OF, endDate: '2026-09-01' }, nextReviewDate: '2026-09-01',
+        objectives: [{ id: 'vo2', adaptationScope: 'vo2_max', intent: 'develop', doseEnvelope: { min: 1, target: 2, max: 2, unit: 'sessions', floorSemantics: 'hard_floor' } }],
+        recentCompletedExposures: 4, evidenceLimitations: 'Follow-up tolerance and adaptation gaps unverified.', diagnostics: [],
+    } };
+    const text = enhanceContextBriefForPlanning(BASE, handoffInput({ recommendations: [rec], effectivePlanningMode: 'event_directed', eventStrategy: 'development_block' }));
+    expect(text).toContain('Long-horizon target: road-race on 2027-06-16');
+    expect(text).toContain('Executable development authority: vo2-block@2');
+    expect(text).toContain('vo2_max: develop; authored dose 1/2/2 sessions');
+    expect(text).toContain('Follow-up tolerance and adaptation gaps unverified');
+    const morning = enhanceContextBriefForPlanning(BASE, handoffInput({ recommendations: [rec], purpose: 'morning', effectivePlanningMode: 'event_directed', eventStrategy: 'development_block' }));
+    expect(morning).toContain('Executable development authority: vo2-block@2');
+});
+
 describe('enhanceContextBriefForPlanning', () => {
     it('turns the copied brief into context rather than an unconditional plan command', () => {
         const text = enhanceContextBriefForPlanning(BASE, handoffInput());

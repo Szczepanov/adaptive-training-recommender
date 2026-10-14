@@ -921,6 +921,8 @@ export interface PlannedDose {
  *  in scope at all, so a phase-gated template is structurally unreachable there, not merely
  *  policy-excluded. See periodization.ts's isTemplatePhaseEligible. */
 export interface TemplatePhaseEligibility {
+    /** Only an explicit exact development role can admit this template. */
+    requiresDevelopmentBlock?: boolean;
     /** Never eligible in the eventless default (Base phase with no active event). */
     requiresFocusEvent?: boolean;
     /** Inclusive day-count ceiling relative to the focus event (e.g. 35 = "only within 35 days"). */
@@ -1080,6 +1082,7 @@ export interface Recommendation {
         policyVersion: string;
         /** Issue #928: The resolved event phase horizon policy that governed this decision. */
         eventHorizon?: import('./eventHorizonPolicy').EventPhaseHorizonPolicy;
+        development?: import('./developmentAuthority').DevelopmentTrace;
         candidateScores: Array<{
             templateId: string;
             utilityScore: number;
@@ -2197,6 +2200,7 @@ export interface AthleteEvidenceLineageRef {
 }
 
 export interface RecommendationAudit {
+    development?: import('./developmentAuthority').DevelopmentTrace;
     policyVersion: string;
     evaluatedAt: string;
     decisionContextRevision: string;
