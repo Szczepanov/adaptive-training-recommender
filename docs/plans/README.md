@@ -56,6 +56,13 @@ a delivery queue.
 
 ## Current plans
 
+Issue #927 event-bound development authority is **In progress** under
+[`2026-10-14-issue-927-development-authority.md`](./2026-10-14-issue-927-development-authority.md).
+The implementation adds explicit optional binding, reviewed date-local block authority,
+existing dose/capacity packing, exact VO2 execution, support-role gates, forecast segments
+and pinned replay/Context Brief v6 readouts. Focused checks passed; independent review,
+full repository verification and generated simulation baseline inspection remain pending.
+
 The implementation plan for Firestore Security Rules modularization, build pipeline, and expression-budget optimization is [`2026-10-08-firestore-rules-modularization-and-budget-refactor.md`](./2026-10-08-firestore-rules-modularization-and-budget-refactor.md) — **In Progress**. Local implementation introduces numbered `app/rules/` modules, deterministic assembly, guarded minified deployment, normalized drift comparison, and redundant-check pruning. Tenant isolation, immutability, state machines, exclusivity, and existing malformed-payload rejection remain enforced. Production compilation latency and deployment acceptance remain pending; the original latency and AST-reduction targets are estimates, not verified results.
 
 Issue #933 forecast authority handoff: **Implemented**. Forecasts use date-local

@@ -21,6 +21,7 @@ export interface SameDayRecommendationInputs {
     scheduleOverlays: RecommendationArgs[18];
     confirmedProgressionOverrides: RecommendationArgs[19];
     mechanicalCheckinHistory?: RecommendationArgs[21];
+    intentBlocks?: RecommendationArgs[22];
 }
 
 export function sameDayRecommendationArguments(input: SameDayRecommendationInputs): RecommendationArgs {
@@ -47,6 +48,7 @@ export function sameDayRecommendationArguments(input: SameDayRecommendationInput
         input.confirmedProgressionOverrides,
         undefined,
         input.mechanicalCheckinHistory,
+        input.intentBlocks,
     ];
 }
 

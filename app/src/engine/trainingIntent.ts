@@ -6,6 +6,8 @@ import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
 import { evaluatePeriodizationPhase, resolveMultiEventObjectives, type DroppedContributorObjective, type PeriodizationResult } from './periodization';
 import { resolveActivePlanDefinitionForEvent, type PlanDefinition } from './planSchedule';
 import { addDaysToLocalDateString } from '../utils/localDate';
+import type { IntentBlock } from './blockIntent';
+import { revalidateDevelopmentEvidence } from './developmentAuthority';
 import { resolvePlanningContext, usesEvergreenProgramming, type PlanningContext } from './planningMode';
 import { applyPlanningOverlays } from './planningOverlays';
 import type { PerformedTrainingFactsSnapshot } from './performedTrainingFacts';
@@ -113,17 +115,19 @@ export function needsEstablishedPerformanceEvidence(planningContext: PlanningCon
     // feeds athlete-state inference, the aerobic floor, power and quality priors, and opting in
     // must not change those decisions; capability cadence reads the #804 mechanical evidence.
     return planningContext.profile.priorities.some(priority =>
-        priority === 'endurance' || priority === 'speed_power' || priority === 'sport_readiness');
+        priority === 'endurance' || priority === 'speed_power' || priority === 'sport_readiness')
+        || Boolean(planningContext.development?.block);
 }
 
 /** Issue #804: whether this intent can emit a mechanical requirement, and therefore whether
  * orchestration must source mechanical exposure evidence and tissue check-ins. */
 export function mechanicalEvidenceRequired(planningContext: PlanningContext): boolean {
     return usesEvergreenProgramming(planningContext)
-        && canEmitMechanicalRequirement(
+        && (planningContext.development?.block?.objectives.some(objective => objective.coverageKey === 'mechanical_exposure')
+            || canEmitMechanicalRequirement(
             planningContext.profile.priorities,
             planningContext.profile.capabilityMaintenance?.enabled === true,
-        );
+        ));
 }
 
 /** The same predicate before a `TrainingIntent` exists (the next-day projection resolves
@@ -133,6 +137,7 @@ export function mechanicalEvidenceRequiredFor(
     events: UserEvent[],
     date: string,
     authoredPlanBlocks: readonly AuthoredPlanBlock[] = [],
+    intentBlocks: readonly IntentBlock[] = [],
 ): boolean {
     return mechanicalEvidenceRequired(
         resolvePlanningContext(
@@ -141,6 +146,7 @@ export function mechanicalEvidenceRequiredFor(
             date,
             null,
             authoredPlanBlocks,
+            intentBlocks,
         ),
     );
 }
@@ -167,6 +173,7 @@ function resolveIntentAuthorities(
     date: string,
     authoredPlanBlocks: readonly AuthoredPlanBlock[],
     trainingIntentProfile: TrainingIntentProfile | null,
+    intentBlocks: readonly IntentBlock[] = [],
 ) {
     const eventPeriodization = evaluatePeriodizationPhase(events, date);
     const planningContext = resolvePlanningContext(
@@ -175,6 +182,7 @@ function resolveIntentAuthorities(
         date,
         null,
         authoredPlanBlocks,
+        intentBlocks,
     );
     // PlanningContext is the sole authority for whether event periodization applies.
     const periodization = planningContext.mode === 'event_directed'
@@ -312,14 +320,16 @@ export async function resolveTrainingIntent(
     fatigueFusionPolicy: FatigueFusionPolicy = 'max',
     preparedRollingLoadBudgetSnapshot?: TrainingHistorySnapshot | null,
     carriedInternalStrain?: DimensionalFatigue,
+    intentBlocks: readonly IntentBlock[] = [],
 ): Promise<TrainingIntent> {
     const {
-        planningContext,
+        planningContext: initialPlanningContext,
         periodization,
         strengthSupportSessions,
         planDefinition,
         performedFactsCoverageDescriptor,
-    } = resolveIntentAuthorities(events, date, authoredPlanBlocks, trainingIntentProfile);
+    } = resolveIntentAuthorities(events, date, authoredPlanBlocks, trainingIntentProfile, intentBlocks);
+    let planningContext = initialPlanningContext;
     const operationalSnapshot = preparedHistorySnapshot
         ?? await prepareTrainingHistorySnapshot(userId, date, windowDays, historyProvider);
     const provider = historyProvider ?? (await import('./firestoreTrainingHistory')).firestoreTrainingHistoryProvider;
@@ -394,6 +404,10 @@ export async function resolveTrainingIntent(
             },
         };
     }
+    planningContext = revalidateDevelopmentEvidence(planningContext,
+        historySnapshot?.athleteStateEvidence?.exposures ?? history,
+        historySnapshot?.athleteStateEvidence?.observedWindowDays ?? operationalSnapshot?.windowDays ?? 0,
+        Boolean(readiness.subjective.painFlag || readiness.subjective.clinicalEnvelopeSources?.length));
 
     // Mechanical establishment has its own evidence stream (#857). This is loaded exactly
     // when #804 can emit, including an explicit #805 opt-in, without widening the general

@@ -71,6 +71,7 @@ export interface HistoricalDecisionInputs {
     previousMode?: 'train' | 'modify' | 'recover';
     fixedActivities: FixedActivity[];
     authoredPlanBlocks: readonly AuthoredPlanBlock[];
+    intentBlocks?: readonly import('../engine/blockIntent').IntentBlock[];
     trainingIntentProfile: TrainingIntentProfile | null;
     preferences: UserPreferences | null;
     externalContext: ExternalPlanContext | null;
@@ -226,6 +227,7 @@ export async function computeHistoricalReplayDigests(
             previousMode: inputs.previousMode,
             fixedActivities: inputs.fixedActivities,
             authoredPlanBlocks: inputs.authoredPlanBlocks,
+        intentBlocks: inputs.intentBlocks,
             trainingIntentProfile: inputs.trainingIntentProfile,
             preferences: inputs.preferences,
             externalContext: inputs.externalContext,
@@ -381,6 +383,7 @@ async function evaluate(inputs: HistoricalDecisionInputs, pass: HistoricalHistor
         preparedHistorySnapshot: snapshotFor(inputs, pass, inputs.preparedHistorySnapshot.windowDays),
         fixedActivities: inputs.fixedActivities,
         authoredPlanBlocks: inputs.authoredPlanBlocks,
+        intentBlocks: inputs.intentBlocks,
         trainingIntentProfile: inputs.trainingIntentProfile,
         preferences: inputs.preferences,
         externalPlan: inputs.externalContext,

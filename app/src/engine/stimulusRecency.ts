@@ -154,6 +154,7 @@ export const TEMPLATE_STIMULUS_FAMILY: Readonly<Record<string, StimulusRecencyFa
     str_full_02: 'strength',
     end_hard_01: 'vo2',
     end_hard_02: 'threshold',
+    end_vo2_development_01: 'vo2',
     end_hard_03: 'vo2',
     swim_technique_01: null,
     swim_easy_01: 'endurance',

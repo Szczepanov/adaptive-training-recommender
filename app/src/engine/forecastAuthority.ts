@@ -1,3 +1,5 @@
+import type { IntentBlock } from './blockIntent';
+import { revalidateDevelopmentEvidence } from './developmentAuthority';
 import type { AuthoredPlanBlock, FixedActivity, MicrocycleState, ScheduleOverlay, TrainingIntentProfile, UserContext, UserEvent, UserPreferences } from './models';
 import type { CompletedExposure } from './trainingHistory';
 import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
@@ -8,7 +10,7 @@ import { resolveEvergreenPlan, type EvergreenMechanicalInputs, type ResolvedEver
 import { buildMicrocycleState } from './microcycle';
 import type { AerobicVolumeFloor } from './aerobicVolumeFloor';
 import { EVERGREEN_GENERAL_COVERAGE_SET } from '../workouts/event-plan';
-import { addDaysToLocalDateString } from '../utils/localDate';
+import { addDaysToLocalDateString, getDayDiff } from '../utils/localDate';
 
 export interface ForecastAuthority {
     id: string;
@@ -26,6 +28,7 @@ export type ForecastAuthorityResolver = (date: string, projected: readonly Compl
 /** The IO boundary supplies durable inputs once. Every speculative branch resolves the same
  * production authority using its own occurrence ledger; no branch can seed another branch. */
 export function createForecastAuthorityResolver(inputs: {
+    intentBlocks?: readonly IntentBlock[];
     todayDate: string;
     days: number;
     events: UserEvent[];
@@ -45,10 +48,11 @@ export function createForecastAuthorityResolver(inputs: {
     initialEvergreen?: ResolvedEvergreenPlan | null;
 }): ForecastAuthorityResolver {
     const contextOn = (date: string) => resolvePlanningContext(inputs.profile,
-        evaluatePeriodizationPhase(inputs.events, date, inputs.todayDate), date, null, inputs.authoredPlanBlocks);
+        evaluatePeriodizationPhase(inputs.events, date, inputs.todayDate), date, null, inputs.authoredPlanBlocks, inputs.intentBlocks);
     const ownerOn = (date: string): string => {
         const context = contextOn(date);
-        return usesEvergreenProgramming(context) ? 'evergreen'
+        return context.development?.block ? `development:${context.development.block.id}@${context.development.block.revision}`
+            : usesEvergreenProgramming(context) ? 'evergreen'
             : `${context.eventStrategy ?? context.mode}:${context.focusEvent?.id ?? ''}`;
     };
     const segments: Array<{ id: string; owner: string; startDate: string; endDate: string }> = [];
@@ -58,7 +62,7 @@ export function createForecastAuthorityResolver(inputs: {
         const date = addDaysToLocalDateString(inputs.todayDate, offset);
         const owner = ownerOn(date);
         const previous = segments.at(-1);
-        const rollingWeekExpired = previous?.owner === 'evergreen'
+        const rollingWeekExpired = (previous?.owner === 'evergreen' || previous?.owner.startsWith('development:'))
             && date > addDaysToLocalDateString(previous.startDate, 6);
         if (previous?.owner === owner && !rollingWeekExpired) previous.endDate = date;
         else segments.push({ id: `${owner}@${date}`, owner, startDate: date, endDate: date });
@@ -89,11 +93,15 @@ export function createForecastAuthorityResolver(inputs: {
                 ...stateEvidence, exposures: mergeEvidence(stateEvidence.exposures, stateEvidence.observedWindowDays),
             } } : {}),
         } : null;
-        const planningContext = contextOn(segment.startDate);
+        const planningContext = revalidateDevelopmentEvidence(contextOn(segment.startDate),
+            projectedSnapshot?.athleteStateEvidence?.exposures ?? history,
+            projectedSnapshot?.athleteStateEvidence?.observedWindowDays ?? projectedSnapshot?.windowDays ?? 0,
+            inputs.hasCurrentClinicalSymptoms);
         const periodization = evaluatePeriodizationPhase(inputs.events, segment.startDate, inputs.todayDate);
         const evergreen = segment.startDate === inputs.todayDate && inputs.initialEvergreen !== undefined
+            && (!inputs.initialEvergreen || inputs.initialEvergreen.planDefinition.blocks.every(block => block.endDate <= segment.endDate))
             ? inputs.initialEvergreen : resolveEvergreenPlan(planningContext, periodization.phase, history, projectedSnapshot,
-            inputs.preferences, inputs.context, segment.startDate, inputs.fixedActivities, 7,
+            inputs.preferences, inputs.context, segment.startDate, inputs.fixedActivities, Math.min(7, getDayDiff(segment.endDate, segment.startDate) + 1),
             inputs.isAdverseRecovery, inputs.scheduleOverlays, new Map(), inputs.aerobicVolumeFloor,
             inputs.hasCurrentClinicalSymptoms, {
                 ...inputs.mechanical,

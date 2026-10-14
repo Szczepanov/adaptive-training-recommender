@@ -80,6 +80,8 @@ import { deriveObjectiveCreditFromProfile, type StimulusConfidence } from './sti
 import { buildCoverageState, coverageHistoryFromFacts, coverageNeedTierForTemplate, resolveCoverageHistory, workoutIdForTemplateId, type CoverageHistoryEntry, type CoveragePerformedFacts } from './coverage';
 import { resolveEvergreenPlan } from './evergreenPlanning';
 import { createForecastAuthorityResolver, resolveDateLocalPlanDefinition, type ForecastAuthority, type ForecastAuthorityResolver } from './forecastAuthority';
+import type { IntentBlock } from './blockIntent';
+import { developmentTemplateEligible } from './developmentAuthority';
 import { resolvePlanningContext } from './planningMode';
 import type { CapabilityMaintenanceResult } from './capabilityMaintenance';
 import type { AerobicVolumeFloor } from './aerobicVolumeFloor';
@@ -328,6 +330,7 @@ export function selectViableForecastCandidate(
 }
 
 export interface WeekAheadOptions {
+    intentBlocks?: readonly IntentBlock[];
     days?: number;
     events?: UserEvent[];
     fixedActivities?: FixedActivity[];
@@ -908,7 +911,11 @@ export function evaluateProjectedDate(
 
     const eligible = eligibleTemplates(ENRICHED_TEMPLATES, shared.context, availability.maxTimeMinutes, date)
         .filter(template => templateFitsResolvedAvailability(template, availability))
-        .filter(t => isTemplatePhaseEligible(t, periodization));
+        .filter(t => {
+            const authority = shared.resolveAuthority?.(date, state.projectedExposures ?? []);
+            return developmentTemplateEligible(t, authority?.planDefinition ?? shared.planDefinition, isTemplatePhaseEligible(t, periodization), date,
+                [...(authority?.completedHistory ?? []), ...(state.projectedExposures ?? [])]);
+        });
     const isLedgerAdmitted = (template: SessionTemplate): boolean => {
         // Rest has no exercise occurrence or capacity debit. Keep it available as the safe
         // fallback when every training candidate is correctly denied by the shared day.
@@ -2627,7 +2634,7 @@ export async function generateWeekAheadPlanWithIntent(
         addDaysToLocalDateString(todayDate, offset));
     // #804: the check-in read does not depend on the intent, so it runs alongside it.
     const mechanicalCheckinsRead = options.mechanicalCheckinHistory
-        ?? (preferences && !historyProvider && futureMechanicalDates.some(date => mechanicalEvidenceRequiredFor(trainingIntentProfile, events, date, options.authoredPlanBlocks ?? []))
+        ?? (preferences && !historyProvider && futureMechanicalDates.some(date => mechanicalEvidenceRequiredFor(trainingIntentProfile, events, date, options.authoredPlanBlocks ?? [], options.intentBlocks))
             ? resolveMechanicalCheckinHistory(userId, todayDate)
             : []);
     const intent = await resolveTrainingIntent(
@@ -2642,6 +2649,7 @@ export async function generateWeekAheadPlanWithIntent(
         trainingIntentProfile,
         fatigueFusionPolicy,
         rollingLoadBudgetSnapshot,
+        undefined, options.intentBlocks,
     );
     const isAdverseRecovery = isSevereAdverseRecoveryReadiness(todayReadiness, todayRec.mode);
     const healthPlanningPolicy = resolveHealthPlanningPolicy(
@@ -2672,7 +2680,7 @@ export async function generateWeekAheadPlanWithIntent(
     const futureContexts = Array.from({ length: (options.days ?? 7) + 1 }, (_, offset) => {
         const date = addDaysToLocalDateString(todayDate, offset);
         return resolvePlanningContext(trainingIntentProfile, evaluatePeriodizationPhase(forecastEvents, date, todayDate),
-            date, null, options.authoredPlanBlocks ?? []);
+            date, null, options.authoredPlanBlocks ?? [], options.intentBlocks);
     });
     // A structured start must not prevent the next Evergreen owner from seeing the wider
     // evidence production would load there. Reuse the already-read, proven budget window.
@@ -2689,6 +2697,7 @@ export async function generateWeekAheadPlanWithIntent(
         todayDate, days: options.days ?? 7, events: forecastEvents, profile: trainingIntentProfile,
         history: rollingLoadBudgetSnapshot?.exposures ?? intent.history, historySnapshot: forecastSnapshot,
         preferences, context, fixedActivities: options.fixedActivities ?? [],
+        intentBlocks: options.intentBlocks,
         authoredPlanBlocks: options.authoredPlanBlocks ?? [], scheduleOverlays: options.scheduleOverlays ?? [],
         eventStrengthSupportSessions: intent.eventStrengthSupportSessions, aerobicVolumeFloor,
         isAdverseRecovery, hasCurrentClinicalSymptoms: hasCurrentClinicalSymptoms(todayReadiness),

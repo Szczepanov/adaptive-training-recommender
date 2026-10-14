@@ -91,6 +91,9 @@ describe('stimulusRecency', () => {
         it('resolves key deliberate workout and template classifications', () => {
             expect(WORKOUT_STIMULUS_FAMILY.end_hard_01).toBeUndefined(); // end_hard_01 is a template, not a catalog workout
             expect(TEMPLATE_STIMULUS_FAMILY.end_hard_01).toBe('vo2');
+            expect(TEMPLATE_STIMULUS_FAMILY.end_vo2_development_01).toBe('vo2');
+            expect(TEMPLATE_STIMULUS_FAMILY.end_hard_02).toBe('threshold');
+            expect(WORKOUT_STIMULUS_FAMILY.cycling_vo2_6x3_01).toBe('vo2');
             expect(WORKOUT_STIMULUS_FAMILY.running_vo2_4x4_01).toBe('vo2');
 
             expect(WORKOUT_STIMULUS_FAMILY.cycling_tempo_surges_01).toBe('tempo');

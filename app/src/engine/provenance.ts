@@ -59,6 +59,7 @@ export function buildRecommendationAudit(
             planMaxAllowableTier: envelopes.plan.maxAllowableTier,
         },
         knowledgeLineage,
+        ...(trace.development ? { development: trace.development } : {}),
         ...(athleteEvidenceLineage ? { athleteEvidenceLineage } : {}),
         ...(recommendation.plannedDose ? { plannedDose: recommendation.plannedDose } : {}),
         ...(recommendation.executionDose ? { executionDose: recommendation.executionDose } : {}),

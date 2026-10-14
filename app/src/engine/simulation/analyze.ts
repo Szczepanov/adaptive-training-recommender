@@ -48,6 +48,7 @@ export interface AnchorWeekResult {
     eventSpecificAnchorHit: boolean | null; eventSpecificExposureDates: string[]; eventSpecificAnchorFulfilled: boolean | null; qualityAnchorHit: boolean | null;
 }
 export interface ScenarioDecisionTrace {
+    development?: import('../developmentAuthority').DevelopmentTrace;
     weekIndex: number;
     date: string;
     readinessTier: 'train' | 'modify' | 'recover';
@@ -183,6 +184,7 @@ export function traceFromRecommendation(weekIndex: number, date: string, recomme
             selectedVsBestBenefitGap: bestBenefitScore === null || selectedBenefitScore === null ? null : bestBenefitScore - selectedBenefitScore,
         },
         rankingAudit: recommendation.decisionTrace?.rankingAudit ?? null,
+        ...(recommendation.decisionTrace?.development ? { development: recommendation.decisionTrace.development } : {}),
         ...(recommendation.decisionTrace?.stimulusRecency ? { stimulusRecency: { stimulusRecency: recommendation.decisionTrace.stimulusRecency, candidateScores: recommendation.decisionTrace.candidateScores } } : {}),
     };
 }
@@ -454,19 +456,19 @@ export async function runScenario(
             'sim-user', readiness, scenario.context, events, currentDate, undefined, historyProvider,
             preparedHistory, fixedActivities, [], scenario.trainingIntentProfile ?? null, scenario.preferences ?? null, fatigueFusionPolicy,
             null, subjectiveDriftPolicy, subjectiveDriftWeights, null, false, [], new Map(), undefined,
-            scenario.mechanicalCheckinHistory,
+            scenario.mechanicalCheckinHistory, scenario.intentBlocks,
         );
         const nextDayPlan = await evaluateNextDayPlanWithIntent(
             'sim-user', events, readiness, scenario.context, currentDate, todayRec, historyProvider,
             preparedHistory, fixedActivities, [], scenario.trainingIntentProfile ?? null, scenario.preferences ?? null, fatigueFusionPolicy,
-            subjectiveDriftPolicy, subjectiveDriftWeights, [], scenario.mechanicalCheckinHistory,
+            subjectiveDriftPolicy, subjectiveDriftWeights, [], scenario.mechanicalCheckinHistory, scenario.intentBlocks,
         );
         const tomorrowRec = nextDayPlan.branches.yellow.recommendation;
 
         const plan = await planGenerator(
             'sim-user', readiness, scenario.context, scenario.preferences ?? null, events, currentDate, todayRec, tomorrowRec,
             {
-                days: 6, fixedActivities, fatigueFusionPolicy,
+                days: 6, fixedActivities, fatigueFusionPolicy, intentBlocks: scenario.intentBlocks,
                 ...(scenario.mechanicalCheckinHistory ? { mechanicalCheckinHistory: scenario.mechanicalCheckinHistory } : {}),
             },
             historyProvider, preparedHistory, scenario.trainingIntentProfile ?? null,
@@ -639,7 +641,7 @@ export async function runForecastDailyParityScenario(
             'sim-user', readiness, scenario.context, events, date, previousMode, provider,
             null, scenario.fixedActivities ?? [], [], scenario.trainingIntentProfile ?? null,
             scenario.preferences ?? null, 'max', null, 'off', REFERENCE_SUBJECTIVE_DRIFT_WEIGHTS,
-            null, false, [], new Map(), undefined, scenario.mechanicalCheckinHistory,
+            null, false, [], new Map(), undefined, scenario.mechanicalCheckinHistory, scenario.intentBlocks,
         );
         dailyTraces.push(traceFromRecommendation(weekIndex, date, recommendation));
         history.push(toCompletedExposure(recommendationAsDay(date, recommendation, 'rolling_daily'), recommendation));
@@ -662,7 +664,7 @@ export async function runForecastDailyParityScenario(
             index > 0 ? forecast.decisionTraces[index - 1].mode : undefined,
             forcedProvider, null, scenario.fixedActivities ?? [], [],
             scenario.trainingIntentProfile ?? null, scenario.preferences ?? null, 'max', null, 'off',
-            REFERENCE_SUBJECTIVE_DRIFT_WEIGHTS, null, false, [], new Map(), undefined, scenario.mechanicalCheckinHistory,
+            REFERENCE_SUBJECTIVE_DRIFT_WEIGHTS, null, false, [], new Map(), undefined, scenario.mechanicalCheckinHistory, scenario.intentBlocks,
         );
         forcedTraces.push(traceFromRecommendation(weekIndex, forecastTrace.date, recommendation));
         forcedHistory.push(traceAsExposure(forecastTrace));

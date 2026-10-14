@@ -516,9 +516,23 @@ export function buildCoverageState(
         requirement.coverageKey === 'long_aerobic_anchor' && requirement.blockId === block.id)?.minimumDurationMinutes;
     const anchorPlanRequirement = planDefinition.coverageRequirements?.find(requirement =>
         requirement.coverageKey === 'long_aerobic_anchor' && requirement.blockId === block.id);
-    const activeDescriptor: CoverageSetDescriptor = anchorPlanRequirement === undefined ? descriptor : {
+    const developmentDescriptor = planDefinition.coverageOverrides ? {
         ...descriptor,
-        coverage: descriptor.coverage.map(item => item.key === 'long_aerobic_anchor'
+        coverage: descriptor.coverage.map(role => planDefinition.coverageOverrides?.find(override => override.key === role.key) ?? role),
+    } : descriptor;
+    if (planDefinition.developmentBlock && planDefinition.coverageOverrides) {
+        history = history.map(exposure => exposure.canonicalCoverageCredits === undefined ? exposure : {
+            ...exposure, canonicalCoverageCredits: deriveExactCoverageCredits({
+                performedOccurrenceId: exposure.occurrenceKey ?? '', workoutId: exposure.workoutId,
+                isReadinessModifiedDose: exposure.isReadinessModifiedDose, sourceKinds: [],
+            }, developmentDescriptor).filter(credit => credit.creditKind === 'exact').map(credit => ({
+                coverageSetId: credit.coverageSetId, coverageKey: credit.coverageKey, creditKind: 'exact' as const,
+            })),
+        });
+    }
+    const activeDescriptor: CoverageSetDescriptor = anchorPlanRequirement === undefined ? developmentDescriptor : {
+        ...developmentDescriptor,
+        coverage: developmentDescriptor.coverage.map(item => item.key === 'long_aerobic_anchor'
             ? {
                 ...item,
                 ...(anchorRequirement !== undefined ? { minimumDurationMinutes: anchorRequirement } : {}),

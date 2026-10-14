@@ -31,6 +31,7 @@ import {
     MissingTrainingIntentProfileError,
     manualIntentBlockSourceIdentity,
     MANUAL_INTENT_BLOCK_SOURCE_SCHEMA_VERSION,
+    MANUAL_EVENT_DEVELOPMENT_SOURCE_SCHEMA_VERSION,
     type IntentBlockHeader,
 } from './intentBlockService';
 import type { IntentBlock } from '../engine/blockIntent';
@@ -148,6 +149,18 @@ describe('IntentBlockService.save', () => {
 
         const service = new IntentBlockService();
         await expect(service.save(USER_ID, block({ revision: 2 }))).rejects.toBeInstanceOf(IntentBlockRevisionNotNewerError);
+    });
+
+    it('persists explicit event binding through the existing save boundary under manual v2', async () => {
+        const writes: unknown[] = [];
+        firestore.runTransaction.mockImplementation(async (_db: unknown, updateFn: (t: unknown) => unknown) => updateFn({
+            get: vi.fn().mockResolvedValue({ exists: () => false }), set: vi.fn((_ref: unknown, value: unknown) => writes.push(value)),
+        }));
+        const authored = block({ eventBinding: { eventId: 'race', eventDate: '2027-07-01',
+            demandProfile: { aerobicEndurance: 0.8, thresholdPower: 0.8, vo2MaxPower: 0.7, repeatedSurges: 0.7, sprintPower: 0.3, fatigueResistance: 0.8, neuromuscular: 0.3 } } });
+        await new IntentBlockService().save(USER_ID, authored);
+        expect(writes[1]).toMatchObject({ sourceSchemaVersion: MANUAL_EVENT_DEVELOPMENT_SOURCE_SCHEMA_VERSION,
+            block: { eventBinding: authored.eventBinding } });
     });
 
     it('accepts a strictly newer revision, preserving the original createdAt', async () => {
@@ -293,6 +306,15 @@ describe('IntentBlockService.getActiveBlocksWithDiagnostics', () => {
         expect(result).toEqual({ blocks: [active], unreadableCount: 0, truncated: true });
         expect(firestore.limit).toHaveBeenCalledWith(3);
         expect(firestore.getDoc).toHaveBeenCalledTimes(4);
+    });
+
+    it('loads next-block context in a bounded range without marking it active today', async () => {
+        const future = block({ dateRange: { startDate: '2026-09-14', endDate: '2026-10-04' } });
+        firestore.getDocs.mockResolvedValue({ docs: [{ id: future.id }] });
+        await mockStoredBlocks([future]);
+        const service = new IntentBlockService();
+        expect((await service.getActiveBlocksWithDiagnostics(USER_ID, '2026-09-10')).blocks).toEqual([]);
+        expect((await service.getActiveBlocksWithDiagnostics(USER_ID, '2026-09-10', 20, '2026-09-17')).blocks).toEqual([future]);
     });
 
     it.each([

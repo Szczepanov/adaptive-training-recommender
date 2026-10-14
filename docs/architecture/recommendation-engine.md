@@ -13,6 +13,32 @@ How `app/src/engine/` turns a morning's data into a prescribed session.
 
 ## Two selection paths
 
+### Event-bound development before structured build (#927)
+
+`planningMode.ts` remains the sole date-local authority. A distant cycling target can select
+one explicitly event-bound, validated and reviewed `IntentBlock` as `development_block`.
+Its authored objectives feed the existing `resolveEvergreenPlan` evidence → dose → capacity
+→ exact packing pipeline; the event-relative Base label remains context. No matching safe
+block retains `evergreen_fallback` with typed diagnostics. Structured event/travel authority
+and the policy-owned final-build boundaries supersede development.
+
+`developmentAuthority.ts` maps cycling VO2/threshold, aerobic-volume minutes, strength
+sessions and embedded power/mechanical session counts. VO2 uses the exact existing 6×3
+prescription through `end_vo2_development_01`; the legacy `end_hard_02` still resolves to
+over-under work. Volume intent withholds generic quality. Health floors, athlete commitment,
+actual availability, clinical/readiness safety and existing capability evidence gates remain
+authoritative; insufficient capacity produces explicit shortfalls. Unsupported mappings,
+substitutions and units fall back without guessed conversion. Completion does not establish
+physiological success or follow-up tolerance.
+
+The Home boundary reads a bounded block sample spanning today, tomorrow and the forecast.
+Incomplete reads withhold development while readable confirmed progressions retain their
+existing date-local behavior. `decisionContext` pins the blocks used by the evaluation.
+`forecastAuthority` segments block identities/revisions and clips packing at their executable
+boundaries. Distinct development objective IDs and descriptor-scoped exact coverage prevent
+future leakage and duplicate authority at transitions. See ADR-0049 for the compatibility
+and authoring contract.
+
 A template can reach the athlete through **two distinct selection paths with different
 filtering rules** (distinct, not independent — Path B runs Path A internally for mode and
 envelopes, so the readiness computation is shared; only the *selection* differs). Any change here must be evaluated against both.

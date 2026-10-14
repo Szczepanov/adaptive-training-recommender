@@ -417,6 +417,8 @@ function packWeeklyDoseAttempt(
                 ).filter(candidate => candidate.role.id !== 'long_aerobic_anchor'
                     || !packed.some(occurrence => occurrence.coverageRoleId === 'long_aerobic_anchor'))
                     .filter(candidate => slot.availableMinutes >= candidate.role.durationMinutes)
+                    .filter(candidate => !requirement.knowledgeRefs.includes(KNOWLEDGE_CLAIM_IDS.developmentAuthorityPolicy)
+                        || delivered + doseFor(candidate.role, requirement) <= requirement.target.maximum)
                     .map(candidate => ({ ...candidate, slot })))
                 .sort((left, right) =>
                     // An active exact effective-date override represents a confirmed

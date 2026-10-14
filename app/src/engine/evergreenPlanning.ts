@@ -23,6 +23,9 @@ import {
 import { mechanicalIdentityFor, type MechanicalStage } from '../workouts/mechanicalExposure';
 import { executableLongAerobicCeilingForWorkout, resolveWeeklyAerobicDoseEnvelope } from './weeklyAerobicDose';
 import type { WeeklyAerobicDoseEnvelope } from './weeklyAerobicDose';
+import { applyDevelopmentDose, developmentAdaptation, revalidateDevelopmentEvidence } from './developmentAuthority';
+import { EVERGREEN_GENERAL_COVERAGE_SET } from '../workouts/event-plan';
+import { getDayDiff } from '../utils/localDate';
 
 export interface ResolvedEvergreenPlan {
     planDefinition: PlanDefinition;
@@ -206,6 +209,12 @@ export function resolveEvergreenPlan(
     mechanical: EvergreenMechanicalInputs = {},
 ): ResolvedEvergreenPlan | null {
     if (!usesEvergreenProgramming(planningContext) || !preferences) return null;
+    const stateEvidence = historySnapshot?.athleteStateEvidence;
+    const athleteEvidence = stateEvidence?.exposures ?? history;
+    const observedWindowDays = stateEvidence?.observedWindowDays ?? historySnapshot?.windowDays ?? 0;
+    planningContext = revalidateDevelopmentEvidence(planningContext, athleteEvidence, observedWindowDays, hasCurrentClinicalSymptoms);
+    const developmentBlock = planningContext.development?.block;
+    if (developmentBlock) days = Math.min(days, getDayDiff(planningContext.development?.executableEndDate ?? developmentBlock.dateRange.endDate, date) + 1);
     const resolvedWindows = Array.from({ length: Math.max(1, days) }, (_, index) => {
         const windowDate = addDaysToLocalDateString(date, index);
         const resolved = resolveAvailability(windowDate, null, [...fixedActivities], context, scheduleOverlays);
@@ -215,9 +224,6 @@ export function resolveEvergreenPlan(
     const capacity = resolveTrainingCapacity(planningContext.profile.weeklyCommitment, preferences, availability);
     const profile = planningContext.profile;
     const capabilityMaintenanceEnabled = profile.capabilityMaintenance?.enabled === true;
-    const stateEvidence = historySnapshot?.athleteStateEvidence;
-    const athleteEvidence = stateEvidence?.exposures ?? history;
-    const observedWindowDays = stateEvidence?.observedWindowDays ?? historySnapshot?.windowDays ?? 0;
     const athleteState = inferAthleteTrainingState(athleteEvidence, observedWindowDays);
     const mechanicalAthleteState = mechanical.exposureHistory && mechanical.observedWindowDays
         ? inferAthleteTrainingState(mechanical.exposureHistory, mechanical.observedWindowDays)
@@ -234,7 +240,19 @@ export function resolveEvergreenPlan(
     const goalOrEvent = {
         priorities: profile.priorities, isAdverseRecovery, hasCurrentClinicalSymptoms, phase, capabilityMaintenanceEnabled,
     };
-    const strategy = resolveEvidenceBackedStrategy(goalOrEvent, athleteState, weeklyAerobicDose, mechanicalAthleteState);
+    const ordinaryStrategy = resolveEvidenceBackedStrategy(goalOrEvent, athleteState, weeklyAerobicDose, mechanicalAthleteState);
+    const requestedGatedAdaptations = developmentBlock?.objectives.map(developmentAdaptation)
+        .filter(adaptation => adaptation === 'neuromuscular_power' || adaptation === 'mechanical_exposure' || adaptation === 'high_intensity') ?? [];
+    // Explicit intent uses the existing evidence gates without changing durable profile priorities.
+    const capabilityStrategy = requestedGatedAdaptations.length ? resolveEvidenceBackedStrategy({ ...goalOrEvent,
+        priorities: ['strength_muscle', 'speed_power'] }, athleteState, weeklyAerobicDose, mechanicalAthleteState) : null;
+    const baseStrategy = capabilityStrategy ? { ...ordinaryStrategy,
+        requirements: [...ordinaryStrategy.requirements, ...capabilityStrategy.requirements.filter(requirement =>
+            requestedGatedAdaptations.includes(requirement.adaptation as 'neuromuscular_power' | 'mechanical_exposure' | 'high_intensity')
+            && !ordinaryStrategy.requirements.some(existing => existing.adaptation === requirement.adaptation))],
+        warnings: [...ordinaryStrategy.warnings, ...capabilityStrategy.warnings.filter(warning =>
+            warning.code === 'power_exposure_withheld' || warning.code === 'mechanical_exposure_withheld')],
+    } : ordinaryStrategy;
     const longAnchorEligible = planningContext.profile.priorities.some(priority =>
         priority === 'endurance' || priority === 'sport_readiness')
         && (phase.phaseName === 'Build' || phase.phaseName === 'Specificity')
@@ -263,7 +281,11 @@ export function resolveEvergreenPlan(
         new Set(context.constraints.impliedGuardrails ?? []),
         optInTargetStage,
     );
-    const packed = packWeeklyDose(strategy, capacity, aerobicPacking.descriptor, progressionOverrides, date);
+    const developmentDose = developmentBlock
+        ? applyDevelopmentDose(developmentBlock, baseStrategy, aerobicPacking.descriptor, isAdverseRecovery, hasCurrentClinicalSymptoms)
+        : { strategy: baseStrategy, descriptor: aerobicPacking.descriptor };
+    const strategy = developmentDose.strategy;
+    const packed = packWeeklyDose(strategy, capacity, developmentDose.descriptor, progressionOverrides, date);
     const budget: WeeklyBudget = aerobicPacking.shortfall
         ? { ...packed, shortfalls: [...packed.shortfalls, aerobicPacking.shortfall] }
         : packed;
@@ -298,16 +320,43 @@ export function resolveEvergreenPlan(
         capability?.result.placements ?? [],
     );
     if (result.status !== 'AVAILABLE') return null;
+    const planDefinition = developmentBlock ? {
+        ...result.data, id: `development:${developmentBlock.id}@${developmentBlock.revision}`, eventId: planningContext.focusEvent!.id,
+        developmentBlock,
+        blocks: result.data.blocks.map(block => ({ ...block, id: `development:${developmentBlock.id}@${developmentBlock.revision}`,
+            startDate: developmentBlock.dateRange.startDate, endDate: addDaysToLocalDateString(date, Math.max(0, days - 1)) })),
+        objectives: result.data.objectives.map(objective => {
+            const authored = developmentBlock.objectives.find(item => item.coverageKey === objective.coverageKey);
+            return authored ? { ...objective, blockId: `development:${developmentBlock.id}@${developmentBlock.revision}`, key: authored.adaptationScope, priority: authored.priority,
+                role: authored.intent === 'develop' ? 'primary_developmental' as const : 'secondary_support' as const,
+                ...(authored.intent === 'maintain' ? { reservationTier: 'support' as const } : {}) }
+                : { ...objective, blockId: `development:${developmentBlock.id}@${developmentBlock.revision}` };
+        }),
+        coverageOverrides: developmentBlock.objectives.flatMap(objective => {
+            const role = developmentDose.descriptor.roles.find(item => item.id === objective.coverageKey);
+            const definition = EVERGREEN_GENERAL_COVERAGE_SET.coverage.find(item => item.key === objective.coverageKey);
+            return role && definition ? [{ ...definition, workoutIds: [...role.exactWorkoutIds] }] : [];
+        }),
+        coverageRequirements: result.data.coverageRequirements?.map(requirement => {
+            const authored = developmentBlock.objectives.find(objective => developmentAdaptation(objective)
+                && objective.coverageKey === requirement.coverageKey);
+            return authored ? { ...requirement, blockId: `development:${developmentBlock.id}@${developmentBlock.revision}`, priority: authored.priority,
+                ...(authored.intent === 'maintain' ? { reservationTier: 'support' as const } : {}) }
+                : { ...requirement, blockId: `development:${developmentBlock.id}@${developmentBlock.revision}` };
+        }),
+    } : result.data;
     const qualityRolePacked = [...budget.requiredRoles, ...budget.targetRoles, ...budget.optionalRoles]
         .some(role => role.coverageRoleId === 'sustained_quality');
     return {
-        planDefinition: result.data,
-        microcycle: buildMicrocycleState(phase, addDaysToLocalDateString(date, -7), [...history], null, result.data, date),
+        planDefinition,
+        microcycle: buildMicrocycleState(phase, addDaysToLocalDateString(date, -7),
+            history.filter(exposure => !developmentBlock || exposure.date >= developmentBlock.dateRange.startDate), null, planDefinition, date),
         budget,
         mechanicalProgression,
         capabilityMaintenance: capability?.result ?? null,
         warnings: [...strategy.warnings, ...(capability?.warnings ?? [])],
         knowledgeRefs: [...new Set([
+            ...(planningContext.development ? [KNOWLEDGE_CLAIM_IDS.developmentAuthorityPolicy] : []),
             ...strategy.requirements.flatMap(requirement => requirement.knowledgeRefs),
             ...(weeklyAerobicDose.source === 'athlete_history' ? [KNOWLEDGE_CLAIM_IDS.weeklyAerobicDoseEnvelopePolicy] : []),
             ...(qualityRolePacked ? [KNOWLEDGE_CLAIM_IDS.evergreenQualitySetComposition] : []),

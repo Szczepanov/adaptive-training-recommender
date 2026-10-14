@@ -79,6 +79,8 @@ export interface PlanDefinition {
   blocks: PlanBlock[];
   objectives: PlanObjectiveDefinition[];
   sequencingRules: SequencingRule[];
+  developmentBlock?: import('./blockIntent').IntentBlock;
+  coverageOverrides?: PlanSessionCoverage[];
   /** Absent for plans without coverage-only capability requirements. */
   coverageRequirements?: PlanCoverageRequirementDefinition[];
   /** Issue #928: The resolved event phase horizon policy that governed this plan. */

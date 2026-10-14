@@ -52,6 +52,7 @@ import { TrainingIntentProfileService, trainingIntentProfileService } from './tr
  * is fixed at 1. This keeps the schema honest (it never claims a source plan that doesn't
  * exist) rather than fabricating a plausible-looking but meaningless external identity. */
 export const MANUAL_INTENT_BLOCK_SOURCE_SCHEMA_VERSION = 'manual-intent-block-v1';
+export const MANUAL_EVENT_DEVELOPMENT_SOURCE_SCHEMA_VERSION = 'manual-intent-block-v2';
 
 export function manualIntentBlockSourceIdentity(blockId: string): { sourcePlanId: string; sourcePlanRevision: number } {
     return { sourcePlanId: blockId, sourcePlanRevision: 1 };
@@ -258,6 +259,7 @@ export class IntentBlockService {
         userId: string,
         date: string,
         maxBlocks = 20,
+        endDate = date,
     ): Promise<{ blocks: IntentBlock[]; unreadableCount: number; truncated: boolean }> {
         if (!Number.isSafeInteger(maxBlocks) || maxBlocks <= 0 || maxBlocks >= Number.MAX_SAFE_INTEGER) {
             throw new RangeError('maxBlocks must be a positive safe integer with room for a truncation sentinel');
@@ -275,7 +277,7 @@ export class IntentBlockService {
         }));
         return {
             blocks: sampledBlocks.filter((block): block is IntentBlock =>
-                block !== null && date >= block.dateRange.startDate && date <= block.dateRange.endDate),
+                block !== null && block.dateRange.startDate <= endDate && date <= block.dateRange.endDate),
             unreadableCount: sampledBlocks.filter(block => block === null).length,
             truncated: snapshot.docs.length > maxBlocks,
         };
@@ -348,7 +350,8 @@ export class IntentBlockService {
         if (!validation.valid) throw new IntentBlockValidationFailedError(validation.issues);
 
         const pinnedProfile = await resolvePinnedProfile(userId, new TrainingIntentProfileService(this.db));
-        const sourceSchemaVersion = options.sourceSchemaVersion ?? MANUAL_INTENT_BLOCK_SOURCE_SCHEMA_VERSION;
+        const sourceSchemaVersion = options.sourceSchemaVersion
+            ?? (block.eventBinding ? MANUAL_EVENT_DEVELOPMENT_SOURCE_SCHEMA_VERSION : MANUAL_INTENT_BLOCK_SOURCE_SCHEMA_VERSION);
         const sourceRef = options.sourceRef ?? null;
         const payload = buildTreatmentIntentReplayPayloadV1(
             block, { ...pinnedProfile, priorities: [...pinnedProfile.priorities] }, sourceSchemaVersion, sourceRef ?? undefined,

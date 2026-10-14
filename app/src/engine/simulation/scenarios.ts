@@ -30,6 +30,7 @@ import { makeThreshold3x17Exposure } from './deliveredDoseScenarios';
  * gets both without being defined twice.
  */
 export interface AthleteScenario {
+    intentBlocks?: readonly import('../blockIntent').IntentBlock[];
     id: string;
     label: string;
     description: string;
@@ -330,6 +331,29 @@ function capabilityMaintenanceScenario(optedIn: boolean): AthleteScenario {
         readinessForWeek: () => stableReadiness({ readiness: 7, fatigue: 3, soreness: 3 }),
     };
 }
+
+const developmentTarget = eventOn('long-horizon-road-race', 300, 'cycling_event', 'road_race', 'A');
+export const LONG_HORIZON_DEVELOPMENT_SCENARIO: AthleteScenario = {
+    id: 'long_horizon_development_blocks', label: 'Long-horizon authored development blocks',
+    description: 'A cycling A target begins 300 days away; successive VO2, productive volume and strength-maintenance blocks own Base-phase intent without future leakage.',
+    event: developmentTarget, context: context({ indoor_bike: true, free_weights: true }, ['Cycling', 'Strength'], [], { weekdayMaxMinutes: 90, weekendMaxMinutes: 120 }),
+    preferences: preferences(90, 120), trainingIntentProfile: { ...evergreenProfile(['endurance', 'strength_muscle'],
+        { minSessions: 6, targetSessions: 6, maxSessions: 7 }), planningMode: 'event_directed' },
+    startDate: START_DATE, weeks: 8, readinessForWeek: () => stableReadiness(),
+    initialHistory: capabilityReadyHistory(),
+    intentBlocks: (['vo2_max', 'zone2_aerobic', 'strength_maintenance'] as const).map((scope, index) => ({
+        id: `development-${scope}`, revision: 1, sourcePlanId: `manual:development-${scope}`, sourcePlanRevision: 1,
+        eventBinding: { eventId: developmentTarget.id, eventDate: developmentTarget.date, demandProfile: developmentTarget.demandProfile },
+        dateRange: { startDate: addDaysToLocalDateString(START_DATE, index * 14), endDate: addDaysToLocalDateString(START_DATE, index === 2 ? 55 : index * 14 + 13) },
+        reviewSchedule: { reviewCadenceDays: index === 2 ? 28 : 14, nextReviewDate: addDaysToLocalDateString(START_DATE, index === 2 ? 55 : index * 14 + 13) },
+        objectives: [{ id: scope, adaptationScope: scope, sport: scope === 'strength_maintenance' ? 'strength' : 'cycling',
+            coverageKey: scope === 'vo2_max' ? 'sustained_quality' : scope === 'zone2_aerobic' ? 'aerobic_volume' : 'primary_strength',
+            intent: scope === 'strength_maintenance' ? 'maintain' : 'develop', priority: 'must_have',
+            doseEnvelope: scope === 'zone2_aerobic' ? { min: 180, target: 240, max: 300, unit: 'minutes', floorSemantics: 'hard_floor' }
+                : { min: 1, target: scope === 'vo2_max' ? 1 : 2, max: 2, unit: 'sessions', floorSemantics: 'hard_floor' },
+            knowledgeLineage: ['policy.periodization.development_authority_v1'], successCriteria: { minCompletedExposures: 2 } }],
+    })),
+};
 
 export const SCENARIOS: AthleteScenario[] = [
     {
@@ -867,3 +891,5 @@ export const SCENARIOS: AthleteScenario[] = [
         readinessForWeek: () => stableReadiness({ readiness: 8, sleepQuality: 8, fatigue: 2, soreness: 2, stress: 2, motivation: 8 }),
     },
 ];
+
+SCENARIOS.push(LONG_HORIZON_DEVELOPMENT_SCENARIO);

@@ -111,6 +111,7 @@ import {
 import './Home.css';
 
 import type { Screen } from '../types/navigation';
+import type { IntentBlock } from '../engine/blockIntent';
 
 interface HomeProps {
   userId: string;
@@ -139,8 +140,10 @@ function verifySessionBindingReplay(userId: string, saved: DailyRecommendation |
  * hide an otherwise valid current-day decision.
  */
 export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabilityMaintenanceResolved }: HomeProps) {
+  const WEEK_AHEAD_DAYS = 7;
   const [decisionInput, setDecisionInput] = useState<ComposedDailyDecisionInput | null>(null);
   const [recommendation, setRecommendation] = useState<Recommendation | null>(null);
+  const [intentBlocks, setIntentBlocks] = useState<readonly IntentBlock[]>([]);
   const [decisionContextCapture, setDecisionContextCapture] = useState<{
     evaluatedAt: string;
     evaluatorInputs: SameDayRecommendationInputs;
@@ -424,7 +427,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
         yesterdaySnapState,
         todayAndTomorrowFixedActivities,
         todayAndTomorrowPlanBlocks,
-        activeIntentBlocks,
+        intentBlockRead,
         loadedOverrides,
         activitiesState,
       ] = await Promise.all([
@@ -454,21 +457,24 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
         // below to derive per-role duration overrides for evergreen selection. A read
         // failure here must never block today's recommendation -- it just means no
         // confirmed progression affects today's selection.
-        intentBlockService.getActiveBlocks(userId, input.date)
+        intentBlockService.getActiveBlocksWithDiagnostics(userId, input.date, 20, addDaysToLocalDateString(input.date, WEEK_AHEAD_DAYS + 7))
           .then(state => {
-            if (state.status === 'AVAILABLE') return state.data;
-            if (state.status !== 'MISSING') console.warn(`Failed to load confirmed intent blocks: ${state.status}`);
-            return [];
+            const complete = !state.truncated && state.unreadableCount === 0;
+            if (!complete) console.warn('Intent-block read incomplete; development authority withheld.');
+            return { blocks: state.blocks, complete };
           })
           .catch(err => {
             console.warn('Failed to load confirmed intent blocks:', err);
-            return [];
+            return { blocks: [], complete: false };
           }),
         activityOverrideService.getAllOverrides(userId).catch(() => ({})),
         activityService.getActivitiesInRange(userId, addDaysToLocalDateString(input.date, -6), addDaysToLocalDateString(input.date, 1)).catch(() => ({ status: 'MISSING' as const })),
       ]);
 
       if (!isCurrent()) return;
+      const activeIntentBlocks = intentBlockRead.blocks;
+      const developmentIntentBlocks = intentBlockRead.complete ? activeIntentBlocks : [];
+      setIntentBlocks(developmentIntentBlocks);
 
       const { overrides: confirmedProgressionOverrides, unsupported: unsupportedProgressionObjectives } =
         deriveDurationOverridesForDate(activeIntentBlocks, input.date);
@@ -653,7 +659,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
         };
 
         const mechanicalCheckinHistory = input.preferences
-          && mechanicalEvidenceRequiredFor(input.trainingIntentProfile, events, input.date)
+          && mechanicalEvidenceRequiredFor(input.trainingIntentProfile, events, input.date, todayAndTomorrowPlanBlocks, developmentIntentBlocks)
           ? await resolveMechanicalCheckinHistory(userId, input.date)
           : [];
         const evaluatedAt = new Date().toISOString();
@@ -678,6 +684,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
           externalRest: externalRestContext,
           scheduleOverlays: input.scheduleOverlays,
           confirmedProgressionOverrides,
+          intentBlocks: developmentIntentBlocks,
           mechanicalCheckinHistory,
         };
         const baseRecommendation = await evaluateSameDayRecommendation(evaluatorInputs);
@@ -1003,7 +1010,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
           () => evaluateNextDayPlanWithIntent(
             userId, events, { subjective, objective }, forecastContext, input.date, todayRec, undefined, preparedSnapshot,
             todayAndTomorrowFixedActivities, todayAndTomorrowPlanBlocks, input.trainingIntentProfile, input.preferences,
-            'max', undefined, undefined, input.scheduleOverlays,
+            'max', undefined, undefined, input.scheduleOverlays, mechanicalCheckinHistory, developmentIntentBlocks,
           ),
         );
         if (!isCurrent()) return;
@@ -1393,7 +1400,6 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
     ).mode;
   }, [decisionInput, eventPeriodization]);
 
-  const WEEK_AHEAD_DAYS = 7;
 
   const [fixedActivitiesState, setFixedActivitiesState] = useState<DataState<FixedActivity[]>>({ status: 'AVAILABLE', data: [], revision: null });
   useEffect(() => {
@@ -1467,7 +1473,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
       // override is date-scoped to a single day, but week-ahead packs the whole horizon in
       // one call. Progression influence is scoped to same-day planning until the packer has
       // a date-scoped resolver (see the same-day evaluateTrainingWithIntent call above).
-      { days: WEEK_AHEAD_DAYS, fixedActivities, authoredPlanBlocks, scheduleOverlays: decisionInput.scheduleOverlays },
+      { days: WEEK_AHEAD_DAYS, fixedActivities, authoredPlanBlocks, scheduleOverlays: decisionInput.scheduleOverlays, intentBlocks },
       undefined,
       historySnapshot,
       decisionInput.trainingIntentProfile,
@@ -1480,7 +1486,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
       }
     });
     return () => { cancelled = true; };
-  }, [userId, forecastEngineInputs, decisionInput, activeRec, canGenerateNormalPlan, nextDayPlan, selectedNextDayTier, eventPeriodization, historySnapshot, fixedActivitiesState, fixedActivities, planBlocksState, authoredPlanBlocks]);
+  }, [userId, forecastEngineInputs, decisionInput, activeRec, canGenerateNormalPlan, nextDayPlan, selectedNextDayTier, eventPeriodization, historySnapshot, fixedActivitiesState, fixedActivities, planBlocksState, authoredPlanBlocks, intentBlocks]);
 
   if (loading) {
     return (
