@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | **In progress** — WP0–WP5 implemented; WP6–WP7 remain |
+| **Status** | **In progress** — WP0–WP6 implemented; WP7 remains |
 | **Source** | [Issue #895](https://github.com/Szczepanov/adaptive-training-recommender/issues/895) |
 | **Baseline** | `origin/main` at `e63517a7` (fetch 2026-09-29; includes #901, #910, #911, #912, #913, #914). The local checkout at plan-writing time was behind by 4 commits; all findings below were verified against the fetched tip (`git show FETCH_HEAD:<path>`), not the stale worktree. |
 | **Blocked by** | No code blocker for WP5; it reuses the implemented diary and reconciliation harness. Per-item dependencies are listed below. |
@@ -13,7 +13,7 @@
 
 Make the structured SessionRunner the lossless, resumable, auditable source of truth for performed session semantics, with Garmin/provider activities attached as secondary measurement evidence for the same physical occurrence.
 
-The 2026-09-29 audit identified durable entry, correction and rest-write gaps. WP1 now batches diary targets, immutable audit records and execution touches into the SDK persistent-cache queue. Tombstones and durable receipts retain deletion and rejected intent across reload. Lifecycle and exact prescription resume are delivered by WP2/WP3. WP4 adds transactional source refresh and real arrival-order convergence proofs. WP5 adds the named failure-state diagnostics and export. The per-consumer double-count inventory and closure remain with WP6–WP7.
+The 2026-09-29 audit identified durable entry, correction and rest-write gaps. WP1 now batches diary targets, immutable audit records and execution touches into the SDK persistent-cache queue. Tombstones and durable receipts retain deletion and rejected intent across reload. Lifecycle and exact prescription resume are delivered by WP2/WP3. WP4 adds transactional source refresh and real arrival-order convergence proofs. WP5 adds the named failure-state diagnostics and export. WP6 adds the per-consumer double-count inventory and proofs for the consumers already under canonical authority; governance and closure remain with WP7.
 
 ## 2. Non-goals
 
@@ -204,19 +204,48 @@ WP5–WP7 and related #723/#724/#896 remain separate; #952 is already closed.
 
 ## WP6 — Per-consumer double-count closure
 
-**Status:** Not started
-**Blocked by:** WP4 (identity must converge first)
-**Purpose:** satisfy the #895 double-count criterion for each consumer already under canonical authority, without a big-bang migration.
+**Status:** Implemented — inventory test `engine/tests/perConsumerDoubleCountInventory.test.ts` and the architecture table in `docs/architecture/session-execution.md`; no defect found, no behavior change, `POLICY_VERSION` unchanged
+**Blocked by:** None remaining (WP4 identity convergence shipped as #1046; WP5 vocabulary shipped as #1053/#1054)
+**Unlocks:** #813 (lower-body / physical-capital ledgers) and WP7
+**Purpose:** satisfy the #895 double-count criterion for each consumer already under canonical authority, without a big-bang migration. Tests plus a labeled inventory; no behavior change is expected.
+
+### Handoff for the implementing agent
+
+Read first: `AGENTS.md`, `CLAUDE.md` (invariants I1-I6), this plan sections 3-4 (decisions D5, D6), `docs/architecture/session-execution.md`, ADR-0034. Use symbols, never line numbers, in any doc or commit text. Verify every row below against current source before writing a test; the inventory was assembled from a grep, not from a full read.
+
+**Consumer inventory to confirm (one row per consumer, authority = canonical or legacy):**
+
+| Consumer | Entry symbol (verify) | Expected authority | Proof to add or locate |
+|---|---|---|---|
+| Weekly coverage credit | `coverage.ts` `resolveCoverageHistory` / `coverageHistoryFromFacts`; callers `rules.ts`, `optimizer.ts`, `planner.ts` | canonical when `performedTrainingFacts` is supplied (even empty); legacy fallback only when null/undefined | existing `engine/tests/canonicalCoverageCreditCutover.test.ts` ("app+Garmin exact full-body -> one credit, not two", arrival-order test); confirm it also covers a late provider update to a revision already credited |
+| Planning / diagnostic brief table | `contextBrief.ts` `renderCanonicalTrainingTable`, `contextBriefActivityTelemetry.ts`, `contextBriefExposureLedger.ts` | canonical, with explicit raw-provenance fallback | one occurrence renders once, Totals use canonical facts, the `Provider-count note` appears on a raw/canonical mismatch; two same-day genuine workouts stay two rows |
+| Response summary path (#914) | `contextBriefResponseSummary.ts` (`contextBriefResponseSummary`), `contextBriefResponseFeatures.ts` | canonical occurrence evidence with `provider_fallback` identity level when unreconciled | must be in the inventory per the #895 related-issues note; prove structured+Garmin does not yield two response summaries; reuse the WP5 / #914 source-completeness vocabulary, do not invent states |
+| Reserved-identity hydration (#917) | the hydration path named in `contextBriefResponseArchitecture.test.ts` | fail-closed on unsupported identity | add to inventory; existing architecture test may already prove it, so reference it rather than duplicate |
+| Daily ledger | `dailyLedger.ts` `dedupeByOccurrence`, inputs in `intradayLedgerInputs.ts` | keyed by `occurrenceId`, highest `revision` wins | confirm the `occurrenceId` fed in is the canonical occurrence id, not a per-source id; if a per-source id can reach it, that is a real defect, so file it and flag it, do not silently patch |
+| Broad history, fatigue, objective, microcycle, morning D-1 (`completedTraining.ts`, `trainingHistorySnapshot.ts`) | live pipeline | legacy / dual-authority | NOT migrated and out of scope. Record as residual, monitored by `training-occurrence/historyShadowDiff.ts` and `computeHistoryShadowDiffForUser`. Label them; do not assert canonical |
 
 ### Changes
 
-- Inventory with tests: coverage (`resolveCoverageHistory`), planning/diagnostic brief (`renderCanonicalTrainingTable`), ledger (`dedupeByOccurrence`) — each proves one occurrence renders/counts once with structured + provider attached.
-- Explicitly out of scope (TO-owned): broad history, fatigue/objective/microcycle, morning D-1 — recorded as residual dual-authority monitored by `historyShadowDiff`, not silently claimed.
+1. Add a single inventory test (suggested `app/src/engine/tests/perConsumerDoubleCountInventory.test.ts`) that builds ONE shared structured-execution + matched-Garmin fixture, runs it through each migrated consumer, and asserts each counts/renders the occurrence once. Reuse fixtures from `canonicalCoverageCreditCutover.test.ts` and the `training-occurrence` fixtures; no live APIs.
+2. Per consumer also assert: (a) provider-first and structured-first arrival give the same result; (b) two genuine same-day sessions remain two; (c) an ambiguous or unreconciled pair is not silently collapsed (prefer false negatives, D5).
+3. Add the inventory table (consumer, authority, proof test, status) to `docs/architecture/session-execution.md` or the occurrence architecture doc, with the unmigrated consumers explicitly labeled legacy.
+4. If a consumer double-counts, fix it at the narrowest layer with a failing test first. A fix that can change a recommendation needs the I4/I5 checks (knowledge coverage, `POLICY_VERSION` bump plus `HISTORICAL_POLICY_VERSIONS`, `node scripts/check-policy-drift.mjs <base-sha>` from `app/`). Otherwise this package must leave `POLICY_VERSION` unchanged.
+
+### Do not
+
+- migrate broad history, fatigue, microcycle or morning D-1 (TO-owned, gated by #872);
+- add a new write path, outbox or telemetry schema;
+- tick #895 acceptance boxes from a label alone; tick the double-count box only if every migrated row has a passing proof.
+
+### Verification
+
+`cd app && npx vitest run src/engine/tests src/training-occurrence src/engine/contextBrief*` while iterating, then `make verify`. If the change is test and docs only, state that. If any engine behavior changed, also run `make simulate` and `cd app && npm run simulate:plan-judge`. Report commands, exit codes and anything skipped.
 
 ### Acceptance
 
 - No migrated consumer double-counts structured + provider records for one occurrence;
-- unmigrated consumers are labeled, not asserted canonical.
+- unmigrated consumers are labeled, not asserted canonical;
+- the inventory table is in the architecture docs and every row cites a passing test.
 
 ---
 
