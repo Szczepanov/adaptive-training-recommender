@@ -420,6 +420,8 @@ describe('training-history persistence parsers', () => {
             ['too long attemptedAt', { exerciseSets: { status: 'failed', attemptedAt: `2026-08-26T08:00:00.${'0'.repeat(60)}Z` } }],
             ['non-date attemptedAt', { exerciseSets: { status: 'failed', attemptedAt: 'not-a-date-at-all' } }],
             ['impossible date attemptedAt', { exerciseSets: { status: 'failed', attemptedAt: '2026-13-45T99:00:00Z' } }],
+            ['rolled-over calendar day attemptedAt', { exerciseSets: { status: 'failed', attemptedAt: '2026-02-30T08:00:00Z' } }],
+            ['non-leap Feb 29 attemptedAt', { exerciseSets: { status: 'failed', attemptedAt: '2027-02-29T08:00:00Z' } }],
             ['non-string attemptedAt', { exerciseSets: { status: 'failed', attemptedAt: 5 } }],
             ['non-object exerciseSets', { exerciseSets: 'failed' }],
             ['non-object detailStatus', 'failed'],

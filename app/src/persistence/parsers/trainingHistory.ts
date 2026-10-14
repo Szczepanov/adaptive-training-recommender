@@ -197,10 +197,21 @@ function parseExerciseSets(value: unknown): NormalizedGarminActivity['exerciseSe
 const MAX_INSTANT_LENGTH = 40;
 const ISO_INSTANT_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/;
 
+// Date.parse rolls impossible calendar days (e.g. 2026-02-30) over to the next month, so the
+// calendar-day component is verified separately.
+function hasRealCalendarDay(value: string): boolean {
+    const year = Number(value.slice(0, 4));
+    const month = Number(value.slice(5, 7));
+    const day = Number(value.slice(8, 10));
+    const probe = new Date(Date.UTC(year, month - 1, day));
+    return probe.getUTCFullYear() === year && probe.getUTCMonth() === month - 1 && probe.getUTCDate() === day;
+}
+
 function isBoundedInstant(value: unknown): value is string {
     return typeof value === 'string'
         && value.length <= MAX_INSTANT_LENGTH
         && ISO_INSTANT_PATTERN.test(value)
+        && hasRealCalendarDay(value)
         && !Number.isNaN(Date.parse(value));
 }
 
