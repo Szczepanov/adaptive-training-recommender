@@ -44,6 +44,34 @@ GARMIN_ACTIVITY_TYPE_KEYWORDS: dict[str, list[str]] = {
 }
 
 
+def _batch_get_docs(db: Any, doc_refs: list[Any]) -> dict[str, Any]:
+    """Fetch document snapshots for a list of document references in chunks of 400.
+
+    Uses ``db.get_all(chunk)`` if available, falling back to individual ``.get()`` calls.
+    Returns a mapping of document ID to snapshot.
+    """
+    if not doc_refs:
+        return {}
+
+    snapshots_by_id: dict[str, Any] = {}
+    chunk_size = 400
+    for i in range(0, len(doc_refs), chunk_size):
+        chunk = doc_refs[i : i + chunk_size]
+        get_all_fn = getattr(db, "get_all", None)
+        if callable(get_all_fn):
+            try:
+                for snap in get_all_fn(chunk):
+                    snapshots_by_id[snap.id] = snap
+            except Exception:
+                for ref in chunk:
+                    snapshots_by_id[ref.id] = ref.get()
+        else:
+            for ref in chunk:
+                snapshots_by_id[ref.id] = ref.get()
+
+    return snapshots_by_id
+
+
 def provider_activity_source_key(provider: str, activity_id: str) -> str:
     """Return canonical source key matching ``sourceIdentity.ts``."""
     normalized_provider = provider.strip().lower()
@@ -225,7 +253,11 @@ def plan_training_occurrence_backfill(
     activities.sort(key=lambda a: (str(a["data"].get("date", "")), a["id"]))
     plan.activities_scanned = len(activities)
 
-    # 1. Inspect existing source links for each activity
+    # Parse activities and construct document references for batch retrieval
+    valid_activities: list[tuple[dict[str, Any], str, str, str, str, Any]] = []
+    link_refs: list[Any] = []
+    link_ref_by_doc_id: dict[str, Any] = {}
+
     for act in activities:
         act_data = act["data"]
         raw_act_id = act_data.get("activityId") or act["id"]
@@ -251,9 +283,51 @@ def plan_training_occurrence_backfill(
         source_key = provider_activity_source_key("garmin", activity_id)
         doc_id = encode_source_key_for_doc_id(source_key)
         link_ref = user_ref.collection("performedOccurrenceSourceLinks").document(doc_id)
-        link_snap = link_ref.get()
+        if doc_id not in link_ref_by_doc_id:
+            link_ref_by_doc_id[doc_id] = link_ref
+            link_refs.append(link_ref)
 
-        if link_snap.exists:
+        valid_activities.append(
+            (act_data, activity_id, activity_date, source_key, doc_id, link_ref)
+        )
+
+    link_snaps_by_id = _batch_get_docs(db, link_refs)
+
+    # Pre-collect target occurrence IDs for batch retrieval
+    occ_refs: list[Any] = []
+    occ_ref_by_id: dict[str, Any] = {}
+
+    for (
+        _act_data,
+        _activity_id,
+        _activity_date,
+        _source_key,
+        doc_id,
+        _link_ref,
+    ) in valid_activities:
+        link_snap = link_snaps_by_id.get(doc_id)
+        if link_snap and link_snap.exists:
+            link_data = link_snap.to_dict() or {}
+            occ_id = str(link_data.get("performedOccurrenceId") or "")
+            if occ_id and occ_id not in occ_ref_by_id:
+                occ_ref = user_ref.collection("performedTrainingOccurrences").document(occ_id)
+                occ_ref_by_id[occ_id] = occ_ref
+                occ_refs.append(occ_ref)
+
+    occ_snaps_by_id = _batch_get_docs(db, occ_refs)
+
+    # 1. Inspect existing source links for each activity
+    for (
+        act_data,
+        activity_id,
+        activity_date,
+        source_key,
+        doc_id,
+        _link_ref,
+    ) in valid_activities:
+        link_snap = link_snaps_by_id.get(doc_id)
+
+        if link_snap and link_snap.exists:
             link_data = link_snap.to_dict() or {}
             # Mirror the canonical source-link boundary closely enough to fail closed on
             # corruption before a migration writes anything. The TypeScript repository
@@ -261,7 +335,8 @@ def plan_training_occurrence_backfill(
             # never be interpreted as a harmless "already linked" record.
             stored_key = link_data.get("sourceKey")
             stored_user = link_data.get("userId")
-            occ_id = link_data.get("performedOccurrenceId")
+            occ_id_raw = link_data.get("performedOccurrenceId")
+            occ_id_str = str(occ_id_raw) if occ_id_raw is not None else None
 
             if stored_key != source_key:
                 plan.anomalies.append(
@@ -270,7 +345,7 @@ def plan_training_occurrence_backfill(
                         message=f"Source link key mismatch: expected {source_key}, found {stored_key}",
                         activity_id=activity_id,
                         source_key=source_key,
-                        occurrence_id=occ_id,
+                        occurrence_id=occ_id_str,
                     )
                 )
                 continue
@@ -281,11 +356,11 @@ def plan_training_occurrence_backfill(
                         message=f"Source link user mismatch: expected {user_id}, found {stored_user}",
                         activity_id=activity_id,
                         source_key=source_key,
-                        occurrence_id=occ_id,
+                        occurrence_id=occ_id_str,
                     )
                 )
                 continue
-            if not occ_id:
+            if not occ_id_raw:
                 plan.anomalies.append(
                     BackfillAnomaly(
                         anomaly_type="dangling_source_link",
@@ -296,17 +371,15 @@ def plan_training_occurrence_backfill(
                 )
                 continue
 
-            occ_snap = (
-                user_ref.collection("performedTrainingOccurrences").document(str(occ_id)).get()
-            )
-            if not occ_snap.exists:
+            occ_snap = occ_snaps_by_id.get(str(occ_id_raw))
+            if not occ_snap or not occ_snap.exists:
                 plan.anomalies.append(
                     BackfillAnomaly(
                         anomaly_type="dangling_source_link",
-                        message=f"Target occurrence {occ_id} referenced by source link does not exist",
+                        message=f"Target occurrence {occ_id_raw} referenced by source link does not exist",
                         activity_id=activity_id,
                         source_key=source_key,
-                        occurrence_id=occ_id,
+                        occurrence_id=occ_id_str,
                     )
                 )
                 continue
@@ -396,7 +469,7 @@ def plan_training_occurrence_backfill(
     # have exactly one source-link claim and that claim must point back to the active
     # occurrence carrying the ref. This mirrors ADR-0034's source-uniqueness primitive
     # and catches corrupt/duplicate ownership before any migration write occurs.
-    occ_stream = (
+    occ_snapshots = list(
         user_ref.collection("performedTrainingOccurrences")
         .where(filter=FieldFilter("localDate", ">=", start_date))
         .where(filter=FieldFilter("localDate", "<=", end_date_inclusive))
@@ -405,7 +478,11 @@ def plan_training_occurrence_backfill(
     )
 
     active_occurrence_ids_for_source: dict[str, list[str]] = {}
-    for occ_snap in occ_stream:
+    preflight_ref_links: list[Any] = []
+    preflight_ref_link_by_doc_id: dict[str, Any] = {}
+    occ_ref_items: list[tuple[Any, str, str, str, str]] = []
+
+    for occ_snap in occ_snapshots:
         occ_data = occ_snap.to_dict() or {}
         refs = occ_data.get("sourceRefs")
         if not isinstance(refs, list):
@@ -448,56 +525,66 @@ def plan_training_occurrence_backfill(
             ref_key = provider_activity_source_key("garmin", ref_act_id)
             active_occurrence_ids_for_source.setdefault(ref_key, []).append(occ_snap.id)
             ref_doc_id = encode_source_key_for_doc_id(ref_key)
-            ref_link_snap = (
-                user_ref.collection("performedOccurrenceSourceLinks").document(ref_doc_id).get()
+            ref_link_ref = user_ref.collection("performedOccurrenceSourceLinks").document(
+                ref_doc_id
             )
-            if not ref_link_snap.exists:
-                plan.anomalies.append(
-                    BackfillAnomaly(
-                        anomaly_type="source_ref_without_source_link",
-                        message=(
-                            f"Active occurrence {occ_snap.id} contains Garmin source ref {ref_act_id} "
-                            "without a corresponding source-link document"
-                        ),
-                        activity_id=ref_act_id,
-                        source_key=ref_key,
-                        occurrence_id=occ_snap.id,
-                    )
-                )
-                continue
+            if ref_doc_id not in preflight_ref_link_by_doc_id:
+                preflight_ref_link_by_doc_id[ref_doc_id] = ref_link_ref
+                preflight_ref_links.append(ref_link_ref)
 
-            ref_link_data = ref_link_snap.to_dict() or {}
-            if (
-                ref_link_data.get("schemaVersion") != 1
-                or ref_link_data.get("sourceKey") != ref_key
-                or ref_link_data.get("sourceKind") != "provider_activity"
-                or ref_link_data.get("userId") != user_id
-            ):
-                plan.anomalies.append(
-                    BackfillAnomaly(
-                        anomaly_type="invalid_source_link",
-                        message=f"Source link claim for {ref_key} is malformed or owned by another user",
-                        activity_id=ref_act_id,
-                        source_key=ref_key,
-                        occurrence_id=occ_snap.id,
-                    )
-                )
-                continue
+            occ_ref_items.append((occ_snap, ref_act_id, ref_key, ref_doc_id, ref_link_ref))
 
-            linked_occurrence_id = str(ref_link_data.get("performedOccurrenceId") or "")
-            if linked_occurrence_id != occ_snap.id:
-                plan.anomalies.append(
-                    BackfillAnomaly(
-                        anomaly_type="source_link_target_mismatch",
-                        message=(
-                            f"Active occurrence {occ_snap.id} carries {ref_key}, but the unique "
-                            f"source link points to {linked_occurrence_id or '<missing>'}"
-                        ),
-                        activity_id=ref_act_id,
-                        source_key=ref_key,
-                        occurrence_id=occ_snap.id,
-                    )
+    preflight_ref_link_snaps_by_id = _batch_get_docs(db, preflight_ref_links)
+
+    for occ_snap, ref_act_id, ref_key, ref_doc_id, _ref_link_ref in occ_ref_items:
+        ref_link_snap = preflight_ref_link_snaps_by_id.get(ref_doc_id)
+        if not ref_link_snap or not ref_link_snap.exists:
+            plan.anomalies.append(
+                BackfillAnomaly(
+                    anomaly_type="source_ref_without_source_link",
+                    message=(
+                        f"Active occurrence {occ_snap.id} contains Garmin source ref {ref_act_id} "
+                        "without a corresponding source-link document"
+                    ),
+                    activity_id=ref_act_id,
+                    source_key=ref_key,
+                    occurrence_id=occ_snap.id,
                 )
+            )
+            continue
+
+        ref_link_data = ref_link_snap.to_dict() or {}
+        if (
+            ref_link_data.get("schemaVersion") != 1
+            or ref_link_data.get("sourceKey") != ref_key
+            or ref_link_data.get("sourceKind") != "provider_activity"
+            or ref_link_data.get("userId") != user_id
+        ):
+            plan.anomalies.append(
+                BackfillAnomaly(
+                    anomaly_type="invalid_source_link",
+                    message=f"Source link claim for {ref_key} is malformed or owned by another user",
+                    activity_id=ref_act_id,
+                    source_key=ref_key,
+                    occurrence_id=occ_snap.id,
+                )
+            )
+            continue
+
+        linked_occurrence_id = str(ref_link_data.get("performedOccurrenceId") or "")
+        if linked_occurrence_id != occ_snap.id:
+            plan.anomalies.append(
+                BackfillAnomaly(
+                    anomaly_type="source_link_target_mismatch",
+                    message=(
+                        f"Active occurrence {occ_snap.id} carries {ref_key}, but the unique "
+                        f"source link points to {linked_occurrence_id or '<missing>'}"
+                    ),
+                    activity_id=ref_act_id,
+                    source_key=ref_key,
+                    occurrence_id=occ_snap.id,
+                )
+            )
 
     for source_key, occurrence_ids in active_occurrence_ids_for_source.items():
         distinct_ids = sorted(set(occurrence_ids))
@@ -679,16 +766,47 @@ def audit_training_occurrence_backfill(
 
     audit.eligible_activities_checked = len(activities)
 
-    # First prove every activity resolves through one well-formed source link to one
-    # active occurrence that actually carries that Garmin source ref.
+    # Pre-collect document references for batch fetching source links and occurrences
+    audit_items: list[tuple[dict[str, Any], str, str, str, Any]] = []
+    audit_link_refs: list[Any] = []
+    audit_link_ref_by_doc_id: dict[str, Any] = {}
+
     for act in activities:
         act_data = act["data"]
         activity_id = str(act_data.get("activityId") or act["id"]).strip()
         source_key = provider_activity_source_key("garmin", activity_id)
         doc_id = encode_source_key_for_doc_id(source_key)
+        link_ref = user_ref.collection("performedOccurrenceSourceLinks").document(doc_id)
+        if doc_id not in audit_link_ref_by_doc_id:
+            audit_link_ref_by_doc_id[doc_id] = link_ref
+            audit_link_refs.append(link_ref)
 
-        link_snap = user_ref.collection("performedOccurrenceSourceLinks").document(doc_id).get()
-        if not link_snap.exists:
+        audit_items.append((act_data, activity_id, source_key, doc_id, link_ref))
+
+    audit_link_snaps = _batch_get_docs(db, audit_link_refs)
+
+    audit_occ_refs: list[Any] = []
+    audit_occ_ref_by_id: dict[str, Any] = {}
+
+    for _act_data, _activity_id, _source_key, doc_id, _link_ref in audit_items:
+        link_snap = audit_link_snaps.get(doc_id)
+        if link_snap and link_snap.exists:
+            link_data = link_snap.to_dict() or {}
+            target_occ_id = str(link_data.get("performedOccurrenceId") or "")
+            if target_occ_id and target_occ_id not in audit_occ_ref_by_id:
+                occ_ref = user_ref.collection("performedTrainingOccurrences").document(
+                    target_occ_id
+                )
+                audit_occ_ref_by_id[target_occ_id] = occ_ref
+                audit_occ_refs.append(occ_ref)
+
+    audit_occ_snaps = _batch_get_docs(db, audit_occ_refs)
+
+    # First prove every activity resolves through one well-formed source link to one
+    # active occurrence that actually carries that Garmin source ref.
+    for _act_data, activity_id, source_key, doc_id, _link_ref in audit_items:
+        link_snap = audit_link_snaps.get(doc_id)
+        if not link_snap or not link_snap.exists:
             audit.missing_links += 1
             audit.issues.append(f"Missing source link for activity {activity_id} ({source_key})")
             continue
@@ -714,8 +832,8 @@ def audit_training_occurrence_backfill(
             )
             continue
 
-        occ_snap = user_ref.collection("performedTrainingOccurrences").document(target_occ_id).get()
-        if not occ_snap.exists:
+        occ_snap = audit_occ_snaps.get(target_occ_id)
+        if not occ_snap or not occ_snap.exists:
             audit.invalid_links += 1
             audit.issues.append(
                 f"Target occurrence {target_occ_id} does not exist for activity {activity_id}"
