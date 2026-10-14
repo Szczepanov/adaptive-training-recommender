@@ -252,41 +252,50 @@ def export_training_occurrence_records(
     execution_entries: list[dict[str, Any]] = []
     execution_prescriptions: list[dict[str, Any]] = []
     session_definition_revisions: list[dict[str, Any]] = []
-    for execution_id in sorted(execution_ids):
-        snapshot = user.collection("session_executions").document(execution_id).get()
-        if snapshot.exists:
-            execution = _document(snapshot)
-            executions.append(execution)
-            entries = (
-                user.collection("session_executions")
-                .document(execution_id)
-                .collection("entries")
-                .stream()
-            )
-            execution_entries.extend(_document(entry) for entry in entries)
-            prescription_hash = execution["data"].get("prescriptionHash")
-            if _safe_id(prescription_hash):
-                prescription = (
-                    user.collection("execution_prescriptions")
-                    .document(str(prescription_hash))
-                    .get()
+    sorted_execution_ids = sorted(execution_ids)
+    if sorted_execution_ids:
+        doc_refs = [
+            user.collection("session_executions").document(execution_id)
+            for execution_id in sorted_execution_ids
+        ]
+        snapshots = db.get_all(doc_refs)
+        # Match snapshots back by ID to preserve sorted order if get_all order varies
+        snapshots_by_id = {snap.id: snap for snap in snapshots}
+        for execution_id in sorted_execution_ids:
+            snapshot = snapshots_by_id.get(execution_id)
+            if snapshot and snapshot.exists:
+                execution = _document(snapshot)
+                executions.append(execution)
+                entries = (
+                    user.collection("session_executions")
+                    .document(execution_id)
+                    .collection("entries")
+                    .stream()
                 )
-                if prescription.exists:
-                    execution_prescriptions.append(_document(prescription))
-            source = execution["data"].get("sessionSource") or {}
-            if source.get("kind") == "manual":
-                definition_id = str(source.get("definitionId") or "")
-                revision = source.get("revision")
-                if _safe_id(definition_id) and isinstance(revision, int) and revision >= 0:
-                    definition = (
-                        user.collection("session_definitions")
-                        .document(definition_id)
-                        .collection("revisions")
-                        .document(str(revision))
+                execution_entries.extend(_document(entry) for entry in entries)
+                prescription_hash = execution["data"].get("prescriptionHash")
+                if _safe_id(prescription_hash):
+                    prescription = (
+                        user.collection("execution_prescriptions")
+                        .document(str(prescription_hash))
                         .get()
                     )
-                    if definition.exists:
-                        session_definition_revisions.append(_document(definition))
+                    if prescription.exists:
+                        execution_prescriptions.append(_document(prescription))
+                source = execution["data"].get("sessionSource") or {}
+                if source.get("kind") == "manual":
+                    definition_id = str(source.get("definitionId") or "")
+                    revision = source.get("revision")
+                    if _safe_id(definition_id) and isinstance(revision, int) and revision >= 0:
+                        definition = (
+                            user.collection("session_definitions")
+                            .document(definition_id)
+                            .collection("revisions")
+                            .document(str(revision))
+                            .get()
+                        )
+                        if definition.exists:
+                            session_definition_revisions.append(_document(definition))
 
     # An occurrence near the window edge may reference an activity whose provider date falls
     # just outside it; fetch those by ID so hydration does not report a false missing source.
