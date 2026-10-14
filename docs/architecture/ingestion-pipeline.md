@@ -341,6 +341,18 @@ Additional activity detail has separate paths:
   `exerciseSets` table; the canonical Completed Workout card (ADR-0034) shows them only as a
   collapsed diagnostic when a structured execution is linked, and shows the HR zones and
   average/max HR next to the structured sets.
+  **Fetch status (#1051):** each target-date strength activity also gets
+  `detailStatus.exerciseSets = { status, attemptedAt }` in the activity document, with `status`
+  one of `fetched` (the `exerciseSets` key is written in the same payload, `[]` included),
+  `failed` (any exception, or a payload with no usable set list), `rate_limited` (a 429 for that
+  activity, and every later qualifying target-date strength activity in the same pass, which
+  is not requested) or `not_attempted` (no activity-detail capability). `attemptedAt` is one UTC
+  instant (not a calendar date, so the Warsaw-date rule does not apply) taken per pass, i.e. the
+  sync decision time, not a per-request time. Older lookback activities and non-strength
+  activities get no status key, and `backfill` without details omits it entirely, so under the
+  `upsert_activities` merge write a stored `fetched` is never clobbered by a pass that did not
+  decide anything; a later pass overwrites the nested value (failed then fetched). The status
+  holds no error text, and the raw detail payloads stay unarchived.
 * **Power-bearing cycling activities** — only when `GARMIN_ACTIVITY_DETAIL_ENABLED=true`,
   target-date live sync can add power zones, HR zones, lap summaries, normalized power,
   intensity factor, and derived variability index. `ActivityTelemetry` renders these read-only

@@ -71,6 +71,22 @@ describe('BlockReviewService frozen selection', () => {
         expect(deps.blocks.listBlockIds).toHaveBeenCalledWith('u1', BLOCK_REVIEW_MAX_BLOCKS);
         expect(deps.evaluations.getRevision).toHaveBeenCalledWith('u1', 'eval', 1);
     });
+    it('loads intent blocks concurrently', async () => {
+        const { service, deps } = await setup();
+        let release!: () => void;
+        const headersReady = new Promise<void>(resolve => { release = resolve; });
+        deps.blocks.listBlockIds.mockResolvedValue({ status: 'AVAILABLE', data: ['block', 'block-2'], revision: null });
+        deps.blocks.getHeaderState.mockImplementation(() => headersReady.then(() => ({
+            status: 'AVAILABLE' as const, data: { revision: 1, contentHash: 'block-hash' }, revision: null,
+        })));
+
+        const reviewsPromise = service.listReviews('u1', asOfDate);
+        await Promise.resolve();
+        expect(deps.blocks.getHeaderState).toHaveBeenCalledTimes(2);
+        release();
+
+        await reviewsPromise;
+    });
     it('does not infer an evaluation from the title or objective vocabulary', async () => {
         const { service, block, deps } = await setup();
         block.objectives = [];
