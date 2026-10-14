@@ -353,8 +353,8 @@ which have been resolved in [#953](https://github.com/Szczepanov/adaptive-traini
 
 Home currently prepares the frozen `ExecutionPrescription` and a scheduled external
 `SessionOccurrence` before Start. At Start, the runner binds its `SessionExecution` to the
-exact plan/revision/session/content hash. The desired Start-only occurrence boundary remains
-open in [#951](https://github.com/Szczepanov/adaptive-training-recommender/issues/951).
+exact plan/revision/session/content hash. Prepared-occurrence supersession and replacement attribution
+were resolved in [#951](https://github.com/Szczepanov/adaptive-training-recommender/issues/951) (PR #998).
 `prescriptionHash` identifies the frozen prescription; its `definitionHash` identifies the
 normalized full or reduced definition. These are different hashes. A later plan revision does
 not replace the prescription used by an existing execution, including an abandoned execution.
@@ -365,9 +365,9 @@ another physical workout or overwrite structured execution authority. The V10 br
 opens Data → Activities and invokes the real `loadCanonicalActivitiesWindow` service because
 the canonical Activities read-model flag is off in the default E2E configuration. It uses real
 reconciliation rather than fabricated linkage. Canonical identities distinguish genuine separate
-workouts, but completing both imported intraday bundle members through Home remains blocked by
-the absent secondary Start card
-([#952](https://github.com/Szczepanov/adaptive-training-recommender/issues/952)).
+workouts; completing both imported intraday bundle members through Home is verified by V9
+after the secondary Start card and binding reconciliation shipped in
+[#952](https://github.com/Szczepanov/adaptive-training-recommender/issues/952) (PR #998).
 
 The next planning brief consumes the canonical planned-versus-performed projection. Its bounded
 rows retain placement, adjudication, athlete action and performance as separate dimensions,
@@ -375,11 +375,9 @@ with occurrence, execution, prescription and performed ids when available. Autho
 report unexpected observed work; a day with an active plan but no authored session/rest renders
 no round-trip row. Missing activity alone is not a miss. Unreadable evidence is unknown, and an
 unreadable replacement archive is reported on the affected row. Service/projector tests pin gate
-and manual replacement labels, but integrated skip persistence and manual replacement attribution
-remain open: [#950](https://github.com/Szczepanov/adaptive-training-recommender/issues/950) and
-[#951](https://github.com/Szczepanov/adaptive-training-recommender/issues/951). A genuine UI manual
-replacement currently leaves the authored row at athlete none rather than attributing the
-completed replacement.
+and manual replacement labels, and integrated manual replacement attribution is verified by V8
+([#951](https://github.com/Szczepanov/adaptive-training-recommender/issues/951) / PR #998): a genuine UI
+manual replacement supersedes the prepared occurrence and attributes the replacement occurrenceId.
 
 Executable browser proofs live in
 [`external-coach-round-trip.pw.ts`](../app/tests/e2e/external-coach-round-trip.pw.ts),
@@ -387,9 +385,9 @@ Executable browser proofs live in
 [`external-plan-execution-states.pw.ts`](../app/tests/e2e/external-plan-execution-states.pw.ts)
 and the desktop/mobile [`external-verdict.pw.ts`](../app/tests/e2e/external-verdict.pw.ts).
 The [#893 proof ledger](./plans/2026-09-29-issue-893-external-coach-round-trip.md#5-revised-acceptance-criteria-and-proof-ledger)
-records exact test names, verification status and remaining gaps. V8 and full V9 bundle
-completion are issue-linked `test.fixme` regressions; they are not passing proofs. #893 remains
-In progress, independently of the active tests' verification results.
+records exact test names, verification status and resolved gaps. All 12 browser variant proof slots (V1–V12),
+including V8 manual replacement and full V9 bundle completion, are active, passing proofs. Issue #893 is
+Implemented.
 
 ## Prompt block
 
