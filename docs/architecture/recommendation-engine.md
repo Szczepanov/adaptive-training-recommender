@@ -1415,8 +1415,8 @@ The plan-derived path (`PlanDefinition`) is not wired to contributors in this in
 
 `resolveSeasonRoadmap(events, asOfDate)` is a pure classification of every upcoming
 scheduled event (and recently completed/DNF events, 28 days) relative to the season's
-primary target, which is by construction the same event as
-`PeriodizationResult.focusEvent`. Roles: `primary_peak`, `benchmark_peak` (another A or a
+primary target, which equals `PeriodizationResult.focusEvent` whenever the
+focus is an upcoming scheduled event (both sort with `compareEventAuthority`). Roles: `primary_peak`, `benchmark_peak` (another A or a
 4-star B, "B+"), `benchmark` (B) and `train_through` (C). It grants no execution authority:
 one event owns each calendar date, and `same_day_authority`, `inside_peak_taper` and
 `insufficient_peak_recovery` conflicts are typed and surfaced rather than blended.

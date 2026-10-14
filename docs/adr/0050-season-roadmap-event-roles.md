@@ -19,7 +19,7 @@ layers a C race's objectives on top of the plan, and never explains conflicts.
 
 `resolveSeasonRoadmap(events, asOfDate)` (`seasonRoadmap.ts`) is a pure function. The first
 upcoming scheduled event in the existing authority order is the **primary season target**
-(always equal to `PeriodizationResult.focusEvent`; a test pins this). Every other event has
+(equal to `PeriodizationResult.focusEvent` whenever the focus is an upcoming scheduled event; in the 3-day post-event window the just-completed event is the focus and the roadmap primary is the next upcoming one; both sort with `compareEventAuthority`). Every other event has
 exactly one role:
 
 | Role | Source | Meaning |
@@ -39,7 +39,9 @@ Exactly one event owns a planning date (authority order). The roadmap emits type
 `SeasonConflict`s — `same_day_authority`, `inside_peak_taper`, `insufficient_peak_recovery`
 (fewer than 7 days, the policy-owned post-event recovery length, between one peak and the
 next peak's taper start) — each with `blocking`/`advisory` severity and an athlete-facing
-message. Conflicts never reweight a recommendation; they are surfaced.
+message. A same-day conflict is advisory only when every yielding event is train-through;
+an event inside a peak taper is advisory only if it is train-through; a peak with no resolved
+taper is prepared up to its date for the recovery-gap check. Conflicts never reweight a recommendation; they are surfaced.
 
 ### D3 — Supporting events change load proportionately (policy bump)
 

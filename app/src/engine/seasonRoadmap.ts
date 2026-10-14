@@ -89,7 +89,7 @@ export function planningDateOf(event: UserEvent): string {
 
 /** The engine's single total order for event authority: priority, proximity, planning date,
  *  then id (a determinism backstop, not a ranking signal). `evaluatePeriodizationPhase`
- *  uses the same order; a test pins that they agree. */
+ *  sorts with this same function, so the two cannot drift. */
 export function compareEventAuthority(
     a: { event: UserEvent; daysToEvent: number; targetDate: string },
     b: { event: UserEvent; daysToEvent: number; targetDate: string },
@@ -124,8 +124,9 @@ function sameDayConflicts(upcoming: readonly SeasonRoadmapEntry[]): SeasonConfli
         .filter(([, entries]) => entries.length > 1)
         .map(([date, entries]) => ({
             kind: 'same_day_authority' as const,
-            // Two peak-role events (or any event against a peak) cannot both be raced fully.
-            severity: entries.filter(entry => isPeakRole(entry.role) || entry.role === 'benchmark').length > 1 ? 'blocking' as const : 'advisory' as const,
+            // The owner keeps the date. It is only advisory when every yielding event is a
+            // train-through race; a yielding benchmark or peak loses a real objective.
+            severity: entries.slice(1).every(entry => entry.role === 'train_through') ? 'advisory' as const : 'blocking' as const,
             date,
             eventIds: entries.map(entry => entry.eventId),
             message: `${entries.map(entry => entry.title).join(' and ')} share ${date}; ${entries[0].title} owns that date and the others yield.`,
@@ -157,8 +158,10 @@ function peakRecoveryConflicts(upcoming: readonly SeasonRoadmapEntry[]): SeasonC
     for (let index = 1; index < peaks.length; index++) {
         const earlier = peaks[index - 1];
         const later = peaks[index];
-        if (earlier.date === later.date || !later.taper) continue;
-        const gap = getDayDiff(later.taper.startDate, earlier.date);
+        if (earlier.date === later.date) continue;
+        // A peak with no resolved taper (e.g. an unauthored general target) is prepared up to its date.
+        const boundary = later.taper?.startDate ?? later.date;
+        const gap = getDayDiff(boundary, earlier.date);
         // A negative or zero gap is an inside_peak_taper conflict already; do not double-report.
         if (gap > 0 && gap < SEASON_PEAK_RECOVERY_GAP_DAYS) {
             conflicts.push({
@@ -166,7 +169,7 @@ function peakRecoveryConflicts(upcoming: readonly SeasonRoadmapEntry[]): SeasonC
                 severity: 'blocking',
                 date: later.date,
                 eventIds: [earlier.eventId, later.eventId],
-                message: `Only ${gap} day(s) separate ${earlier.title} (${earlier.date}) from ${later.title}'s taper start (${later.taper.startDate}); ${SEASON_PEAK_RECOVERY_GAP_DAYS} are needed to recover between peaks.`,
+                message: `Only ${gap} day(s) separate ${earlier.title} (${earlier.date}) from ${later.title}'s ${later.taper ? `taper start (${boundary})` : `date (${boundary})`}; ${SEASON_PEAK_RECOVERY_GAP_DAYS} are needed to recover between peaks.`,
             });
         }
     }
@@ -180,7 +183,9 @@ function peakRecoveryConflicts(upcoming: readonly SeasonRoadmapEntry[]): SeasonC
  * are upcoming; completed/DNF events within `SEASON_OUTCOME_LOOKBACK_DAYS` are retained so
  * their outcome can revalidate later development. Cancelled, DNS, rescheduled and stale
  * (past, never completed) events are excluded. The primary target is the first upcoming event
- * in the engine's authority order, so it always equals `PeriodizationResult.focusEvent`.
+ * in the engine's authority order, so it equals `PeriodizationResult.focusEvent` whenever the
+ * focus is an upcoming scheduled event. During the 3-day post-event window a just-completed
+ * event is the focus (Post-Event Recovery) while the roadmap's primary is the next upcoming one.
  */
 export function resolveSeasonRoadmap(events: readonly UserEvent[], asOfDate: string): SeasonRoadmap {
     const dated = events.map(event => {

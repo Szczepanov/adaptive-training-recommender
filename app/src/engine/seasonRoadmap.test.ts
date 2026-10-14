@@ -116,6 +116,27 @@ describe('season conflicts', () => {
         expect(resolveSeasonRoadmap([A, roomy], AS_OF).conflicts).toEqual([]);
     });
 
+    it('treats an A and a same-day C as advisory, and two benchmarks as blocking', () => {
+        const craft = event({ id: 'c-same-day', date: '2026-09-12', priority: 'C' });
+        expect(resolveSeasonRoadmap([A, craft], AS_OF).conflicts[0]).toMatchObject({ kind: 'same_day_authority', severity: 'advisory' });
+        const clubA = event({ id: 'b-a', date: '2026-07-04', priority: 'B' });
+        const clubB = event({ id: 'b-b', date: '2026-07-04', priority: 'B' });
+        expect(resolveSeasonRoadmap([clubA, clubB], AS_OF).conflicts[0]).toMatchObject({ severity: 'blocking' });
+    });
+
+    it('checks peak recovery against the date when the later peak has no taper', () => {
+        const target = (id: string, date: string) => event({ id, date, priority: 'A', category: 'general_target' });
+        const roadmap = resolveSeasonRoadmap([target('t1', '2026-08-01'), target('t2', '2026-08-04')], AS_OF);
+        expect(roadmap.conflicts).toEqual([expect.objectContaining({ kind: 'insufficient_peak_recovery', eventIds: ['t1', 't2'] })]);
+    });
+
+    it('diverges from the focus event only inside the post-event recovery window', () => {
+        const raced = event({ id: 'a-raced', date: '2026-09-12', priority: 'A', lifecycle: 'completed' });
+        const next = event({ id: 'c-next', date: '2026-09-20', priority: 'C' });
+        expect(evaluatePeriodizationPhase([raced, next], '2026-09-13').focusEvent?.id).toBe('a-raced');
+        expect(resolveSeasonRoadmap([raced, next], '2026-09-13').primaryEventId).toBe('c-next');
+    });
+
     it('describes each role and conflict for the Context Brief', () => {
         const twin = event({ id: 'c-twin', date: '2026-06-20', priority: 'C' });
         const text = describeSeasonRoadmap(resolveSeasonRoadmap([A, C, twin], AS_OF)).join('\n');
