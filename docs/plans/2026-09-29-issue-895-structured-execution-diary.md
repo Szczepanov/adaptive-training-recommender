@@ -231,10 +231,10 @@ WP5–WP7 and related #723/#724/#896 remain separate; #952 is already closed.
 
 ### Delivered
 
-- `sessions/diaryAuthority.architecture.test.ts`: only `sessionExecutionService` builds references into the diary collections (one audited read-only exception); the diary-write internals are imported only by the service; engine, response, observation, outcome and knowledge modules never import the write path directly and cannot reach it through static or lazy imports, except from the three orchestration entry points and one named read adapter that is checked to call read methods only; allowlists are checked for staleness.
+- `sessions/diaryAuthority.architecture.test.ts`: only `sessionExecutionService` builds references into the diary collections (one audited read-only exception); the diary-write internals are imported only by the service; engine, response, observation, outcome and knowledge modules never import the write path directly and cannot reach it through static or lazy imports, except from the three orchestration entry points and one named read adapter whose calls and intermediate history service are checked against audited read methods; allowlists are checked for staleness.
 - `training-occurrence/structuredIdentityAuthority.test.ts`: provider recognition or a provider modality override cannot change the identity, modality or weekly-role credit of an occurrence that has a structured execution.
 - Containment of normalized response telemetry (no raw 1 Hz trace fields) was already pinned by `engine/contextBriefResponseArchitecture.test.ts`; it is referenced, not duplicated.
-- Two acceptance gaps closed with tests: a pinned definition replays after the live catalog workout changes (`sessions/sessionDefinitionResolverSnapshot.test.ts`), and a late provider update to an already-credited occurrence keeps one credit (`engine/tests/perConsumerDoubleCountInventory.test.ts`).
+- Additional acceptance evidence: a pinned definition replays after the live catalog workout changes (`sessions/sessionDefinitionResolverSnapshot.test.ts`), and independently rebuilt snapshots before and after provider enrichment each give one credit (no incremental retained-credit update proof) (`engine/tests/perConsumerDoubleCountInventory.test.ts`).
 - `docs/architecture/session-execution.md` gains the authority-guard, arrival-order and limits section, and the status board is updated. The #895 issue body checklist is ticked from this ledger only after this package merges.
 
 ### Acceptance ledger (against `origin/main` after this package)

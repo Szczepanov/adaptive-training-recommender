@@ -48,6 +48,8 @@ const STATIC_REACH_ADAPTERS = new Set(['engine/firestoreTrainingHistory.ts']);
 const LAZY_IO_ENTRY_POINTS = new Set(['engine/rules.ts', 'engine/trainingIntent.ts', 'engine/replay.ts']);
 
 const NON_DIARY_DOMAINS = ['engine/', 'responses/', 'observations/', 'outcomes/', 'knowledge/'];
+// Repository-wide source scans need headroom under coverage and concurrent verification.
+const SOURCE_SCAN_TIMEOUT = 60_000;
 
 function productionFiles(directory = SRC_DIR): string[] {
     return readdirSync(directory, { withFileTypes: true })
@@ -61,20 +63,26 @@ function productionFiles(directory = SRC_DIR): string[] {
 }
 
 const rel = (absolutePath: string): string => relative(SRC_DIR, absolutePath).replaceAll('\\', '/');
+const parsedSources = new Map<string, ts.SourceFile>();
 
 function parse(absolutePath: string): ts.SourceFile {
-    return ts.createSourceFile(
+    const cached = parsedSources.get(absolutePath);
+    if (cached) return cached;
+    const source = ts.createSourceFile(
         rel(absolutePath),
         readFileSync(absolutePath, 'utf8'),
         ts.ScriptTarget.Latest,
         true,
         absolutePath.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
     );
+    parsedSources.set(absolutePath, source);
+    return source;
 }
 
 function resolveSpecifier(fromAbsolute: string, specifier: string): string | null {
     if (!specifier.startsWith('.')) return null;
     const base = resolve(dirname(fromAbsolute), specifier);
+    if (/\.tsx?$/.test(base) && existsSync(base)) return rel(base);
     for (const candidate of [`${base}.ts`, `${base}.tsx`, join(base, 'index.ts'), join(base, 'index.tsx')]) {
         if (existsSync(candidate)) return rel(candidate);
     }
@@ -119,7 +127,18 @@ function runtimeImportGraph(includeDynamic: boolean, dynamicSources?: (file: str
 }
 
 function calleeName(call: ts.CallExpression): string | undefined {
-    if (ts.isIdentifier(call.expression)) return call.expression.text;
+    if (ts.isIdentifier(call.expression)) {
+        const localName = call.expression.text;
+        for (const statement of call.getSourceFile().statements) {
+            if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)
+                || !/^firebase\/firestore(?:\/lite)?$/.test(statement.moduleSpecifier.text)) continue;
+            const bindings = statement.importClause?.namedBindings;
+            if (!bindings || !ts.isNamedImports(bindings)) continue;
+            const imported = bindings.elements.find(element => element.name.text === localName);
+            if (imported) return imported.propertyName?.text ?? imported.name.text;
+        }
+        return localName;
+    }
     if (ts.isPropertyAccessExpression(call.expression)) return call.expression.name.text;
     return undefined;
 }
@@ -133,6 +152,7 @@ interface DiaryReference {
 const DIARY_PATH_SEGMENT = /(^|\/)(session_executions|session_execution_locks|diaryMutations)(\/|$)/;
 /** Diary subcollections, which can be reached directly through a collection group query. */
 const DIARY_GROUP_NAMES = new Set(['entries', 'restEvents', 'diaryMutations']);
+const pathInitializers = new WeakMap<ts.SourceFile, Map<string, ts.Expression[]>>();
 
 /** Text pieces of a path-like argument: plain strings, template heads/spans, and a same-file
  * `const NAME = '...'` that an identifier argument points at. */
@@ -142,16 +162,23 @@ function literalPieces(argument: ts.Expression): string[] {
         return [argument.head.text, ...argument.templateSpans.map(span => span.literal.text)];
     }
     if (ts.isIdentifier(argument)) {
-        const pieces: string[] = [];
-        const visit = (node: ts.Node): void => {
-            if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.name.text === argument.text
-                && node.initializer && !ts.isIdentifier(node.initializer)) {
-                pieces.push(...literalPieces(node.initializer));
-            }
-            ts.forEachChild(node, visit);
-        };
-        visit(argument.getSourceFile());
-        return pieces;
+        const source = argument.getSourceFile();
+        let initializers = pathInitializers.get(source);
+        if (!initializers) {
+            initializers = new Map<string, ts.Expression[]>();
+            const visit = (node: ts.Node): void => {
+                if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)
+                    && node.initializer && !ts.isIdentifier(node.initializer)) {
+                    const values = initializers!.get(node.name.text) ?? [];
+                    values.push(node.initializer);
+                    initializers!.set(node.name.text, values);
+                }
+                ts.forEachChild(node, visit);
+            };
+            visit(source);
+            pathInitializers.set(source, initializers);
+        }
+        return (initializers.get(argument.text) ?? []).flatMap(literalPieces);
     }
     return [];
 }
@@ -226,9 +253,51 @@ function reachable(start: string, graph: Map<string, string[]>): Set<string> {
     return seen;
 }
 
+function reachingTargets(targets: Set<string>, graph: Map<string, string[]>): Set<string> {
+    const reverse = new Map<string, string[]>();
+    for (const [source, edges] of graph) {
+        for (const target of edges) {
+            const callers = reverse.get(target) ?? [];
+            callers.push(source);
+            reverse.set(target, callers);
+        }
+    }
+    return new Set([...targets].flatMap(target => [...reachable(target, reverse)]));
+}
+
+/** Check method references too, so extracting a write method cannot hide it from the guard. */
+function historyServiceMethods(source: ts.SourceFile): string[] {
+    const receivers = new Set(['strengthHistoryReadService', 'sessionExecutionService', 'executionService']);
+    for (const statement of source.statements) {
+        if (!ts.isImportDeclaration(statement)) continue;
+        const bindings = statement.importClause?.namedBindings;
+        if (!bindings || !ts.isNamedImports(bindings)) continue;
+        for (const binding of bindings.elements) {
+            if (receivers.has(binding.propertyName?.text ?? binding.name.text)) receivers.add(binding.name.text);
+        }
+    }
+    const methods: string[] = [];
+    const visit = (node: ts.Node): void => {
+        if (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) {
+            const receiver = node.expression;
+            const receiverName = ts.isIdentifier(receiver) ? receiver.text
+                : ts.isPropertyAccessExpression(receiver) && receiver.expression.kind === ts.SyntaxKind.ThisKeyword
+                    ? receiver.name.text : undefined;
+            if (receiverName && receivers.has(receiverName)) {
+                methods.push(ts.isPropertyAccessExpression(node) ? node.name.text
+                    : ts.isStringLiteral(node.argumentExpression) ? node.argumentExpression.text : '<computed>');
+            }
+        }
+        ts.forEachChild(node, visit);
+    };
+    visit(source);
+    return methods;
+}
+
 describe('canonical execution diary authority (#895 WP7)', () => {
     it('only the execution service builds references into the diary collections, plus audited read-only lookups', () => {
-        const outsideAuthority = diaryReferences().filter(reference => reference.file !== WRITE_AUTHORITY);
+        const references = diaryReferences();
+        const outsideAuthority = references.filter(reference => reference.file !== WRITE_AUTHORITY);
 
         const unexpected = outsideAuthority
             .filter(reference => READ_ONLY_REFERENCERS[reference.file] !== reference.collection)
@@ -239,13 +308,13 @@ describe('canonical execution diary authority (#895 WP7)', () => {
         expect(writers).toEqual([]);
 
         // The authority itself must still be the place that builds these references.
-        expect(diaryReferences().some(reference => reference.file === WRITE_AUTHORITY && reference.collection === 'session_executions')).toBe(true);
-    });
+        expect(references.some(reference => reference.file === WRITE_AUTHORITY && reference.collection === 'session_executions')).toBe(true);
+    }, SOURCE_SCAN_TIMEOUT);
 
     it('the read-only allowlist has no stale entries', () => {
         const referencing = new Set(diaryReferences().map(reference => reference.file));
         for (const file of Object.keys(READ_ONLY_REFERENCERS)) expect(referencing.has(file)).toBe(true);
-    });
+    }, SOURCE_SCAN_TIMEOUT);
 
     it('detects a write-shaped reference (self-test of the read-only classifier)', () => {
         const source = ts.createSourceFile(
@@ -265,6 +334,7 @@ describe('canonical execution diary authority (#895 WP7)', () => {
     });
 
     it.each([
+        ['a renamed Firestore import', "import { doc as diaryDoc } from 'firebase/firestore'; diaryDoc(db, 'users', u, 'session_executions', id)"],
         ['an interpolated template path', "doc(db, `users/${u}/session_executions/${id}`)"],
         ['a slash-joined string path', "doc(db, 'users/u1/session_executions/e1')"],
         ['a same-file constant', "const C = 'session_executions'; collection(db, 'users', u, C)"],
@@ -280,6 +350,10 @@ describe('canonical execution diary authority (#895 WP7)', () => {
         expect(found).toBeDefined();
     });
 
+    it('resolves explicit TypeScript extensions in runtime imports', () => {
+        expect(resolveSpecifier(join(SRC_DIR, 'engine/probe.ts'), '../services/sessionExecutionService.ts')).toBe(WRITE_AUTHORITY);
+    });
+
     it('diary-write internals are imported only by the execution service', () => {
         const graph = runtimeImportGraph(true);
         const importers = [...graph.entries()]
@@ -288,7 +362,7 @@ describe('canonical execution diary authority (#895 WP7)', () => {
             .sort();
         expect(importers.filter(file => !INTERNALS_IMPORTERS.has(file))).toEqual([]);
         expect(importers).toContain(WRITE_AUTHORITY);
-    });
+    }, SOURCE_SCAN_TIMEOUT);
 
     it('engine, response, observation, outcome and knowledge modules never import the diary-write path directly', () => {
         const graph = runtimeImportGraph(true);
@@ -299,34 +373,42 @@ describe('canonical execution diary authority (#895 WP7)', () => {
             .map(([file]) => file)
             .sort();
         expect(violations).toEqual([]);
-    });
+    }, SOURCE_SCAN_TIMEOUT);
 
     it('those domains cannot reach the diary-write path, except through the sanctioned lazy entry points and read adapter', () => {
         // Lazy `import()` counts everywhere EXCEPT from the three orchestration entry points.
         const graph = runtimeImportGraph(true, file => !LAZY_IO_ENTRY_POINTS.has(file));
         const protectedTargets = new Set([...DIARY_WRITE_INTERNALS, WRITE_AUTHORITY]);
+        const reachesWritePath = reachingTargets(protectedTargets, graph);
         const violations = [...graph.keys()]
             .filter(file => NON_DIARY_DOMAINS.some(prefix => file.startsWith(prefix)))
             .filter(file => !STATIC_REACH_ADAPTERS.has(file))
-            .filter(file => [...reachable(file, graph)].some(target => protectedTargets.has(target)))
+            .filter(file => reachesWritePath.has(file))
             .sort();
         expect(violations).toEqual([]);
+    }, SOURCE_SCAN_TIMEOUT);
+
+    it('reverse reachability includes indirect callers and cycles but excludes unrelated branches', () => {
+        const graph = new Map([
+            ['engine', ['adapter']], ['adapter', ['service']], ['service', ['internal']],
+            ['internal', ['service']], ['unrelated', ['readOnly']],
+        ]);
+        expect([...reachingTargets(new Set(['service']), graph)].sort()).toEqual(['adapter', 'engine', 'internal', 'service']);
     });
 
-    it('the allowlisted history adapter only calls read methods on the history services', () => {
-        const source = parse(join(SRC_DIR, 'engine/firestoreTrainingHistory.ts'));
-        const called = new Set<string>();
-        const visit = (node: ts.Node): void => {
-            if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)
-                && ts.isIdentifier(node.expression.expression)
-                && ['strengthHistoryReadService', 'executionService', 'sessionExecutionService'].includes(node.expression.expression.text)) {
-                called.add(`${node.expression.expression.text}.${node.expression.name.text}`);
-            }
-            ts.forEachChild(node, visit);
-        };
-        visit(source);
-        expect([...called].filter(call => !/^(get|list|read)/i.test(call.split('.')[1] ?? ''))).toEqual([]);
-        expect(called.size).toBeGreaterThan(0);
+    it.each(['engine/firestoreTrainingHistory.ts', 'services/strengthHistoryReadService.ts'])('the history read path only references audited read methods in %s', file => {
+        const methods = historyServiceMethods(parse(join(SRC_DIR, file)));
+        expect(methods.filter(method => !['getSessionsInRange', 'getExecutionsInRange'].includes(method))).toEqual([]);
+        expect(methods.length).toBeGreaterThan(0);
+    });
+
+    it.each([
+        ['an injected service field', 'this.executionService.completeExecution(u, id)'],
+        ['a renamed service import', "import { sessionExecutionService as diary } from '../services/sessionExecutionService'; diary.completeExecution(u, id)"],
+        ['an extracted write method', 'const write = executionService.completeExecution'],
+        ['an indexed write method', "this.executionService['completeExecution'](u, id)"],
+    ])('detects write access through %s', (_label, code) => {
+        expect(historyServiceMethods(ts.createSourceFile('probe.ts', code, ts.ScriptTarget.Latest, true))).toContain('completeExecution');
     });
 
     it('the static-reach adapter allowlist has no stale entries', () => {
@@ -334,5 +416,5 @@ describe('canonical execution diary authority (#895 WP7)', () => {
         for (const adapter of STATIC_REACH_ADAPTERS) {
             expect([...reachable(adapter, graph)].some(target => target === WRITE_AUTHORITY)).toBe(true);
         }
-    });
+    }, SOURCE_SCAN_TIMEOUT);
 });

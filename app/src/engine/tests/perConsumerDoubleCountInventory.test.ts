@@ -125,9 +125,10 @@ describe('#895 WP6 per-consumer double-count inventory', () => {
             expect(req?.credits).toHaveLength(1);
         });
 
-        it('a late provider update to an already-credited occurrence keeps one credit', () => {
+        it('recomputing coverage before and after provider enrichment gives one credit per snapshot', () => {
             // rev-1: the structured execution alone was credited. rev-2: the Garmin recording
-            // arrives and is reconciled into the SAME performed occurrence.
+            // arrives and is reconciled into the SAME performed occurrence. These are
+            // independent snapshots, not an incremental update to retained credit state.
             const structuredOnly = deriveFactsFromOccurrence(
                 { ...occurrence('occ-shared', 'exec-shared', 'garmin-shared'), sourceRefs: [{ kind: 'structured_execution', executionId: 'exec-shared' }] },
                 { structured: hydrated('exec-shared', 'garmin-shared').structured },
