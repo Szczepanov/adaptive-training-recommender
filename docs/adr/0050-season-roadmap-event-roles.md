@@ -69,9 +69,10 @@ Context Brief as each event's role, not only days to the focus event.
 
 ## Consequences
 
-PR 1 adds the roadmap and registry claim with no behavior change. Behavior (D3) bumps
-`POLICY_VERSION` and Context Brief contract; D4 follows. Constants (4-star B+, 7-day gap,
-28-day lookback, supporting taper/recovery scalars) are uncalibrated product choices
+PR 1 adds the roadmap and registry claim with no behavior change. Behavior (D3) and the
+D5 audit/brief exposure bump `POLICY_VERSION` and the Context Brief contract (v7); D4 follows. Constants (4-star B+, 7-day gap,
+28-day lookback, supporting taper reductions 0.15/0.25, recovery 1 day at 0.8 and 2 days at 0.6,
+3-day C-race lead) are uncalibrated product choices
 registered as `policy.periodization.season_roadmap_v1`; the evidence found supports no
 specific value. Rollback removes the optional audit field and overlay; the roadmap is
 recomputable from events.

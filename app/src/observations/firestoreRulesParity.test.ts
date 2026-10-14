@@ -37,6 +37,7 @@ const RECOMMENDATION_AUDIT_KEYS = [
     'knowledgeLineage',
     'athleteEvidenceLineage',
     'development',
+    'season',
 ] as const satisfies readonly PersistedRecommendationAuditKey[];
 
 const AUDIT_KEYS_ARE_EXHAUSTIVE: Exclude<

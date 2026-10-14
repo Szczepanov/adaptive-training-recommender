@@ -21,6 +21,7 @@ import {
     signed,
 } from './contextBrief';
 import { renderMorningQualityActivityTelemetry } from './contextBriefActivityTelemetry';
+import { describeSeasonRoadmap } from './seasonRoadmap';
 import {
     briefPurposeFor,
     findSectionHeading,
@@ -393,6 +394,18 @@ function renderDevelopmentAuthority(input: ContextBriefPlanningHandoffInput): st
     ];
 }
 
+function renderSeasonRoadmap(input: ContextBriefPlanningHandoffInput): string[] {
+    const season = input.recommendations.find(item => item.date === input.asOfDate)?.recommendationAudit?.season;
+    if (!season) return [];
+    return [
+        '- Season roadmap (planning context; one event owns each date):',
+        ...describeSeasonRoadmap(season),
+        ...(season.supportingScale
+            ? [`- Supporting-event dose limit today: ${season.supportingScale.eventTitle} ${season.supportingScale.kind} (volume x${season.supportingScale.volumeScale.toFixed(2)}, intensity x${season.supportingScale.intensityScale.toFixed(2)}).`]
+            : []),
+    ];
+}
+
 function renderDataHandoff(input: ContextBriefPlanningHandoffInput, today: TodayAuthority): string {
     const latestSnapshot = latestByDate(input.snapshots);
     const latestCheckin = latestByDate(input.checkins);
@@ -415,6 +428,7 @@ function renderDataHandoff(input: ContextBriefPlanningHandoffInput, today: Today
     ];
 
     lines.push(...renderDevelopmentAuthority(input));
+    lines.push(...renderSeasonRoadmap(input));
 
     lines.push(...renderSensorEvidence(input.trainingSettings, input.preferences, input.activities, input.asOfDate));
     if (input.preferences) {
@@ -757,6 +771,7 @@ export function buildMorningCoachBrief(input: ContextBriefPlanningHandoffInput):
 
     lines.push('', todayAuthority.block);
     lines.push(...renderDevelopmentAuthority(input));
+    lines.push(...renderSeasonRoadmap(input));
 
     // 1. Today's Status & Check-in
     lines.push('', '## 1. Today\'s Status & Check-in', '');

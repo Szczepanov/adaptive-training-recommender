@@ -60,6 +60,7 @@ export function buildRecommendationAudit(
         },
         knowledgeLineage,
         ...(trace.development ? { development: trace.development } : {}),
+        ...(trace.season ? { season: trace.season } : {}),
         ...(athleteEvidenceLineage ? { athleteEvidenceLineage } : {}),
         ...(recommendation.plannedDose ? { plannedDose: recommendation.plannedDose } : {}),
         ...(recommendation.executionDose ? { executionDose: recommendation.executionDose } : {}),

@@ -237,7 +237,7 @@ export function resolvePlannedDose(
  * this event/date.
  */
 export function resolvePlannedDoseForDate(
-    phase: { volumeScale: number; intensityScale: number },
+    phase: { volumeScale: number; intensityScale: number; supportingEventScale?: { volumeScale: number; intensityScale: number } },
     objectives: readonly WeeklyObjective[],
     unresolvedObjectives: readonly WeeklyObjective[],
     planDefinition: PlanDefinition | null | undefined,
@@ -245,7 +245,13 @@ export function resolvePlannedDoseForDate(
 ): PlannedDose {
     const activeBlock = planDefinition?.blocks.find(block => block.startDate <= date && date <= block.endDate);
     if (activeBlock) {
-        return boundedPlannedDose(activeBlock.volumeScale, activeBlock.intensityScale);
+        // Issue #929: a supporting season event narrows an authored block as a minimum; the
+        // plan is event-relative to the primary target and cannot know about nearer races.
+        const supporting = phase.supportingEventScale;
+        return boundedPlannedDose(
+            Math.min(activeBlock.volumeScale, supporting?.volumeScale ?? Infinity),
+            Math.min(activeBlock.intensityScale, supporting?.intensityScale ?? Infinity),
+        );
     }
     return resolvePlannedDose(phase, objectives, unresolvedObjectives);
 }

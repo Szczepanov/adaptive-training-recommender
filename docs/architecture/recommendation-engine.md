@@ -1420,8 +1420,19 @@ focus is an upcoming scheduled event (both sort with `compareEventAuthority`). R
 4-star B, "B+"), `benchmark` (B) and `train_through` (C). It grants no execution authority:
 one event owns each calendar date, and `same_day_authority`, `inside_peak_taper` and
 `insufficient_peak_recovery` conflicts are typed and surfaced rather than blended.
-`UserEvent.starPriority` carries the star control from `goalToUserEvent`. Current status of
-the behavioral increments is tracked on the plans board.
+`UserEvent.starPriority` carries the star control from `goalToUserEvent`.
+Supporting events (`seasonSupport.ts`) narrow dose as a *minimum* with the primary phase's
+`volumeScale`/`intensityScale` (and with an authored structured block's scales in
+`resolvePlannedDoseForDate`): a B inside its own resolved taper falls linearly to at most a
+0.15 volume reduction (B+ / secondary A: 0.25), and a completed or DNF B/B+ gets 1 / 2 recovery
+days at 0.8 / 0.6. The limit is ignored while the primary target tapers or recovers, so a
+nearer race never flattens the surrounding block or derails the primary trajectory. A C
+(`train_through`) race contributes no objectives; within 3 days of it one quality objective
+(threshold, VO2, surge, then race-specific) of the governing event loses one required credit,
+recorded as a `train_through_replaces_key_session` dropped contributor objective.
+`RecommendationAudit.season` (`SeasonTrace`) persists the roadmap, conflicts and the active
+dose limit when more than one event is involved, and the Context Brief renders each event's
+role from it. Current status of the behavioral increments is tracked on the plans board.
 
 ---
 

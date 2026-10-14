@@ -236,7 +236,10 @@ export function resolveSeasonRoadmap(events: readonly UserEvent[], asOfDate: str
 }
 
 /** Athlete-facing, deterministic lines naming each event's role. Used by the Context Brief. */
-export function describeSeasonRoadmap(roadmap: SeasonRoadmap): string[] {
+export function describeSeasonRoadmap(roadmap: {
+    entries: ReadonlyArray<Pick<SeasonRoadmapEntry, 'title' | 'date' | 'role' | 'daysToEvent' | 'status' | 'dateOwner'>>;
+    conflicts: readonly SeasonConflict[];
+}): string[] {
     const roleText: Record<SeasonEventRole, string> = {
         primary_peak: 'primary season target (owns the macrocycle, taper and development)',
         benchmark_peak: 'major benchmark / mini-peak (proportionate taper, then back to the current block)',

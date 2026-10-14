@@ -1669,11 +1669,12 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
       function hasValidRecommendationAudit(userId, audit, version, date, revision) {
         let hasLineage = 'knowledgeLineage' in audit;
         return audit is map
-          && audit.keys().hasOnly(['policyVersion', 'evaluatedAt', 'decisionContextRevision', 'decisionContext', 'safetyStatus', 'history', 'envelope', 'plannedDose', 'executionDose', 'candidateScores', 'droppedContributorObjectives', 'externalPlan', 'externalRest', 'authoredOccurrence', 'primarySession', 'additionalSessions', 'subjectiveDrift', 'identityDecision', 'knowledgeLineage', 'athleteEvidenceLineage', 'development'])
+          && audit.keys().hasOnly(['policyVersion', 'evaluatedAt', 'decisionContextRevision', 'decisionContext', 'safetyStatus', 'history', 'envelope', 'plannedDose', 'executionDose', 'candidateScores', 'droppedContributorObjectives', 'externalPlan', 'externalRest', 'authoredOccurrence', 'primarySession', 'additionalSessions', 'subjectiveDrift', 'identityDecision', 'knowledgeLineage', 'athleteEvidenceLineage', 'development', 'season'])
           && (version < 4
             ? !hasLineage
             : (version == 4 && hasLineage && hasValidKnowledgeLineage(audit.knowledgeLineage)))
           && (!('development' in audit) || (audit.development is map && audit.development.objectives.size() <= 64 && audit.development.diagnostics.size() <= 64))
+          && (!('season' in audit) || (audit.season is map && audit.season.entries.size() <= 32 && audit.season.conflicts.size() <= 64))
           && (!('athleteEvidenceLineage' in audit) || hasValidAthleteEvidenceLineage(audit.athleteEvidenceLineage))
           // Scalar/deep audit shape is validated at the TypeScript persistence/read
           // boundary. Rules keep the integrity-bearing context binding below; this split

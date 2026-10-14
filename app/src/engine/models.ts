@@ -748,7 +748,7 @@ export interface ObjectiveProgress {
 // lives here (not periodization.ts) so decisionTrace/RecommendationAudit below can
 // reference it without periodization.ts importing back from models.ts.
 
-export type ObjectiveDropReason = 'inadmissible_during_taper';
+export type ObjectiveDropReason = 'inadmissible_during_taper' | 'train_through_replaces_key_session';
 
 export interface DroppedContributorObjective {
     eventId: string;
@@ -1086,6 +1086,8 @@ export interface Recommendation {
         /** Issue #928: The resolved event phase horizon policy that governed this decision. */
         eventHorizon?: import('./eventHorizonPolicy').EventPhaseHorizonPolicy;
         development?: import('./developmentAuthority').DevelopmentTrace;
+        /** Issue #929: compact season roadmap; absent for single-event athletes. */
+        season?: import('./seasonSupport').SeasonTrace;
         candidateScores: Array<{
             templateId: string;
             utilityScore: number;
@@ -2204,6 +2206,8 @@ export interface AthleteEvidenceLineageRef {
 
 export interface RecommendationAudit {
     development?: import('./developmentAuthority').DevelopmentTrace;
+    /** Issue #929: compact season roadmap; absent for single-event athletes. */
+    season?: import('./seasonSupport').SeasonTrace;
     policyVersion: string;
     evaluatedAt: string;
     decisionContextRevision: string;
