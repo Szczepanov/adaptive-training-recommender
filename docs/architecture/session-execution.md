@@ -224,8 +224,65 @@ after reload. Rest deadlines are cleared rather than reconstructed.
 
 Missing/invalid prescription bytes or a conflicting diary produce degraded resume. The runner
 retains the execution and entry evidence, pauses logging and new starts, and offers Retry recovery.
-It never substitutes current fixture/catalog/plan content for missing pinned bytes. The broader
-diagnostic and navigation surfaces remain follow-up work under #895/#723.
+It never substitutes current fixture/catalog/plan content for missing pinned bytes. Navigation and
+discoverability remain follow-up work under #723; failure diagnostics are described next.
+
+## Failure observability for canonical workouts (#895 WP5)
+
+An incomplete workout in the canonical Activities view names *which* of the eight #895 §10
+failure states holds instead of rendering "no data". Policy effect: none (display and export
+only; `POLICY_VERSION` is unchanged).
+
+**Layers.** `activitiesReadModelService.getCompletedWorkoutsInRange` records what each source
+read actually returned in `CompletedWorkoutView.sourceReads` (structured read, provider read,
+device-local outbox snapshot, reconciliation sweep outcome) instead of collapsing absent,
+unreadable and unresolved into `undefined`. The pure `training-occurrence/workoutSourceDiagnostics.ts`
+`projectWorkoutSourceDiagnostics` turns a view into one assessment per state;
+`workoutSourceDiagnosticsExport.ts` builds the bounded export; `WorkoutSourceDiagnostics.tsx`
+renders it. Every assessment is a closed union: `holds`, `clear`, `not_applicable` or
+`not_observable`. **`not_observable` is never rendered as empty, zero, healthy or synced.**
+States are independent, so co-occurring failures are all reported.
+
+| # | State | Derived from | Notes |
+|---|---|---|---|
+| 1 | `session_execution_absent` | `sourceReads.structured` | `no_execution_linked` (Garmin-only) or `execution_document_missing`; an unreadable/invalid execution is `not_observable`, never "absent" |
+| 2 | `entry_write_unsettled` | `sourceReads.outbox` (`sessionDiaryReceipts`) | `queued_writes` / `failed_writes`, both reported when both exist. **Receipts are per device**: zero receipts is `not_observable` (`receipts_are_device_local`), not "synced"; an unreadable store is `receipts_unreadable` |
+| 3 | `garmin_activity_absent` | `sourceReads.provider` | `no_provider_linked`; `activity_not_in_read_window` (the read window is bounded, so this is deliberately not "deleted"; also reported when one of several attached Garmin refs is missing); unreadable activities are `not_observable` |
+| 4 | `garmin_detail_unavailable` | `NormalizedGarminActivity.exerciseSets` | `exerciseSets` is written only when the detail endpoint succeeded. Present means `clear`. An omitted key on a strength activity is `not_observable` (`detail_fetch_outcome_not_persisted`): failed, rate-limited and never-attempted are not distinguishable because Python only logs fetch failures (follow-up #1051) |
+| 5 | `garmin_detail_empty` | `exerciseSets` | `[]` is durable proof of a successful fetch with zero sets, so it `holds`; absent detail cannot be called empty (`detail_not_stored`) |
+| 6 | `reconciliation_no_candidate` | `reconciliation.state` + sweep outcome | `single_source` after a *completed* sweep, or `manually_separated` from sticky exclusions. A failed, incomplete (unreadable Activities or a swallowed per-source error) or skipped sweep is `not_observable`, as is the unmarked other half of a persisted ambiguity (`counterpart_ambiguous`: ambiguous provenance marks only the side that was created and stores no candidate ids, so an opposite-kind single-source row within a day of an `ambiguous` one is never told "no candidate"). An unevaluated source is not "no candidate" |
+| 7 | `reconciliation_ambiguous` | persisted `ambiguous` | Distinct from 6; persisted ambiguity stays manual-only (WP4) |
+| 8 | `read_model_projection_failed` | `sourceReads` + window error | Per-workout reasons (`execution_unavailable`, `execution_invalid`, `definition_unresolved`, `entries_unavailable`, `provider_activities_unreadable`); a whole-window rejection renders a named alert and a failed export, never an empty list. Individual malformed entry documents are dropped by `getEntries` and are not counted (the `clear` wording says so) |
+
+`sourceCompletenessFor` maps the reads onto the existing planning-side `sourceCompleteness`
+shape of `TrainingResponseSessionEvidence` (#914/#916) and the export carries it, so the two
+stay comparable (several attached provider sources are `ambiguous`, as there); the per-state
+reasons refine that vocabulary rather than fork it.
+
+`ReconciliationOutcome` is a return value, not persisted. The persisted `single_source`,
+`matched` and `ambiguous` provenance maps to `created_single_source`, `attached_auto_link`
+and `ambiguous`; any manual decision (link, unlink, keep-separate) is `not_observable` as a
+matcher outcome. `error` is observable only in aggregate: `reconcileDateRangeForUser` now
+reports `activitiesReadable` and `sourceErrors` (additive; reconciliation behaviour is
+unchanged), and `loadCanonicalActivitiesWindow` turns a thrown, partial or errored sweep into
+`failed` / `incomplete`. `already_linked` is not observable per workout. An empty window is
+worded as "nothing recorded" only after a `completed` sweep, and its export header carries the
+sweep status. `permission-denied` reads still fail the whole window rather than one row; other
+entries-read failures are confined to their row.
+
+`getCompletedWorkoutsInRange` callers that diff against the legacy pipeline
+(`computeHistoryShadowDiffForUser`) return `null` when a structured source could not be read,
+rather than logging a false evidence-tier regression.
+
+**Surface.** Real gaps and unreadable dependencies show a visible "Some data is missing or
+unknown" notice per card. Expected single-source facts (a structured session without a watch
+recording, a Garmin ride without a plan) stay in the collapsed "Source diagnostics" list, which
+always shows all eight checks with their issue numbers. Status is spelled out in text.
+
+**Export.** "Copy source diagnostics" is user-initiated and bounded (newest 100 workouts,
+20 source keys each, deterministic ordering). It contains ids, source keys, states, reasons and
+timestamps only: no telemetry, exercise data, titles, actors, free text or credentials. A failed
+window exports `projection: "failed"` with `null` counts, never `0`.
 
 ## Custom-template lifecycle
 

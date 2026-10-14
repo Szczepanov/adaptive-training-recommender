@@ -11,6 +11,7 @@ const { activityService } = await import('../services/activityService');
 const { recommendationService } = await import('../services/recommendationService');
 const { getCompletedWorkoutsInRange } = await import('./activitiesReadModelService');
 const { computeHistoryShadowDiffForUser } = await import('./historyShadowService');
+const { completeReads } = await import('./workoutSourceDiagnostics.fixtures');
 
 beforeEach(() => {
     vi.clearAllMocks();
@@ -36,6 +37,21 @@ describe('computeHistoryShadowDiffForUser', () => {
         expect(diff).toBeNull();
     });
 
+    it('returns null instead of a false evidence-tier regression when a structured source could not be read', async () => {
+        vi.mocked(activityService.getActivitiesInRange).mockResolvedValue({ status: 'AVAILABLE', data: [], revision: null });
+        vi.mocked(recommendationService.getRecommendationsInRange).mockResolvedValue({ status: 'AVAILABLE', data: [], revision: null });
+        vi.mocked(getCompletedWorkoutsInRange).mockResolvedValue([{
+            performedOccurrenceId: 'pto-1',
+            sourceKeys: [],
+            sourceBadge: { hasStructured: true, hasProvider: false, providers: [] },
+            reconciliation: { state: 'single_source' },
+            garminExerciseSetsAreDiagnosticOnly: true,
+            sourceReads: { ...completeReads, structured: { status: 'entries_unavailable' } },
+        }]);
+
+        expect(await computeHistoryShadowDiffForUser('user-1', '2026-08-20', '2026-08-27')).toBeNull();
+    });
+
     it('computes a real diff when both sources are available', async () => {
         vi.mocked(activityService.getActivitiesInRange).mockResolvedValue({
             status: 'AVAILABLE',
@@ -49,6 +65,7 @@ describe('computeHistoryShadowDiffForUser', () => {
             sourceBadge: { hasStructured: false, hasProvider: true, providers: ['garmin'] },
             reconciliation: { state: 'single_source' },
             garminExerciseSetsAreDiagnosticOnly: false,
+            sourceReads: completeReads,
         }]);
 
         const diff = await computeHistoryShadowDiffForUser('user-1', '2026-08-20', '2026-08-27');

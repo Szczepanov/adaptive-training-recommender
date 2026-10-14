@@ -7,7 +7,7 @@ vi.mock('./repository', async () => {
 });
 vi.mock('../services/activityService', () => ({ activityService: { getActivitiesInRange: vi.fn() } }));
 vi.mock('../services/sessionExecutionService', () => ({
-    sessionExecutionService: { getExecution: vi.fn(), getEntries: vi.fn(), getRestEvents: vi.fn() },
+    sessionExecutionService: { getExecution: vi.fn(), getEntries: vi.fn(), getRestEvents: vi.fn(), getDiaryReceipts: vi.fn() },
 }));
 vi.mock('../sessions/sessionDefinitionResolver', () => ({ resolveSessionDefinition: vi.fn() }));
 
@@ -39,6 +39,7 @@ beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(activityService.getActivitiesInRange).mockResolvedValue({ status: 'AVAILABLE', data: [], revision: null });
     vi.mocked(sessionExecutionService.getRestEvents).mockResolvedValue([]);
+    vi.mocked(sessionExecutionService.getDiaryReceipts).mockReturnValue([]);
 });
 
 describe('getCompletedWorkoutsInRange', () => {

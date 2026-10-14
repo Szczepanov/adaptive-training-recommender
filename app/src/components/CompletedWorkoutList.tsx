@@ -10,7 +10,7 @@ import type { IntensityGauge } from '../engine/models';
 import { formatSessionLoad } from '../sessions/loadDisplay';
 import type { RangeOrNumber, SessionEffort, SessionEntryPayload } from '../sessions/models';
 import type { StepComparison } from '../sessions/performedComparison';
-import { manualLinkCandidatesFor, type CompletedWorkoutView, type ManualLinkCandidate } from '../training-occurrence/completedWorkoutView';
+import { manualLinkCandidatesFor, type CompletedWorkoutView, type ManualLinkCandidate, type ReconciliationSweepStatus } from '../training-occurrence/completedWorkoutView';
 import type { PerformedRestDetail, PrescribedStepTarget } from '../training-occurrence/structuredSetDetail';
 import { sourceKeyForRef } from '../training-occurrence/sourceIdentity';
 import { copyActivityJsonToClipboard } from '../utils/activityJsonExport';
@@ -20,11 +20,18 @@ import {
   hasRunningDynamics,
   hrMeasurementDetail,
 } from './activityTelemetryFormat';
+import { DiagnosticsExportButton, WorkoutSourceDiagnostics, type DiagnosticsWindow } from './WorkoutSourceDiagnostics';
 import { ZoneBars } from './ZoneBars';
 import './ActivityTelemetry.css';
 
 interface CompletedWorkoutListProps {
   workouts: CompletedWorkoutView[] | null;
+  /** The displayed date window; when given, the list offers the bounded source-diagnostics
+   * export (#895 WP5). User-initiated only. */
+  exportWindow?: DiagnosticsWindow | null;
+  /** The window sweep outcome. Only `completed` lets an empty window read as "nothing recorded";
+   * anything else (or omitted) leaves it unknown (#895 WP5). */
+  windowSweep?: ReconciliationSweepStatus;
   onReclassify?: (activityId: string) => void;
   /** Diagnostic-only affordance (ADR-0034 "Manual reconciliation UX") -- omitted by
    * default; pass a handler to surface an "Unlink" control on matched workouts. */
@@ -322,11 +329,22 @@ function ProvenanceDisclosure({ workout, onUnlinkSource }: { workout: CompletedW
   );
 }
 
-export function CompletedWorkoutList({ workouts, onReclassify, onUnlinkSource, onLinkSources }: CompletedWorkoutListProps) {
+export function CompletedWorkoutList({ workouts, exportWindow, windowSweep, onReclassify, onUnlinkSource, onLinkSources }: CompletedWorkoutListProps) {
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   if (workouts === null) return <p className="activity-telemetry-state">Loading recent activities…</p>;
-  if (workouts.length === 0) return <p className="activity-telemetry-state">No workouts were recorded in the last seven days.</p>;
+  if (workouts.length === 0) {
+    return (
+      <>
+        {exportWindow && <DiagnosticsExportButton range={exportWindow} result={{ status: 'available', workouts }} sweep={windowSweep} />}
+        <p className="activity-telemetry-state">
+          {windowSweep === 'completed'
+            ? 'No workouts were recorded in the last seven days.'
+            : 'No workouts were found, but the latest matching check did not evaluate every recording, so newly synced activities may be missing.'}
+        </p>
+      </>
+    );
+  }
 
   const handleCopy = async (workout: CompletedWorkoutView) => {
     if (!workout.garmin) return;
@@ -340,6 +358,8 @@ export function CompletedWorkoutList({ workouts, onReclassify, onUnlinkSource, o
   };
 
   return (
+    <>
+    {exportWindow && <DiagnosticsExportButton range={exportWindow} result={{ status: 'available', workouts }} sweep={windowSweep} />}
     <div className="activity-telemetry-list">
       {workouts.map(workout => {
         const startTime = formatLocalTime(workout.startedAt);
@@ -389,12 +409,14 @@ export function CompletedWorkoutList({ workouts, onReclassify, onUnlinkSource, o
             )}
             <GarminEnrichment workout={workout} />
             {!workout.structured && !workout.garmin && (
-              <p className="activity-telemetry-empty">No structured or telemetry detail is available for this occurrence.</p>
+              <p className="activity-telemetry-empty">No session or Garmin detail could be shown for this workout. The source checks below say why.</p>
             )}
+            <WorkoutSourceDiagnostics workout={workout} />
             <ProvenanceDisclosure workout={workout} onUnlinkSource={onUnlinkSource} />
           </article>
         );
       })}
     </div>
+    </>
   );
 }

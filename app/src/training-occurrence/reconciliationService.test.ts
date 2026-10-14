@@ -500,5 +500,32 @@ describe('reconcileDateRangeForUser', () => {
             'structured_execution:exec-done',
             'provider_activity:garmin:act-1',
         ]);
+        expect(summary.activitiesReadable).toBe(true);
+        expect(summary.sourceErrors).toBe(0);
+    });
+
+    it('reports (without throwing) that it could not read Activities, so callers do not treat the sweep as complete (#895 WP5)', async () => {
+        vi.mocked(sessionExecutionService.getExecutionsInRange).mockResolvedValue({ executions: [], invalidRecords: 0 });
+        vi.mocked(activityService.getActivitiesInRange).mockResolvedValue({ status: 'INVALID', issues: [] });
+        vi.mocked(repo.queryActiveInDateWindow).mockResolvedValue([]);
+
+        const summary = await reconcileDateRangeForUser('user-1', '2026-08-25', '2026-08-27');
+
+        expect(summary).toMatchObject({ activitiesProcessed: 0, activitiesReadable: false, sourceErrors: 0 });
+    });
+
+    it('counts per-source reconciliation errors that reconcileSourceFacts otherwise swallows', async () => {
+        vi.mocked(sessionExecutionService.getExecutionsInRange).mockResolvedValue({ executions: [], invalidRecords: 0 });
+        vi.mocked(activityService.getActivitiesInRange).mockResolvedValue({
+            status: 'AVAILABLE',
+            data: [{ activityId: 'act-1', date: '2026-08-26', type: 'strength_training', durationMin: 40, trainingEffectAerobic: null, trainingEffectAnaerobic: null, averageHr: null, activityTrainingLoad: null, intensityTag: 'moderate' }],
+            revision: null,
+        });
+        vi.mocked(repo.getBySourceKey).mockRejectedValue(new Error('firestore unavailable'));
+        vi.mocked(repo.queryActiveInDateWindow).mockResolvedValue([]);
+
+        const summary = await reconcileDateRangeForUser('user-1', '2026-08-25', '2026-08-27');
+
+        expect(summary).toMatchObject({ activitiesProcessed: 1, activitiesReadable: true, sourceErrors: 1 });
     });
 });

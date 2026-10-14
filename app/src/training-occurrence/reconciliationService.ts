@@ -280,6 +280,11 @@ async function mergeDuplicatesInWindow(userId: string, fromDateInclusive: string
 export interface SweepSummary {
     executionsProcessed: number;
     activitiesProcessed: number;
+    /** False when the Activities read was not AVAILABLE, so the sweep evaluated no activity
+     * (#895 WP5: an unevaluated source is not "no candidate"). Observational only. */
+    activitiesReadable: boolean;
+    /** Sources whose reconciliation returned `outcome: 'error'` (swallowed per source). */
+    sourceErrors: number;
 }
 
 /**
@@ -299,17 +304,25 @@ export async function reconcileDateRangeForUser(
         activityService.getActivitiesInRange(userId, fromDateInclusive, toDateExclusive),
     ]);
 
+    let sourceErrors = 0;
     for (const { execution } of executions) {
         if (execution.state !== 'completed') continue;
-        await reconcileSourceFacts(userId, structuredExecutionToFacts(execution));
+        const result = await reconcileSourceFacts(userId, structuredExecutionToFacts(execution));
+        if (result.outcome === 'error') sourceErrors += 1;
     }
 
     const activities = activitiesState.status === 'AVAILABLE' ? activitiesState.data : [];
     for (const activity of activities) {
-        await reconcileSourceFacts(userId, garminActivityToFacts(activity));
+        const result = await reconcileSourceFacts(userId, garminActivityToFacts(activity));
+        if (result.outcome === 'error') sourceErrors += 1;
     }
 
     await mergeDuplicatesInWindow(userId, fromDateInclusive, toDateInclusive);
 
-    return { executionsProcessed: executions.length, activitiesProcessed: activities.length };
+    return {
+        executionsProcessed: executions.length,
+        activitiesProcessed: activities.length,
+        activitiesReadable: activitiesState.status === 'AVAILABLE',
+        sourceErrors,
+    };
 }

@@ -16,13 +16,13 @@ import {
 import { ActivityTelemetry } from './ActivityTelemetry';
 import { ActivityReclassificationModal } from './ActivityReclassificationModal';
 import { StrengthOverloadHistory } from './StrengthOverloadHistory';
-import { CompletedWorkoutList } from './CompletedWorkoutList';
+import { CanonicalActivitiesPanel } from './CanonicalActivitiesPanel';
 import { linkCompletedWorkoutSources, unlinkCompletedWorkoutSource } from './completedWorkoutActions';
 import { BodyCompositionPanel } from './anthropometry/BodyCompositionPanel';
 import { NutritionPanel } from './nutrition/NutritionPanel';
 import { configuredActivitiesReadModelPolicy } from '../training-occurrence/activitiesReadModelPolicy';
 import { loadCanonicalActivitiesWindow } from '../training-occurrence/canonicalActivitiesWindow';
-import type { CompletedWorkoutView } from '../training-occurrence/completedWorkoutView';
+import type { CompletedWorkoutView, ReconciliationSweepStatus } from '../training-occurrence/completedWorkoutView';
 import { SCREEN_LABELS } from '../types/navigation';
 import './DataView.css';
 import type { CapabilityMaintenanceResult } from '../engine/capabilityMaintenance';
@@ -116,6 +116,7 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery', onNav
     userId: string;
     asOfDate: string;
     workouts: CompletedWorkoutView[] | null;
+    reconciliationSweep?: ReconciliationSweepStatus;
     /** Set when the canonical read itself rejected -- `workouts` stays null so the UI can
      * tell "still loading" (canonicalWorkoutWindow is null/stale) apart from "read failed"
      * (this flag set) instead of showing an indefinite loading state for a real failure. */
@@ -140,6 +141,9 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery', onNav
   }, [activeTab, userId, adherenceStats]);
 
   const briefDate = decisionInput?.date;
+  const canonicalWindowIsCurrent = canonicalWorkoutWindow !== null
+    && canonicalWorkoutWindow.userId === userId
+    && canonicalWorkoutWindow.asOfDate === briefDate;
   const capabilityMaintenanceKey = JSON.stringify(capabilityMaintenance ?? null);
   useEffect(() => {
     // Both userId and asOfDate must match the cached window, or a user switch on the same
@@ -168,8 +172,8 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery', onNav
     let cancelled = false;
     const startInclusive = addDaysToLocalDateString(briefDate, -6);
     const throughExclusive = addDaysToLocalDateString(briefDate, 1);
-    loadCanonicalActivitiesWindow(userId, startInclusive, throughExclusive).then((workouts) => {
-      if (!cancelled) setCanonicalWorkoutWindow({ userId, asOfDate: briefDate, workouts });
+    loadCanonicalActivitiesWindow(userId, startInclusive, throughExclusive).then(({ workouts, reconciliationSweep }) => {
+      if (!cancelled) setCanonicalWorkoutWindow({ userId, asOfDate: briefDate, workouts, reconciliationSweep });
     }).catch(err => {
       console.warn('[training-occurrence] canonical activities read failed', err);
       if (!cancelled) setCanonicalWorkoutWindow({ userId, asOfDate: briefDate, workouts: null, error: true });
@@ -1133,24 +1137,23 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery', onNav
               )}
             </div>
             {activitiesReadModelPolicy === 'canonical-v1' ? (
-              canonicalWorkoutWindow && canonicalWorkoutWindow.userId === userId && canonicalWorkoutWindow.asOfDate === briefDate && canonicalWorkoutWindow.error ? (
-                <p className="activity-telemetry-state error">Canonical activity view is temporarily unavailable. Retry the dashboard refresh.</p>
-              ) : (
-                <CompletedWorkoutList
-                  workouts={canonicalWorkoutWindow && canonicalWorkoutWindow.userId === userId && canonicalWorkoutWindow.asOfDate === briefDate ? canonicalWorkoutWindow.workouts : null}
-                  onReclassify={() => setReclassifyModalOpen(true)}
-                  onUnlinkSource={(performedOccurrenceId, sourceKey) => {
-                    unlinkCompletedWorkoutSource(userId, performedOccurrenceId, sourceKey, userId)
-                      .then(() => setCanonicalWorkoutWindow(null))
-                      .catch(err => console.warn('[training-occurrence] unlink failed', err));
-                  }}
-                  onLinkSources={(structuredOccurrenceId, providerOccurrenceId) => {
-                    linkCompletedWorkoutSources(userId, structuredOccurrenceId, providerOccurrenceId, userId)
-                      .then(() => setCanonicalWorkoutWindow(null))
-                      .catch(err => console.warn('[training-occurrence] manual link failed', err));
-                  }}
-                />
-              )
+              <CanonicalActivitiesPanel
+                workouts={canonicalWindowIsCurrent ? canonicalWorkoutWindow.workouts : null}
+                failed={canonicalWindowIsCurrent && !!canonicalWorkoutWindow.error}
+                reconciliationSweep={canonicalWindowIsCurrent ? canonicalWorkoutWindow.reconciliationSweep : undefined}
+                range={briefDate ? { from: addDaysToLocalDateString(briefDate, -6), toExclusive: addDaysToLocalDateString(briefDate, 1) } : null}
+                onReclassify={() => setReclassifyModalOpen(true)}
+                onUnlinkSource={(performedOccurrenceId, sourceKey) => {
+                  unlinkCompletedWorkoutSource(userId, performedOccurrenceId, sourceKey, userId)
+                    .then(() => setCanonicalWorkoutWindow(null))
+                    .catch(err => console.warn('[training-occurrence] unlink failed', err));
+                }}
+                onLinkSources={(structuredOccurrenceId, providerOccurrenceId) => {
+                  linkCompletedWorkoutSources(userId, structuredOccurrenceId, providerOccurrenceId, userId)
+                    .then(() => setCanonicalWorkoutWindow(null))
+                    .catch(err => console.warn('[training-occurrence] manual link failed', err));
+                }}
+              />
             ) : (
               <ActivityTelemetry
                 state={activityWindow && activityWindow.userId === userId && activityWindow.asOfDate === briefDate ? activityWindow.state : null}

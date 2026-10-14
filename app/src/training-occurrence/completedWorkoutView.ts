@@ -36,6 +36,62 @@ export interface CompletedWorkoutStructuredDetail {
     performedRest: PerformedRestAvailability;
 }
 
+/**
+ * #895 WP5: what each source read actually returned, so "absent", "unreadable" and "not
+ * linked" are three different facts instead of one `undefined` field. Produced only by
+ * `getCompletedWorkoutsInRange`; consumed by the pure `workoutSourceDiagnostics.ts`.
+ */
+export type StructuredSourceRead =
+    | { status: 'not_linked' }
+    | { status: 'available' }
+    /** The occurrence references an execution whose document does not exist. */
+    | { status: 'execution_missing' }
+    | { status: 'execution_invalid' }
+    | { status: 'execution_unavailable' }
+    | { status: 'definition_unresolved'; definition: 'MISSING' | 'INVALID' | 'UNAVAILABLE' }
+    | { status: 'entries_unavailable' };
+
+export type ProviderSourceRead =
+    | 'not_linked'
+    /** Only non-Garmin providers are attached; the v1 DTO has a Garmin telemetry slot only. */
+    | 'non_garmin_only'
+    | 'available'
+    /** More than one provider source is attached (the DTO surfaces only the first Garmin
+     * one). Mirrors `trainingResponseEvidence`, which reports several measured sources as
+     * `ambiguous`. `multiple_available`: every Garmin ref hydrated; `multiple_incomplete`: some
+     * Garmin ref has no record in the fetched window. */
+    | 'multiple_available'
+    | 'multiple_incomplete'
+    /** The activities read succeeded but the linked Garmin ref has no record in the fetched
+     * window. Deliberately not "deleted": the read window is bounded. */
+    | 'activity_not_in_read_window'
+    | 'activities_unreadable';
+
+/** Device-local diary receipts (`sessionDiaryReceipts.ts`) for the linked execution. They
+ * exist only on the device that wrote the diary, so zero here is not proof of "synced". */
+export type OutboxSnapshot =
+    | { status: 'not_linked' }
+    | { status: 'read'; queued: number; failed: number }
+    | { status: 'unreadable' };
+
+/** `completed` = the sweep ran and evaluated every source. `incomplete` = it returned without
+ * throwing but skipped sources (unreadable Activities, per-source errors). `failed` = it threw.
+ * `not_run` = the caller read the canonical window without sweeping. Only `completed` licenses
+ * a "no candidate" or "nothing recorded" claim. */
+export type ReconciliationSweepStatus = 'completed' | 'incomplete' | 'failed' | 'not_run';
+
+export interface CompletedWorkoutSourceReads {
+    structured: StructuredSourceRead;
+    provider: ProviderSourceRead;
+    outbox: OutboxSnapshot;
+    reconciliationSweep: ReconciliationSweepStatus;
+    /** True when this window holds an `ambiguous` occurrence of the opposite source kind within
+     * one local day. Ambiguous provenance stores no candidate ids and only the newly created
+     * side is marked, so this single-source row may be its (unmarked) counterpart: "no
+     * candidate" cannot be asserted for it. Conservative by construction. */
+    ambiguousCounterpart: boolean;
+}
+
 export interface CompletedWorkoutView {
     performedOccurrenceId: string;
     /** `sourceIdentity.ts` keys of every attached source -- lets a manual-link offer
@@ -57,6 +113,9 @@ export interface CompletedWorkoutView {
      * `exerciseSets` (if present) as fallback/diagnostic only, never as a second
      * competing representation of exercise/rep/weight identity. */
     garminExerciseSetsAreDiagnosticOnly: boolean;
+    /** Read statuses behind `structured`/`garmin` (#895 WP5). Never inferred from the
+     * presence of those fields: an `undefined` `structured` can mean any of several things. */
+    sourceReads: CompletedWorkoutSourceReads;
 }
 
 export function sourceBadgeFor(occurrence: Pick<PerformedTrainingOccurrence, 'sourceRefs'>): CompletedWorkoutSourceBadge {
