@@ -8,6 +8,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { initializeTestEnvironment, type RulesTestEnvironment } from '@firebase/rules-unit-testing';
 import type { Firestore } from 'firebase/firestore';
 import type { NormalizedGarminActivity } from '../engine/models';
+import { parseNormalizedGarminActivity } from '../persistence/parsers/trainingHistory';
 import type { SessionExecution } from '../sessions/models';
 import type { CompletedWorkoutView } from '../training-occurrence/completedWorkoutView';
 
@@ -197,6 +198,26 @@ emulatorDescribe('Workout source diagnostics against real reconciliation (#895 W
         expect(states.garmin_detail_unavailable).toEqual({ status: 'clear' });
         // Expected single-source facts are explained but do not raise a notice.
         expect(diagnostics.projectWorkoutSourceDiagnostics(view).attention).toEqual([]);
+    });
+
+    it('reports a persisted failed detail fetch status as state 4 holding (#1051)', async () => {
+        const withoutSets = Object.fromEntries(
+            Object.entries(activity()).filter(([key]) => key !== 'exerciseSets'),
+        ) as unknown as NormalizedGarminActivity;
+        // Round-trip the Firestore document shape the Python writer produces through the real parser.
+        const parsed = parseNormalizedGarminActivity(
+            { ...withoutSets, detailStatus: { exerciseSets: { status: 'failed', attemptedAt: '2026-09-29T08:00:00+00:00' } } },
+            'users/u1/activities/act-1',
+            'act-1',
+        );
+        if (parsed.status !== 'AVAILABLE') throw new Error('expected the seeded activity to parse');
+        expect(parsed.data.detailStatus).toEqual({ exerciseSets: { status: 'failed', attemptedAt: '2026-09-29T08:00:00+00:00' } });
+        wiring.activities = [parsed.data];
+        await reconciliation.reconcileDateRangeForUser(USER_ID, DATE, '2026-09-30');
+
+        const [view] = await views();
+        expect(stateOf(view).garmin_detail_unavailable).toEqual({ status: 'holds', reasons: ['detail_fetch_failed'] });
+        expect(diagnostics.projectWorkoutSourceDiagnostics(view).attention).toContain('garmin_detail_unavailable');
     });
 
     it('reports a matched structured + Garmin workout as complete', async () => {

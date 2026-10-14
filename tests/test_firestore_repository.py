@@ -767,3 +767,18 @@ def test_get_snapshot_logs_warning_and_returns_none_on_exception(
     assert res is None
     assert "Error reading Firestore snapshot for user real_uid_456 date 2026-08-06" in caplog.text
     assert "Firestore connection timeout" in caplog.text
+
+
+def test_get_snapshots_by_dates_delegates_to_get_snapshots_batch() -> None:
+    repo = FirestoreRecoveryRepository(user_id="real_uid_456", db=MagicMock())
+    date_isos = ["2026-08-06", "2026-08-07"]
+    expected_result = {
+        "2026-08-06": {"userId": "real_uid_456", "date": "2026-08-06"},
+        "2026-08-07": {"userId": "real_uid_456", "date": "2026-08-07"},
+    }
+    repo.get_snapshots_batch = MagicMock(return_value=expected_result)
+
+    result = repo.get_snapshots_by_dates(date_isos)
+
+    assert result == expected_result
+    repo.get_snapshots_batch.assert_called_once_with(date_isos)
