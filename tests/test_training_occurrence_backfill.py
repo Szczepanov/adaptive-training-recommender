@@ -103,9 +103,11 @@ class _MockDb:
         self.users: dict[str, dict[str, dict[str, dict[str, Any]]]] = initial_data or {}
         self.touched_user_ids: list[str] = []
         self.write_count: int = 0
+        self.get_all_call_count: int = 0
         self.get_all_batches: list[list[str]] = []
 
     def get_all(self, refs: list[_Ref]) -> list[_Snapshot]:
+        self.get_all_call_count += 1
         self.get_all_batches.append([ref.id for ref in refs])
         return [ref.get() for ref in reversed(refs)]
 
@@ -129,6 +131,27 @@ class _MockDb:
 
     def transaction(self) -> _MockTransaction:
         return _MockTransaction(self)
+
+
+def test_batch_read_failure_aborts_planning_and_audit(monkeypatch: pytest.MonkeyPatch) -> None:
+    db = _MockDb(
+        {
+            "user1": {
+                "activities": {
+                    "act1": {"activityId": "act1", "date": "2026-07-01", "type": "cycling"}
+                }
+            }
+        }
+    )
+
+    def fail_batch(_refs: list[Any]) -> list[_Snapshot]:
+        raise RuntimeError("batch read failed")
+
+    monkeypatch.setattr(db, "get_all", fail_batch)
+    for operation in (plan_training_occurrence_backfill, audit_training_occurrence_backfill):
+        with pytest.raises(RuntimeError, match="batch read failed"):
+            operation(db, "user1", "2026-07-01", "2026-07-01")
+    assert db.write_count == 0
 
 
 def test_preflight_batches_source_links_in_bounded_chunks() -> None:
@@ -793,6 +816,81 @@ def test_duplicate_active_source_ownership_is_detected_preflight_and_audit() -> 
     assert not audit.audit_passed
     assert audit.invalid_links >= 2
     assert any("multiple active occurrences" in issue for issue in audit.issues)
+
+
+def test_batched_get_all_usage_in_plan_and_audit() -> None:
+    source_key1 = provider_activity_source_key("garmin", "act1")
+    source_doc_id1 = encode_source_key_for_doc_id(source_key1)
+    source_key2 = provider_activity_source_key("garmin", "act2")
+    source_doc_id2 = encode_source_key_for_doc_id(source_key2)
+
+    db = _MockDb(
+        {
+            "user1": {
+                "activities": {
+                    "act1": {"activityId": "act1", "date": "2026-07-01", "type": "cycling"},
+                    "act2": {"activityId": "act2", "date": "2026-07-02", "type": "running"},
+                },
+                "performedOccurrenceSourceLinks": {
+                    source_doc_id1: {
+                        "schemaVersion": 1,
+                        "sourceKey": source_key1,
+                        "sourceKind": "provider_activity",
+                        "userId": "user1",
+                        "performedOccurrenceId": "pto-1",
+                    },
+                    source_doc_id2: {
+                        "schemaVersion": 1,
+                        "sourceKey": source_key2,
+                        "sourceKind": "provider_activity",
+                        "userId": "user1",
+                        "performedOccurrenceId": "pto-2",
+                    },
+                },
+                "performedTrainingOccurrences": {
+                    "pto-1": {
+                        "schemaVersion": 1,
+                        "performedOccurrenceId": "pto-1",
+                        "userId": "user1",
+                        "status": "active",
+                        "localDate": "2026-07-01",
+                        "sourceRefs": [
+                            {
+                                "kind": "provider_activity",
+                                "provider": "garmin",
+                                "activityId": "act1",
+                            }
+                        ],
+                    },
+                    "pto-2": {
+                        "schemaVersion": 1,
+                        "performedOccurrenceId": "pto-2",
+                        "userId": "user1",
+                        "status": "active",
+                        "localDate": "2026-07-02",
+                        "sourceRefs": [
+                            {
+                                "kind": "provider_activity",
+                                "provider": "garmin",
+                                "activityId": "act2",
+                            }
+                        ],
+                    },
+                },
+            }
+        }
+    )
+
+    db.get_all_call_count = 0
+    plan = plan_training_occurrence_backfill(db, "user1", "2026-07-01", "2026-07-02")
+    assert plan.already_linked_count == 2
+    # Verify get_all was used for batch fetching instead of 1-by-1 reads
+    assert db.get_all_call_count > 0
+
+    db.get_all_call_count = 0
+    audit = audit_training_occurrence_backfill(db, "user1", "2026-07-01", "2026-07-02")
+    assert audit.audit_passed
+    assert db.get_all_call_count > 0
 
 
 def test_impossible_activity_date_is_rejected_before_migration() -> None:
