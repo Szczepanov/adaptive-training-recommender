@@ -405,6 +405,7 @@ def plan_training_occurrence_backfill(
     )
 
     active_occurrence_ids_for_source: dict[str, list[str]] = {}
+    active_garmin_refs: list[dict[str, str]] = []
     for occ_snap in occ_stream:
         occ_data = occ_snap.to_dict() or {}
         refs = occ_data.get("sourceRefs")
@@ -448,56 +449,86 @@ def plan_training_occurrence_backfill(
             ref_key = provider_activity_source_key("garmin", ref_act_id)
             active_occurrence_ids_for_source.setdefault(ref_key, []).append(occ_snap.id)
             ref_doc_id = encode_source_key_for_doc_id(ref_key)
-            ref_link_snap = (
-                user_ref.collection("performedOccurrenceSourceLinks").document(ref_doc_id).get()
+            active_garmin_refs.append(
+                {
+                    "occ_id": occ_snap.id,
+                    "ref_act_id": ref_act_id,
+                    "ref_key": ref_key,
+                    "ref_doc_id": ref_doc_id,
+                }
             )
-            if not ref_link_snap.exists:
-                plan.anomalies.append(
-                    BackfillAnomaly(
-                        anomaly_type="source_ref_without_source_link",
-                        message=(
-                            f"Active occurrence {occ_snap.id} contains Garmin source ref {ref_act_id} "
-                            "without a corresponding source-link document"
-                        ),
-                        activity_id=ref_act_id,
-                        source_key=ref_key,
-                        occurrence_id=occ_snap.id,
-                    )
-                )
-                continue
 
-            ref_link_data = ref_link_snap.to_dict() or {}
-            if (
-                ref_link_data.get("schemaVersion") != 1
-                or ref_link_data.get("sourceKey") != ref_key
-                or ref_link_data.get("sourceKind") != "provider_activity"
-                or ref_link_data.get("userId") != user_id
-            ):
-                plan.anomalies.append(
-                    BackfillAnomaly(
-                        anomaly_type="invalid_source_link",
-                        message=f"Source link claim for {ref_key} is malformed or owned by another user",
-                        activity_id=ref_act_id,
-                        source_key=ref_key,
-                        occurrence_id=occ_snap.id,
-                    )
-                )
-                continue
+    # Batch fetch all corresponding performedOccurrenceSourceLinks documents
+    source_links_coll = user_ref.collection("performedOccurrenceSourceLinks")
+    distinct_doc_ids = list({r["ref_doc_id"] for r in active_garmin_refs})
+    doc_refs = [source_links_coll.document(doc_id) for doc_id in distinct_doc_ids]
 
-            linked_occurrence_id = str(ref_link_data.get("performedOccurrenceId") or "")
-            if linked_occurrence_id != occ_snap.id:
-                plan.anomalies.append(
-                    BackfillAnomaly(
-                        anomaly_type="source_link_target_mismatch",
-                        message=(
-                            f"Active occurrence {occ_snap.id} carries {ref_key}, but the unique "
-                            f"source link points to {linked_occurrence_id or '<missing>'}"
-                        ),
-                        activity_id=ref_act_id,
-                        source_key=ref_key,
-                        occurrence_id=occ_snap.id,
-                    )
+    fetched_link_snaps: dict[str, Any] = {}
+    chunk_size = 400
+    for i in range(0, len(doc_refs), chunk_size):
+        chunk = doc_refs[i : i + chunk_size]
+        try:
+            for snap in db.get_all(chunk):
+                fetched_link_snaps[snap.id] = snap
+        except AttributeError:
+            for ref in chunk:
+                snap = ref.get()
+                fetched_link_snaps[snap.id] = snap
+
+    for item in active_garmin_refs:
+        occ_id = item["occ_id"]
+        ref_act_id = item["ref_act_id"]
+        ref_key = item["ref_key"]
+        ref_doc_id = item["ref_doc_id"]
+
+        ref_link_snap = fetched_link_snaps.get(ref_doc_id)
+        if not ref_link_snap or not ref_link_snap.exists:
+            plan.anomalies.append(
+                BackfillAnomaly(
+                    anomaly_type="source_ref_without_source_link",
+                    message=(
+                        f"Active occurrence {occ_id} contains Garmin source ref {ref_act_id} "
+                        "without a corresponding source-link document"
+                    ),
+                    activity_id=ref_act_id,
+                    source_key=ref_key,
+                    occurrence_id=occ_id,
                 )
+            )
+            continue
+
+        ref_link_data = ref_link_snap.to_dict() or {}
+        if (
+            ref_link_data.get("schemaVersion") != 1
+            or ref_link_data.get("sourceKey") != ref_key
+            or ref_link_data.get("sourceKind") != "provider_activity"
+            or ref_link_data.get("userId") != user_id
+        ):
+            plan.anomalies.append(
+                BackfillAnomaly(
+                    anomaly_type="invalid_source_link",
+                    message=f"Source link claim for {ref_key} is malformed or owned by another user",
+                    activity_id=ref_act_id,
+                    source_key=ref_key,
+                    occurrence_id=occ_id,
+                )
+            )
+            continue
+
+        linked_occurrence_id = str(ref_link_data.get("performedOccurrenceId") or "")
+        if linked_occurrence_id != occ_id:
+            plan.anomalies.append(
+                BackfillAnomaly(
+                    anomaly_type="source_link_target_mismatch",
+                    message=(
+                        f"Active occurrence {occ_id} carries {ref_key}, but the unique "
+                        f"source link points to {linked_occurrence_id or '<missing>'}"
+                    ),
+                    activity_id=ref_act_id,
+                    source_key=ref_key,
+                    occurrence_id=occ_id,
+                )
+            )
 
     for source_key, occurrence_ids in active_occurrence_ids_for_source.items():
         distinct_ids = sorted(set(occurrence_ids))
