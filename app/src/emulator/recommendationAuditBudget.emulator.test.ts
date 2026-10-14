@@ -792,6 +792,25 @@ emulatorDescribe('Recommendation audit budget', () => {
             );
         });
 
+        it('accepts a compact season trace and rejects an oversized one (#929)', async () => {
+            await environment.clearFirestore();
+            const db = environment.authenticatedContext(owner).firestore();
+            const rec = recommendation(0, false);
+            const entry = { eventId: 'a', title: 'A', date, role: 'primary_peak', daysToEvent: 5, status: 'upcoming', dateOwner: true };
+            const season = (entries: unknown[]) => ({
+                policyVersion: '2026-10-season-roadmap-v1', primaryEventId: 'a', entries, conflicts: [], supportingScale: null,
+            });
+            await assertSucceeds(
+                setDoc(doc(db, path), { ...rec, recommendationAudit: { ...rec.recommendationAudit, season: season([entry]) } }),
+            );
+            await assertFails(
+                setDoc(doc(db, path), {
+                    ...rec,
+                    recommendationAudit: { ...rec.recommendationAudit, season: season(Array.from({ length: 33 }, () => entry)) },
+                }),
+            );
+        });
+
         it('rejects more than 64 dropped contributor objectives', async () => {
             await environment.clearFirestore();
             const db = environment.authenticatedContext(owner).firestore();
