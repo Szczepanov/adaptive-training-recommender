@@ -290,6 +290,23 @@ always shows all eight checks with their issue numbers. Status is spelled out in
 timestamps only: no telemetry, exercise data, titles, actors, free text or credentials. A failed
 window exports `projection: "failed"` with `null` counts, never `0`.
 
+## Per-consumer double-count closure (#895 WP6)
+
+One physical workout (a structured execution plus a matched Garmin recording) must be counted or rendered once by every consumer that already reads canonical authority. `engine/tests/perConsumerDoubleCountInventory.test.ts` pushes one shared fixture through each migrated consumer; the suites in the last column prove arrival order, ambiguity and pending reconciliation.
+
+| Consumer | Authority | Counts once because | Deeper proof |
+|---|---|---|---|
+| Weekly coverage credit (`coverage.ts` `resolveCoverageHistory`) | canonical when `performedTrainingFacts` is supplied, even empty; legacy only when null/undefined | credits are keyed by performed occurrence, not by source | `engine/tests/canonicalCoverageCreditCutover.test.ts` |
+| Planning/diagnostic brief table (`contextBrief.ts` `renderCanonicalTrainingTable`) | canonical, with raw-provenance fallback | one row per canonical fact; raw provider rows are provenance, never added to totals | `engine/contextBriefTrainingDedupe.test.ts` |
+| Response summary (`contextBriefResponseSummary.ts` `deriveKeySessionSummaries`) | canonical occurrence evidence | a loaded Garmin source suppresses the structured-only duplicate; a missing row falls back to one structured-only summary | `engine/contextBriefResponseFeatures.test.ts`, `engine/contextBriefResponseArchitecture.test.ts` |
+| Daily ledger (`dailyLedger.ts` `computeDailyLedger`) | authored session occurrence (planner and Home ledgers also key fixed activities by `fixedActivityOccurrenceKey`) | keyed by `occurrenceId` with highest-`revision` wins; the input mapper (`intradayLedgerInputs.ts`) takes session occurrences plus optional linked execution facts and no provider activity, so structured+Garmin cannot double-spend through it | `engine/dailyLedger.test.ts`, `engine/intradayLedgerInputs.test.ts` |
+| Morning-brief D-1 section (`contextBriefPlanningHandoff.ts` `morningAdherenceEvidence`) | canonical facts for yesterday | linked Garmin rows are labeled observational evidence for the canonical session; an unmatched activity is isolated | `engine/contextBriefContract.test.ts` ("links Garmin evidence to one canonical D-1 session and isolates an unmatched activity") |
+| Completed-training history and fatigue (`completedTraining.ts`, `fatigue.ts`) | **legacy**, not migrated | out of scope: TO-owned, gated by #872 | completed-training history dual authority is measured by the opt-in `training-occurrence/historyShadowDiff.ts` diagnostic (fatigue is not covered by it); the inventory test pins that these files do not import canonical occurrence authority |
+
+Unmigrated consumers are labeled, not asserted canonical. Moving one onto canonical facts is a separate change that must re-run this inventory.
+
+Residuals not proven by this inventory: the reserved-identity hydration path hardened under #917 has no dedicated row, and no test covers a late provider update to a revision that coverage has already credited (arrival-order swap is covered). Neither is a known defect.
+
 ## Custom-template lifecycle
 
 The collection document is a mutable `SessionDefinitionHeader`; definition revisions are
