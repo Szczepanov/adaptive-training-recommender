@@ -10,6 +10,7 @@ from garmin_sync.identity_eligibility import (
     identity_bundle_key,
     is_bundle_baseline_eligible,
     resolve_bundle_identity_projection,
+    validate_identity_passport_current,
 )
 
 
@@ -256,3 +257,52 @@ def test_duplicate_assessments_for_one_bundle_are_omitted_from_index() -> None:
         [_assessment(), duplicate], {"assessment-1": [], "assessment-2": []}
     )
     assert index == {}
+
+
+def _valid_current_passport() -> dict[str, object]:
+    return {
+        "schemaVersion": 1,
+        "passportVersion": "2026-08-27.1",
+        "createdAt": "2026-08-27T06:00:00Z",
+        "policyVersion": "identity-v1-shadow",
+        "featureSchemaVersion": "identity-features-v1",
+        "anchorPolicy": {
+            "primaryProvider": "garmin",
+            "primaryTransport": "garmin_direct",
+            "role": "personal_wearable_anchor",
+            "requireIndependentLineage": True,
+        },
+        "sourceProfiles": {},
+        "crossSourceProfiles": {},
+        "calibration": {
+            "manualUserCount": 0,
+            "manualNotUserCount": 0,
+            "mixedOccupancyCount": 0,
+            "uncertainCount": 0,
+            "shadowWindowStart": None,
+            "shadowWindowEnd": None,
+        },
+        "updatedAt": "2026-08-27T07:00:00Z",
+    }
+
+
+def test_validate_identity_passport_current_valid() -> None:
+    passport = _valid_current_passport()
+    assert validate_identity_passport_current(passport) is True
+
+
+@pytest.mark.parametrize(
+    "invalid_value",
+    [
+        None,
+        "not_a_mapping",
+        123,
+        [],
+        {**_valid_current_passport(), "updatedAt": ""},
+        {**_valid_current_passport(), "updatedAt": None},
+        {k: v for k, v in _valid_current_passport().items() if k != "updatedAt"},
+        {**_valid_current_passport(), "schemaVersion": 2},
+    ],
+)
+def test_validate_identity_passport_current_invalid(invalid_value: object) -> None:
+    assert validate_identity_passport_current(invalid_value) is False
