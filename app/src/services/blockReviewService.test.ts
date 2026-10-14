@@ -179,6 +179,16 @@ describe('BlockReviewService assessment evidence', () => {
         expect(read.report?.metricProgress[0]).toMatchObject({ baselineObservationId: baselineKey, status: 'insufficient_evidence' });
         expect(read.report?.metricProgress[0].latestObservationId).toBeUndefined();
     });
+    it('reuses a declared baseline attempt across bindings', async () => {
+        const { service, deps, evaluation } = await setup();
+        evaluation.bindings = [...evaluation.bindings, { ...evaluation.bindings[0], id: 'p20-duplicate' }];
+        evaluation.revision.contentHash = await hashEvaluationContent(evaluation);
+
+        await service.loadReview('u1', selection, asOfDate);
+
+        expect(deps.attempts.getAttempt).toHaveBeenCalledTimes(1);
+        expect(deps.attempts.getAttempt).toHaveBeenCalledWith('u1', 'baseline');
+    });
     it('accepts a compatible post-block repeat more than 28 days later through asOf, without inventing reliability', async () => {
         const { service, add } = await setup(); add('post', '2026-10-03', 220);
         const read = await service.loadReview('u1', selection, asOfDate);
