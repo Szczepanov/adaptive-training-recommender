@@ -225,7 +225,7 @@ WP5–WP7 and related #723/#724/#896 remain separate; #952 is already closed.
 
 ## WP7 — Documentation, governance and issue closure
 
-**Status:** Implemented — guards, architecture documentation and the acceptance ledger are delivered. #895 stays open: criterion 12 and the real-device/cold-offline limits below are not proven.
+**Status:** Implemented — guards, architecture documentation and the acceptance ledger are delivered. #895 stays open: criterion 12 is only narrowed (browser-level click, real Garmin arrival timing and real-device behavior remain unproven) and the real-device/cold-offline limits below are not proven.
 **Blocked by:** None (WP1–WP6 are merged)
 **Purpose:** make the diary contract hard to regress and close #895 honestly.
 
@@ -252,21 +252,21 @@ WP5–WP7 and related #723/#724/#896 remain separate; #952 is already closed.
 | 9 | matched pair is one history row | `components/CompletedWorkoutList.test.tsx`, `training-occurrence/completedWorkoutView.test.ts` | unit |
 | 10 | two same-day sessions do not merge | `emulator/reconciliationOrdering.emulator.test.ts`, `training-occurrence/reconciliationService.test.ts` | emulator + unit |
 | 11 | late provider arrival enriches | `emulator/reconciliationOrdering.emulator.test.ts` | emulator (synthetic timing) |
-| 12 | manual link/unlink survives sync | `emulator/reconciliationOrdering.emulator.test.ts`, `training-occurrence/reconciliationService.test.ts` | **partial**: repository-seeded decisions and the reconciliation sweep only; no Python Garmin re-sync, no UI-driven link/unlink |
+| 12 | manual link/unlink survives sync | `emulator/reconciliationOrdering.emulator.test.ts`, `training-occurrence/reconciliationService.test.ts` | **partial, narrowed**: repository-seeded decisions and the reconciliation sweep (those two files); Python daily `sync` and the recovery `backfill` never write `performedTrainingOccurrences` or `performedOccurrenceSourceLinks`, and the explicit `backfill-training-occurrences` command is create-only and treats an existing source-link as already linked (`tests/test_training_occurrence_backfill.py::test_manual_reconciliation_preservation`); UI click wiring (list `onClick` to the `onUnlinkSource`/`onLinkSources` callbacks, and the action helper to `unlinkSource`/`mergeOccurrences` with a sticky `link` decision) is covered by `components/CompletedWorkoutList.interaction.test.tsx` and `components/completedWorkoutActions.test.ts`. The `DataView` and `CanonicalActivitiesPanel` glue between those two steps is not tested. Still unproven: a browser-level click against the emulator |
 | 13 | no double-count for canonical consumers | `engine/tests/perConsumerDoubleCountInventory.test.ts` | unit, scoped to consumers already canonical |
 | 14 | ten integration scenarios | offline queueing and retry: `emulator/sessionExecutionDiary.emulator.test.ts`; concurrent start: `emulator/sessionExecutionConcurrentStart.emulator.test.ts`; reload: that suite plus the browser test; completion and abandonment: `emulator/sessionLifecycleResumeRules.emulator.test.ts`; correction: the diary emulator suite; provider-first, execution-first and ambiguous: `emulator/reconciliationOrdering.emulator.test.ts` | emulator + browser |
 | 15 | diagnostics explain source state | `emulator/workoutSourceDiagnostics.emulator.test.ts`, `components/WorkoutSourceDiagnostics.test.tsx`, `training-occurrence/workoutSourceDiagnosticsExport.test.ts` | emulator + unit |
 
 ### Not established, and why #895 stays open
 
-- Criterion 12 as stated needs the Garmin re-sync path and a UI-driven link/unlink proof.
+- Criterion 12 is narrowed, not closed: the Python path is shown to be non-writing for occurrences (daily sync) or create-only (explicit backfill) and the UI click wiring is unit-covered, but a browser-level link/unlink click against the emulator, real Garmin arrival timing and real-device behavior remain unproven.
 - Synthetic and emulator proofs cannot establish cold-offline launch, real-device storage durability, a real network drop mid-write, real Garmin arrival timing, or set-logging latency (see #897's real-device acceptance procedure).
 - Garmin detail-fetch status stays `not_observable` until #1051.
 - Residuals: the #917 reserved-identity hydration row; history, fatigue and microcycle remain legacy and TO-owned (#872).
 
 ### Close #895 only when
 
-Criterion 12 and the operational evidence above are either proven on `origin/main` or explicitly waived by the owner, and residual TO-owned work is linked, not absorbed.
+The remaining criterion 12 evidence and the operational evidence above are either proven on `origin/main` or explicitly waived by the owner, and residual TO-owned work is linked, not absorbed.
 
 ## 6. Recommended PR sequence
 
