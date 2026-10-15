@@ -34,6 +34,9 @@ import { ineligibleAlternativeOptionIds } from '../engine/sessionChoiceEligibili
 import { EXERCISES_BY_ID } from '../workouts/exercises.ts';
 import type { BodyRegion, FitWorkoutFingerprintKind, RegionTissueResponse } from '../engine/models';
 import type { SessionCompletionPayload } from '../components/session/SessionCompletionSheet';
+import { runExclusive } from '../utils/runExclusive';
+import { buildSetCorrection, isLoggedSetUndoOpen, LOGGED_SET_UNDO_WINDOW_MS } from '../sessions/setCorrection';
+import type { SetCorrectionInput, SetCorrectionResult } from '../sessions/setCorrection';
 
 /** Two `ExerciseRef`s identify the same performed exercise. Used to scope a step's
  * per-exercise `setIndex` so a mid-session swap (`substituteStepExercise`) starts the
@@ -63,6 +66,8 @@ export interface UseSessionRunnerResult {
     resumeDegradedReason: string | null;
     canUndo: boolean;
     lastRemovedEntry: SessionEntry | null;
+    /** The set logged within the last `LOGGED_SET_UNDO_WINDOW_MS`, if still live and undoable (#724). */
+    undoableLoggedEntry: SessionEntry | null;
     /** True once a recorded choice ended the whole session (D-MCHOICE `end_session`). */
     sessionEnded: boolean;
     /** `SessionOption.id`s an athlete-observed choice must not offer as selectable right now. */
@@ -77,7 +82,12 @@ export interface UseSessionRunnerResult {
     /** Records an athlete's answer to an authored `SessionChoice` as its own execution event. */
     logChoice: (choiceId: string, optionId: string, reason?: string, supersedesChoiceEntryId?: string) => Promise<void>;
     editEntry: (entryId: string, updatedPayload: Partial<SessionEntryPayload>) => Promise<void>;
+    /** Corrects a logged repetition set in place through the auditable `correct` mutation:
+     * identity, timestamps, set index, warm-up flag and gauge are preserved (#724). */
+    correctSet: (entryId: string, input: SetCorrectionInput) => Promise<SetCorrectionResult>;
     removeEntry: (entryId: string) => Promise<void>;
+    /** Undoes the just-logged set (within the short window) via the delete tombstone. */
+    undoLoggedSet: () => Promise<void>;
     undo: () => Promise<void>;
     startRestTimer: (seconds: number) => void;
     skipRestTimer: () => void;
@@ -142,6 +152,9 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
     const [resumeStatus, setResumeStatus] = useState<'none' | 'ready' | 'degraded'>('none');
     const [resumeDegradedReason, setResumeDegradedReason] = useState<string | null>(null);
     const [lastRemovedEntry, setLastRemovedEntry] = useState<SessionEntry | null>(null);
+    const [recentLogged, setRecentLogged] = useState<{ id: string; atMs: number } | null>(null);
+    /** Synchronous single-flight guard so a double tap on Undo can only tombstone once. */
+    const undoLoggedInFlightRef = useRef(false);
     const diaryFailedRef = useRef(false);
     const refreshDiaryRef = useRef<(() => void) | null>(null);
     const diaryWriteOptions = useMemo(() => ({
@@ -608,6 +621,7 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
 
         setEntries(prev => [...prev, entry]);
         setSyncStatus('pending');
+        setRecentLogged({ id: entryId, atMs: Date.now() });
 
         // Rest belongs to the performed set, not to persistence completion. Start it at the same
         // optimistic boundary as the entry so a slow write can never resurrect a timer the athlete
@@ -698,6 +712,25 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
         }
     }, [execution, entries, userId, diaryWriteOptions]);
 
+    const correctSet = useCallback(async (entryId: string, input: SetCorrectionInput): Promise<SetCorrectionResult> => {
+        const target = entries.find(e => e.id === entryId);
+        if (!execution || execution.state !== 'in_progress' || !target) {
+            return { ok: false, reason: 'This set can no longer be corrected.' };
+        }
+        const built = buildSetCorrection(target, input);
+        if (!built.ok) return built;
+        const stamp = new Date().toISOString();
+        setEntries(prev => prev.map(e => (e.id === entryId ? { ...e, payload: built.payload, updatedAt: stamp } : e)));
+        try {
+            await sessionExecutionService.correctEntry(userId, execution.executionId, entryId, { payload: built.payload }, diaryWriteOptions);
+        } catch {
+            // The correction was not accepted: show the stored value again, not the unsaved one.
+            setEntries(prev => prev.map(e => (e.id === entryId ? target : e)));
+            setSyncStatus('unavailable');
+        }
+        return built;
+    }, [execution, entries, userId, diaryWriteOptions]);
+
     const removeEntry = useCallback(async (entryId: string) => {
         if (!execution || execution.state !== 'in_progress') return;
         const target = entries.find(e => e.id === entryId);
@@ -711,6 +744,40 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
             setSyncStatus('unavailable');
         }
     }, [execution, entries, userId, diaryWriteOptions]);
+
+    const undoLoggedSet = useCallback(async () => {
+        if (!recentLogged || undoLoggedInFlightRef.current) return;
+        if (!isLoggedSetUndoOpen(recentLogged.atMs, Date.now())) {
+            setRecentLogged(null);
+            return;
+        }
+        const { id } = recentLogged;
+        setRecentLogged(null);
+        await runExclusive(undoLoggedInFlightRef, async () => {
+            // The rest the undone set started has no set left to belong to.
+            if (activeRestRef.current?.afterEntryId === id) {
+                activeRestRef.current = null;
+                manualRestDeadlineRef.current = null;
+                setRestSecondsRemaining(0);
+                setIsRestRunning(false);
+            }
+            await removeEntry(id);
+        });
+    }, [recentLogged, removeEntry]);
+
+    useEffect(() => {
+        if (!recentLogged) return undefined;
+        const remaining = Math.max(0, LOGGED_SET_UNDO_WINDOW_MS - (Date.now() - recentLogged.atMs));
+        const timer = setTimeout(() => setRecentLogged(null), remaining);
+        return () => clearTimeout(timer);
+    }, [recentLogged]);
+
+    const undoableLoggedEntry = useMemo(
+        () => (execution?.state === 'in_progress' && recentLogged
+            ? entries.find(e => e.id === recentLogged.id && !e.deletedAt) ?? null
+            : null),
+        [execution?.state, recentLogged, entries],
+    );
 
     const undo = useCallback(async () => {
         if (!execution || execution.state !== 'in_progress' || !lastRemovedEntry) return;
@@ -983,6 +1050,7 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
         resumeDegradedReason,
         canUndo: lastRemovedEntry !== null && lastRemovedEntry.payload.kind !== 'choice',
         lastRemovedEntry,
+        undoableLoggedEntry,
         sessionEnded,
         ineligibleOptionIds,
 
@@ -994,7 +1062,9 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
         logEntry,
         logChoice,
         editEntry,
+        correctSet,
         removeEntry,
+        undoLoggedSet,
         undo,
         startRestTimer,
         skipRestTimer,

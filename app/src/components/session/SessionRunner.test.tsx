@@ -165,6 +165,41 @@ describe('SessionRunner session picker', () => {
         expect(html).toContain('aria-label="Remove set 8"');
     });
 
+    it('offers a short-lived Undo for the just-logged set, but not alongside the removed-set restore banner (#724)', () => {
+        const step = repetitionStep('squat', 3);
+        const definition = definitionWithBlock('sequential', [step]);
+        const entries = [repetitionEntry(step.id, 1), repetitionEntry(step.id, 2)];
+        const base = {
+            activeStep: step,
+            activeBlock: definition.blocks[0],
+            activeBlockIndex: 0,
+            activeStepIndex: 0,
+            definition,
+            entries,
+            execution: { state: 'in_progress' },
+            isRestoring: false,
+            elapsedSeconds: 0,
+            isRestRunning: false,
+            restSecondsRemaining: 0,
+            syncStatus: 'synced',
+            sessionEnded: false,
+            ineligibleOptionIds: new Set<string>(),
+        };
+        vi.mocked(useSessionRunner).mockReturnValueOnce({ ...base, canUndo: false, undoableLoggedEntry: entries[1] } as unknown as ReturnType<typeof useSessionRunner>);
+        const logged = renderToStaticMarkup(<SessionRunner userId="user-1" />);
+        expect(logged).toContain('Set 2 logged');
+        expect(logged).toContain('Undo set 2');
+        expect(logged).not.toContain('Set removed');
+
+        vi.mocked(useSessionRunner).mockReturnValueOnce({ ...base, canUndo: true, lastRemovedEntry: entries[1], undoableLoggedEntry: entries[1] } as unknown as ReturnType<typeof useSessionRunner>);
+        const removed = renderToStaticMarkup(<SessionRunner userId="user-1" />);
+        expect(removed).toContain('Set removed');
+        expect(removed).not.toContain('Set 2 logged');
+
+        vi.mocked(useSessionRunner).mockReturnValueOnce({ ...base, canUndo: false, undoableLoggedEntry: null } as unknown as ReturnType<typeof useSessionRunner>);
+        expect(renderToStaticMarkup(<SessionRunner userId="user-1" />)).not.toContain('logged</span>');
+    });
+
     it('shows the active exercise and Log before authored manual navigation', () => {
         const step = repetitionStep('squat', 1);
         const definition = definitionWithBlock('sequential', [step, repetitionStep('row', 1)]);

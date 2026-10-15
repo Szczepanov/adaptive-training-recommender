@@ -205,6 +205,28 @@ describe('SessionCompletionSheet', () => {
         expect(html).toContain('Partial sets you have logged (2 sets) are permanently retained');
     });
 
+    it('disables every terminal action while a completion write is in flight, so a second tap cannot double-submit (#724)', () => {
+        const render = (openAbandonConfirmation: boolean) => renderToStaticMarkup(
+            <SessionCompletionSheet
+                startedAt={new Date().toISOString()}
+                totalSets={2}
+                steps={[]}
+                onComplete={vi.fn()}
+                onAbandon={vi.fn()}
+                onCancel={vi.fn()}
+                saving
+                openAbandonConfirmation={openAbandonConfirmation}
+            />,
+        );
+        const completion = render(false);
+        expect(completion).toContain('Saving...');
+        expect(completion).not.toMatch(/<button(?![^>]*disabled)[^>]*>\s*Finish/);
+        expect(completion).toMatch(/<button[^>]*disabled=""[^>]*>Abandon Session\.\.\./);
+        const abandon = render(true);
+        expect(abandon).toContain('Abandoning...');
+        expect(abandon).not.toMatch(/<button(?![^>]*disabled)[^>]*>\s*Abandoning/);
+    });
+
     it('warns before a locked assessment is terminally abandoned (#494)', () => {
         const html = renderToStaticMarkup(
             <SessionCompletionSheet

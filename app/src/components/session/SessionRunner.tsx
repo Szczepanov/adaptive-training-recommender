@@ -38,6 +38,8 @@ import fixture04 from '../../sessions/fixtures/04-friday-field-drills.json';
 import fixture05 from '../../sessions/fixtures/05-timed-trunk-and-tissue.json';
 import fixture06 from '../../sessions/fixtures/06-protocol-locked-sprint-jump-test.json';
 import fixture08 from '../../sessions/fixtures/08-recovery-spin-companion.json';
+import { runExclusive } from '../../utils/runExclusive';
+import { LoggedSetUndoBanner } from './LoggedSetUndoBanner';
 
 const AVAILABLE_FIXTURES: SessionDefinition[] = [
     fixture01 as unknown as SessionDefinition,
@@ -195,6 +197,10 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
     const [correctingChoiceEntryId, setCorrectingChoiceEntryId] = useState<string | null>(null);
     const [editReps, setEditReps] = useState<string>('');
     const [editWeight, setEditWeight] = useState<string>('');
+    const [editError, setEditError] = useState<string | null>(null);
+    const [isFinishing, setIsFinishing] = useState(false);
+    /** Synchronous single-flight guard: state alone lets two same-frame taps both start a terminal write. */
+    const finishInFlightRef = useRef(false);
     const [savedDefinitions, setSavedDefinitions] = useState<SessionDefinitionHeader[]>([]);
     const [savedDefinitionsError, setSavedDefinitionsError] = useState<string | null>(null);
     const [startingSavedDefinitionId, setStartingSavedDefinitionId] = useState<string | null>(null);
@@ -849,6 +855,7 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
     };
 
     const handleStartEdit = (entry: SessionEntry) => {
+        setEditError(null);
         setEditingEntryId(entry.id);
         if (entry.payload.kind === 'repetition') {
             setEditReps(String(entry.payload.reps));
@@ -856,12 +863,14 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
         }
     };
 
-    const handleSaveEdit = (entryId: string) => {
-        const r = parseInt(editReps, 10);
-        const w = editWeight.trim().length > 0 ? parseFloat(editWeight) : undefined;
-        if (!isNaN(r) && r > 0) {
-            runner.editEntry(entryId, { reps: r, weightKg: w });
+    const handleSaveEdit = async (entryId: string) => {
+        const result = await runner.correctSet(entryId, { reps: editReps, weightKg: editWeight });
+        if (!result.ok) {
+            // Never silently coerce an invalid value: keep the editor open and say why.
+            setEditError(result.reason);
+            return;
         }
+        setEditError(null);
         setEditingEntryId(null);
     };
 
@@ -894,22 +903,27 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
         // (if any) still knows what just finished and what it separately unlocks.
         const finishedTitle = definition.title;
         const companions = definition.companionSessions;
-        try {
-            await action();
-            setShowCompletionSheet(false);
-            setShowAbandonConfirmation(false);
-            setCompletionError(null);
-            // A skipped/abandoned primary session still leaves an independently executable
-            // companion (e.g. the recovery spin) worth offering -- it is never gated on the
-            // primary's own completion.
-            if (companions && companions.length > 0) {
-                setCompanionPrompt({ finishedTitle, finishedAt: Date.now(), companions });
-            } else if (onClose && mode !== 'assessment') {
-                onClose();
+        await runExclusive(finishInFlightRef, async () => {
+            setIsFinishing(true);
+            try {
+                await action();
+                setShowCompletionSheet(false);
+                setShowAbandonConfirmation(false);
+                setCompletionError(null);
+                // A skipped/abandoned primary session still leaves an independently executable
+                // companion (e.g. the recovery spin) worth offering -- it is never gated on the
+                // primary's own completion.
+                if (companions && companions.length > 0) {
+                    setCompanionPrompt({ finishedTitle, finishedAt: Date.now(), companions });
+                } else if (onClose && mode !== 'assessment') {
+                    onClose();
+                }
+            } catch {
+                setCompletionError(errorMessage);
+            } finally {
+                setIsFinishing(false);
             }
-        } catch {
-            setCompletionError(errorMessage);
-        }
+        });
     };
 
     const inputProfile = activeStep ? resolveStepInputProfile(activeStep) : 'repetition_mass';
@@ -951,6 +965,13 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                         Undo
                     </button>
                 </div>
+            )}
+
+            {runner.undoableLoggedEntry && !runner.canUndo && (
+                <LoggedSetUndoBanner
+                    label={runner.undoableLoggedEntry.payload.kind === 'repetition' ? `Set ${runner.undoableLoggedEntry.payload.setIndex}` : 'Entry'}
+                    onUndo={() => { void runner.undoLoggedSet(); }}
+                />
             )}
 
             {/* Active Step Panel */}
@@ -1110,12 +1131,13 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                                                     className="edit-input"
                                                     aria-label={`Repetitions for set ${idx + 1}`}
                                                 />
-                                                <button type="button" className="save-edit-btn" onClick={() => handleSaveEdit(entry.id)}>
+                                                <button type="button" className="save-edit-btn" onClick={() => { void handleSaveEdit(entry.id); }}>
                                                     Save
                                                 </button>
-                                                <button type="button" className="cancel-edit-btn" onClick={() => setEditingEntryId(null)}>
+                                                <button type="button" className="cancel-edit-btn" onClick={() => { setEditError(null); setEditingEntryId(null); }}>
                                                     Cancel
                                                 </button>
+                                                {editError && <p className="session-runner-error" role="alert">{editError}</p>}
                                             </div>
                                         ) : (
                                             <>
@@ -1241,7 +1263,7 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                     startedAt={runner.execution.startedAt}
                     totalSets={entries.length}
                     steps={stepSummaries}
-                    saving={false}
+                    saving={isFinishing}
                     openAbandonConfirmation={showAbandonConfirmation}
                     error={completionError}
                     hidden={showSaveTemplateModal}

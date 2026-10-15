@@ -1,0 +1,49 @@
+/**
+ * Pure helpers for correcting or undoing a just-logged repetition set (#724).
+ *
+ * A correction is a deliberate `correct` diary mutation on the *same* entry (see
+ * `sessionExecutionService.correctEntry`): the entry keeps its identity, `completedAt`,
+ * `createdAt`, set index, warm-up flag and intensity gauge, and only the athlete-edited
+ * performed values change. An undo of a just-logged set is the existing `delete` tombstone,
+ * never a compensating set. Out-of-range values are rejected, never clamped or "fixed".
+ */
+import type { RepetitionEntryPayload, SessionEntry } from './models';
+
+/** How long after logging a set the one-tap "Undo" affordance stays offered. */
+export const LOGGED_SET_UNDO_WINDOW_MS = 10_000;
+
+export type SetCorrectionInput = { reps: string; weightKg: string };
+
+export type SetCorrectionResult =
+    | { ok: true; payload: RepetitionEntryPayload }
+    | { ok: false; reason: string };
+
+export function buildSetCorrection(entry: SessionEntry, input: SetCorrectionInput): SetCorrectionResult {
+    if (entry.payload.kind !== 'repetition') {
+        return { ok: false, reason: 'Only repetition sets can be corrected here.' };
+    }
+    const repsText = input.reps.trim();
+    const reps = Number(repsText);
+    if (repsText === '' || !Number.isInteger(reps) || reps < 1) {
+        return { ok: false, reason: 'Enter a whole number of repetitions (1 or more).' };
+    }
+    const weightText = input.weightKg.trim();
+    let weightKg: number | undefined;
+    if (weightText !== '') {
+        weightKg = Number(weightText);
+        if (!Number.isFinite(weightKg) || weightKg < 0) {
+            return { ok: false, reason: 'Enter a load of 0 kg or more, or leave it empty.' };
+        }
+    }
+    const { weightKg: _previousWeight, ...rest } = entry.payload;
+    void _previousWeight;
+    return {
+        ok: true,
+        payload: { ...rest, reps, ...(weightKg !== undefined ? { weightKg } : {}) },
+    };
+}
+
+/** True while the athlete may still one-tap undo a set logged at `loggedAtMs`. */
+export function isLoggedSetUndoOpen(loggedAtMs: number, nowMs: number): boolean {
+    return nowMs >= loggedAtMs && nowMs - loggedAtMs < LOGGED_SET_UNDO_WINDOW_MS;
+}
