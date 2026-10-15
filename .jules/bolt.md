@@ -104,6 +104,10 @@
 **Learning:** `export_training_occurrence_records` was executing individual `.get()` calls in a `for` loop to retrieve missing activity documents outside the window. This created an N+1 query pattern where each activity fetch incurred sequential RPC network roundtrip latency. Collecting all missing activity document references into a list and calling `db.get_all(doc_refs)` batches the requests into a single RPC, eliminating serial network delays and yielding a ~12.6x speedup when fetching missing activity records.
 **Action:** When fetching multiple individual documents by ID in Firestore, construct a list of document references and fetch them using `db.get_all(doc_refs)` instead of calling `.get()` inside a `for` loop.
 
+## 2026-10-27 - Module-level constant pre-allocation for default resolution tolerances
+**Learning:** Re-creating a dictionary default argument `{1: 5.0, 5: 4.0, ...}` and calling `.get(duration, default)` on every loop iteration inside `evaluate_resolution_candidate` causes unnecessary heap allocations per invocation and repetitive dict lookups. Defining a module-level default dictionary and pre-computing a `(duration, tolerance)` tuple sequence (`_DEFAULT_WINDOW_TOLERANCES`) yields a ~3.5x micro-benchmark speedup by eliminating dict instantiation and replacing dict lookups with direct tuple unpacking.
+**Action:** When a function uses a fixed default dictionary and loops over known static keys, hoist the dictionary and tuple sequence to module scope so default calls iterate over pre-paired tuples directly.
+
 ## 2026-10-28 - Parallelize Scenario Execution in runAllScenarios
 **Learning:** Sequential `await runScenario` calls in `runAllScenarios` blocked execution of independent athlete simulation scenarios in serial order, accumulating wall-clock latency across all scenario runs.
 **Action:** Parallelize independent async scenario evaluations using `Promise.all` in batch simulation functions.
