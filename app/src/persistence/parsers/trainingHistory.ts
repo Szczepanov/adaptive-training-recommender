@@ -697,7 +697,10 @@ export function parseDailyRecommendation(raw: unknown, documentPath: string): Da
  * Trust boundary: an archive written after the #940 rules deploy is
  * rules-verified to carry the audit the parent actually had. Archives written
  * before it are indistinguishable (the document has no marker), so they remain
- * client-written claims. PR-C (#893 WP5.2 M-5/M-7) therefore stays in force: this
+ * client-written claims. The rules verify only the audit and the core scalar
+ * fields above; `primarySession`, `additionalSessions`, the `prescription` body
+ * (beyond `.id`), any added keys and an `engineVerdict` the parent never had
+ * remain unverified client claims. PR-C (#893 WP5.2 M-5/M-7) therefore stays in force: this
  * parser validates structure, and hydration must still verify the archived
  * `externalPlan` claim against stored plan-revision bytes before trusting it
  * (M-7). An archive that fails any check here is INVALID and the calling row
