@@ -12,6 +12,7 @@ from garmin_sync.garmin_provider import (
     canonicalize_from_raw,
     extract_sleep_metrics,
     qualifies_for_activity_detail,
+    qualifies_for_strength_exercise_sets,
 )
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
@@ -95,6 +96,37 @@ def test_detail_gate_skips_easy_and_unsupported_activities():
     assert not qualifies_for_activity_detail(activity("running", "easy"))
     assert not qualifies_for_activity_detail(activity("swimming", "hard"))
     assert not qualifies_for_activity_detail(activity("cycling", "hard", None))
+
+
+def test_qualifies_for_strength_exercise_sets():
+    def activity(activity_type: str, activity_id: str | None = "101"):
+        from garmin_sync.canonical import CanonicalActivity
+
+        return CanonicalActivity(
+            activity_id=activity_id,
+            date="2026-08-17",
+            type=activity_type,
+            duration_min=60,
+            duration_seconds=3600,
+            training_effect_aerobic=2.0,
+            training_effect_anaerobic=0.0,
+            average_hr=120,
+            training_load=50,
+            intensity_tag="moderate",
+        )
+
+    # Supported strength activity types (case-insensitive)
+    assert qualifies_for_strength_exercise_sets(activity("strength_training"))
+    assert qualifies_for_strength_exercise_sets(activity("STRENGTH_TRAINING"))
+    assert qualifies_for_strength_exercise_sets(activity("fitness_equipment"))
+    assert qualifies_for_strength_exercise_sets(activity("Fitness_Equipment"))
+
+    # Non-strength activity types
+    assert not qualifies_for_strength_exercise_sets(activity("running"))
+    assert not qualifies_for_strength_exercise_sets(activity("cycling"))
+
+    # Missing activity ID
+    assert not qualifies_for_strength_exercise_sets(activity("strength_training", activity_id=None))
 
 
 def test_adapter_fetch_activity_detail_uses_cached_list_summary_and_all_three_endpoints():
