@@ -103,3 +103,7 @@
 ## 2026-10-26 - Batch fetch missing activity documents in export_training_occurrence_records
 **Learning:** `export_training_occurrence_records` was executing individual `.get()` calls in a `for` loop to retrieve missing activity documents outside the window. This created an N+1 query pattern where each activity fetch incurred sequential RPC network roundtrip latency. Collecting all missing activity document references into a list and calling `db.get_all(doc_refs)` batches the requests into a single RPC, eliminating serial network delays and yielding a ~12.6x speedup when fetching missing activity records.
 **Action:** When fetching multiple individual documents by ID in Firestore, construct a list of document references and fetch them using `db.get_all(doc_refs)` instead of calling `.get()` inside a `for` loop.
+
+## 2026-10-27 - Parallelize baseline and attempt observation async reads in BlockReviewService
+**Learning:** Sequentially awaiting async observation reads (`read(...)`) for declared baseline observations and each selected assessment attempt in `BlockReviewService.reviewBlock` introduces N+1 network roundtrips. Gathering unique observation keys into a `Set` and executing all read tasks concurrently using `Promise.all` parallelizes asynchronous I/O roundtrips and avoids redundant requests.
+**Action:** When fetching multiple entities or observations by key in async TypeScript services, collect unique keys and resolve read promises via `Promise.all` rather than awaiting each read sequentially in a `for` loop.
