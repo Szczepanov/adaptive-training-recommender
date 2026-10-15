@@ -107,3 +107,7 @@
 ## 2026-10-28 - Parallelize Scenario Execution in runAllScenarios
 **Learning:** Sequential `await runScenario` calls in `runAllScenarios` blocked execution of independent athlete simulation scenarios in serial order, accumulating wall-clock latency across all scenario runs.
 **Action:** Parallelize independent async scenario evaluations using `Promise.all` in batch simulation functions.
+
+## 2026-11-02 - Distinguish QuerySnapshot document parsing from N+1 network queries
+**Learning:** Iterating over `querySnapshot.docs` synchronously in memory without an `await` statement is an in-memory document parsing operation, not an N+1 Firestore network query. `getDocs(q)` fetches all matching documents in a single RPC roundtrip beforehand.
+**Action:** Before refactoring loop constructs flagged for N+1 query patterns, verify whether asynchronous I/O (`await`) or secondary network fetches actually occur inside the loop body.
