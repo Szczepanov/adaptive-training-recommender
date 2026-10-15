@@ -184,9 +184,14 @@ export function buildAssessmentHistory(input: BuildAssessmentHistoryInput): Asse
         const completedAttempts = testAttempts.filter(attempt => attempt.state === 'completed');
         const abandonedCount = testAttempts.filter(attempt => attempt.state === 'abandoned').length;
 
+        const attemptsWithObs = completedAttempts.map(attempt => ({
+            attempt,
+            obsList: observationsByAttempt.get(attempt.id) ?? [],
+        }));
+
         const metricIds = new Set(definition.protocol.metricIds);
-        for (const attempt of completedAttempts) {
-            for (const { revision } of observationsByAttempt.get(attempt.id) ?? []) {
+        for (const { attempt, obsList } of attemptsWithObs) {
+            for (const { revision } of obsList) {
                 if (
                     revision.protocolRef.id === protocolId
                     && revision.protocolRef.revision === attempt.protocolRef.revision
@@ -208,8 +213,7 @@ export function buildAssessmentHistory(input: BuildAssessmentHistoryInput): Asse
             }>();
             const completedWithMetricBenchmark = new Set<string>();
 
-            for (const attempt of completedAttempts) {
-                const obsList = observationsByAttempt.get(attempt.id) ?? [];
+            for (const { attempt, obsList } of attemptsWithObs) {
                 for (const { head, revision } of obsList) {
                     if (
                         revision.metricId !== metricId
