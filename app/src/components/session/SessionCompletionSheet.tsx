@@ -3,7 +3,7 @@ import type { BodyRegion, TissueResponseLevel } from '../../engine/models';
 import type { SessionStepSummary } from '../../workouts/strengthSessionEntry';
 import {
     COMPLETION_TISSUE_LEVEL_OPTIONS,
-    resolveSubmittedTissueFeedback,
+    buildCompletionPayload,
     type CompletionTissueFeedback,
 } from './sessionCompletionOptions';
 
@@ -68,8 +68,8 @@ export const SessionCompletionSheet: React.FC<SessionCompletionSheetProps> = ({
     openAbandonConfirmation = false,
     error = null,
 }) => {
-    const [sessionRpe, setSessionRpe] = useState<number | undefined>(7);
-    const [completedFraction, setCompletedFraction] = useState(1);
+    const [sessionRpe, setSessionRpe] = useState<number | undefined>(undefined);
+    const [completedFraction, setCompletedFraction] = useState<number | undefined>(undefined);
     const [unexpectedFatigue, setUnexpectedFatigue] = useState(false);
     const [notes, setNotes] = useState('');
     const [selectedRegion, setSelectedRegion] = useState<BodyRegion | ''>('');
@@ -89,14 +89,16 @@ export const SessionCompletionSheet: React.FC<SessionCompletionSheetProps> = ({
     const abandoningAssessment = recordKind === 'AssessmentAttempt';
 
     const handleConfirmComplete = async () => {
-        const submittedTissueFeedback = resolveSubmittedTissueFeedback(tissueFeedback, selectedRegion, reportedPain);
-        const payload: SessionCompletionPayload = {
+        const payload: SessionCompletionPayload = buildCompletionPayload({
             sessionRpe,
             completedFraction,
-            unexpectedFatigue,
-            notes: notes.trim() || undefined,
-            tissueFeedback: submittedTissueFeedback.length > 0 ? submittedTissueFeedback : undefined,
-        };
+            unexpectedFatigueChecked: unexpectedFatigue,
+            notes,
+            tissueFeedback,
+            selectedRegion,
+            reportedPain,
+            missingRequiredStepCount: missingRequiredSteps.length,
+        });
         await onComplete(payload);
     };
 
@@ -196,17 +198,21 @@ export const SessionCompletionSheet: React.FC<SessionCompletionSheetProps> = ({
                         )}
 
                         <div className="form-group rpe-picker-group">
-                            <label htmlFor="session-rpe-input">
+                            <div id="session-rpe-label">
                                 <strong>Whole-Session Effort (sRPE 1–10)</strong>
-                                <span className="helper-text">1 = Rest, 5 = Moderate, 7 = Hard, 10 = Max Effort</span>
-                            </label>
-                            <div className="rpe-button-row">
+                                <span className="helper-text">1 = Rest, 5 = Moderate, 7 = Hard, 10 = Max Effort. Optional: tap a value again to clear it.</span>
+                                <span className="helper-text" id="session-rpe-status" data-testid="srpe-status" aria-live="polite">
+                                    {sessionRpe === undefined ? 'Not answered' : `Selected: ${sessionRpe}`}
+                                </span>
+                            </div>
+                            <div className="rpe-button-row" role="group" aria-labelledby="session-rpe-label" aria-describedby="session-rpe-status">
                                 {[4, 5, 6, 7, 8, 9, 10].map(val => (
                                     <button
                                         key={val}
                                         type="button"
                                         className={`rpe-pill-btn ${sessionRpe === val ? 'selected' : ''}`}
-                                        onClick={() => setSessionRpe(val)}
+                                        aria-pressed={sessionRpe === val}
+                                        onClick={() => setSessionRpe(previous => (previous === val ? undefined : val))}
                                     >
                                         {val}
                                     </button>
@@ -276,16 +282,20 @@ export const SessionCompletionSheet: React.FC<SessionCompletionSheetProps> = ({
                             </label>
                             <select
                                 id="completed-fraction-input"
-                                value={completedFraction}
-                                onChange={e => setCompletedFraction(Number(e.target.value))}
+                                value={completedFraction ?? ''}
+                                onChange={e => setCompletedFraction(e.target.value === '' ? undefined : Number(e.target.value))}
                                 className="select-input"
                             >
-                                <option value={1}>All of it (100%)</option>
+                                <option value="">Not answered</option>
+                                <option value={1} disabled={missingRequiredSteps.length > 0}>All of it (100%)</option>
                                 <option value={0.75}>Most of it (75%)</option>
                                 <option value={0.5}>About half (50%)</option>
                                 <option value={0.25}>Only a little (25%)</option>
                                 <option value={0}>None (0%)</option>
                             </select>
+                            {missingRequiredSteps.length > 0 && (
+                                <span className="helper-text">100% isn't available while required steps are unfinished.</span>
+                            )}
                         </div>
 
                         <label className="checkbox-label" htmlFor="unexpected-fatigue-input">

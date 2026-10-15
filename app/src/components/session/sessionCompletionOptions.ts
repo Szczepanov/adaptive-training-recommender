@@ -31,3 +31,53 @@ export function resolveSubmittedTissueFeedback(
         { region: selectedRegion, painDuringTraining: reportedPain, afterTrainingState: reportedPain },
     ];
 }
+
+/** Fields of the completion form as the athlete left them. `undefined` means "not answered". */
+export interface CompletionEvidenceDraft {
+    sessionRpe?: number;
+    completedFraction?: number;
+    /** Still persisted as a boolean: the `immediate` SessionResponse it creates is the athlete's
+     * post-session confirmation that the intraday flow waits for (see session-execution.md). */
+    unexpectedFatigueChecked: boolean;
+    notes: string;
+    tissueFeedback: CompletionTissueFeedback[];
+    selectedRegion: BodyRegion | '';
+    reportedPain: TissueResponseLevel;
+    /** Required, non-optional planned steps that still have unfinished work. */
+    missingRequiredStepCount: number;
+}
+
+export interface CompletionEvidencePayload {
+    sessionRpe?: number;
+    completedFraction?: number;
+    unexpectedFatigue?: boolean;
+    notes?: string;
+    tissueFeedback?: CompletionTissueFeedback[];
+}
+
+/**
+ * True when an athlete-reported "100% completed" would contradict known unfinished required
+ * work. The sheet disables that option and `buildCompletionPayload` refuses to persist it.
+ */
+export function contradictsRequiredWork(completedFraction: number | undefined, missingRequiredStepCount: number): boolean {
+    return completedFraction === 1 && missingRequiredStepCount > 0;
+}
+
+/**
+ * Missing is not neutral, not zero and not an implicit negative answer (#896): only fields
+ * the athlete actually answered are emitted. Unexpected fatigue is persisted as `true` when
+ * ticked and omitted otherwise, because an untouched checkbox is not a "no fatigue" report.
+ */
+export function buildCompletionPayload(draft: CompletionEvidenceDraft): CompletionEvidencePayload {
+    const tissueFeedback = resolveSubmittedTissueFeedback(draft.tissueFeedback, draft.selectedRegion, draft.reportedPain);
+    const notes = draft.notes.trim();
+    const keepFraction = draft.completedFraction !== undefined
+        && !contradictsRequiredWork(draft.completedFraction, draft.missingRequiredStepCount);
+    return {
+        ...(draft.sessionRpe !== undefined ? { sessionRpe: draft.sessionRpe } : {}),
+        ...(keepFraction ? { completedFraction: draft.completedFraction } : {}),
+        unexpectedFatigue: draft.unexpectedFatigueChecked,
+        ...(notes ? { notes } : {}),
+        ...(tissueFeedback.length > 0 ? { tissueFeedback } : {}),
+    };
+}

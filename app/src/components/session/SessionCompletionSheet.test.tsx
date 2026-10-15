@@ -70,6 +70,45 @@ describe('SessionCompletionSheet', () => {
         expect(html).toContain('Unexpected fatigue during or after this session');
     });
 
+    it('opens with sRPE and completion fraction unanswered rather than preselected (#896)', () => {
+        const html = renderToStaticMarkup(
+            <SessionCompletionSheet
+                startedAt={new Date().toISOString()}
+                totalSets={1}
+                steps={[]}
+                onComplete={vi.fn()}
+                onAbandon={vi.fn()}
+                onCancel={vi.fn()}
+                saving={false}
+            />,
+        );
+
+        expect(html).toContain('Not answered');
+        expect(html).not.toContain('Selected:');
+        expect(html).not.toContain('rpe-pill-btn selected');
+        expect(html).not.toMatch(/<option value="\d(\.\d+)?" selected/);
+        expect(html).not.toContain('checked=""');
+    });
+
+    it('disables the 100% option while required work is unfinished (#896)', () => {
+        const html = renderToStaticMarkup(
+            <SessionCompletionSheet
+                startedAt={new Date().toISOString()}
+                totalSets={1}
+                steps={[{
+                    exerciseIndex: 0, exerciseId: 'back_squat', displayName: 'Back Squat', isPlanned: true,
+                    optional: false, targetSets: 3, targetReps: 5, targetGauge: null, loggedSetsCount: 1, isComplete: false,
+                }]}
+                onComplete={vi.fn()}
+                onAbandon={vi.fn()}
+                onCancel={vi.fn()}
+                saving={false}
+            />,
+        );
+
+        expect(html).toMatch(/<option value="1" disabled="">All of it/);
+    });
+
     it('renders warning box when there are incomplete required steps', () => {
         const steps: SessionStepSummary[] = [
             {

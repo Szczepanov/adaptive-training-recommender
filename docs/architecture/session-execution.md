@@ -319,6 +319,29 @@ Residual not proven by this inventory: the reserved-identity hydration path hard
 
 **Limits.** Synthetic and emulator proofs do not establish cold-offline app launch, real-device storage durability, a real network drop mid-write, real Garmin arrival timing, or set-logging latency between sets.
 
+## Completion-evidence missingness (#896)
+
+`SessionCompletionSheet` opens with every subjective field unanswered. `buildCompletionPayload`
+(`sessionCompletionOptions.ts`) emits only what the athlete answered:
+
+* `sessionRpe` is persisted only after an explicit selection (tapping the selected value again
+  clears it). An untouched sheet persists none; selecting 7 persists 7.
+* `completedFraction` is persisted only when chosen. "All of it (100%)" is disabled, and never
+  persisted, while required planned steps are unfinished. The fraction is not derived from
+  execution: there is no provenance field for a derived value yet, so an unanswered fraction
+  stays absent rather than being guessed.
+* `unexpectedFatigue` deliberately keeps its explicit boolean (`false` when unticked). The
+  `immediate` `SessionResponse` it creates is what the intraday flow
+  (`evaluateIntradayReassessment`, `intradayLaunchClaim`) treats as the athlete's post-session
+  confirmation; omitting it would leave an untouched completion with no `immediate` response and
+  stall a dependent same-day session with no recovery path. Making it a true unanswered/yes/no
+  question needs an owner decision on how intraday confirmation is obtained, and is not part of
+  this change.
+* Empty notes stay absent; the tissue-feedback draft and next-day linkage are unchanged.
+
+Historical records that already carry `sessionRpe = 7` or `completedFraction = 1` are not
+reclassified. Missing is not neutral, not zero and not an implicit negative answer.
+
 ## Custom-template lifecycle
 
 The collection document is a mutable `SessionDefinitionHeader`; definition revisions are
