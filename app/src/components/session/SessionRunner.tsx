@@ -201,6 +201,8 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
     const [isFinishing, setIsFinishing] = useState(false);
     /** Synchronous single-flight guard: state alone lets two same-frame taps both start a terminal write. */
     const finishInFlightRef = useRef(false);
+    const saveEditInFlightRef = useRef(false);
+    const runnerRootRef = useRef<HTMLDivElement>(null);
     const [savedDefinitions, setSavedDefinitions] = useState<SessionDefinitionHeader[]>([]);
     const [savedDefinitionsError, setSavedDefinitionsError] = useState<string | null>(null);
     const [startingSavedDefinitionId, setStartingSavedDefinitionId] = useState<string | null>(null);
@@ -863,15 +865,22 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
         }
     };
 
-    const handleSaveEdit = async (entryId: string) => {
+    const handleSaveEdit = (entryId: string) => runExclusive(saveEditInFlightRef, async () => {
         const result = await runner.correctSet(entryId, { reps: editReps, weightKg: editWeight });
         if (!result.ok) {
-            // Never silently coerce an invalid value: keep the editor open and say why.
+            // Never silently coerce an invalid value or hide a rejected write: keep the editor open and say why.
             setEditError(result.reason);
             return;
         }
         setEditError(null);
         setEditingEntryId(null);
+    });
+
+    /** The banner unmounts on Undo, so hand focus to the primary Log control (ui-ux 3.2). */
+    const handleUndoLoggedSet = () => {
+        void runner.undoLoggedSet().then(() => {
+            runnerRootRef.current?.querySelector<HTMLElement>('.log-set-btn')?.focus();
+        });
     };
 
     const handleSaveCustomTemplate = async () => {
@@ -930,7 +939,7 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
     const activeEffort = activeStep ? formatEffort(activeStep) : null;
 
     return (
-        <div className={`session-runner-container${mode === 'assessment' ? ' runner-mode-assessment' : ''}`}>
+        <div ref={runnerRootRef} className={`session-runner-container${mode === 'assessment' ? ' runner-mode-assessment' : ''}`}>
             {/* Top Bar */}
             <div className="session-top-bar">
                 <div className="session-header-left">
@@ -958,7 +967,7 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
             </div>
 
             {/* Undo Banner */}
-            {runner.canUndo && (
+            {runner.canUndo && !runner.undoableLoggedEntry && !showCompletionSheet && (
                 <div className="undo-toast-banner" role="alert">
                     <span>Set removed</span>
                     <button type="button" className="undo-action-btn" onClick={runner.undo}>
@@ -967,10 +976,10 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                 </div>
             )}
 
-            {runner.undoableLoggedEntry && !runner.canUndo && (
+            {runner.undoableLoggedEntry && !showCompletionSheet && (
                 <LoggedSetUndoBanner
                     label={runner.undoableLoggedEntry.payload.kind === 'repetition' ? `Set ${runner.undoableLoggedEntry.payload.setIndex}` : 'Entry'}
-                    onUndo={() => { void runner.undoLoggedSet(); }}
+                    onUndo={handleUndoLoggedSet}
                 />
             )}
 
@@ -1121,6 +1130,8 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                                                     placeholder="kg"
                                                     className="edit-input"
                                                     aria-label={`Weight for set ${idx + 1} in kilograms`}
+                                                    aria-invalid={editError ? true : undefined}
+                                                    aria-describedby={editError ? 'set-edit-error' : undefined}
                                                 />
                                                 <input
                                                     type="number"
@@ -1130,6 +1141,8 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                                                     placeholder="reps"
                                                     className="edit-input"
                                                     aria-label={`Repetitions for set ${idx + 1}`}
+                                                    aria-invalid={editError ? true : undefined}
+                                                    aria-describedby={editError ? 'set-edit-error' : undefined}
                                                 />
                                                 <button type="button" className="save-edit-btn" onClick={() => { void handleSaveEdit(entry.id); }}>
                                                     Save
@@ -1137,7 +1150,7 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                                                 <button type="button" className="cancel-edit-btn" onClick={() => { setEditError(null); setEditingEntryId(null); }}>
                                                     Cancel
                                                 </button>
-                                                {editError && <p className="session-runner-error" role="alert">{editError}</p>}
+                                                {editError && <p id="set-edit-error" className="session-runner-error" role="alert">{editError}</p>}
                                             </div>
                                         ) : (
                                             <>

@@ -165,7 +165,7 @@ describe('SessionRunner session picker', () => {
         expect(html).toContain('aria-label="Remove set 8"');
     });
 
-    it('offers a short-lived Undo for the just-logged set, but not alongside the removed-set restore banner (#724)', () => {
+    it('offers the newest undo only: the just-logged set outranks a stale removed-set restore (#724)', () => {
         const step = repetitionStep('squat', 3);
         const definition = definitionWithBlock('sequential', [step]);
         const entries = [repetitionEntry(step.id, 1), repetitionEntry(step.id, 2)];
@@ -191,7 +191,13 @@ describe('SessionRunner session picker', () => {
         expect(logged).toContain('Undo set 2');
         expect(logged).not.toContain('Set removed');
 
-        vi.mocked(useSessionRunner).mockReturnValueOnce({ ...base, canUndo: true, lastRemovedEntry: entries[1], undoableLoggedEntry: entries[1] } as unknown as ReturnType<typeof useSessionRunner>);
+        // A stale earlier removal (canUndo) must never hide the newer logged-set Undo.
+        vi.mocked(useSessionRunner).mockReturnValueOnce({ ...base, canUndo: true, lastRemovedEntry: entries[0], undoableLoggedEntry: entries[1] } as unknown as ReturnType<typeof useSessionRunner>);
+        const both = renderToStaticMarkup(<SessionRunner userId="user-1" />);
+        expect(both).toContain('Undo set 2');
+        expect(both).not.toContain('Set removed');
+
+        vi.mocked(useSessionRunner).mockReturnValueOnce({ ...base, canUndo: true, lastRemovedEntry: entries[1], undoableLoggedEntry: null } as unknown as ReturnType<typeof useSessionRunner>);
         const removed = renderToStaticMarkup(<SessionRunner userId="user-1" />);
         expect(removed).toContain('Set removed');
         expect(removed).not.toContain('Set 2 logged');

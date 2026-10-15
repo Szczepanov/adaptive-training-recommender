@@ -34,8 +34,7 @@ import { ineligibleAlternativeOptionIds } from '../engine/sessionChoiceEligibili
 import { EXERCISES_BY_ID } from '../workouts/exercises.ts';
 import type { BodyRegion, FitWorkoutFingerprintKind, RegionTissueResponse } from '../engine/models';
 import type { SessionCompletionPayload } from '../components/session/SessionCompletionSheet';
-import { runExclusive } from '../utils/runExclusive';
-import { buildSetCorrection, isLoggedSetUndoOpen, LOGGED_SET_UNDO_WINDOW_MS } from '../sessions/setCorrection';
+import { commitSetCorrection, isRestoreOffered, LOGGED_SET_UNDO_WINDOW_MS, planLoggedSetUndo, restoreWouldDuplicateSetIndex, runLoggedSetUndo } from '../sessions/setCorrection';
 import type { SetCorrectionInput, SetCorrectionResult } from '../sessions/setCorrection';
 
 /** Two `ExerciseRef`s identify the same performed exercise. Used to scope a step's
@@ -81,7 +80,6 @@ export interface UseSessionRunnerResult {
     logEntry: (payload: SessionEntryPayload, side?: 'left' | 'right' | 'bilateral', selectedOptionId?: string) => Promise<void>;
     /** Records an athlete's answer to an authored `SessionChoice` as its own execution event. */
     logChoice: (choiceId: string, optionId: string, reason?: string, supersedesChoiceEntryId?: string) => Promise<void>;
-    editEntry: (entryId: string, updatedPayload: Partial<SessionEntryPayload>) => Promise<void>;
     /** Corrects a logged repetition set in place through the auditable `correct` mutation:
      * identity, timestamps, set index, warm-up flag and gauge are preserved (#724). */
     correctSet: (entryId: string, input: SetCorrectionInput) => Promise<SetCorrectionResult>;
@@ -152,6 +150,8 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
     const [resumeStatus, setResumeStatus] = useState<'none' | 'ready' | 'degraded'>('none');
     const [resumeDegradedReason, setResumeDegradedReason] = useState<string | null>(null);
     const [lastRemovedEntry, setLastRemovedEntry] = useState<SessionEntry | null>(null);
+    /** Removals whose restore is no longer offered because a newer set was logged since. */
+    const [dismissedRemovedIds, setDismissedRemovedIds] = useState<ReadonlySet<string>>(() => new Set());
     const [recentLogged, setRecentLogged] = useState<{ id: string; atMs: number } | null>(null);
     /** Synchronous single-flight guard so a double tap on Undo can only tombstone once. */
     const undoLoggedInFlightRef = useRef(false);
@@ -622,6 +622,9 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
         setEntries(prev => [...prev, entry]);
         setSyncStatus('pending');
         setRecentLogged({ id: entryId, atMs: Date.now() });
+        if (lastRemovedEntry && !dismissedRemovedIds.has(lastRemovedEntry.id)) {
+            setDismissedRemovedIds(prev => new Set(prev).add(lastRemovedEntry.id));
+        }
 
         // Rest belongs to the performed set, not to persistence completion. Start it at the same
         // optimistic boundary as the entry so a slow write can never resurrect a timer the athlete
@@ -653,7 +656,7 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
                 setIsRestRunning(false);
             }
         }
-    }, [execution, activeStep, activeBlock, rawDefinition, entries, userId, closeActiveRest, diaryWriteOptions]);
+    }, [execution, activeStep, activeBlock, rawDefinition, entries, userId, closeActiveRest, diaryWriteOptions, lastRemovedEntry, dismissedRemovedIds]);
 
     const logChoice = useCallback(async (
         choiceId: string,
@@ -697,42 +700,28 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
         }
     }, [execution, activeBlock, entries, userId, diaryWriteOptions]);
 
-    const editEntry = useCallback(async (entryId: string, updatedPayload: Partial<SessionEntryPayload>) => {
-        if (!execution || execution.state !== 'in_progress') return;
-        const target = entries.find(e => e.id === entryId);
-        if (!target) return;
-        if (target.payload.kind === 'choice') throw new Error('Choice entries are append-only; record a corrected choice instead.');
-        setEntries(prev => prev.map(e => (e.id === entryId ? { ...e, payload: { ...e.payload, ...updatedPayload } as SessionEntryPayload, updatedAt: new Date().toISOString() } : e)));
-        try {
-            await sessionExecutionService.correctEntry(userId, execution.executionId, entryId, {
-                payload: { ...target.payload, ...updatedPayload } as SessionEntryPayload,
-            }, diaryWriteOptions);
-        } catch {
-            setSyncStatus('unavailable');
-        }
-    }, [execution, entries, userId, diaryWriteOptions]);
-
     const correctSet = useCallback(async (entryId: string, input: SetCorrectionInput): Promise<SetCorrectionResult> => {
         const target = entries.find(e => e.id === entryId);
-        if (!execution || execution.state !== 'in_progress' || !target) {
+        if (!execution || execution.state !== 'in_progress' || !target || terminalInFlightRef.current) {
             return { ok: false, reason: 'This set can no longer be corrected.' };
         }
-        const built = buildSetCorrection(target, input);
-        if (!built.ok) return built;
-        const stamp = new Date().toISOString();
-        setEntries(prev => prev.map(e => (e.id === entryId ? { ...e, payload: built.payload, updatedAt: stamp } : e)));
-        try {
-            await sessionExecutionService.correctEntry(userId, execution.executionId, entryId, { payload: built.payload }, diaryWriteOptions);
-        } catch {
+        const result = await commitSetCorrection(target, input, {
+            applyLocal: payload => {
+                const stamp = new Date().toISOString();
+                setEntries(prev => prev.map(e => (e.id === entryId ? { ...e, payload, updatedAt: stamp } : e)));
+            },
+            persist: payload => sessionExecutionService.correctEntry(userId, execution.executionId, entryId, { payload }, diaryWriteOptions),
             // The correction was not accepted: show the stored value again, not the unsaved one.
-            setEntries(prev => prev.map(e => (e.id === entryId ? target : e)));
-            setSyncStatus('unavailable');
-        }
-        return built;
+            rollbackLocal: () => {
+                setEntries(prev => prev.map(e => (e.id === entryId ? target : e)));
+                setSyncStatus('unavailable');
+            },
+        });
+        return result;
     }, [execution, entries, userId, diaryWriteOptions]);
 
     const removeEntry = useCallback(async (entryId: string) => {
-        if (!execution || execution.state !== 'in_progress') return;
+        if (!execution || execution.state !== 'in_progress' || terminalInFlightRef.current) return;
         const target = entries.find(e => e.id === entryId);
         if (!target) return;
         if (target.payload.kind === 'choice') throw new Error('Choice entries are append-only; record a corrected choice instead.');
@@ -746,14 +735,18 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
     }, [execution, entries, userId, diaryWriteOptions]);
 
     const undoLoggedSet = useCallback(async () => {
-        if (!recentLogged || undoLoggedInFlightRef.current) return;
-        if (!isLoggedSetUndoOpen(recentLogged.atMs, Date.now())) {
+        const plan = planLoggedSetUndo(recentLogged, Date.now(), {
+            undoInFlight: undoLoggedInFlightRef.current,
+            terminalInFlight: terminalInFlightRef.current !== null,
+        });
+        if (plan === 'ignore' || !recentLogged) return;
+        if (plan === 'expired') {
             setRecentLogged(null);
             return;
         }
         const { id } = recentLogged;
         setRecentLogged(null);
-        await runExclusive(undoLoggedInFlightRef, async () => {
+        await runLoggedSetUndo(undoLoggedInFlightRef, async () => {
             // The rest the undone set started has no set left to belong to.
             if (activeRestRef.current?.afterEntryId === id) {
                 activeRestRef.current = null;
@@ -781,8 +774,10 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
 
     const undo = useCallback(async () => {
         if (!execution || execution.state !== 'in_progress' || !lastRemovedEntry) return;
+        if (terminalInFlightRef.current) return;
         const toRestore = lastRemovedEntry;
         setLastRemovedEntry(null);
+        if (!isRestoreOffered(toRestore, dismissedRemovedIds) || restoreWouldDuplicateSetIndex(entries, toRestore)) return;
         if (toRestore.payload.kind === 'choice') throw new Error('Choice entries are append-only and cannot be restored as a correction.');
         setEntries(prev => [...prev, { ...toRestore, deletedAt: null }]);
         try {
@@ -790,7 +785,7 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
         } catch {
             setSyncStatus('unavailable');
         }
-    }, [execution, lastRemovedEntry, userId, diaryWriteOptions]);
+    }, [execution, lastRemovedEntry, dismissedRemovedIds, entries, userId, diaryWriteOptions]);
 
     // Not currently wired into any UI (no `afterEntryId` context to attribute a durable
     // rest event to) -- left as local-only countdown state, matching its existing
@@ -1048,7 +1043,7 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
         syncStatus,
         resumeStatus,
         resumeDegradedReason,
-        canUndo: lastRemovedEntry !== null && lastRemovedEntry.payload.kind !== 'choice',
+        canUndo: isRestoreOffered(lastRemovedEntry, dismissedRemovedIds),
         lastRemovedEntry,
         undoableLoggedEntry,
         sessionEnded,
@@ -1061,7 +1056,6 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
         prevStep,
         logEntry,
         logChoice,
-        editEntry,
         correctSet,
         removeEntry,
         undoLoggedSet,

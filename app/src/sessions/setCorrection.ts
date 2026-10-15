@@ -8,6 +8,7 @@
  * never a compensating set. Out-of-range values are rejected, never clamped or "fixed".
  */
 import type { RepetitionEntryPayload, SessionEntry } from './models';
+import { runExclusive } from '../utils/runExclusive';
 
 /** How long after logging a set the one-tap "Undo" affordance stays offered. */
 export const LOGGED_SET_UNDO_WINDOW_MS = 10_000;
@@ -23,15 +24,16 @@ export function buildSetCorrection(entry: SessionEntry, input: SetCorrectionInpu
         return { ok: false, reason: 'Only repetition sets can be corrected here.' };
     }
     const repsText = input.reps.trim();
-    const reps = Number(repsText);
-    if (repsText === '' || !Number.isInteger(reps) || reps < 1) {
+    // Plain decimal digits only: `Number('1e1')` would otherwise silently turn into 10 reps.
+    const reps = /^\d+$/.test(repsText) ? Number(repsText) : Number.NaN;
+    if (!Number.isSafeInteger(reps) || reps < 1) {
         return { ok: false, reason: 'Enter a whole number of repetitions (1 or more).' };
     }
     const weightText = input.weightKg.trim();
     let weightKg: number | undefined;
     if (weightText !== '') {
-        weightKg = Number(weightText);
-        if (!Number.isFinite(weightKg) || weightKg < 0) {
+        weightKg = /^(\d+\.?\d*|\.\d+)$/.test(weightText) ? Number(weightText) : Number.NaN;
+        if (!Number.isFinite(weightKg)) {
             return { ok: false, reason: 'Enter a load of 0 kg or more, or leave it empty.' };
         }
     }
@@ -46,4 +48,73 @@ export function buildSetCorrection(entry: SessionEntry, input: SetCorrectionInpu
 /** True while the athlete may still one-tap undo a set logged at `loggedAtMs`. */
 export function isLoggedSetUndoOpen(loggedAtMs: number, nowMs: number): boolean {
     return nowMs >= loggedAtMs && nowMs - loggedAtMs < LOGGED_SET_UNDO_WINDOW_MS;
+}
+
+/** The "Set removed - Undo" restore is only offered while it is still the newest action: once the
+ * athlete logs another set, restoring the older removal could duplicate a set index. */
+export function isRestoreOffered(lastRemoved: SessionEntry | null, dismissedRemovedIds: ReadonlySet<string>): boolean {
+    return lastRemoved !== null && lastRemoved.payload.kind !== 'choice' && !dismissedRemovedIds.has(lastRemoved.id);
+}
+
+/** True when restoring `restored` would leave two live repetition sets with the same set index
+ * for the same step and exercise (a false extra exposure). */
+export function restoreWouldDuplicateSetIndex(liveEntries: readonly SessionEntry[], restored: SessionEntry): boolean {
+    if (restored.payload.kind !== 'repetition') return false;
+    const { setIndex } = restored.payload;
+    const exerciseKey = JSON.stringify(restored.exerciseRef ?? null);
+    return liveEntries.some(entry => entry.id !== restored.id
+        && !entry.deletedAt
+        && entry.stepId === restored.stepId
+        && JSON.stringify(entry.exerciseRef ?? null) === exerciseKey
+        && entry.payload.kind === 'repetition'
+        && entry.payload.setIndex === setIndex);
+}
+
+export const CORRECTION_NOT_SAVED_REASON = 'The correction could not be saved. The set keeps its previous values.';
+
+export interface SetCorrectionEffects {
+    /** Optimistic local update, applied before the durable write. */
+    applyLocal: (payload: RepetitionEntryPayload) => void;
+    /** Durable write through the auditable correction path; rejects when not accepted. */
+    persist: (payload: RepetitionEntryPayload) => Promise<void>;
+    /** Restores the stored values after a rejected write. */
+    rollbackLocal: () => void;
+}
+
+/** Validates, applies, persists and (on a rejected write) rolls back one correction. A failed
+ * write is reported as `ok: false` so the editor stays open with the reason. */
+export async function commitSetCorrection(
+    target: SessionEntry,
+    input: SetCorrectionInput,
+    effects: SetCorrectionEffects,
+): Promise<SetCorrectionResult> {
+    const built = buildSetCorrection(target, input);
+    if (!built.ok) return built;
+    effects.applyLocal(built.payload);
+    try {
+        await effects.persist(built.payload);
+    } catch {
+        effects.rollbackLocal();
+        return { ok: false, reason: CORRECTION_NOT_SAVED_REASON };
+    }
+    return built;
+}
+
+export type LoggedSetUndoPlan = 'undo' | 'expired' | 'ignore';
+
+/** Decides what a tap on the logged-set Undo does. A terminal write in flight (rules require
+ * `in_progress` for entries) or a tap already being processed is ignored; an expired window
+ * just dismisses the offer. */
+export function planLoggedSetUndo(
+    recent: { atMs: number } | null,
+    nowMs: number,
+    state: { undoInFlight: boolean; terminalInFlight: boolean },
+): LoggedSetUndoPlan {
+    if (!recent || state.undoInFlight || state.terminalInFlight) return 'ignore';
+    return isLoggedSetUndoOpen(recent.atMs, nowMs) ? 'undo' : 'expired';
+}
+
+/** Runs `undoOnce` under the single-flight lock so a double tap tombstones at most once. */
+export function runLoggedSetUndo(lock: { current: boolean }, undoOnce: () => Promise<void>): Promise<void | undefined> {
+    return runExclusive(lock, undoOnce);
 }

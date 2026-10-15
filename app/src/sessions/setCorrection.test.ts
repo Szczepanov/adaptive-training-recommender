@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { SessionEntry } from './models';
-import { buildSetCorrection, isLoggedSetUndoOpen, LOGGED_SET_UNDO_WINDOW_MS } from './setCorrection';
+import { buildSetCorrection, commitSetCorrection, CORRECTION_NOT_SAVED_REASON, planLoggedSetUndo, runLoggedSetUndo, isLoggedSetUndoOpen, isRestoreOffered, LOGGED_SET_UNDO_WINDOW_MS, restoreWouldDuplicateSetIndex } from './setCorrection';
 
 const at = '2026-10-05T08:00:00.000Z';
 const gauged: SessionEntry = {
@@ -20,11 +20,11 @@ describe('buildSetCorrection', () => {
         expect(result.ok && result.payload.gauge).toEqual({ scale: 'rir', value: 2 });
     });
 
-    it.each(['', '0', '-3', '2.5', 'abc'])('rejects invalid reps %j without coercing it', reps => {
+    it.each(['', '0', '-3', '2.5', 'abc', '1e1', '0x10', '+5', '9007199254740993'])('rejects invalid reps %j without coercing it', reps => {
         expect(buildSetCorrection(gauged, { reps, weightKg: '10' }).ok).toBe(false);
     });
 
-    it.each(['-1', 'NaN', 'Infinity', 'x'])('rejects invalid load %j', weightKg => {
+    it.each(['-1', 'NaN', 'Infinity', 'x', '1e2', '--1', '1.2.3'])('rejects invalid load %j', weightKg => {
         expect(buildSetCorrection(gauged, { reps: '5', weightKg }).ok).toBe(false);
     });
 
@@ -50,5 +50,94 @@ describe('isLoggedSetUndoOpen', () => {
         expect(isLoggedSetUndoOpen(1_000, 1_000 + LOGGED_SET_UNDO_WINDOW_MS - 1)).toBe(true);
         expect(isLoggedSetUndoOpen(1_000, 1_000 + LOGGED_SET_UNDO_WINDOW_MS)).toBe(false);
         expect(isLoggedSetUndoOpen(2_000, 1_000)).toBe(false);
+    });
+});
+
+const live = (id: string, setIndex: number, extra: Partial<SessionEntry> = {}): SessionEntry => ({
+    ...gauged, id, payload: { kind: 'repetition', setIndex, reps: 5 }, exerciseRef: { kind: 'catalog', exerciseId: 'squat' }, ...extra,
+});
+
+describe('restore offer after log -> undo -> log (#724 review)', () => {
+    it('stops offering a stale removal once a newer set was logged, but offers a fresh one', () => {
+        const set3 = live('set-3', 3);
+        const dismissed = new Set<string>();
+        expect(isRestoreOffered(set3, dismissed)).toBe(true);
+        // The athlete logs another set: the older removal is dismissed.
+        expect(isRestoreOffered(set3, new Set([set3.id]))).toBe(false);
+        // Undoing the next logged set produces a new, offered removal.
+        expect(isRestoreOffered(live('set-3b', 3), new Set([set3.id]))).toBe(true);
+    });
+
+    it('never offers a choice or nothing', () => {
+        expect(isRestoreOffered(null, new Set())).toBe(false);
+        expect(isRestoreOffered({ ...gauged, payload: { kind: 'choice', choiceId: 'c', optionId: 'o' } }, new Set())).toBe(false);
+    });
+
+    it('refuses a restore that would leave two live sets with the same set index', () => {
+        const stale = live('set-3', 3);
+        const replacement = live('set-3b', 3);
+        expect(restoreWouldDuplicateSetIndex([live('set-1', 1), live('set-2', 2), replacement], stale)).toBe(true);
+        expect(restoreWouldDuplicateSetIndex([live('set-1', 1), live('set-2', 2)], stale)).toBe(false);
+        expect(restoreWouldDuplicateSetIndex([replacement], stale)).toBe(true);
+    });
+
+    it('does not treat another step, another exercise or a tombstone as a duplicate', () => {
+        const stale = live('set-3', 3);
+        expect(restoreWouldDuplicateSetIndex([live('x', 3, { stepId: 'row' })], stale)).toBe(false);
+        expect(restoreWouldDuplicateSetIndex([live('x', 3, { exerciseRef: { kind: 'catalog', exerciseId: 'bench' } })], stale)).toBe(false);
+        expect(restoreWouldDuplicateSetIndex([live('x', 3, { deletedAt: at })], stale)).toBe(false);
+    });
+});
+
+describe('commitSetCorrection', () => {
+    const effects = (persist: () => Promise<void>) => ({ applyLocal: vi.fn(), persist: vi.fn(persist), rollbackLocal: vi.fn() });
+
+    it('applies then persists the preserved-gauge payload and reports success', async () => {
+        const e = effects(async () => undefined);
+        const result = await commitSetCorrection(gauged, { reps: '7', weightKg: '90' }, e);
+        expect(result.ok).toBe(true);
+        expect(e.applyLocal).toHaveBeenCalledWith(expect.objectContaining({ reps: 7, weightKg: 90, gauge: { scale: 'rir', value: 2 } }));
+        expect(e.persist).toHaveBeenCalledOnce();
+        expect(e.rollbackLocal).not.toHaveBeenCalled();
+    });
+
+    it('rolls back and reports failure when the write is rejected, so the editor stays open', async () => {
+        const e = effects(async () => { throw new Error('rules'); });
+        const result = await commitSetCorrection(gauged, { reps: '7', weightKg: '' }, e);
+        expect(result).toEqual({ ok: false, reason: CORRECTION_NOT_SAVED_REASON });
+        expect(e.rollbackLocal).toHaveBeenCalledOnce();
+    });
+
+    it('touches neither local state nor the write path for invalid input', async () => {
+        const e = effects(async () => undefined);
+        expect((await commitSetCorrection(gauged, { reps: '1e1', weightKg: '' }, e)).ok).toBe(false);
+        expect(e.applyLocal).not.toHaveBeenCalled();
+        expect(e.persist).not.toHaveBeenCalled();
+    });
+});
+
+describe('planLoggedSetUndo and runLoggedSetUndo', () => {
+    const idle = { undoInFlight: false, terminalInFlight: false };
+
+    it('undoes inside the window, dismisses after expiry, and ignores nothing-to-undo', () => {
+        expect(planLoggedSetUndo({ atMs: 0 }, LOGGED_SET_UNDO_WINDOW_MS - 1, idle)).toBe('undo');
+        expect(planLoggedSetUndo({ atMs: 0 }, LOGGED_SET_UNDO_WINDOW_MS, idle)).toBe('expired');
+        expect(planLoggedSetUndo(null, 0, idle)).toBe('ignore');
+    });
+
+    it('ignores Undo while a terminal transition or another undo is in flight', () => {
+        expect(planLoggedSetUndo({ atMs: 0 }, 1, { ...idle, terminalInFlight: true })).toBe('ignore');
+        expect(planLoggedSetUndo({ atMs: 0 }, 1, { ...idle, undoInFlight: true })).toBe('ignore');
+    });
+
+    it('tombstones once for a double tap', async () => {
+        const lock = { current: false };
+        let release!: () => void;
+        const tombstone = vi.fn(() => new Promise<void>(resolve => { release = resolve; }));
+        const first = runLoggedSetUndo(lock, tombstone);
+        const second = runLoggedSetUndo(lock, tombstone);
+        release();
+        await Promise.all([first, second]);
+        expect(tombstone).toHaveBeenCalledOnce();
     });
 });
