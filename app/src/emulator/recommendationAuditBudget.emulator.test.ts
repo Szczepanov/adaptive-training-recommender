@@ -1089,11 +1089,22 @@ emulatorDescribe('Recommendation audit budget', () => {
             await assertFails(setDoc(doc(db, `${path}/revisions/2`), buildArchiveDoc(parent, 2)));
         });
 
-        it('denies an archive for a revision other than the one being replaced', async () => {
+        it('denies an orphan archive even when the parent already sits at the next revision', async () => {
+            const parent = fixtureExternal();
+            // Parent already bumped to revision 2 but its revision-1 archive is missing.
+            const db = await seedParent({ ...(parent as unknown as Record<string, unknown>), revision: 2 });
+            // Only the before-write `get` clause rejects this: `getAfter` alone sees revision 2 == 1 + 1.
+            await assertFails(setDoc(doc(db, `${path}/revisions/1`), buildArchiveDoc(parent, 1)));
+        });
+
+        it('denies a forged extra archive riding along with a valid decision-change batch', async () => {
             const parent = fixtureExternal();
             const db = await seedParent(parent as unknown as Record<string, unknown>);
             const batch = writeBatch(db);
-            batch.set(doc(db, `${path}/revisions/7`), buildArchiveDoc(parent, 7));
+            // The legitimate archive for the revision being replaced...
+            batch.set(doc(db, `${path}/revisions/1`), buildArchiveDoc(parent, 1));
+            // ...plus a second archive for a revision that is not being replaced.
+            batch.set(doc(db, `${path}/revisions/2`), buildArchiveDoc(parent, 2));
             const next = nextOf(parent);
             batch.set(doc(db, path), next, { mergeFields: Object.keys(next) });
             await assertFails(batch.commit());
