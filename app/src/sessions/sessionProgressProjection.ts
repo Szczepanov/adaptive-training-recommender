@@ -95,20 +95,27 @@ export function projectSessionProgress(
  */
 export function resolveResumeCursor(
     rawDefinition: SessionDefinition,
-    entries: readonly SessionEntry[],
+    allEntries: readonly SessionEntry[],
 ): SessionProgressCursor {
+    // Tombstoned entries are not performed work: one filter feeds the cursor, the last-touched
+    // scan and every completion count so they cannot disagree.
+    const entries = allEntries.filter(entry => !entry.deletedAt);
     const base = projectSessionProgress(rawDefinition, entries);
     if (base.sessionEnded) return base;
 
     const effective = resolveEffectiveSession(rawDefinition, entries);
     for (let index = entries.length - 1; index >= 0; index--) {
         const entry = entries[index];
-        if (entry.deletedAt || !countsTowardPrescribedSets(entry)) continue;
+        if (!countsTowardPrescribedSets(entry)) continue;
         const blockIndex = effective.definition.blocks.findIndex(block => block.steps.some(step => step.id === entry.stepId));
         const block = effective.definition.blocks[blockIndex];
         if (!block || effective.endedBlockIds.has(block.id) || isRotatingExecutionMode(block.executionMode)) return base;
         const stepIndex = block.steps.findIndex(step => step.id === entry.stepId);
         const step = block.steps[stepIndex];
+        // An omit_step choice marks the step optional rather than removing it; a step the
+        // athlete dropped must not be reopened (end_block/end_session are handled above).
+        const rawStep = rawDefinition.blocks.flatMap(rawBlock => rawBlock.steps).find(candidate => candidate.id === step.id);
+        if (step.optional && !rawStep?.optional) return base;
         if (completedPrescribedSets(step, entries) >= targetEntriesForGroupStep(block, step)) return base;
         return { blockIndex, stepIndex, sessionEnded: false, requiredWorkComplete: base.requiredWorkComplete };
     }
