@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { SessionDefinition, SessionEntry } from './models';
-import { projectSessionProgress } from './sessionProgressProjection';
+import { projectSessionProgress, resolveResumeCursor } from './sessionProgressProjection';
 
 const at = '2026-10-05T10:00:00.000Z';
 const definition: SessionDefinition = {
@@ -101,4 +101,60 @@ describe('projectSessionProgress', () => {
         expect(projectSessionProgress(optional, [entry('squat', 1)])).toMatchObject({ requiredWorkComplete: true });
     });
 
+});
+
+describe('resolveResumeCursor', () => {
+    it('falls back to the first incomplete step when nothing was touched', () => {
+        expect(resolveResumeCursor(definition, [])).toMatchObject({ blockIndex: 0, stepIndex: 0 });
+    });
+
+    it('opens the last-touched unfinished step even when earlier required work is incomplete', () => {
+        const three: SessionDefinition = { ...definition, blocks: [{ ...definition.blocks[0], steps: [
+            { id: 'a', kind: 'exercise', dose: { kind: 'repetition', sets: 1, reps: 5 } },
+            { id: 'b', kind: 'exercise', dose: { kind: 'repetition', sets: 3, reps: 5 } },
+        ] }] };
+        expect(resolveResumeCursor(three, [entry('b', 1)])).toMatchObject({ stepIndex: 1, sessionEnded: false });
+        expect(projectSessionProgress(three, [entry('b', 1)])).toMatchObject({ stepIndex: 0 });
+    });
+
+    it('moves past a finished last-touched step to the first incomplete one', () => {
+        expect(resolveResumeCursor(definition, [entry('squat', 1), entry('row', 1)]))
+            .toMatchObject({ stepIndex: 0, requiredWorkComplete: false });
+        expect(resolveResumeCursor(definition, [entry('squat', 1), entry('squat', 2), entry('row', 1)]).requiredWorkComplete).toBe(true);
+    });
+
+    it('ignores warm-ups when choosing the last-touched step', () => {
+        const warmup: SessionEntry = { ...entry('row', 1, 'wu'), payload: { kind: 'repetition', setIndex: 1, reps: 5, isWarmup: true } };
+        expect(resolveResumeCursor(definition, [entry('squat', 1), warmup])).toMatchObject({ stepIndex: 0 });
+    });
+
+    it('does not treat a tombstoned entry as performed work', () => {
+        // row has a single prescribed set; its only entry is deleted, so row is still unfinished.
+        const deleted: SessionEntry = { ...entry('row', 1, 'gone'), deletedAt: at };
+        const cursor = resolveResumeCursor(definition, [entry('squat', 1), entry('squat', 2), deleted]);
+        expect(cursor).toMatchObject({ stepIndex: 1, requiredWorkComplete: false });
+    });
+
+    it('does not reopen a step dropped by an omit_step choice', () => {
+        const withChoice: SessionDefinition = { ...definition, blocks: [{
+            ...definition.blocks[0],
+            steps: [
+                { id: 'a', kind: 'exercise', dose: { kind: 'repetition', sets: 3, reps: 5 } },
+                { id: 'b', kind: 'exercise', dose: { kind: 'repetition', sets: 1, reps: 5 } },
+            ],
+            optionSets: [{
+                id: 'choice-a',
+                appliesAtStepId: 'a',
+                trigger: { kind: 'athlete_observed', description: 'Feeling it?' },
+                options: [{ id: 'skip', label: 'Skip', actions: [{ kind: 'omit_step', targetStepId: 'a' }] }],
+            }],
+        }] };
+        const choice: SessionEntry = {
+            ...entry('a', 1, 'choice-entry'), selectedOptionId: 'skip',
+            payload: { kind: 'choice', choiceId: 'choice-a', optionId: 'skip' },
+        };
+        const entries = [entry('a', 1, 'a-1'), choice];
+        expect(resolveResumeCursor(withChoice, entries)).toMatchObject({ stepIndex: 1 });
+        expect(resolveResumeCursor(withChoice, entries)).toEqual(projectSessionProgress(withChoice, entries));
+    });
 });

@@ -219,7 +219,24 @@ describe('SessionRunner session picker', () => {
         expect(html.indexOf('class="active-step-panel"')).toBeLessThan(html.indexOf('aria-label="Workout steps"'));
         expect(html.indexOf('aria-label="Log repetition set"')).toBeLessThan(html.indexOf('aria-label="Workout steps"'));
         expect(html).toContain('class="step-nav-pill active');
-        expect(html).toContain('row</button>');
+        expect(html).toContain('0/1 set · Required');
+        expect(html).toContain('>row</span>');
+    });
+
+    it('shows target progress and required/optional status for every authored step, plus the summary', () => {
+        const required = repetitionStep('squat', 3);
+        const bonus = { ...repetitionStep('curl', 2), optional: true };
+        const definition = { ...definitionWithBlock('sequential', [required, bonus]), summary: 'Heavy squat day' };
+        vi.mocked(useSessionRunner).mockReturnValueOnce({
+            activeStep: required, activeBlock: definition.blocks[0], activeBlockIndex: 0, activeStepIndex: 0,
+            definition, entries: [], execution: { state: 'in_progress' }, isRestoring: false,
+            elapsedSeconds: 0, isRestRunning: false, syncStatus: 'synced', canUndo: false,
+            sessionEnded: false, ineligibleOptionIds: new Set<string>(),
+        } as unknown as ReturnType<typeof useSessionRunner>);
+        const html = renderToStaticMarkup(<SessionRunner userId="user-1" />);
+        expect(html).toContain('0/3 sets · Required');
+        expect(html).toContain('0/2 sets · Optional');
+        expect(html).toContain('Heavy squat day');
     });
 
     it('tints the running header for locked assessments (#496)', () => {

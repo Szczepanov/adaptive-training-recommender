@@ -398,6 +398,50 @@ const savedUpperBodyStrengthMaintenance: SessionDefinition = {
   ],
 };
 
+/** Required catalog work, an unresolved free-text exercise and an optional accessory (#723). */
+const prescribedNavigatorSession: SessionDefinition = {
+  schemaVersion: 1,
+  id: 'visual-prescribed-navigator',
+  revision: 1,
+  title: 'Prescribed Strength Navigator',
+  summary: 'Squat first, then rows and an optional finisher; stop any set if form breaks down.',
+  intent: 'training',
+  modalities: ['Strength'],
+  dominantModality: 'strength',
+  blocks: [
+    {
+      id: 'main',
+      title: 'Main work',
+      role: 'main',
+      executionMode: 'sequential',
+      steps: [
+        {
+          id: 'back-squat',
+          kind: 'exercise',
+          title: 'Back squat',
+          exerciseRef: { kind: 'catalog', exerciseId: 'back_squat' },
+          dose: { kind: 'repetition', sets: 3, reps: 5 },
+          stopConditions: ['Stop the set if depth or bar path degrades.'],
+        },
+        {
+          id: 'cable-pallof',
+          kind: 'exercise',
+          title: 'Landmine anti-rotation press',
+          exerciseRef: { kind: 'unresolved_free_text', name: 'Landmine anti-rotation press' },
+          dose: { kind: 'repetition', sets: 2, reps: 8 },
+        },
+        {
+          id: 'curl-finisher',
+          kind: 'exercise',
+          title: 'Curl finisher',
+          optional: true,
+          dose: { kind: 'repetition', sets: 2, reps: 12 },
+        },
+      ],
+    },
+  ],
+};
+
 const archivedShoulderCare: SessionDefinition = {
   ...savedUpperBodyStrengthMaintenance,
   id: 'visual-archived-shoulder-care',
@@ -825,6 +869,25 @@ export const VISUAL_SCENARIOS: VisualScenario[] = [
       'Activation remains distinct and completion summary remains available.',
     ],
     fixture: buildFixture({ initialSession: primaryStrengthSession }),
+  },
+  {
+    id: 'session-runner-prescribed-navigator',
+    title: 'Session Runner - prescribed work, free-text and optional steps',
+    screen: 'session',
+    expectedFocus: [
+      'Every authored step shows completed/target progress and required or optional status before it is started.',
+      'The session summary and the active step stop condition are visible beside the entry form.',
+      'A free-text exercise stays reachable from the navigator after switching away.',
+    ],
+    fixture: buildFixture({
+      initialSession: {
+        definition: prescribedNavigatorSession,
+        binding: {
+          sessionSource: { kind: 'unplanned_fixture', fixtureId: 'visual-prescribed-navigator' },
+          prescriptionHash: 'visual-prescribed-navigator-hash',
+        },
+      },
+    }),
   },
   {
     id: 'session-runner-custom-template-library',

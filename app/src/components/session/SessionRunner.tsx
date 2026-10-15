@@ -21,6 +21,7 @@ import { archivedSavedDefinitionError } from '../../sessions/sessionLaunch';
 import { targetEntriesForGroupStep } from '../../sessions/groupProgression';
 import { completedPrescribedSets, nextHoldSide } from '../../sessions/workSets';
 import { stepName } from '../../sessions/stepDisplay';
+import { describeStepNavigatorProgress } from '../../sessions/stepNavigatorProgress';
 import { GroupProgress } from './GroupProgress';
 import { ChoiceCard } from './ChoiceCard';
 import { SessionEntryActions } from './SessionEntryActions';
@@ -959,6 +960,7 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                     <span className="intent-tag">{definition.intent}</span>
                     {mode === 'assessment' && <span className="mode-tag mode-tag-assessment">Locked assessment</span>}
                     <h2 className="session-title-text">{definition.title}</h2>
+                    {definition.summary && <p className="session-summary-text">{definition.summary}</p>}
                 </div>
                 <div className="session-header-right">
                     <button
@@ -1242,8 +1244,8 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                         <div className="step-pills">
                             {block.steps.map((step, sIdx) => {
                                 const stepCompletedSets = stepCompletedCounts.get(step.id) ?? 0;
-                                const targetSets = targetEntriesForGroupStep(block, step);
-                                const isStepComplete = stepCompletedSets >= targetSets;
+                                const navProgress = describeStepNavigatorProgress(block, step, stepCompletedSets);
+                                const isStepComplete = navProgress.complete;
                                 const isCurrent = runner.activeBlockIndex === bIdx && runner.activeStepIndex === sIdx;
                                 return (
                                     <button
@@ -1253,7 +1255,10 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                                         aria-current={isCurrent ? 'step' : undefined}
                                         onClick={() => selectStepAndFocus(bIdx, sIdx)}
                                     >
-                                        {isStepComplete ? '✓ ' : (stepCompletedSets > 0 ? `(${stepCompletedSets}/${targetSets}) ` : '')}{stepName(step)}
+                                        <span className="step-nav-pill-name">{isStepComplete ? '✓ ' : ''}{stepName(step)}</span>
+                                        <span className="step-nav-pill-meta">
+                                            {navProgress.progressText} · {navProgress.requirement === 'optional' ? 'Optional' : 'Required'}
+                                        </span>
                                     </button>
                                 );
                             })}

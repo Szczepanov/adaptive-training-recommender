@@ -435,17 +435,17 @@ test('captures the primary catalog strength warm-up journey', async ({ page }) =
   ]);
 
   await page.locator('.log-set-btn').click();
-  await page.getByRole('button', { name: 'Dead bug', exact: true }).click();
+  await page.getByRole('button', { name: /^Dead bug \d+\/\d+ /i }).click();
   await expect(page.getByRole('heading', { name: /Dead Bug/i })).toBeVisible();
   await page.locator('.log-set-btn').click();
-  await page.getByRole('button', { name: 'Hang power clean rehearsal', exact: true }).click();
+  await page.getByRole('button', { name: /^Hang power clean rehearsal \d+\/\d+ /i }).click();
   await expect(page.getByRole('heading', { name: /Hang Power Clean Rehearsal/i })).toBeVisible();
   await expect(page.getByText('Load: Empty bar, then light rehearsal load')).toBeVisible();
   await capture(page, scenario, 'warmup-ramp', [
     'The structured ramp-load copy is visible before the activation block.',
   ]);
 
-  await page.getByRole('button', { name: 'Hang power clean', exact: true }).click();
+  await page.getByRole('button', { name: /^Hang power clean \d+\/\d+ /i }).click();
   await expect(page.locator('.block-role-label').filter({ hasText: 'Power activation' })).toBeVisible();
   await expect(page.getByRole('heading', { name: /Hang Power Clean/i, exact: true })).toBeVisible();
   await capture(page, scenario, 'activation-transition', [
@@ -518,6 +518,43 @@ test('captures just-logged set undo and in-place set correction', async ({ page 
   // Once the window passes, the offer disappears on its own.
   await page.clock.fastForward(11_000);
   await expect(page.getByRole('button', { name: 'Undo set 1' })).toHaveCount(0);
+});
+
+test('captures prescribed progress, optional status and free-text reachability in the runner navigator', async ({ page }) => {
+  const scenario = VISUAL_SCENARIOS.find(candidate => candidate.id === 'session-runner-prescribed-navigator');
+  if (!scenario) throw new Error('Missing prescribed navigator visual scenario');
+  await visitScenario(page, scenario);
+
+  const nav = page.getByRole('navigation', { name: 'Workout steps' });
+  await expect(page.locator('.session-summary-text')).toContainText('Squat first');
+  await expect(page.locator('.step-stop-conditions')).toContainText('Stop the set if depth or bar path degrades.');
+  await expect(nav.getByRole('button', { name: /Back squat/ })).toContainText('0/3 sets · Required');
+  await expect(nav.getByRole('button', { name: /Landmine anti-rotation press/ })).toContainText('0/2 sets · Required');
+  await expect(nav.getByRole('button', { name: /Curl finisher/ })).toContainText('0/2 sets · Optional');
+  await capture(page, scenario, 'prescribed-unstarted', [
+    'Unstarted prescribed work shows 0/target and required/optional status.',
+  ]);
+
+  await page.getByRole('checkbox', { name: 'Warm-up', exact: true }).uncheck();
+  await page.locator('.log-set-btn').click();
+  await expect(nav.getByRole('button', { name: /Back squat/ })).toContainText('1/3 sets · Required');
+
+  await nav.getByRole('button', { name: /Landmine anti-rotation press/ }).click();
+  await expect(page.getByRole('heading', { name: 'Landmine anti-rotation press' })).toBeVisible();
+  await nav.getByRole('button', { name: /Back squat/ }).click();
+  await expect(page.getByRole('heading', { name: /Back squat/i })).toBeVisible();
+  await nav.getByRole('button', { name: /Landmine anti-rotation press/ }).click();
+  await expect(page.getByRole('heading', { name: 'Landmine anti-rotation press' })).toBeVisible();
+  await capture(page, scenario, 'free-text-reachable', [
+    'The free-text exercise reopens from the navigator without retyping it.',
+  ]);
+
+  if (test.info().project.name.includes('mobile')) {
+    for (const pill of await nav.getByRole('button').all()) {
+      const box = await pill.boundingBox();
+      expect(box?.height).toBeGreaterThanOrEqual(44);
+    }
+  }
 });
 
 test('captures saved custom-template preview and archived-library states', async ({ page }) => {
