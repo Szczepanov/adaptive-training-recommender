@@ -25,6 +25,7 @@ class _Snapshot:
         self.id = doc_id
         self._data = data
         self.exists = data is not None
+        self.reference: Any = None
 
     def to_dict(self) -> dict[str, Any] | None:
         return self._data
@@ -36,16 +37,19 @@ class _Query:
         docs: dict[str, dict[str, Any]],
         filters: list[tuple[str, str, Any]] | None = None,
         nested: dict[str, dict[str, dict[str, dict[str, Any]]]] | None = None,
+        path: str = "",
     ) -> None:
         self._docs = docs
         self._filters = filters or []
         self._nested = nested or {}
+        self.path = path
 
     def where(self, *, filter: Any) -> "_Query":  # noqa: A002 -- mirrors the Firestore API
         return _Query(
             self._docs,
             [*self._filters, (filter.field_path, filter.op_string, filter.value)],
             self._nested,
+            self.path,
         )
 
     def order_by(self, _field: str) -> "_Query":
@@ -64,13 +68,22 @@ class _Query:
     def document(self, doc_id: str) -> Any:
         docs = self._docs
         nested = self._nested
+        path = f"{self.path}/{doc_id}"
 
         class _Ref:
+            def __init__(self) -> None:
+                self.path = path
+
             def get(self) -> _Snapshot:
-                return _Snapshot(doc_id, docs.get(doc_id))
+                snapshot = _Snapshot(doc_id, docs.get(doc_id))
+                snapshot.reference = self
+                return snapshot
 
             def collection(self, collection_name: str) -> _Query:
-                return _Query(nested.get(doc_id, {}).get(collection_name, {}))
+                return _Query(
+                    nested.get(doc_id, {}).get(collection_name, {}),
+                    path=f"{path}/{collection_name}",
+                )
 
         return _Ref()
 
@@ -100,6 +113,7 @@ class _FakeDb:
                         return _Query(
                             collections.get(collection_name, {}),
                             nested=collections.get("_nested", {}).get(collection_name, {}),
+                            path=f"users/{user_id}/{collection_name}",
                         )
 
                 return _User()
@@ -556,3 +570,36 @@ def test_export_includes_bounded_immutable_contexts_and_parentless_safety_outcom
     ]
     assert records["sourceProvenance"]["decisionContexts"] == {"status": "exact_revision"}
     assert set(db.touched_users) == {"u1"}
+
+
+def test_external_plan_batches_preserve_identity_when_results_are_reversed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db = _db()
+    user = db.users["u1"]
+    user["session_occurrences"] = {
+        plan_id: {
+            "date": "2026-08-06",
+            "externalPlanRef": {"planId": plan_id, "revision": 2},
+        }
+        for plan_id in ("plan-a", "plan-b", "missing")
+    }
+    user["external_plans"] = {plan_id: {"owner": plan_id} for plan_id in ("plan-a", "plan-b")}
+    user["_nested"]["external_plans"] = {
+        plan_id: {
+            "placement": {"current": {"owner": plan_id}},
+            "revisions": {"2": {"owner": plan_id}},
+        }
+        for plan_id in ("plan-a", "plan-b")
+    }
+    get_all = db.get_all
+    monkeypatch.setattr(db, "get_all", lambda refs: list(reversed(get_all(refs))))
+
+    records = export_training_occurrence_records(db, "u1", "2026-08-01", "2026-08-08")
+
+    for key in ("externalPlanPlacements", "externalPlanRevisions"):
+        assert [(row["planId"], row["data"]["owner"]) for row in records[key]] == [
+            ("plan-a", "plan-a"),
+            ("plan-b", "plan-b"),
+        ]
+    assert [row["id"] for row in records["externalPlanHeaders"]] == ["plan-a", "plan-b"]

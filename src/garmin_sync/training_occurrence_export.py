@@ -223,20 +223,46 @@ def export_training_occurrence_records(
     external_headers: list[dict[str, Any]] = []
     external_revisions: list[dict[str, Any]] = []
     external_placements: list[dict[str, Any]] = []
-    for plan_id in sorted({plan_id for plan_id, _ in external_refs}):
-        plan_ref = user.collection("external_plans").document(plan_id)
-        header = plan_ref.get()
-        if header.exists:
-            external_headers.append(_document(header))
-        placement = plan_ref.collection("placement").document("current").get()
-        if placement.exists:
-            external_placements.append({"planId": plan_id, **_document(placement)})
-        for referenced_id, revision in sorted(external_refs):
-            if referenced_id != plan_id:
-                continue
-            snapshot = plan_ref.collection("revisions").document(str(revision)).get()
-            if snapshot.exists:
-                external_revisions.append({"planId": plan_id, **_document(snapshot)})
+    sorted_plan_ids = sorted({plan_id for plan_id, _ in external_refs})
+    if sorted_plan_ids:
+        header_refs = [
+            user.collection("external_plans").document(plan_id) for plan_id in sorted_plan_ids
+        ]
+        header_snaps = {snap.id: snap for snap in db.get_all(header_refs)}
+        external_headers.extend(
+            _document(header_snaps[plan_id])
+            for plan_id in sorted_plan_ids
+            if header_snaps[plan_id].exists
+        )
+
+        placement_refs = [
+            user.collection("external_plans")
+            .document(plan_id)
+            .collection("placement")
+            .document("current")
+            for plan_id in sorted_plan_ids
+        ]
+        # Child IDs repeat across plans; match unordered batch results by full path.
+        placement_snaps = {snap.reference.path: snap for snap in db.get_all(placement_refs)}
+        for plan_id, ref in zip(sorted_plan_ids, placement_refs, strict=True):
+            snap = placement_snaps[ref.path]
+            if snap.exists:
+                external_placements.append({"planId": plan_id, **_document(snap)})
+
+        sorted_refs = sorted(external_refs)
+        revision_refs = [
+            user.collection("external_plans")
+            .document(plan_id)
+            .collection("revisions")
+            .document(str(revision))
+            for plan_id, revision in sorted_refs
+        ]
+        if revision_refs:
+            revision_snaps = {snap.reference.path: snap for snap in db.get_all(revision_refs)}
+            for (plan_id, _), ref in zip(sorted_refs, revision_refs, strict=True):
+                snap = revision_snaps[ref.path]
+                if snap.exists:
+                    external_revisions.append({"planId": plan_id, **_document(snap)})
     recommendation_revisions.sort(key=lambda row: (row["recommendationId"], row["id"]))
 
     execution_ids: set[str] = set()
