@@ -107,3 +107,7 @@
 ## 2026-10-28 - Parallelize Scenario Execution in runAllScenarios
 **Learning:** Sequential `await runScenario` calls in `runAllScenarios` blocked execution of independent athlete simulation scenarios in serial order, accumulating wall-clock latency across all scenario runs.
 **Action:** Parallelize independent async scenario evaluations using `Promise.all` in batch simulation functions.
+
+## 2026-11-01 - Batch fetch external plans, placements, and revisions via get_all
+**Learning:** `export_training_occurrence_records` was issuing sequential individual `.get()` calls for each `plan_id` in `sorted_plan_ids` to retrieve `external_plans` header documents, placement documents, and revision documents. Fetching documents individually created an N+1 query pattern with linear network roundtrip latency. Collecting document references into lists and issuing single `db.get_all(refs)` batch calls for headers, placements, and revisions reduces RPC network roundtrips from 3N to 3 batch calls, eliminating serial network delays and substantially improving export throughput.
+**Action:** Always batch fetch collections of Firestore document references using `db.get_all(refs)` instead of calling `.get()` in loops. When matching results back from `get_all`, use doc reference full paths (`snap.reference.path`) for subcollection documents where child IDs repeat across parent collections.
