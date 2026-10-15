@@ -843,7 +843,7 @@ def evaluate_resolution_candidate(
     This is a calibration harness, not runtime selection policy. Features unsupported
     by native source cadence are reported separately and excluded from the denominator.
     """
-    if tolerances_pct is None:
+    if not tolerances_pct:
         window_tolerances = _DEFAULT_WINDOW_TOLERANCES
     else:
         window_tolerances = tuple(

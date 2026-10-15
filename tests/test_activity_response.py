@@ -6,6 +6,7 @@ from garmin_sync.activity_response import (
     coarsest_preserving_resolution,
     derive_activity_response,
     evaluate_activity_resolution_candidates,
+    evaluate_resolution_candidate,
     evaluate_resolution_candidates,
 )
 from garmin_sync.fit_activity import (
@@ -577,6 +578,12 @@ def test_feature_family_resolution_harness_requires_fine_source_for_sprint_peaks
         for feature in two_seconds.features
     )
     assert two_seconds.passes_required_rate is False
+
+
+def test_resolution_harness_empty_tolerances_use_defaults():
+    assert evaluate_resolution_candidate((), 1, tolerances_pct={}) == evaluate_resolution_candidate(
+        (), 1
+    )
 
 
 def test_resolution_harness_reports_candidate_degradation_separately_from_source_limits():
