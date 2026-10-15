@@ -104,7 +104,9 @@ export const ExerciseSwapModal: React.FC<ExerciseSwapModalProps> = ({
 
                 {!isCustom ? (
                     <div className="catalog-picker-section">
+                        <label className="swap-label" htmlFor="swap-exercise-search">Search exercises</label>
                         <input
+                            id="swap-exercise-search"
                             type="search"
                             className="exercise-search-input"
                             placeholder="Search exercises by name, equipment, muscle..."
@@ -140,9 +142,10 @@ export const ExerciseSwapModal: React.FC<ExerciseSwapModalProps> = ({
                     </div>
                 ) : (
                     <div className="custom-exercise-section">
-                        <label className="swap-input-group">
-                            <span className="swap-label">Exercise Name</span>
+                        <div className="swap-input-group">
+                            <label className="swap-label" htmlFor="swap-custom-exercise-name">Exercise Name</label>
                             <input
+                                id="swap-custom-exercise-name"
                                 type="text"
                                 className="swap-input-box"
                                 placeholder="e.g. Single-arm Dumbbell Floor Press"
@@ -150,7 +153,7 @@ export const ExerciseSwapModal: React.FC<ExerciseSwapModalProps> = ({
                                 onChange={e => setCustomName(e.target.value)}
                                 autoFocus
                             />
-                        </label>
+                        </div>
                     </div>
                 )}
 

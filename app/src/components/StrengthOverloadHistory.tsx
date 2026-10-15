@@ -1,3 +1,4 @@
+import { useId } from 'react';
 import { useOverloadHistory } from '../hooks/useOverloadHistory';
 import { EXERCISES_BY_ID } from '../workouts/exercises';
 import { exerciseIdentityKey, type ExerciseIdentity } from '../workouts/overloadHistory';
@@ -23,6 +24,7 @@ function identityValue(identity: ExerciseIdentity): string {
  *  satisfies: charting is a presentation upgrade for later, not a correctness gap now. */
 export function StrengthOverloadHistory({ userId }: StrengthOverloadHistoryProps) {
     const { loading, error, exercises, selected, select, history, invalidRecords } = useOverloadHistory(userId);
+    const selectId = useId();
 
     if (loading) {
         return <div className="strength-overload-history"><p className="card-empty">Loading overload history…</p></div>;
@@ -45,7 +47,10 @@ export function StrengthOverloadHistory({ userId }: StrengthOverloadHistoryProps
         <div className="strength-overload-history">
             <h3>Overload history</h3>
 
+            <label className="strength-overload-select-label" htmlFor={selectId}>Exercise</label>
             <select
+                id={selectId}
+                className="strength-overload-select"
                 value={selected ? identityValue(selected) : ''}
                 onChange={event => {
                     const identity = exercises.find(exercise => identityValue(exercise) === event.target.value) ?? null;
@@ -65,6 +70,14 @@ export function StrengthOverloadHistory({ userId }: StrengthOverloadHistoryProps
             {selected && history.length === 0 && <p className="card-empty">No sets logged for this exercise in the last 90 days.</p>}
 
             {selected && history.length > 0 && (
+                <>
+                <p className="strength-overload-scroll-hint" aria-hidden="true">Swipe the table sideways to see every column.</p>
+                <div
+                    className="strength-overload-table-scroll"
+                    role="region"
+                    aria-label="Overload history table, scrolls horizontally"
+                    tabIndex={0}
+                >
                 <table className="strength-overload-table">
                     <thead>
                         <tr>
@@ -91,6 +104,8 @@ export function StrengthOverloadHistory({ userId }: StrengthOverloadHistoryProps
                         ))}
                     </tbody>
                 </table>
+                </div>
+                </>
             )}
         </div>
     );

@@ -100,6 +100,8 @@ fact used by downstream strength-volume and estimated-1RM exclusion filters. Sto
 prescriptions carry their blocks and display metadata, so a later catalog warm-up revision cannot
 rewrite an already-started or historical session.
 
+After a set is logged the weight field is refocused with its content selected, so the next load can be typed over it from the keyboard. The pure submit decisions (payload building, the single-flight guard, focus/select) live in `repetitionSubmit.ts` and are unit-tested; real focus and selection behaviour is asserted by the `#725` case in `app/tests/visual/capture.pw.ts`. The session header's sync pill sits in a polite live region with a text label, so pending/queued/unavailable transitions are announced and not conveyed by colour alone.
+
 Repetition submission is single-flight at the input surface: while one set is being persisted, a
 second Enter/click is ignored and the log button is disabled. This prevents rapid duplicate submits
 from deriving the same ordinal `setIndex` from one rendered entry snapshot. Rest timing is deliberately

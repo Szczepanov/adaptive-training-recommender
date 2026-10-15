@@ -45,6 +45,23 @@ describe('StrengthOverloadHistory', () => {
         expect(html).toContain('Farmer carry');
     });
 
+    it('labels the exercise picker and wraps the table in a focusable scroll region', () => {
+        vi.spyOn(historyHook, 'useOverloadHistory').mockReturnValue(baseResult({
+            exercises: [{ exerciseId: 'front_squat' }],
+            selected: { exerciseId: 'front_squat' },
+            history: [{
+                date: '2026-08-10', sessionId: 's1', setCount: 1, workingSetCount: 1, totalReps: 5, tonnageKg: 500,
+                heaviestSet: { setIndex: 1, reps: 5, weightKg: 100, isWarmup: false, completedAt: '2026-08-10T18:10:00Z' },
+            }],
+        }));
+        const html = renderToStaticMarkup(<StrengthOverloadHistory userId="u1" />);
+        const labelFor = /<label class="strength-overload-select-label" for="([^"]+)">Exercise<\/label>/.exec(html);
+        expect(labelFor).not.toBeNull();
+        expect(html).toContain(`<select id="${labelFor![1]}"`);
+        expect(html).toMatch(/<div class="strength-overload-table-scroll" role="region" aria-label="[^"]+" tabindex="0"><table/);
+        expect(html).toContain('strength-overload-scroll-hint');
+    });
+
     it('renders a history row per session with tonnage and heaviest set', () => {
         vi.spyOn(historyHook, 'useOverloadHistory').mockReturnValue(baseResult({
             exercises: [{ exerciseId: 'front_squat' }],

@@ -977,7 +977,12 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                         {soundMuted ? '🔇' : '🔊'}
                     </button>
                     <span className="session-timer">⏱️ {formatTime(runner.elapsedSeconds)}</span>
-                    <span className={`sync-pill ${runner.syncStatus}`}>{runner.syncStatus}</span>
+                    <span className="sync-status-live" role="status" aria-live="polite" aria-atomic="true">
+                        <span className={`sync-pill ${runner.syncStatus}`}>
+                            <span className="sr-only">Sync status: </span>
+                            {runner.syncStatus}
+                        </span>
+                    </span>
                 </div>
             </div>
 

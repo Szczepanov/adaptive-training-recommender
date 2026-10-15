@@ -223,6 +223,20 @@ describe('SessionRunner session picker', () => {
         expect(html).toContain('>row</span>');
     });
 
+    it.each(['pending', 'queued', 'unavailable'] as const)('announces the %s sync status in a polite live region with a text label', status => {
+        const step = repetitionStep('squat', 1);
+        const definition = definitionWithBlock('sequential', [step]);
+        vi.mocked(useSessionRunner).mockReturnValueOnce({
+            activeStep: step, activeBlock: definition.blocks[0], activeBlockIndex: 0, activeStepIndex: 0,
+            definition, entries: [], execution: { state: 'in_progress' }, isRestoring: false,
+            elapsedSeconds: 0, isRestRunning: false, syncStatus: status, canUndo: false,
+            sessionEnded: false, ineligibleOptionIds: new Set<string>(),
+        } as unknown as ReturnType<typeof useSessionRunner>);
+        const html = renderToStaticMarkup(<SessionRunner userId="user-1" />);
+        expect(html).toMatch(/<span class="sync-status-live" role="status" aria-live="polite" aria-atomic="true">/);
+        expect(html).toContain(`<span class="sync-pill ${status}"><span class="sr-only">Sync status: </span>${status}</span>`);
+    });
+
     it('shows target progress and required/optional status for every authored step, plus the summary', () => {
         const required = repetitionStep('squat', 3);
         const bonus = { ...repetitionStep('curl', 2), optional: true };
