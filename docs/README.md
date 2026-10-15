@@ -113,6 +113,8 @@ Architectural choices, system invariants, and technical trade-offs are documente
 * [**ADR-0046: First-Class Raw Assessment Trial Evidence**](./adr/0046-first-class-raw-assessment-trial-evidence.md) — *Accepted.* Extends OV with immutable raw multi-trial evidence, append-only corrections, deterministic reducers and typed derivation provenance while preserving evidence-only authority. Amended 2026-10-01 (D-AT-IMPORT): file imports such as WL Analysis per-frame CSV are versioned, local-only source adapters with content-digest provenance.
 * [**ADR-0047: Fixed-Load Mean Velocity Assessment Series**](./adr/0047-fixed-load-velocity-assessment-series.md) — *Accepted.* Dedicated fixed-load velocity protocols per exercise with exact load, measurement method (including importer parser version) and equipment setup as series-defining identity; no observation-key change.
 * [**ADR-0048: Event Taxonomy, Format Identity, and Event-Specific Planning Semantics**](./adr/0048-event-taxonomy-and-format-semantics.md) — *Proposed.* Extended taxonomy and planning rules for generic events and fitness-races (like HYROX).
+* [**ADR-0049: Explicit Event-Bound Development Authority**](./adr/0049-event-bound-development-authority.md) — *Accepted.* Optional event-bound snapshots for intent blocks separating event-directed development from an unrelated imported block.
+* [**ADR-0050: Season Roadmap — Event Roles**](./adr/0050-season-roadmap-event-roles.md) — *Accepted.* A pure roadmap classifying A/B/C event roles and date conflicts that grants no execution authority.
 
 ---
 

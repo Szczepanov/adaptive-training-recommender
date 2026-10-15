@@ -1205,8 +1205,7 @@ export async function runAllScenarios(
     commit = 'unknown',
     options: SimulationRunOptions = {},
 ): Promise<SimulationReport> {
-    const results: ScenarioResult[] = [];
-    for (const scenario of scenarios) results.push(await runScenario(scenario, generateWeekAheadPlanWithIntent, options));
+    const results = await Promise.all(scenarios.map(scenario => runScenario(scenario, generateWeekAheadPlanWithIntent, options)));
     return {
         commit, capturedAt: new Date().toISOString(), engineVersion: 'v2', policyVersion: '2026.08.x', scenarios: results,
         preferenceSensitivity: evaluatePreferenceSensitivity(results), readinessSensitivity: evaluateReadinessSensitivity(results),

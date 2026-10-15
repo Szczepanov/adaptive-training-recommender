@@ -27,6 +27,55 @@ def test_extract_race_predictions_supports_current_latest_endpoint_keys():
     assert predictions.marathon_sec == 12840
 
 
+def test_extract_race_predictions_returns_none_for_invalid_and_empty_inputs():
+    assert extract_race_predictions(None) is None
+    assert extract_race_predictions({}) is None
+    assert extract_race_predictions([]) is None
+    assert extract_race_predictions("invalid_string") is None
+
+
+def test_extract_race_predictions_handles_list_shape_edge_cases():
+    # Payload with racePredictionDtoList key, non-dict item, missing distance/time, and unmapped distance (3000m)
+    payload = {
+        "racePredictionDtoList": [
+            "not_a_dict",
+            {"distance": 5000},  # missing time
+            {"time": 1200},  # missing distance
+            {"distance": -5000, "time": 1200},  # negative distance
+            {"distance": 5000, "time": -1200},  # negative time
+            {"distance": 3000, "time": 600},  # out of target ranges
+            {"distance": 5000, "time": 1250},  # valid 5k
+        ]
+    }
+    predictions = extract_race_predictions(payload)
+    assert predictions is not None
+    assert predictions.five_km_sec == 1250
+    assert predictions.ten_km_sec is None
+    assert predictions.half_marathon_sec is None
+    assert predictions.marathon_sec is None
+
+
+def test_extract_race_predictions_supports_dict_key_aliases_and_filters_unmatched():
+    # Key aliases '5000', '10000', '21k', '42k', as well as unrelated or invalid keys
+    payload = {
+        "5000": 1200,
+        "10000": 2500,
+        "21k": 5500,
+        "42k": 11500,
+        "unrelated_key": 9999,
+        "invalid_5k_str": "1200",
+    }
+    predictions = extract_race_predictions(payload)
+    assert predictions is not None
+    assert predictions.five_km_sec == 1200
+    assert predictions.ten_km_sec == 2500
+    assert predictions.half_marathon_sec == 5500
+    assert predictions.marathon_sec == 11500
+
+    # Payload with no matching keys or positive values returns None
+    assert extract_race_predictions({"unrelated": 123, "time5K": -100}) is None
+
+
 def test_extract_race_predictions_ignores_non_finite_bool_and_string_values():
     predictions = extract_race_predictions(
         {
