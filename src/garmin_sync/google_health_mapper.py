@@ -10,6 +10,7 @@ import json
 import logging
 import re
 from datetime import datetime, timezone
+from functools import lru_cache
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -69,6 +70,7 @@ def resolve_provider_from_package(package_name: str | None) -> str:
     return f"unknown:{cleaned}"
 
 
+@lru_cache(maxsize=1024)
 def parse_iso_datetime(dt_str: str | None) -> datetime | None:
     """Parse ISO8601 string to timezone-aware datetime."""
     if not dt_str:
