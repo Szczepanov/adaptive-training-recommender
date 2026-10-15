@@ -355,7 +355,10 @@ def test_validate_identity_review_event_valid() -> None:
         {**_valid_review_event(), "occupancyAttestation": "INVALID_OCCUPANCY"},
         # invalid supersedes
         {**_valid_review_event(), "supersedesReviewEventId": ""},
-        {**_valid_review_event(), "supersedesReviewEventId": "event-123"},  # self-referential supersedes == event_id
+        {
+            **_valid_review_event(),
+            "supersedesReviewEventId": "event-123",
+        },  # self-referential supersedes == event_id
         # invalid timestamp
         {**_valid_review_event(), "recordedAt": "not-a-timestamp"},
         {**_valid_review_event(), "recordedAt": None},
