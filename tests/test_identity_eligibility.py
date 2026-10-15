@@ -11,6 +11,7 @@ from garmin_sync.identity_eligibility import (
     is_bundle_baseline_eligible,
     resolve_bundle_identity_projection,
     validate_identity_passport_current,
+    validate_identity_passport_version,
 )
 
 
@@ -306,3 +307,69 @@ def test_validate_identity_passport_current_valid() -> None:
 )
 def test_validate_identity_passport_current_invalid(invalid_value: object) -> None:
     assert validate_identity_passport_current(invalid_value) is False
+
+
+def _valid_version_passport() -> dict[str, object]:
+    passport = _valid_current_passport()
+    passport.pop("updatedAt", None)
+    passport.update(
+        {
+            "trainingSetHash": "a" * 64,
+            "trainingObservationCount": 30,
+            "trainingWindowStart": "2026-07-28T00:00:00Z",
+            "trainingWindowEnd": "2026-08-26T23:59:59Z",
+            "previousVersion": None,
+            "changeReason": "INITIAL_BOOTSTRAP",
+            "algorithmVersion": "v1.0.0",
+        }
+    )
+    return passport
+
+
+def test_validate_identity_passport_version_valid() -> None:
+    passport = _valid_version_passport()
+    assert validate_identity_passport_version(passport) is True
+
+    passport_with_prev = _valid_version_passport()
+    passport_with_prev["previousVersion"] = "2026-08-26.1"
+    passport_with_prev["changeReason"] = "MEASUREMENT_SYSTEM_SHIFT_CONFIRMED_BY_REPLAY"
+    assert validate_identity_passport_version(passport_with_prev) is True
+
+
+@pytest.mark.parametrize(
+    "invalid_value",
+    [
+        None,
+        "not_a_mapping",
+        123,
+        [],
+        # Missing or invalid trainingSetHash
+        {**_valid_version_passport(), "trainingSetHash": ""},
+        {**_valid_version_passport(), "trainingSetHash": "a" * 63},
+        {**_valid_version_passport(), "trainingSetHash": "g" * 64},
+        {**_valid_version_passport(), "trainingSetHash": 123},
+        # Missing or invalid trainingObservationCount
+        {**_valid_version_passport(), "trainingObservationCount": -1},
+        {**_valid_version_passport(), "trainingObservationCount": True},
+        {**_valid_version_passport(), "trainingObservationCount": "30"},
+        # Invalid training window boundaries
+        {**_valid_version_passport(), "trainingWindowStart": ""},
+        {**_valid_version_passport(), "trainingWindowStart": None},
+        {**_valid_version_passport(), "trainingWindowEnd": ""},
+        {**_valid_version_passport(), "trainingWindowEnd": None},
+        # Invalid previousVersion
+        {**_valid_version_passport(), "previousVersion": ""},
+        {**_valid_version_passport(), "previousVersion": 123},
+        # Invalid changeReason
+        {**_valid_version_passport(), "changeReason": "INVALID_REASON"},
+        {**_valid_version_passport(), "changeReason": None},
+        # Invalid algorithmVersion
+        {**_valid_version_passport(), "algorithmVersion": ""},
+        {**_valid_version_passport(), "algorithmVersion": None},
+        # Core passport failures (e.g. invalid schemaVersion or missing core field)
+        {**_valid_version_passport(), "schemaVersion": 2},
+        {k: v for k, v in _valid_version_passport().items() if k != "passportVersion"},
+    ],
+)
+def test_validate_identity_passport_version_invalid(invalid_value: object) -> None:
+    assert validate_identity_passport_version(invalid_value) is False
