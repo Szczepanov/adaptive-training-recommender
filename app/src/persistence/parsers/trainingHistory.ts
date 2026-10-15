@@ -688,15 +688,20 @@ export function parseDailyRecommendation(raw: unknown, documentPath: string): Da
  * `recommendationService.ts` `saveRecommendationInternal` when a new decision
  * revision supersedes the previous one. Unlike the live document it carries no
  * `userId`/`date`/`adherence` envelope. `archivesPriorRevision` compares the
- * core prior-decision fields (and `engineVerdict` when it already existed), but
- * does not currently authenticate `recommendationAudit` itself; see #940.
+ * core prior-decision fields (and `engineVerdict` when it already existed) and,
+ * since #940, requires `recommendationAudit` to be deep-equal to the parent's
+ * pre-update audit (absent iff absent). The `revisions/{revId}` create rule also
+ * only admits an archive in the same write that bumps the parent from `revId` to
+ * `revId + 1`, so no orphan or forged stand-alone archive can be created.
  *
- * PR-C (#893 WP5.2 M-5/M-7): the round-trip projector's only archive read. The
- * archived `recommendationAudit` is client-written and NOT rules-verified, so
- * this parser validates its structure but hydration must still verify the
- * archived `externalPlan` claim against stored plan-revision bytes before
- * trusting it (M-7). An archive that fails any check here is INVALID and the
- * calling row degrades to `unknown` (M-8) -- never trusted partially. */
+ * Trust boundary: an archive written after the #940 rules deploy is
+ * rules-verified to carry the audit the parent actually had. Archives written
+ * before it are indistinguishable (the document has no marker), so they remain
+ * client-written claims. PR-C (#893 WP5.2 M-5/M-7) therefore stays in force: this
+ * parser validates structure, and hydration must still verify the archived
+ * `externalPlan` claim against stored plan-revision bytes before trusting it
+ * (M-7). An archive that fails any check here is INVALID and the calling row
+ * degrades to `unknown` (M-8) -- never trusted partially. */
 export interface ArchivedRecommendation {
     revision: number;
     templateId: string;

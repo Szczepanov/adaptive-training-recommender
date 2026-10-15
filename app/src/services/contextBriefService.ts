@@ -815,8 +815,9 @@ export class ContextBriefService {
                 // `externalPlan` -- never "revision n-1": after rev1 external,
                 // rev2 manual, rev3 manual, n-1 is rev2, which carries
                 // `authoredOccurrence` and no `externalPlan`. The archived audit
-                // is client-written and not rules-verified, so it is a claim to
-                // be verified (M-7) below, never self-authenticating evidence.
+                // is rules-verified only for archives written after #940; older
+                // archives are indistinguishable, so it stays a claim to be
+                // verified (M-7) below, never self-authenticating evidence.
                 // Justification for the extra read: hydration resolved as of
                 // today cannot supply the pre-replace external identity after a
                 // re-import; everything else this section needs is already loaded.
@@ -875,7 +876,8 @@ export class ContextBriefService {
                 // with a matching content hash, and the archived decision fields
                 // form a consistent external-decision pair (actionable verdict +
                 // synthetic session template, or gated verdict + canonical rest).
-                // The archived audit itself remains an untrusted claim until #940. Any failure
+                // Pre-#940 archives cannot be told from rules-verified ones (no marker), so the
+                // archived audit stays a claim to verify here regardless of age. Any failure
                 // leaves the date without attribution (M-8): the row degrades to
                 // `unknown` via `replaceArchiveUnavailable`, never to the current
                 // revision's identity.
