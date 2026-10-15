@@ -39,6 +39,7 @@ import fixture05 from '../../sessions/fixtures/05-timed-trunk-and-tissue.json';
 import fixture06 from '../../sessions/fixtures/06-protocol-locked-sprint-jump-test.json';
 import fixture08 from '../../sessions/fixtures/08-recovery-spin-companion.json';
 import { runExclusive } from '../../utils/runExclusive';
+import { loggedSetLabel } from '../../sessions/setUndoState';
 import { LoggedSetUndoBanner } from './LoggedSetUndoBanner';
 
 const AVAILABLE_FIXTURES: SessionDefinition[] = [
@@ -992,7 +993,7 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
 
             {runner.undoableLoggedEntry && !showCompletionSheet && (
                 <LoggedSetUndoBanner
-                    label={runner.undoableLoggedEntry.payload.kind === 'repetition' ? `Set ${runner.undoableLoggedEntry.payload.setIndex}` : 'Entry'}
+                    label={loggedSetLabel(runner.entries, runner.undoableLoggedEntry)}
                     context={loggedUndoStepTitle}
                     onUndo={handleUndoLoggedSet}
                 />

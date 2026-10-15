@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { SessionEntry } from './models';
 import {
     afterEntryRemoved, afterLoggedOfferExpired, afterRestoreDone, afterRestoreRefused, afterSetLogged,
-    INITIAL_SET_UNDO_STATE, isRestoreOffered, nextRepetitionSetIndex, planRestore,
+    INITIAL_SET_UNDO_STATE, isRestoreOffered, loggedSetLabel, nextRepetitionSetIndex, performedEntryPosition, planRestore,
     RESTORE_REFUSED_DUPLICATE_REASON, restoreWouldDuplicateSetIndex, sameExerciseRef,
 } from './setUndoState';
 import type { SetUndoState } from './setUndoState';
@@ -178,5 +178,24 @@ describe('undo offer sequences (#724)', () => {
     it('never offers a restore for a choice entry', () => {
         expect(isRestoreOffered({ ...set('c', 1), payload: { kind: 'choice', choiceId: 'c', optionId: 'o' } }, new Set())).toBe(false);
         expect(isRestoreOffered(null, new Set())).toBe(false);
+    });
+});
+
+describe('banner numbering matches the performed list', () => {
+    it('labels by list position, not setIndex, so highest+1 numbering never disagrees with the list', () => {
+        const s1 = set('s1', 1); const s2 = set('s2', 2);
+        const s3 = set('s3', 4); // setIndex skipped 3 after a middle removal
+        const list = [s1, s2, s3];
+        expect(performedEntryPosition(list, s3)).toBe(3);
+        expect(loggedSetLabel(list, s3)).toBe('Set 3');
+        expect(loggedSetLabel([s2, s3], s3)).toBe('Set 2');
+    });
+
+    it('counts only the own step of the entry and falls back to a neutral label', () => {
+        const other = set('o', 1, { stepId: 'row' });
+        const mine = set('m', 1);
+        expect(loggedSetLabel([other, mine], mine)).toBe('Set 1');
+        expect(loggedSetLabel([other], mine)).toBe('Entry');
+        expect(loggedSetLabel([{ ...mine, payload: { kind: 'duration', seconds: 20 } }], { ...mine, payload: { kind: 'duration', seconds: 20 } })).toBe('Entry');
     });
 });

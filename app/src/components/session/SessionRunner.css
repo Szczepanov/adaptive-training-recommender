@@ -1150,8 +1150,17 @@
     min-width: 44px;
 }
 
+/* Always rendered so assistive tech keeps the live region; only its visual box is removed when
+   empty (taken out of flow so it adds no gap). */
 .session-runner-container .undo-live-region:empty {
-    display: none;
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    border: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
 }
 
 .session-runner-container .undo-live-region {

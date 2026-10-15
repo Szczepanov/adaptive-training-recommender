@@ -112,3 +112,18 @@ export function planRestore(input: {
     if (restoreWouldDuplicateSetIndex(liveEntries, removed)) return { kind: 'refuse', reason: RESTORE_REFUSED_DUPLICATE_REASON };
     return { kind: 'restore', entry: removed };
 }
+
+/** The number the athlete sees for an entry: its 1-based position among the entries logged for
+ * the same step, which is exactly how the "Performed for this step" list and its edit/remove
+ * aria-labels number rows. `setIndex` can legitimately skip numbers (highest + 1), so it is not
+ * used for display. */
+export function performedEntryPosition(entries: readonly SessionEntry[], entry: SessionEntry): number {
+    const position = entries.filter(candidate => candidate.stepId === entry.stepId).findIndex(candidate => candidate.id === entry.id);
+    return position === -1 ? 0 : position + 1;
+}
+
+/** Label shared by the logged-set banner and its Undo button ("Set 3"); null when the entry is gone. */
+export function loggedSetLabel(entries: readonly SessionEntry[], entry: SessionEntry): string {
+    const position = performedEntryPosition(entries, entry);
+    return entry.payload.kind === 'repetition' && position > 0 ? `Set ${position}` : 'Entry';
+}

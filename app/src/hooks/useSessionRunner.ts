@@ -730,7 +730,7 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
         }
     }, [execution, entries, userId, diaryWriteOptions]);
 
-    /** Resolves true only when a set was actually undone, so callers move focus only then. */
+    /** Resolves true as soon as the undo is accepted (local state updated, write continuing), so callers move focus only then. */
     const undoLoggedSet = useCallback(async (): Promise<boolean> => {
         const plan = planLoggedSetUndo(recentLogged, Date.now(), {
             undoInFlight: undoLoggedInFlightRef.current,
@@ -742,7 +742,9 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
             return false;
         }
         const { id } = recentLogged;
-        const performed = await runLoggedSetUndo(undoLoggedInFlightRef, async () => {
+        // Decided now: the durable write (which can take seconds offline) continues in the
+        // background, so the caller can move focus immediately after the local update.
+        void runLoggedSetUndo(undoLoggedInFlightRef, async () => {
             // The rest the undone set started has no set left to belong to.
             if (activeRestRef.current?.afterEntryId === id) {
                 activeRestRef.current = null;
@@ -751,9 +753,8 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
                 setIsRestRunning(false);
             }
             await removeEntry(id);
-            return true;
-        });
-        return performed === true;
+        }).catch(() => setSyncStatus('unavailable'));
+        return true;
     }, [recentLogged, removeEntry]);
 
     useEffect(() => {
@@ -788,11 +789,9 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
         setLastRemovedEntry(null);
         setUndoState(afterRestoreDone);
         setEntries(prev => [...prev, { ...toRestore, deletedAt: null }]);
-        try {
-            await sessionExecutionService.restoreEntry(userId, execution.executionId, toRestore.id, diaryWriteOptions);
-        } catch {
-            setSyncStatus('unavailable');
-        }
+        // Accepted locally; the durable restore continues in the background.
+        void sessionExecutionService.restoreEntry(userId, execution.executionId, toRestore.id, diaryWriteOptions)
+            .catch(() => setSyncStatus('unavailable'));
         return true;
     }, [execution, lastRemovedEntry, dismissedRemovedIds, entries, userId, diaryWriteOptions]);
 
