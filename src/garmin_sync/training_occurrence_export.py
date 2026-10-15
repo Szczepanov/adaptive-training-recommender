@@ -228,8 +228,12 @@ def export_training_occurrence_records(
         header_refs = [
             user.collection("external_plans").document(plan_id) for plan_id in sorted_plan_ids
         ]
-        header_snaps = db.get_all(header_refs)
-        external_headers.extend(_document(snap) for snap in header_snaps if snap.exists)
+        header_snaps = {snap.id: snap for snap in db.get_all(header_refs)}
+        external_headers.extend(
+            _document(header_snaps[plan_id])
+            for plan_id in sorted_plan_ids
+            if header_snaps[plan_id].exists
+        )
 
         placement_refs = [
             user.collection("external_plans")
@@ -238,8 +242,10 @@ def export_training_occurrence_records(
             .document("current")
             for plan_id in sorted_plan_ids
         ]
-        placement_snaps = db.get_all(placement_refs)
-        for plan_id, snap in zip(sorted_plan_ids, placement_snaps, strict=True):
+        # Child IDs repeat across plans; match unordered batch results by full path.
+        placement_snaps = {snap.reference.path: snap for snap in db.get_all(placement_refs)}
+        for plan_id, ref in zip(sorted_plan_ids, placement_refs, strict=True):
+            snap = placement_snaps[ref.path]
             if snap.exists:
                 external_placements.append({"planId": plan_id, **_document(snap)})
 
@@ -252,8 +258,9 @@ def export_training_occurrence_records(
             for plan_id, revision in sorted_refs
         ]
         if revision_refs:
-            revision_snaps = db.get_all(revision_refs)
-            for (plan_id, _), snap in zip(sorted_refs, revision_snaps, strict=True):
+            revision_snaps = {snap.reference.path: snap for snap in db.get_all(revision_refs)}
+            for (plan_id, _), ref in zip(sorted_refs, revision_refs, strict=True):
+                snap = revision_snaps[ref.path]
                 if snap.exists:
                     external_revisions.append({"planId": plan_id, **_document(snap)})
     recommendation_revisions.sort(key=lambda row: (row["recommendationId"], row["id"]))
