@@ -154,7 +154,10 @@ def test_batch_read_failure_aborts_planning_and_audit(monkeypatch: pytest.Monkey
     assert db.write_count == 0
 
 
-def test_preflight_batches_source_links_in_bounded_chunks() -> None:
+@pytest.mark.parametrize(
+    "operation", [plan_training_occurrence_backfill, audit_training_occurrence_backfill]
+)
+def test_occurrence_scan_batches_source_links_in_bounded_chunks(operation: Any) -> None:
     occurrences = {
         f"pto-{i}": {
             "status": "active",
@@ -167,15 +170,20 @@ def test_preflight_batches_source_links_in_bounded_chunks() -> None:
     }
     db = _MockDb({"user1": {"performedTrainingOccurrences": occurrences}})
 
-    plan = plan_training_occurrence_backfill(db, "user1", "2026-07-01", "2026-07-01")
+    result = operation(db, "user1", "2026-07-01", "2026-07-01")
 
     assert [len(batch) for batch in db.get_all_batches] == [400, 1]
     assert {doc_id for batch in db.get_all_batches for doc_id in batch} == {
         encode_source_key_for_doc_id(provider_activity_source_key("garmin", str(i)))
         for i in range(401)
     }
-    assert len(plan.anomalies) == 401
-    assert all(a.anomaly_type == "source_ref_without_source_link" for a in plan.anomalies)
+    if operation is plan_training_occurrence_backfill:
+        assert len(result.anomalies) == 401
+        assert all(a.anomaly_type == "source_ref_without_source_link" for a in result.anomalies)
+    else:
+        assert not result.audit_passed
+        assert result.invalid_links == 401
+        assert all("without a source link" in issue for issue in result.issues)
     assert db.write_count == 0
 
 
