@@ -269,6 +269,13 @@
     color: #f1f5f9;
 }
 
+.session-summary-text {
+    margin: 0;
+    font-size: 0.85rem;
+    color: #cbd5e1;
+    overflow-wrap: anywhere;
+}
+
 .session-header-right {
     display: flex;
     align-items: center;
@@ -400,6 +407,20 @@
     font-size: 0.85rem;
     cursor: pointer;
     min-height: 44px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.1rem;
+    text-align: left;
+    max-width: 100%;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.step-nav-pill-meta {
+    font-size: 0.75rem;
+    font-weight: 400;
+    opacity: 0.9;
 }
 
 .step-nav-pill.active {

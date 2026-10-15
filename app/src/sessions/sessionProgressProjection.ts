@@ -84,3 +84,33 @@ export function projectSessionProgress(
         requiredWorkComplete: true,
     };
 }
+
+/**
+ * The step to open after a reload (#723). The last-touched step is preferred when it is
+ * still unfinished sequential work, so the athlete lands where they stopped rather than on an
+ * earlier required step they deliberately skipped past. "Touched" is persisted performed work
+ * only (warm-ups and choice records are not); an unlogged selection is never invented. Rotating
+ * groups, ended blocks and an ended session keep `projectSessionProgress` authority, which
+ * also supplies the first-incomplete fallback when nothing unfinished was touched.
+ */
+export function resolveResumeCursor(
+    rawDefinition: SessionDefinition,
+    entries: readonly SessionEntry[],
+): SessionProgressCursor {
+    const base = projectSessionProgress(rawDefinition, entries);
+    if (base.sessionEnded) return base;
+
+    const effective = resolveEffectiveSession(rawDefinition, entries);
+    for (let index = entries.length - 1; index >= 0; index--) {
+        const entry = entries[index];
+        if (entry.deletedAt || !countsTowardPrescribedSets(entry)) continue;
+        const blockIndex = effective.definition.blocks.findIndex(block => block.steps.some(step => step.id === entry.stepId));
+        const block = effective.definition.blocks[blockIndex];
+        if (!block || effective.endedBlockIds.has(block.id) || isRotatingExecutionMode(block.executionMode)) return base;
+        const stepIndex = block.steps.findIndex(step => step.id === entry.stepId);
+        const step = block.steps[stepIndex];
+        if (completedPrescribedSets(step, entries) >= targetEntriesForGroupStep(block, step)) return base;
+        return { blockIndex, stepIndex, sessionEnded: false, requiredWorkComplete: base.requiredWorkComplete };
+    }
+    return base;
+}

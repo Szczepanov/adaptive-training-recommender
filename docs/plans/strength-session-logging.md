@@ -334,6 +334,13 @@ from the "More" drawer in `MobileNav.tsx`. Not added to the primary bottom-nav b
 than assumed here; the drawer entry is the same tier `Import Training Plan` and
 `Export Context for AI` already occupy.
 
+> **Errata (#723).** The original S1.5 outcome did not include resume discoverability: the
+> 2026-08-18 review found a resumed session looked empty. That is now carried by the
+> source-neutral runner (`resolveResumeCursor`, the `Workout steps` navigator with
+> completed/target and Required/Optional status, header summary, authored stop conditions) and
+> the `App` resume banner plus Home Resume action; see `docs/architecture/session-execution.md`.
+> Interaction is covered by Playwright visual captures, not component-interaction unit tests.
+
 > **Errata (2026-09-29).** `components/StrengthSessionRunner.tsx` was later removed
 > (`be17e098`, "remove legacy strength execution UI"). Its successor is the source-neutral
 > `components/session/SessionRunner.tsx` backed by `hooks/useSessionRunner.ts`. The legacy

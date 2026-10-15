@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { SessionDefinition, SessionEntry } from './models';
-import { projectSessionProgress } from './sessionProgressProjection';
+import { projectSessionProgress, resolveResumeCursor } from './sessionProgressProjection';
 
 const at = '2026-10-05T10:00:00.000Z';
 const definition: SessionDefinition = {
@@ -101,4 +101,31 @@ describe('projectSessionProgress', () => {
         expect(projectSessionProgress(optional, [entry('squat', 1)])).toMatchObject({ requiredWorkComplete: true });
     });
 
+});
+
+describe('resolveResumeCursor', () => {
+    it('falls back to the first incomplete step when nothing was touched', () => {
+        expect(resolveResumeCursor(definition, [])).toMatchObject({ blockIndex: 0, stepIndex: 0 });
+    });
+
+    it('opens the last-touched unfinished step even when earlier required work is incomplete', () => {
+        const three: SessionDefinition = { ...definition, blocks: [{ ...definition.blocks[0], steps: [
+            { id: 'a', kind: 'exercise', dose: { kind: 'repetition', sets: 1, reps: 5 } },
+            { id: 'b', kind: 'exercise', dose: { kind: 'repetition', sets: 3, reps: 5 } },
+        ] }] };
+        expect(resolveResumeCursor(three, [entry('b', 1)])).toMatchObject({ stepIndex: 1, sessionEnded: false });
+        expect(projectSessionProgress(three, [entry('b', 1)])).toMatchObject({ stepIndex: 0 });
+    });
+
+    it('moves past a finished last-touched step to the first incomplete one', () => {
+        expect(resolveResumeCursor(definition, [entry('squat', 1), entry('row', 1)]))
+            .toMatchObject({ stepIndex: 0, requiredWorkComplete: false });
+        expect(resolveResumeCursor(definition, [entry('squat', 1), entry('squat', 2), entry('row', 1)]).requiredWorkComplete).toBe(true);
+    });
+
+    it('ignores warm-ups and deleted entries when choosing the last-touched step', () => {
+        const warmup: SessionEntry = { ...entry('row', 1, 'wu'), payload: { kind: 'repetition', setIndex: 1, reps: 5, isWarmup: true } };
+        const deleted: SessionEntry = { ...entry('row', 1, 'gone'), deletedAt: at };
+        expect(resolveResumeCursor(definition, [entry('squat', 1), warmup, deleted])).toMatchObject({ stepIndex: 0 });
+    });
 });

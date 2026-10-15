@@ -224,8 +224,17 @@ after reload. Rest deadlines are cleared rather than reconstructed.
 
 Missing/invalid prescription bytes or a conflicting diary produce degraded resume. The runner
 retains the execution and entry evidence, pauses logging and new starts, and offers Retry recovery.
-It never substitutes current fixture/catalog/plan content for missing pinned bytes. Navigation and
-discoverability remain follow-up work under #723; failure diagnostics are described next.
+It never substitutes current fixture/catalog/plan content for missing pinned bytes. Failure
+diagnostics are described next.
+
+On resume the runner opens `resolveResumeCursor`'s step: the last-touched unfinished sequential
+step from persisted performed work, else the `projectSessionProgress` first-incomplete required
+step. The runner header carries the pinned definition title and `summary`; the `Workout steps`
+navigator lists every authored step (started or not, catalog or free-text) with
+`completed/target` progress and Required/Optional status from `describeStepNavigatorProgress`.
+The active step's authored `notes` and `stopConditions` sit beside its entry form and are never
+inferred when the prescription omits them. App-level resume is the `App` banner plus Home's
+Resume action (see `user-flows.md`).
 
 ## Failure observability for canonical workouts (#895 WP5)
 

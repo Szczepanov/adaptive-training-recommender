@@ -18,7 +18,7 @@ import { getLocalDateString } from '../utils/localDate';
 import { sessionDefinitionService } from '../services/sessionDefinitionService';
 import { playRestCompleteSound } from '../utils/audioFeedback';
 import { resolveSessionDefinition } from '../sessions/sessionDefinitionResolver';
-import { projectSessionProgress } from '../sessions/sessionProgressProjection';
+import { resolveResumeCursor } from '../sessions/sessionProgressProjection';
 import { overlayQueuedDiaryState } from '../sessions/sessionDiaryResume';
 import { prepareFixtureSessionLaunch } from '../services/sessionAuthoringService';
 import { convergeCompletedExecution } from '../services/sessionCompletionConvergence';
@@ -301,7 +301,7 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
                     setSyncStatus('unavailable');
                     return;
                 }
-                const cursor = projectSessionProgress(resolved.data, diary.entries);
+                const cursor = resolveResumeCursor(resolved.data, diary.entries);
                 setRawDefinition(resolved.data);
                 setActiveBlockIndex(cursor.blockIndex);
                 setActiveStepIndex(cursor.stepIndex);
@@ -518,7 +518,7 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
                     return;
                 }
                 setRawDefinition(resolved.data);
-                const cursor = projectSessionProgress(resolved.data, diary.entries);
+                const cursor = resolveResumeCursor(resolved.data, diary.entries);
                 setActiveBlockIndex(cursor.blockIndex);
                 setActiveStepIndex(cursor.stepIndex);
                 setSyncStatus(diary.failedReceiptCount > 0 ? 'unavailable' : diary.queuedReceiptCount > 0 ? 'queued' : 'synced');
