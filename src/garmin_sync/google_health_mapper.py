@@ -74,9 +74,6 @@ def parse_iso_datetime(dt_str: str | None) -> datetime | None:
     if not dt_str:
         return None
     try:
-        # Replace Z with +00:00 if present
-        if dt_str.endswith("Z"):
-            dt_str = dt_str[:-1] + "+00:00"
         return datetime.fromisoformat(dt_str)
     except Exception:
         return None
