@@ -266,7 +266,7 @@ export class BlockReviewService {
                     } catch { unreadable++; }
                 };
                 if (binding.baseline.kind === 'declared_observation') await read(binding.baseline.observationId, true);
-                for (const attempt of selectedAttempts) await read(observationKeyFor(attempt.id, binding.metricId));
+                await Promise.all(selectedAttempts.map(attempt => read(observationKeyFor(attempt.id, binding.metricId))));
                 result.sources.push(listed ? source(name, observationsByBinding[binding.id].length, unreadable, listed.truncated)
                     : { source: name, status: 'unreadable', recordCount: observationsByBinding[binding.id].length, unreadableCount: unreadable });
             } catch { result.sources.push({ source: name, status: 'unreadable', recordCount: 0 }); }
