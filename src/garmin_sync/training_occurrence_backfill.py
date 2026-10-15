@@ -875,6 +875,10 @@ def audit_training_occurrence_backfill(
     )
 
     active_occurrence_ids_for_source: dict[str, list[str]] = {}
+    audit_ref_links: list[Any] = []
+    audit_ref_link_by_doc_id: dict[str, Any] = {}
+    occ_ref_items: list[tuple[Any, str, str]] = []
+
     for occ_snap in occ_stream:
         occ_data = occ_snap.to_dict() or {}
         refs = occ_data.get("sourceRefs")
@@ -901,30 +905,37 @@ def audit_training_occurrence_backfill(
 
             source_key = provider_activity_source_key("garmin", activity_id)
             active_occurrence_ids_for_source.setdefault(source_key, []).append(occ_snap.id)
-            link_snap = (
-                user_ref.collection("performedOccurrenceSourceLinks")
-                .document(encode_source_key_for_doc_id(source_key))
-                .get()
-            )
-            if not link_snap.exists:
-                audit.invalid_links += 1
-                audit.issues.append(
-                    f"Active occurrence {occ_snap.id} carries {source_key} without a source link"
-                )
-                continue
+            doc_id = encode_source_key_for_doc_id(source_key)
+            if doc_id not in audit_ref_link_by_doc_id:
+                link_ref = user_ref.collection("performedOccurrenceSourceLinks").document(doc_id)
+                audit_ref_link_by_doc_id[doc_id] = link_ref
+                audit_ref_links.append(link_ref)
 
-            link_data = link_snap.to_dict() or {}
-            if (
-                link_data.get("schemaVersion") != 1
-                or link_data.get("sourceKey") != source_key
-                or link_data.get("sourceKind") != "provider_activity"
-                or link_data.get("userId") != user_id
-                or str(link_data.get("performedOccurrenceId") or "") != occ_snap.id
-            ):
-                audit.invalid_links += 1
-                audit.issues.append(
-                    f"Active occurrence {occ_snap.id} does not own the unique source-link claim for {source_key}"
-                )
+            occ_ref_items.append((occ_snap, source_key, doc_id))
+
+    audit_ref_link_snaps_by_id = _batch_get_docs(db, audit_ref_links)
+
+    for occ_snap, source_key, doc_id in occ_ref_items:
+        link_snap = audit_ref_link_snaps_by_id.get(doc_id)
+        if not link_snap or not link_snap.exists:
+            audit.invalid_links += 1
+            audit.issues.append(
+                f"Active occurrence {occ_snap.id} carries {source_key} without a source link"
+            )
+            continue
+
+        link_data = link_snap.to_dict() or {}
+        if (
+            link_data.get("schemaVersion") != 1
+            or link_data.get("sourceKey") != source_key
+            or link_data.get("sourceKind") != "provider_activity"
+            or link_data.get("userId") != user_id
+            or str(link_data.get("performedOccurrenceId") or "") != occ_snap.id
+        ):
+            audit.invalid_links += 1
+            audit.issues.append(
+                f"Active occurrence {occ_snap.id} does not own the unique source-link claim for {source_key}"
+            )
 
     for source_key, occurrence_ids in active_occurrence_ids_for_source.items():
         distinct_ids = sorted(set(occurrence_ids))
