@@ -36,6 +36,20 @@ from .fit_activity import (
 DERIVATION_VERSION = "multi-resolution-v1"
 MAX_PERSISTED_SEGMENTS = 64
 POWER_DURATION_WINDOWS_SECONDS = (1, 5, 10, 30, 60, 180, 300, 1200)
+_DEFAULT_RESOLUTION_TOLERANCES_PCT: dict[int, float] = {
+    1: 5.0,
+    5: 4.0,
+    10: 4.0,
+    30: 3.0,
+    60: 3.0,
+    180: 2.5,
+    300: 2.5,
+    1200: 2.0,
+}
+_DEFAULT_WINDOW_TOLERANCES: tuple[tuple[int, float], ...] = tuple(
+    (duration, _DEFAULT_RESOLUTION_TOLERANCES_PCT[duration])
+    for duration in POWER_DURATION_WINDOWS_SECONDS
+)
 RESOLUTION_CANDIDATES_SECONDS = (1, 2, 5, 10, 15, 30, 60, 120, 300, 600)
 _CYCLING_TYPES = {
     "cycling",
@@ -829,16 +843,13 @@ def evaluate_resolution_candidate(
     This is a calibration harness, not runtime selection policy. Features unsupported
     by native source cadence are reported separately and excluded from the denominator.
     """
-    tolerances = tolerances_pct or {
-        1: 5.0,
-        5: 4.0,
-        10: 4.0,
-        30: 3.0,
-        60: 3.0,
-        180: 2.5,
-        300: 2.5,
-        1200: 2.0,
-    }
+    if tolerances_pct is None:
+        window_tolerances = _DEFAULT_WINDOW_TOLERANCES
+    else:
+        window_tolerances = tuple(
+            (duration, tolerances_pct.get(duration, 5.0))
+            for duration in POWER_DURATION_WINDOWS_SECONDS
+        )
     native_resolution = _resolution_seconds(records, lambda row: row.power_watts)
     candidate_records = _downsample_power(records, candidate_seconds)
     candidate_resolution = _resolution_seconds(candidate_records, lambda row: row.power_watts)
@@ -846,8 +857,7 @@ def evaluate_resolution_candidate(
     eligible = 0
     preserved = 0
 
-    for duration in POWER_DURATION_WINDOWS_SECONDS:
-        tolerance = tolerances.get(duration, 5.0)
+    for duration, tolerance in window_tolerances:
         native = _peak_power(records, duration, native_resolution)
         if native is None:
             features.append(
