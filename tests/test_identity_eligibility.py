@@ -11,6 +11,7 @@ from garmin_sync.identity_eligibility import (
     is_bundle_baseline_eligible,
     resolve_bundle_identity_projection,
     validate_identity_passport_current,
+    validate_identity_review_event,
 )
 
 
@@ -306,3 +307,66 @@ def test_validate_identity_passport_current_valid() -> None:
 )
 def test_validate_identity_passport_current_invalid(invalid_value: object) -> None:
     assert validate_identity_passport_current(invalid_value) is False
+
+
+def _valid_review_event() -> dict[str, object]:
+    return {
+        "id": "event-123",
+        "assessmentId": "assessment-456",
+        "schemaVersion": 1,
+        "label": "USER",
+        "occupancyAttestation": "EXCLUSIVE",
+        "recordedAt": "2026-08-27T08:00:00Z",
+        "source": "user_ui",
+    }
+
+
+def test_validate_identity_review_event_valid() -> None:
+    event = _valid_review_event()
+    assert validate_identity_review_event(event) is True
+    assert validate_identity_review_event(event, expected_assessment_id="assessment-456") is True
+
+    # Valid with supersedes review event
+    event_with_supersedes = {**event, "supersedesReviewEventId": "event-100"}
+    assert validate_identity_review_event(event_with_supersedes) is True
+
+    # Valid with admin_replay source
+    event_admin = {**event, "source": "admin_replay"}
+    assert validate_identity_review_event(event_admin) is True
+
+
+@pytest.mark.parametrize(
+    "invalid_value",
+    [
+        None,
+        "not_a_dict",
+        123,
+        [],
+        # missing or invalid id / assessmentId
+        {**_valid_review_event(), "id": ""},
+        {**_valid_review_event(), "id": None},
+        {**_valid_review_event(), "assessmentId": ""},
+        {**_valid_review_event(), "assessmentId": None},
+        # mismatched schema version
+        {**_valid_review_event(), "schemaVersion": 2},
+        # invalid label
+        {**_valid_review_event(), "label": "INVALID_LABEL"},
+        # invalid occupancy attestation
+        {**_valid_review_event(), "occupancyAttestation": "INVALID_OCCUPANCY"},
+        # invalid supersedes
+        {**_valid_review_event(), "supersedesReviewEventId": ""},
+        {**_valid_review_event(), "supersedesReviewEventId": "event-123"},  # self-referential supersedes == event_id
+        # invalid timestamp
+        {**_valid_review_event(), "recordedAt": "not-a-timestamp"},
+        {**_valid_review_event(), "recordedAt": None},
+        # invalid source
+        {**_valid_review_event(), "source": "other_source"},
+    ],
+)
+def test_validate_identity_review_event_invalid(invalid_value: object) -> None:
+    assert validate_identity_review_event(invalid_value) is False
+
+
+def test_validate_identity_review_event_expected_assessment_id_mismatch() -> None:
+    event = _valid_review_event()
+    assert validate_identity_review_event(event, expected_assessment_id="other-assessment") is False
