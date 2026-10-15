@@ -465,6 +465,7 @@ const longSetListSession: SessionDefinition = {
           title: 'Back squat',
           exerciseRef: { kind: 'catalog', exerciseId: 'back_squat' },
           dose: { kind: 'repetition', sets: 20, reps: 5 },
+          load: { kind: 'mass', kg: 80 },
         },
       ],
     },

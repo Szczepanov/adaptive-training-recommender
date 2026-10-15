@@ -29,6 +29,7 @@ import { ExerciseSwapModal } from './ExerciseSwapModal';
 import { SessionDefinitionPreview } from './SessionDefinitionPreview';
 import { isSoundEnabled, setSoundEnabled } from '../../utils/audioFeedback';
 import { SCREEN_LABELS } from '../../types/navigation';
+import { nextSyncAnnouncement } from './syncAnnouncement';
 import './SessionRunner.css';
 
 // Import positive fixtures for quick unplanned session launch
@@ -190,6 +191,10 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
     mode = 'session',
 }) => {
     const runner = useSessionRunner(userId, AVAILABLE_FIXTURES);
+    const [syncAnnouncement, setSyncAnnouncement] = useState<string | null>(() => nextSyncAnnouncement(null, runner.syncStatus));
+    useEffect(() => {
+        setSyncAnnouncement(previous => nextSyncAnnouncement(previous, runner.syncStatus));
+    }, [runner.syncStatus]);
     const overload = useOverloadHistory(userId);
     const initialLaunchAttempted = useRef(false);
     const [showCompletionSheet, setShowCompletionSheet] = useState<boolean>(false);
@@ -977,12 +982,9 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                         {soundMuted ? '🔇' : '🔊'}
                     </button>
                     <span className="session-timer">⏱️ {formatTime(runner.elapsedSeconds)}</span>
-                    <span className="sync-status-live" role="status" aria-live="polite" aria-atomic="true">
-                        <span className={`sync-pill ${runner.syncStatus}`}>
-                            <span className="sr-only">Sync status: </span>
-                            {runner.syncStatus}
-                        </span>
-                    </span>
+                    <span className={`sync-pill ${runner.syncStatus}`}>{runner.syncStatus}</span>
+                    {/* Only actionable sync states are announced (see nextSyncAnnouncement); the pill stays visible. */}
+                    <span className="sr-only" role="status">{syncAnnouncement}</span>
                 </div>
             </div>
 

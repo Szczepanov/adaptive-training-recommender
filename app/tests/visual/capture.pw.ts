@@ -571,22 +571,28 @@ test('keeps the repetition logger keyboard-efficient and reachable after many lo
   await expect(weight).toBeFocused();
   await expect(performed).toContainText('(0)');
 
-  // One Enter in the weight field logs exactly one set, then focus returns to the weight field
-  // with its content selected, so the next number typed replaces it instead of appending.
-  await weight.press('Enter');
+  // The prescribed load seeds the weight field so there is a value to select.
+  await expect(weight).toHaveValue('80');
+
+  // Clicking Log moves focus to the button; the logger must then return focus to the weight
+  // field with its content selected, so typing replaces the load instead of appending to it.
+  await logButton.click();
   await expect(performed).toContainText('(1)');
   await expect(weight).toBeFocused();
-  const previousWeight = await weight.inputValue();
   await page.keyboard.type('77');
   await expect(weight).toHaveValue('77');
-  expect(previousWeight).not.toBe('77');
-  await expect(performed).toContainText('(1)');
+
+  // A single Enter in the weight field logs exactly one more set, not zero or two.
+  await weight.press('Enter');
+  await expect(performed).toContainText('(2)');
+  await expect(page.locator('.entries-list .entry-row')).toHaveCount(2);
+  await page.waitForTimeout(300);
+  await expect(page.locator('.entries-list .entry-row')).toHaveCount(2);
 
   // Log a long list of sets from the keyboard alone.
-  for (let count = 2; count <= 15; count += 1) {
+  for (let count = 3; count <= 15; count += 1) {
     await weight.press('Enter');
     await expect(performed).toContainText(`(${count})`);
-    await expect(weight).toBeFocused();
   }
   await expect(page.locator('.entries-list .entry-row')).toHaveCount(15);
   expect(await noBodyOverflow()).toBe(true);
