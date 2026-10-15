@@ -963,6 +963,153 @@ emulatorDescribe('Recommendation audit budget', () => {
         });
     });
 
+    // ── Issue #940: archived audit must equal the parent's pre-update audit ────
+
+    describe('archive audit binding and orphan archives (#940)', () => {
+        const seedParent = async (parent: Record<string, unknown>, extraArchive?: Record<string, unknown>) => {
+            await environment.clearFirestore();
+            await environment.withSecurityRulesDisabled(async ctx => {
+                const adminDb = ctx.firestore();
+                await setDoc(doc(adminDb, path), parent);
+                const audit = parent.recommendationAudit as { decisionContext?: unknown } | undefined;
+                if (audit?.decisionContext) {
+                    await setDoc(doc(adminDb, `${path}/decision_contexts/1`), buildContextDoc(parent as unknown as DailyRecommendation, 1));
+                }
+                if (extraArchive) await setDoc(doc(adminDb, `${path}/revisions/1`), extraArchive);
+            });
+            return environment.authenticatedContext(owner).firestore();
+        };
+
+        /** Next decision revision, mirroring the S4 fallback (no decision-context binding). */
+        const nextOf = (parent: DailyRecommendation): Record<string, unknown> => {
+            const nextAudit: Record<string, unknown> = {
+                ...(parent.recommendationAudit as unknown as Record<string, unknown>),
+                evaluatedAt: '2026-09-01T07:00:00Z',
+            };
+            delete nextAudit.decisionContext;
+            return {
+                ...parent,
+                revision: 2,
+                rationale: 'Changed decision for #940',
+                updatedAt: '2026-09-01T07:00:00Z',
+                recommendationAudit: nextAudit,
+            };
+        };
+
+        const legacyParent = (): Record<string, unknown> => {
+            const legacy: Record<string, unknown> = { ...fixtureCatalog(), schemaVersion: 2 };
+            delete legacy.recommendationAudit;
+            return legacy;
+        };
+
+        const legacyNext = (legacy: Record<string, unknown>): Record<string, unknown> => ({
+            ...legacy, revision: 2, rationale: 'Legacy change', updatedAt: '2026-09-01T07:00:00Z',
+        });
+
+        const commitChange = (
+            db: ReturnType<ReturnType<RulesTestEnvironment['authenticatedContext']>['firestore']>,
+            archive: Record<string, unknown> | undefined,
+            next: Record<string, unknown>,
+        ) => {
+            const batch = writeBatch(db);
+            if (archive) batch.set(doc(db, `${path}/revisions/1`), archive);
+            batch.set(doc(db, path), next, { mergeFields: Object.keys(next) });
+            return batch.commit();
+        };
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        type LooseAudit = Record<string, any>;
+        const withTamperedAudit = (
+            archive: Record<string, unknown>,
+            tamper: (audit: LooseAudit) => void,
+        ) => {
+            const audit = structuredClone(archive.recommendationAudit) as LooseAudit;
+            tamper(audit);
+            return { ...archive, recommendationAudit: audit };
+        };
+
+        it('allows a decision change whose archive carries the parent exact audit', async () => {
+            const parent = fixtureExternal();
+            const db = await seedParent(parent as unknown as Record<string, unknown>);
+            await assertSucceeds(commitChange(db, buildArchiveDoc(parent, 1), nextOf(parent)));
+        });
+
+        it('allows a legacy decision change from a parent without audit to an archive without audit', async () => {
+            const legacy = legacyParent();
+            const db = await seedParent(legacy);
+            const archive = buildArchiveDoc(legacy as unknown as DailyRecommendation, 1);
+            expect(archive.recommendationAudit).toBeUndefined();
+            await assertSucceeds(commitChange(db, archive, legacyNext(legacy)));
+        });
+
+        const tampers: Array<[string, (a: LooseAudit) => void]> = [
+            ['externalPlan.contentHash', a => { a.externalPlan.contentHash = 'f'.repeat(64); }],
+            ['externalPlan.planId', a => { a.externalPlan.planId = 'forged-plan'; }],
+            ['policyVersion', a => { a.policyVersion = 'forged-policy'; }],
+        ];
+        for (const [label, tamper] of tampers) {
+            it(`denies an archive whose audit differs from the parent in ${label}`, async () => {
+                const parent = fixtureExternal();
+                const db = await seedParent(parent as unknown as Record<string, unknown>);
+                const archive = withTamperedAudit(buildArchiveDoc(parent, 1), tamper);
+                await assertFails(commitChange(db, archive, nextOf(parent)));
+            });
+        }
+
+        it('denies an archive that adds an audit the parent did not have', async () => {
+            const legacy = legacyParent();
+            const db = await seedParent(legacy);
+            const archive = {
+                ...buildArchiveDoc(legacy as unknown as DailyRecommendation, 1),
+                recommendationAudit: fixtureExternal().recommendationAudit,
+            };
+            await assertFails(commitChange(db, archive, legacyNext(legacy)));
+        });
+
+        it('denies an archive whose audit is an explicit null against an audit-less parent', async () => {
+            const legacy = legacyParent();
+            const db = await seedParent(legacy);
+            const archive = { ...buildArchiveDoc(legacy as unknown as DailyRecommendation, 1), recommendationAudit: null };
+            await assertFails(commitChange(db, archive, legacyNext(legacy)));
+        });
+
+        it('denies an archive that omits the audit the parent had', async () => {
+            const parent = fixtureExternal();
+            const db = await seedParent(parent as unknown as Record<string, unknown>);
+            const archive = buildArchiveDoc(parent, 1);
+            delete archive.recommendationAudit;
+            await assertFails(commitChange(db, archive, nextOf(parent)));
+        });
+
+        it('denies an orphan archive created without the matching parent update', async () => {
+            const parent = fixtureExternal();
+            const db = await seedParent(parent as unknown as Record<string, unknown>);
+            // Parent revision stays 1: an archive for revision 1 (== parent) or 2 (> parent) is an orphan.
+            await assertFails(setDoc(doc(db, `${path}/revisions/1`), buildArchiveDoc(parent, 1)));
+            await assertFails(setDoc(doc(db, `${path}/revisions/2`), buildArchiveDoc(parent, 2)));
+        });
+
+        it('denies an archive for a revision other than the one being replaced', async () => {
+            const parent = fixtureExternal();
+            const db = await seedParent(parent as unknown as Record<string, unknown>);
+            const batch = writeBatch(db);
+            batch.set(doc(db, `${path}/revisions/7`), buildArchiveDoc(parent, 7));
+            const next = nextOf(parent);
+            batch.set(doc(db, path), next, { mergeFields: Object.keys(next) });
+            await assertFails(batch.commit());
+        });
+
+        it('denies the decision change when a forged archive was pre-created with a different audit', async () => {
+            const parent = fixtureExternal();
+            const forged = withTamperedAudit(buildArchiveDoc(parent, 1), a => { a.externalPlan.contentHash = 'f'.repeat(64); });
+            const db = await seedParent(parent as unknown as Record<string, unknown>, forged);
+            // Parent update alone binds to the pre-existing (forged) archive and must fail.
+            await assertFails(commitChange(db, undefined, nextOf(parent)));
+            // Re-creating the archive in the batch cannot overwrite the create-once document.
+            await assertFails(commitChange(db, buildArchiveDoc(parent, 1), nextOf(parent)));
+        });
+    });
+
     // ── Optional exact measurement report (AUDIT_BUDGET_MEASURE=1) ───────────
 
     if (process.env.AUDIT_BUDGET_MEASURE) {
