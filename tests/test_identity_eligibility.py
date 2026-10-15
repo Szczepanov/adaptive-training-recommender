@@ -10,7 +10,9 @@ from garmin_sync.identity_eligibility import (
     identity_bundle_key,
     is_bundle_baseline_eligible,
     resolve_bundle_identity_projection,
+    validate_automatic_identity_assessment,
     validate_identity_passport_current,
+    validate_identity_passport_version,
     validate_identity_review_event,
 )
 
@@ -309,22 +311,10 @@ def test_validate_identity_passport_current_invalid(invalid_value: object) -> No
     assert validate_identity_passport_current(invalid_value) is False
 
 
-def _valid_review_event() -> dict[str, object]:
-    return {
-        "id": "event-123",
-        "assessmentId": "assessment-456",
-        "schemaVersion": 1,
-        "label": "USER",
-        "occupancyAttestation": "EXCLUSIVE",
-        "recordedAt": "2026-08-27T08:00:00Z",
-        "source": "user_ui",
-    }
-
-
 def test_validate_identity_review_event_valid() -> None:
-    event = _valid_review_event()
+    event = _review()
     assert validate_identity_review_event(event) is True
-    assert validate_identity_review_event(event, expected_assessment_id="assessment-456") is True
+    assert validate_identity_review_event(event, expected_assessment_id="assessment-1") is True
 
     # Valid with supersedes review event
     event_with_supersedes = {**event, "supersedesReviewEventId": "event-100"}
@@ -343,27 +333,27 @@ def test_validate_identity_review_event_valid() -> None:
         123,
         [],
         # missing or invalid id / assessmentId
-        {**_valid_review_event(), "id": ""},
-        {**_valid_review_event(), "id": None},
-        {**_valid_review_event(), "assessmentId": ""},
-        {**_valid_review_event(), "assessmentId": None},
+        {**_review(), "id": ""},
+        {**_review(), "id": None},
+        {**_review(), "assessmentId": ""},
+        {**_review(), "assessmentId": None},
         # mismatched schema version
-        {**_valid_review_event(), "schemaVersion": 2},
+        {**_review(), "schemaVersion": 2},
         # invalid label
-        {**_valid_review_event(), "label": "INVALID_LABEL"},
+        {**_review(), "label": "INVALID_LABEL"},
         # invalid occupancy attestation
-        {**_valid_review_event(), "occupancyAttestation": "INVALID_OCCUPANCY"},
+        {**_review(), "occupancyAttestation": "INVALID_OCCUPANCY"},
         # invalid supersedes
-        {**_valid_review_event(), "supersedesReviewEventId": ""},
+        {**_review(), "supersedesReviewEventId": ""},
         {
-            **_valid_review_event(),
-            "supersedesReviewEventId": "event-123",
+            **_review(),
+            "supersedesReviewEventId": "review-1",
         },  # self-referential supersedes == event_id
         # invalid timestamp
-        {**_valid_review_event(), "recordedAt": "not-a-timestamp"},
-        {**_valid_review_event(), "recordedAt": None},
+        {**_review(), "recordedAt": "not-a-timestamp"},
+        {**_review(), "recordedAt": None},
         # invalid source
-        {**_valid_review_event(), "source": "other_source"},
+        {**_review(), "source": "other_source"},
     ],
 )
 def test_validate_identity_review_event_invalid(invalid_value: object) -> None:
@@ -371,5 +361,119 @@ def test_validate_identity_review_event_invalid(invalid_value: object) -> None:
 
 
 def test_validate_identity_review_event_expected_assessment_id_mismatch() -> None:
-    event = _valid_review_event()
+    event = _review()
     assert validate_identity_review_event(event, expected_assessment_id="other-assessment") is False
+
+
+def _valid_version_passport() -> dict[str, object]:
+    passport = _valid_current_passport()
+    passport.pop("updatedAt", None)
+    passport.update(
+        {
+            "trainingSetHash": "a" * 64,
+            "trainingObservationCount": 30,
+            "trainingWindowStart": "2026-07-28T00:00:00Z",
+            "trainingWindowEnd": "2026-08-26T23:59:59Z",
+            "previousVersion": None,
+            "changeReason": "INITIAL_BOOTSTRAP",
+            "algorithmVersion": "v1.0.0",
+        }
+    )
+    return passport
+
+
+def test_validate_identity_passport_version_valid() -> None:
+    passport = _valid_version_passport()
+    assert validate_identity_passport_version(passport) is True
+
+    passport_with_prev = _valid_version_passport()
+    passport_with_prev["previousVersion"] = "2026-08-26.1"
+    passport_with_prev["changeReason"] = "MEASUREMENT_SYSTEM_SHIFT_CONFIRMED_BY_REPLAY"
+    assert validate_identity_passport_version(passport_with_prev) is True
+
+
+@pytest.mark.parametrize(
+    "invalid_value",
+    [
+        None,
+        "not_a_mapping",
+        123,
+        [],
+        {**_valid_version_passport(), "trainingSetHash": ""},
+        {**_valid_version_passport(), "trainingSetHash": "a" * 63},
+        {**_valid_version_passport(), "trainingSetHash": "g" * 64},
+        {**_valid_version_passport(), "trainingSetHash": 123},
+        {**_valid_version_passport(), "trainingObservationCount": -1},
+        {**_valid_version_passport(), "trainingObservationCount": True},
+        {**_valid_version_passport(), "trainingObservationCount": "30"},
+        {**_valid_version_passport(), "trainingWindowStart": ""},
+        {**_valid_version_passport(), "trainingWindowStart": None},
+        {**_valid_version_passport(), "trainingWindowEnd": ""},
+        {**_valid_version_passport(), "trainingWindowEnd": None},
+        {**_valid_version_passport(), "previousVersion": ""},
+        {**_valid_version_passport(), "previousVersion": 123},
+        {**_valid_version_passport(), "changeReason": "INVALID_REASON"},
+        {**_valid_version_passport(), "changeReason": None},
+        {**_valid_version_passport(), "algorithmVersion": ""},
+        {**_valid_version_passport(), "algorithmVersion": None},
+        {**_valid_version_passport(), "schemaVersion": 2},
+        {k: v for k, v in _valid_version_passport().items() if k != "passportVersion"},
+    ],
+)
+def test_validate_identity_passport_version_invalid(invalid_value: object) -> None:
+    assert validate_identity_passport_version(invalid_value) is False
+
+
+def test_validate_automatic_identity_assessment_valid() -> None:
+    assessment = _assessment()
+    assert validate_automatic_identity_assessment(assessment) is True
+
+    assessment_no_passport = {**_assessment(), "passportVersion": None, "identityScore": None}
+    assert validate_automatic_identity_assessment(assessment_no_passport) is True
+
+
+@pytest.mark.parametrize(
+    "invalid_value",
+    [
+        None,
+        "not_a_mapping",
+        123,
+        [],
+        {**_assessment(), "id": ""},
+        {**_assessment(), "id": None},
+        {**_assessment(), "sourceNightKey": ""},
+        {**_assessment(), "sourceNightKey": None},
+        {**_assessment(), "automaticStatus": "INVALID_STATUS"},
+        {**_assessment(), "automaticStatus": None},
+        {**_assessment(), "identityScore": "not_a_number"},
+        {**_assessment(), "identityScore": float("nan")},
+        {**_assessment(), "identityScore": float("inf")},
+        {**_assessment(), "confidenceTier": "SUPER_HIGH"},
+        {**_assessment(), "confidenceTier": None},
+        {**_assessment(), "reasonCodes": "not_a_list"},
+        {**_assessment(), "reasonCodes": ["INVALID_REASON_CODE"]},
+        {**_assessment(), "passportVersion": ""},
+        {**_assessment(), "policyVersion": ""},
+        {**_assessment(), "featureSchemaVersion": ""},
+        {**_assessment(), "assessedAt": ""},
+        {**_assessment(), "sharedSource": "not_a_mapping"},
+        {**_assessment(), "sharedSource": {"provider": "", "transport": "health_aggregator"}},
+        {**_assessment(), "sharedSource": {"provider": "shared_bed", "transport": ""}},
+        {**_assessment(), "sharedBundleRef": "not_a_mapping"},
+        {
+            **_assessment(),
+            "sharedBundleRef": {
+                "id": "2026-08-27_shared_bed_health_aggregator",
+                "provider": "other_provider",
+                "transport": "health_aggregator",
+                "revision": 2,
+                "sourcePayloadHash": "sha256:shared",
+                "lineageKey": "shared_bed:pod-side:a",
+            },
+        },
+        {**_assessment(), "anchorBundleRefs": "not_a_list"},
+        {**_assessment(), "anchorBundleRefs": [{"invalid": "ref"}]},
+    ],
+)
+def test_validate_automatic_identity_assessment_invalid(invalid_value: object) -> None:
+    assert validate_automatic_identity_assessment(invalid_value) is False
