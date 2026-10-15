@@ -1149,3 +1149,15 @@
     min-height: 44px;
     min-width: 44px;
 }
+
+.session-runner-container .undo-live-region:empty {
+    display: none;
+}
+
+.session-runner-container .undo-live-region {
+    padding: 0.5rem 0.75rem;
+    border: 1px solid #b45309;
+    border-radius: 8px;
+    background: #1e293b;
+    color: #fde68a;
+}

@@ -10,6 +10,13 @@ describe('LoggedSetUndoBanner', () => {
         expect(html).toContain('role="status"');
     });
 
+    it('names the exercise when the runner may already have advanced to another step', () => {
+        const html = renderToStaticMarkup(<LoggedSetUndoBanner label="Set 2" context="Back Squat" onUndo={vi.fn()} />);
+        expect(html).toContain('Set 2 logged');
+        expect(html).toContain('Back Squat');
+        expect(html).toContain('Undo set 2');
+    });
+
     it('wires Undo to the supplied handler', () => {
         const onUndo = vi.fn();
         const element = LoggedSetUndoBanner({ label: 'Set 1', onUndo, children: undefined } as never) as unknown as {

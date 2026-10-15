@@ -877,11 +877,23 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
     });
 
     /** The banner unmounts on Undo, so hand focus to the primary Log control (ui-ux 3.2). */
-    const handleUndoLoggedSet = () => {
-        void runner.undoLoggedSet().then(() => {
-            runnerRootRef.current?.querySelector<HTMLElement>('.log-set-btn')?.focus();
-        });
+    const moveFocusAfterUndo = () => {
+        const log = runnerRootRef.current?.querySelector<HTMLButtonElement>('.log-set-btn');
+        // The Log control can be disabled mid-submit; the step heading is always present and focusable.
+        (log && !log.disabled ? log : activeHeadingRef.current)?.focus();
     };
+    const handleUndoLoggedSet = () => {
+        void runner.undoLoggedSet().then(performed => { if (performed) moveFocusAfterUndo(); });
+    };
+    const handleRestoreRemoved = () => {
+        void runner.undo().then(performed => { if (performed) moveFocusAfterUndo(); });
+    };
+    const loggedUndoStepTitle = (() => {
+        const entry = runner.undoableLoggedEntry;
+        if (!entry) return undefined;
+        const step = (runner.definition?.blocks ?? []).flatMap(block => block.steps).find(candidate => candidate.id === entry.stepId);
+        return step ? stepName(step) : undefined;
+    })();
 
     const handleSaveCustomTemplate = async () => {
         if (!definition) return;
@@ -970,15 +982,18 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
             {runner.canUndo && !runner.undoableLoggedEntry && !showCompletionSheet && (
                 <div className="undo-toast-banner" role="alert">
                     <span>Set removed</span>
-                    <button type="button" className="undo-action-btn" onClick={runner.undo}>
+                    <button type="button" className="undo-action-btn" onClick={handleRestoreRemoved}>
                         Undo
                     </button>
                 </div>
             )}
 
+            <div className="undo-live-region" role="status" aria-live="polite">{showCompletionSheet ? null : runner.restoreNotice}</div>
+
             {runner.undoableLoggedEntry && !showCompletionSheet && (
                 <LoggedSetUndoBanner
                     label={runner.undoableLoggedEntry.payload.kind === 'repetition' ? `Set ${runner.undoableLoggedEntry.payload.setIndex}` : 'Entry'}
+                    context={loggedUndoStepTitle}
                     onUndo={handleUndoLoggedSet}
                 />
             )}

@@ -50,26 +50,6 @@ export function isLoggedSetUndoOpen(loggedAtMs: number, nowMs: number): boolean 
     return nowMs >= loggedAtMs && nowMs - loggedAtMs < LOGGED_SET_UNDO_WINDOW_MS;
 }
 
-/** The "Set removed - Undo" restore is only offered while it is still the newest action: once the
- * athlete logs another set, restoring the older removal could duplicate a set index. */
-export function isRestoreOffered(lastRemoved: SessionEntry | null, dismissedRemovedIds: ReadonlySet<string>): boolean {
-    return lastRemoved !== null && lastRemoved.payload.kind !== 'choice' && !dismissedRemovedIds.has(lastRemoved.id);
-}
-
-/** True when restoring `restored` would leave two live repetition sets with the same set index
- * for the same step and exercise (a false extra exposure). */
-export function restoreWouldDuplicateSetIndex(liveEntries: readonly SessionEntry[], restored: SessionEntry): boolean {
-    if (restored.payload.kind !== 'repetition') return false;
-    const { setIndex } = restored.payload;
-    const exerciseKey = JSON.stringify(restored.exerciseRef ?? null);
-    return liveEntries.some(entry => entry.id !== restored.id
-        && !entry.deletedAt
-        && entry.stepId === restored.stepId
-        && JSON.stringify(entry.exerciseRef ?? null) === exerciseKey
-        && entry.payload.kind === 'repetition'
-        && entry.payload.setIndex === setIndex);
-}
-
 export const CORRECTION_NOT_SAVED_REASON = 'The correction could not be saved. The set keeps its previous values.';
 
 export interface SetCorrectionEffects {
@@ -115,6 +95,6 @@ export function planLoggedSetUndo(
 }
 
 /** Runs `undoOnce` under the single-flight lock so a double tap tombstones at most once. */
-export function runLoggedSetUndo(lock: { current: boolean }, undoOnce: () => Promise<void>): Promise<void | undefined> {
+export function runLoggedSetUndo<T>(lock: { current: boolean }, undoOnce: () => Promise<T>): Promise<T | undefined> {
     return runExclusive(lock, undoOnce);
 }

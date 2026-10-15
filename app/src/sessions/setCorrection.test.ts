@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { SessionEntry } from './models';
-import { buildSetCorrection, commitSetCorrection, CORRECTION_NOT_SAVED_REASON, planLoggedSetUndo, runLoggedSetUndo, isLoggedSetUndoOpen, isRestoreOffered, LOGGED_SET_UNDO_WINDOW_MS, restoreWouldDuplicateSetIndex } from './setCorrection';
+import { buildSetCorrection, commitSetCorrection, CORRECTION_NOT_SAVED_REASON, planLoggedSetUndo, runLoggedSetUndo, isLoggedSetUndoOpen, LOGGED_SET_UNDO_WINDOW_MS } from './setCorrection';
 
 const at = '2026-10-05T08:00:00.000Z';
 const gauged: SessionEntry = {
@@ -50,42 +50,6 @@ describe('isLoggedSetUndoOpen', () => {
         expect(isLoggedSetUndoOpen(1_000, 1_000 + LOGGED_SET_UNDO_WINDOW_MS - 1)).toBe(true);
         expect(isLoggedSetUndoOpen(1_000, 1_000 + LOGGED_SET_UNDO_WINDOW_MS)).toBe(false);
         expect(isLoggedSetUndoOpen(2_000, 1_000)).toBe(false);
-    });
-});
-
-const live = (id: string, setIndex: number, extra: Partial<SessionEntry> = {}): SessionEntry => ({
-    ...gauged, id, payload: { kind: 'repetition', setIndex, reps: 5 }, exerciseRef: { kind: 'catalog', exerciseId: 'squat' }, ...extra,
-});
-
-describe('restore offer after log -> undo -> log (#724 review)', () => {
-    it('stops offering a stale removal once a newer set was logged, but offers a fresh one', () => {
-        const set3 = live('set-3', 3);
-        const dismissed = new Set<string>();
-        expect(isRestoreOffered(set3, dismissed)).toBe(true);
-        // The athlete logs another set: the older removal is dismissed.
-        expect(isRestoreOffered(set3, new Set([set3.id]))).toBe(false);
-        // Undoing the next logged set produces a new, offered removal.
-        expect(isRestoreOffered(live('set-3b', 3), new Set([set3.id]))).toBe(true);
-    });
-
-    it('never offers a choice or nothing', () => {
-        expect(isRestoreOffered(null, new Set())).toBe(false);
-        expect(isRestoreOffered({ ...gauged, payload: { kind: 'choice', choiceId: 'c', optionId: 'o' } }, new Set())).toBe(false);
-    });
-
-    it('refuses a restore that would leave two live sets with the same set index', () => {
-        const stale = live('set-3', 3);
-        const replacement = live('set-3b', 3);
-        expect(restoreWouldDuplicateSetIndex([live('set-1', 1), live('set-2', 2), replacement], stale)).toBe(true);
-        expect(restoreWouldDuplicateSetIndex([live('set-1', 1), live('set-2', 2)], stale)).toBe(false);
-        expect(restoreWouldDuplicateSetIndex([replacement], stale)).toBe(true);
-    });
-
-    it('does not treat another step, another exercise or a tombstone as a duplicate', () => {
-        const stale = live('set-3', 3);
-        expect(restoreWouldDuplicateSetIndex([live('x', 3, { stepId: 'row' })], stale)).toBe(false);
-        expect(restoreWouldDuplicateSetIndex([live('x', 3, { exerciseRef: { kind: 'catalog', exerciseId: 'bench' } })], stale)).toBe(false);
-        expect(restoreWouldDuplicateSetIndex([live('x', 3, { deletedAt: at })], stale)).toBe(false);
     });
 });
 
