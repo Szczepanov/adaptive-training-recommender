@@ -498,6 +498,8 @@ emulatorDescribe('Firestore security rules', () => {
             modality: 'Cycling',
             mode: 'train',
             rationale: 'A compact rationale.',
+            // Carry the parent's exact audit so only the field under test can cause the denial (#940).
+            recommendationAudit: validRecommendation().recommendationAudit,
         });
         batch.set(doc(ownerDb, recommendationPath) as any, {
             ...validRecommendation(),
@@ -522,6 +524,8 @@ emulatorDescribe('Firestore security rules', () => {
             modality: 'Cycling',
             mode: 'train',
             rationale: 'A compact rationale.',
+            // Carry the parent's exact audit so only the field under test can cause the denial (#940).
+            recommendationAudit: validRecommendation().recommendationAudit,
         });
         batch.set(doc(ownerDb, recommendationPath) as any, {
             ...validRecommendation('2026-08-07T09:30:00Z'),
@@ -546,6 +550,8 @@ emulatorDescribe('Firestore security rules', () => {
             modality: 'Cycling',
             mode: 'train',
             rationale: 'A compact rationale.',
+            // Carry the parent's exact audit so only the field under test can cause the denial (#940).
+            recommendationAudit: validRecommendation().recommendationAudit,
         });
         batch.set(doc(ownerDb, recommendationPath) as any, {
             ...validRecommendation('2026-08-07T09:30:00Z'),
@@ -554,6 +560,33 @@ emulatorDescribe('Firestore security rules', () => {
         }, { merge: true });
 
         await assertFails(batch.commit());
+    });
+
+    it('accepts a decision change for a legacy parent without a revision field (#940)', async () => {
+        const legacy = validRecommendation() as Record<string, unknown>;
+        delete legacy.revision;
+        await testEnvironment.withSecurityRulesDisabled(async context => {
+            await setDoc(doc(context.firestore(), recommendationPath), legacy);
+        });
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        const batch = ownerDb.batch();
+        batch.set(doc(ownerDb, `${recommendationPath}/revisions/1`) as any, {
+            revision: 1,
+            templateId: 'easy_01',
+            templateTitle: 'Easy Ride',
+            category: 'Easy Endurance',
+            modality: 'Cycling',
+            mode: 'train',
+            rationale: 'A compact rationale.',
+            recommendationAudit: validRecommendation().recommendationAudit,
+        });
+        batch.set(doc(ownerDb, recommendationPath) as any, {
+            ...validRecommendation(),
+            templateId: 'hard_01',
+            revision: 2,
+        }, { merge: true });
+
+        await assertSucceeds(batch.commit());
     });
 
     it('rejects decision update with non-incrementing revision number', async () => {
@@ -570,6 +603,8 @@ emulatorDescribe('Firestore security rules', () => {
             modality: 'Cycling',
             mode: 'train',
             rationale: 'A compact rationale.',
+            // Carry the parent's exact audit so only the field under test can cause the denial (#940).
+            recommendationAudit: validRecommendation().recommendationAudit,
         });
         batch.set(doc(ownerDb, recommendationPath) as any, {
             ...validRecommendation(),

@@ -1787,7 +1787,18 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
           && (!('prescription' in previous) || (
             ('prescription' in prior)
             && (!('id' in previous.prescription) || prior.prescription.id == previous.prescription.id)
-          ));
+          ))
+          // Issue #940: the archived audit is exactly the audit the parent carried before
+          // this update (absent iff absent; the revisions create rule requires a present
+          // audit to be a map). Deep map equality; the client copies the raw stored audit.
+          && prior.get('recommendationAudit', null) == previous.get('recommendationAudit', null);
+      }
+
+      function archiveAccompaniesParentBump(userId, date, archivedRevision) {
+        let parentPath = /databases/$(database)/documents/users/$(userId)/daily_recommendations/$(date);
+        let before = get(parentPath).data;
+        return (('revision' in before) ? before.revision : 1) == archivedRevision
+          && getAfter(parentPath).data.revision == archivedRevision + 1;
       }
 
       // WP2 / Issue #953: On update, validate only changed sections.
@@ -1914,9 +1925,16 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
 
       match /revisions/{revId} {
         allow read: if isOwner(userId);
+        // Issue #940: an archive can only be created in the same write as the parent
+        // decision change it archives: the parent is at this revision before the write and
+        // at revision + 1 after it. This rules out orphan or forged stand-alone archives.
         allow create: if isOwner(userId)
           && request.resource.data.revision is int
-          && string(request.resource.data.revision) == revId;
+          && string(request.resource.data.revision) == revId
+          // `prior.get(..., null)` equality in archivesPriorRevision would accept an explicit
+          // null audit against an audit-less parent; an archived audit must be a map.
+          && (!('recommendationAudit' in request.resource.data) || request.resource.data.recommendationAudit is map)
+          && archiveAccompaniesParentBump(userId, date, request.resource.data.revision);
         allow update, delete: if false;
       }
 
