@@ -175,3 +175,85 @@ def test_daily_fetch_surfaces_missing_spo2_dependency_contract():
 
     with pytest.raises(AttributeError, match="get_spo2_data"):
         GarminProviderAdapter(client).fetch_daily_metrics("2026-08-23", "2026-08-22")
+
+
+def test_extract_skin_temp_deviation_handles_non_dict_payloads():
+    assert extract_skin_temp_deviation(None) is None
+    assert extract_skin_temp_deviation([]) is None
+    assert extract_skin_temp_deviation("invalid_payload") is None
+    assert extract_skin_temp_deviation(123) is None
+
+
+def test_extract_skin_temp_deviation_key_precedence_and_aliases():
+    # 1. Top-level avgSkinTempDeviationC
+    payload1 = {
+        "avgSkinTempDeviationC": 0.15,
+        "skinTempDeviationCelsius": 0.25,
+        "dailySleepDTO": {
+            "avgSkinTempDeviationC": 0.35,
+            "skinTempDeviationCelsius": 0.45,
+            "avgSkinTempDeviation": 0.55,
+        },
+    }
+    assert extract_skin_temp_deviation(payload1) == 0.15
+
+    # 2. Top-level skinTempDeviationCelsius
+    payload2 = {
+        "skinTempDeviationCelsius": 0.25,
+        "dailySleepDTO": {
+            "avgSkinTempDeviationC": 0.35,
+            "skinTempDeviationCelsius": 0.45,
+            "avgSkinTempDeviation": 0.55,
+        },
+    }
+    assert extract_skin_temp_deviation(payload2) == 0.25
+
+    # 3. dailySleepDTO.avgSkinTempDeviationC
+    payload3 = {
+        "dailySleepDTO": {
+            "avgSkinTempDeviationC": 0.35,
+            "skinTempDeviationCelsius": 0.45,
+            "avgSkinTempDeviation": 0.55,
+        },
+    }
+    assert extract_skin_temp_deviation(payload3) == 0.35
+
+    # 4. dailySleepDTO.skinTempDeviationCelsius
+    payload4 = {
+        "dailySleepDTO": {
+            "skinTempDeviationCelsius": 0.45,
+            "avgSkinTempDeviation": 0.55,
+        },
+    }
+    assert extract_skin_temp_deviation(payload4) == 0.45
+
+    # 5. dailySleepDTO.avgSkinTempDeviation
+    payload5 = {
+        "dailySleepDTO": {
+            "avgSkinTempDeviation": 0.55,
+        },
+    }
+    assert extract_skin_temp_deviation(payload5) == 0.55
+
+
+def test_extract_skin_temp_deviation_handles_strings_bools_and_non_finite_values():
+    assert extract_skin_temp_deviation({"avgSkinTempDeviationC": "0.42"}) == 0.42
+    assert extract_skin_temp_deviation({"avgSkinTempDeviationC": "-0.18"}) == -0.18
+    assert extract_skin_temp_deviation({"avgSkinTempDeviationC": True}) is None
+    assert extract_skin_temp_deviation({"avgSkinTempDeviationC": False}) is None
+    assert extract_skin_temp_deviation({"avgSkinTempDeviationC": "not_a_number"}) is None
+    assert extract_skin_temp_deviation({"avgSkinTempDeviationC": float("nan")}) is None
+    assert extract_skin_temp_deviation({"avgSkinTempDeviationC": float("inf")}) is None
+    assert extract_skin_temp_deviation({"avgSkinTempDeviationC": float("-inf")}) is None
+
+
+def test_extract_skin_temp_deviation_handles_non_dict_daily_sleep_dto():
+    assert extract_skin_temp_deviation({"dailySleepDTO": None}) is None
+    assert extract_skin_temp_deviation({"dailySleepDTO": "invalid"}) is None
+    assert extract_skin_temp_deviation({"dailySleepDTO": 123}) is None
+
+
+def test_extract_skin_temp_deviation_rounding_and_zero_preservation():
+    assert extract_skin_temp_deviation({"avgSkinTempDeviationC": 0.1234}) == 0.12
+    assert extract_skin_temp_deviation({"avgSkinTempDeviationC": -0.5678}) == -0.57
+    assert extract_skin_temp_deviation({"avgSkinTempDeviationC": 0.0}) == 0.0
