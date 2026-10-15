@@ -557,6 +557,74 @@ test('captures prescribed progress, optional status and free-text reachability i
   }
 });
 
+test('keeps the repetition logger keyboard-efficient and reachable after many logged sets (#725)', async ({ page }) => {
+  const scenario = VISUAL_SCENARIOS.find(candidate => candidate.id === 'session-runner-logger-long-set-list');
+  if (!scenario) throw new Error('Missing long set list visual scenario');
+  await visitScenario(page, scenario);
+
+  const weight = page.getByRole('spinbutton', { name: 'Weight in kilograms' });
+  const logButton = page.getByRole('button', { name: 'Log repetition set' });
+  const performed = page.locator('.entries-heading');
+  const noBodyOverflow = () => page.locator('body').evaluate(body => body.scrollWidth <= window.innerWidth);
+
+  await page.getByRole('checkbox', { name: 'Warm-up', exact: true }).uncheck();
+  await expect(weight).toBeFocused();
+  await expect(performed).toContainText('(0)');
+
+  // The prescribed load seeds the weight field so there is a value to select.
+  await expect(weight).toHaveValue('80');
+
+  // Clicking Log moves focus to the button; the logger must then return focus to the weight
+  // field with its content selected, so typing replaces the load instead of appending to it.
+  await logButton.click();
+  await expect(performed).toContainText('(1)');
+  await expect(weight).toBeFocused();
+  await page.keyboard.type('77');
+  await expect(weight).toHaveValue('77');
+
+  // A single Enter in the weight field logs exactly one more set, not zero or two.
+  await weight.press('Enter');
+  await expect(performed).toContainText('(2)');
+  await expect(page.locator('.entries-list .entry-row')).toHaveCount(2);
+  await page.waitForTimeout(300);
+  await expect(page.locator('.entries-list .entry-row')).toHaveCount(2);
+
+  // Log a long list of sets from the keyboard alone.
+  for (let count = 3; count <= 15; count += 1) {
+    await weight.press('Enter');
+    await expect(performed).toContainText(`(${count})`);
+  }
+  await expect(page.locator('.entries-list .entry-row')).toHaveCount(15);
+  expect(await noBodyOverflow()).toBe(true);
+
+  // The primary Log control is still on screen, not covered, and a full-size target.
+  await logButton.scrollIntoViewIfNeeded();
+  const box = await logButton.boundingBox();
+  const viewport = page.viewportSize();
+  expect(box).not.toBeNull();
+  expect(viewport).not.toBeNull();
+  expect(box!.height).toBeGreaterThanOrEqual(44);
+  expect(box!.y).toBeGreaterThanOrEqual(0);
+  expect(box!.y + box!.height).toBeLessThanOrEqual(viewport!.height);
+  expect(box!.x + box!.width).toBeLessThanOrEqual(viewport!.width);
+  expect(await logButton.evaluate(button => {
+    const rect = button.getBoundingClientRect();
+    return button.contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2));
+  })).toBe(true);
+
+  // Range text on the RIR and velocity-loss gauge inputs.
+  const gaugeScale = page.getByRole('combobox', { name: 'Intensity gauge scale' });
+  await gaugeScale.selectOption('rir');
+  await expect(page.getByRole('spinbutton', { name: 'Reps in reserve from 0 to 10' })).toBeVisible();
+  await gaugeScale.selectOption('velocity_loss');
+  await expect(page.getByRole('spinbutton', { name: 'Velocity loss percentage from 0 to 100' })).toBeVisible();
+  expect(await noBodyOverflow()).toBe(true);
+
+  await capture(page, scenario, 'logger-many-sets', [
+    'After many logged sets the Log control stays reachable and the page does not scroll sideways.',
+  ]);
+});
+
 test('captures saved custom-template preview and archived-library states', async ({ page }) => {
   const scenario = VISUAL_SCENARIOS.find(candidate => candidate.id === 'session-runner-custom-template-library');
   if (!scenario) throw new Error('Missing saved custom-template library visual scenario');

@@ -17,8 +17,58 @@
   color: var(--tier-yellow, #eab308);
 }
 
+.strength-overload-select-label {
+  font-size: 0.8rem;
+  color: var(--text-secondary, #94a3b8);
+}
+
+.strength-overload-select {
+  min-height: var(--touch-target-min, 44px);
+  box-sizing: border-box;
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  background: var(--surface-input, #0f172a);
+  color: var(--text-primary, #f8fafc);
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  border-radius: 0.5rem;
+  font-size: 1rem;
+}
+
+.strength-overload-select:focus-visible,
+.strength-overload-table-scroll:focus-visible {
+  outline: 2px solid var(--accent-color, #38bdf8);
+  outline-offset: 2px;
+}
+
+/* Local horizontal scroll container (ui-ux.md 4.2): the page never overflows; the edge
+   shadows (background-attachment: local vs scroll) show which side still has columns. */
+.strength-overload-table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border-radius: 0.5rem;
+  background:
+    linear-gradient(to right, var(--surface-card, #1e293b) 30%, transparent) left center / 2rem 100% no-repeat local,
+    linear-gradient(to left, var(--surface-card, #1e293b) 30%, transparent) right center / 2rem 100% no-repeat local,
+    linear-gradient(to right, rgba(148, 163, 184, 0.45), transparent) left center / 0.75rem 100% no-repeat scroll,
+    linear-gradient(to left, rgba(148, 163, 184, 0.45), transparent) right center / 0.75rem 100% no-repeat scroll;
+}
+
+.strength-overload-scroll-hint {
+  display: none;
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--text-secondary, #94a3b8);
+}
+
+@media (max-width: 600px) {
+  .strength-overload-scroll-hint {
+    display: block;
+  }
+}
+
 .strength-overload-table {
   width: 100%;
+  min-width: 28rem;
   border-collapse: collapse;
   font-size: 0.85rem;
 }

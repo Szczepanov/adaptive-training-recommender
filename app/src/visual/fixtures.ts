@@ -442,6 +442,36 @@ const prescribedNavigatorSession: SessionDefinition = {
   ],
 };
 
+/** One high-volume repetition step so a keyboard-only athlete can log a long set list (#725). */
+const longSetListSession: SessionDefinition = {
+  schemaVersion: 1,
+  id: 'visual-long-set-list',
+  revision: 1,
+  title: 'High-volume Strength Logger',
+  summary: 'One high-volume step used to check the logger stays reachable with many logged sets.',
+  intent: 'training',
+  modalities: ['Strength'],
+  dominantModality: 'strength',
+  blocks: [
+    {
+      id: 'main',
+      title: 'Main work',
+      role: 'main',
+      executionMode: 'sequential',
+      steps: [
+        {
+          id: 'back-squat',
+          kind: 'exercise',
+          title: 'Back squat',
+          exerciseRef: { kind: 'catalog', exerciseId: 'back_squat' },
+          dose: { kind: 'repetition', sets: 20, reps: 5 },
+          load: { kind: 'mass', kg: 80 },
+        },
+      ],
+    },
+  ],
+};
+
 const archivedShoulderCare: SessionDefinition = {
   ...savedUpperBodyStrengthMaintenance,
   id: 'visual-archived-shoulder-care',
@@ -885,6 +915,24 @@ export const VISUAL_SCENARIOS: VisualScenario[] = [
         binding: {
           sessionSource: { kind: 'unplanned_fixture', fixtureId: 'visual-prescribed-navigator' },
           prescriptionHash: 'visual-prescribed-navigator-hash',
+        },
+      },
+    }),
+  },
+  {
+    id: 'session-runner-logger-long-set-list',
+    title: 'Session Runner - repetition logger with a long logged-set list',
+    screen: 'session',
+    expectedFocus: [
+      'The weight field is focused on entry and the primary Log control stays reachable.',
+      'A long list of logged sets does not cause horizontal page overflow.',
+    ],
+    fixture: buildFixture({
+      initialSession: {
+        definition: longSetListSession,
+        binding: {
+          sessionSource: { kind: 'unplanned_fixture', fixtureId: 'visual-long-set-list' },
+          prescriptionHash: 'visual-long-set-list-hash',
         },
       },
     }),

@@ -1,6 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
 import type { SessionStep, RepetitionEntryPayload } from '../../../sessions/models';
-import type { IntensityGauge } from '../../../engine/models';
+import {
+    buildRepetitionPayload,
+    focusAndSelect,
+    runSingleFlight,
+    type GaugeScaleType,
+} from './repetitionSubmit';
 
 interface RepetitionInputCardProps {
     step: SessionStep;
@@ -9,8 +14,6 @@ interface RepetitionInputCardProps {
     defaultIsWarmup?: boolean;
     onSubmit: (payload: RepetitionEntryPayload) => void | Promise<void>;
 }
-
-type GaugeScaleType = 'none' | 'rpe' | 'rir' | 'velocity_loss' | 'technical';
 
 export const RepetitionInputCard: React.FC<RepetitionInputCardProps> = ({
     step,
@@ -53,73 +56,30 @@ export const RepetitionInputCard: React.FC<RepetitionInputCardProps> = ({
     }, [step.id, defaultReps, suggestedWeightKg, defaultIsWarmup]);
 
     useEffect(() => {
-        if (weightRef.current) {
-            weightRef.current.focus();
-            weightRef.current.select();
-        }
+        focusAndSelect(weightRef.current);
     }, [step.id]);
-
-    const buildGauge = (): IntensityGauge | undefined => {
-        if (gaugeScale === 'rpe') {
-            const val = gaugeVal.trim().length > 0 ? parseFloat(gaugeVal) : undefined;
-            if (val !== undefined && Number.isFinite(val) && val >= 1 && val <= 10) {
-                return { scale: 'rpe_rts', value: val };
-            }
-        } else if (gaugeScale === 'rir') {
-            const val = gaugeVal.trim().length > 0 ? parseFloat(gaugeVal) : undefined;
-            if (val !== undefined && Number.isFinite(val) && val >= 0 && val <= 10) {
-                return { scale: 'rir', value: val };
-            }
-        } else if (gaugeScale === 'velocity_loss') {
-            const val = gaugeVal.trim().length > 0 ? parseFloat(gaugeVal) : undefined;
-            if (val !== undefined && Number.isFinite(val) && val >= 0 && val <= 100) {
-                return { scale: 'velocity_loss', percent: val };
-            }
-        } else if (gaugeScale === 'technical') {
-            return {
-                scale: 'technical',
-                met: technicalMet,
-                ...(technicalNote.trim().length > 0 ? { note: technicalNote.trim() } : {}),
-            };
-        }
-        return undefined;
-    };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (submitInFlightRef.current) return;
 
-        const parsedReps = parseInt(reps, 10);
-        if (isNaN(parsedReps) || parsedReps <= 0) return;
+        const payload = buildRepetitionPayload({ reps, weight, isWarmup, gaugeScale, gaugeVal, technicalMet, technicalNote });
+        if (!payload) return;
 
-        const parsedWeight = weight.trim().length > 0 ? parseFloat(weight) : undefined;
-        const gauge = buildGauge();
+        await runSingleFlight(submitInFlightRef, async () => {
+            setIsSubmitting(true);
+            try {
+                await onSubmit(payload);
 
-        submitInFlightRef.current = true;
-        setIsSubmitting(true);
-        try {
-            await onSubmit({
-                kind: 'repetition',
-                setIndex: 1, // dynamically indexed by caller
-                reps: parsedReps,
-                ...(parsedWeight !== undefined ? { weightKg: parsedWeight } : {}),
-                isWarmup,
-                ...(gauge ? { gauge } : {}),
-            });
+                // Reset gauge value for next set only after the write lifecycle has completed.
+                setGaugeVal('');
+                setTechnicalNote('');
 
-            // Reset gauge value for next set only after the write lifecycle has completed.
-            setGaugeVal('');
-            setTechnicalNote('');
-
-            // Refocus weight input for next set.
-            if (weightRef.current) {
-                weightRef.current.focus();
-                weightRef.current.select();
+                // Refocus weight input for next set.
+                focusAndSelect(weightRef.current);
+            } finally {
+                setIsSubmitting(false);
             }
-        } finally {
-            submitInFlightRef.current = false;
-            setIsSubmitting(false);
-        }
+        });
     };
 
     return (
@@ -206,7 +166,7 @@ export const RepetitionInputCard: React.FC<RepetitionInputCardProps> = ({
                             value={gaugeVal}
                             onChange={e => setGaugeVal(e.target.value)}
                             className="session-input-box gauge-val-input"
-                            aria-label="Reps in reserve"
+                            aria-label="Reps in reserve from 0 to 10"
                         />
                     )}
 
@@ -220,7 +180,7 @@ export const RepetitionInputCard: React.FC<RepetitionInputCardProps> = ({
                             value={gaugeVal}
                             onChange={e => setGaugeVal(e.target.value)}
                             className="session-input-box gauge-val-input"
-                            aria-label="Velocity loss percentage"
+                            aria-label="Velocity loss percentage from 0 to 100"
                         />
                     )}
 
