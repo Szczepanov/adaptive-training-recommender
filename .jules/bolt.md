@@ -107,7 +107,3 @@
 ## 2026-10-28 - Parallelize Scenario Execution in runAllScenarios
 **Learning:** Sequential `await runScenario` calls in `runAllScenarios` blocked execution of independent athlete simulation scenarios in serial order, accumulating wall-clock latency across all scenario runs.
 **Action:** Parallelize independent async scenario evaluations using `Promise.all` in batch simulation functions.
-
-## 2026-11-01 - Pre-index manual definition revisions in nonCatalogDisplayMetadata via WeakMap
-**Learning:** Calling `.find()` on `sources.manualDefinitionRevisions` for every prescription lookup caused O(N) search overhead and recomputed expensive `JSON.stringify(canonicalizeSessionData(...))` operations on candidate blocks. Pre-indexing candidate revisions into a `Map` cached in a `WeakMap` keyed by the `manualDefinitionRevisions` array reference provides O(1) lookups and pre-computes block JSON strings, achieving a ~3.3x speedup.
-**Action:** When searching a revision list passed as a source array property, cache a pre-indexed `Map` using a `WeakMap` keyed on the source array reference.

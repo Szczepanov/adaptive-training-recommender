@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { DailyRecommendation, NormalizedGarminActivity } from '../engine/models';
-import type { ExecutionPrescription, SessionEntry, SessionExecution } from '../sessions/models';
+import type { ExecutionPrescription, SessionDefinition, SessionEntry, SessionExecution } from '../sessions/models';
 import { buildTrainingHistorySnapshot } from '../engine/trainingHistorySnapshot';
 import { workoutForTemplate } from '../workouts/prescription';
 import type { PerformedOccurrenceSourceRef, PerformedTrainingOccurrence } from './models';
@@ -144,6 +144,48 @@ describe('deriveCanonicalBroadExposure', () => {
             liveEvents: [], liveExposures: [], occurrences: [occurrence([structuredRef], { modality: 'strength' })], sources: hydrated,
         }).audit;
         expect(audit).toMatchObject({ derived: 1, unsupportedDerivations: 0, structuredAuthorityViolations: 0 });
+    });
+
+    it('reuses manual revision lookups without losing block checks or mixing revision arrays', () => {
+        const prescription: ExecutionPrescription = {
+            ...strengthPrescription, definitionHash: 'h', displayMetadata: undefined,
+        };
+        const definition: SessionDefinition = {
+            schemaVersion: 1, id: 'upper', revision: 1,
+            title: 'Revision fallback', intent: 'training', dominantModality: 'Strength',
+            blocks: prescription.blocks,
+        };
+        const mismatched = {
+            definition: { ...definition, title: 'Wrong blocks', blocks: [] }, contentHash: 'h',
+        };
+        const hydrated = sources({
+            executionsById: new Map([['e-1', execution({
+                sessionSource: prescription.sessionSource, prescriptionHash: 'ph-1', sessionRpe: 8,
+            })]]),
+            entriesByExecutionId: new Map([['e-1', [setEntry('1')]]]),
+            prescriptionsByHash: new Map([['ph-1', prescription]]),
+            manualDefinitionRevisions: [mismatched, { definition, contentHash: 'h' }],
+        });
+        const performed = occurrence([structuredRef], { modality: 'strength' });
+
+        const first = deriveCanonicalBroadExposure(performed, hydrated);
+        expect(first).toMatchObject({
+            status: 'derived',
+            exposure: { modality: 'Strength', trainingRecordLike: { type: 'Revision fallback' } },
+        });
+        expect(deriveCanonicalBroadExposure(performed, hydrated)).toEqual(first);
+        expect(deriveCanonicalBroadExposure(performed, {
+            ...hydrated, manualDefinitionRevisions: [mismatched],
+        })).toEqual({ status: 'unknown', reason: 'non_catalog_execution_evidence_missing' });
+        expect(deriveCanonicalBroadExposure(performed, {
+            ...hydrated,
+            manualDefinitionRevisions: [{
+                definition: { ...definition, title: 'Replacement fallback' }, contentHash: 'h',
+            }],
+        })).toMatchObject({
+            status: 'derived', exposure: { trainingRecordLike: { type: 'Replacement fallback' } },
+        });
+        expect(deriveCanonicalBroadExposure(performed, hydrated)).toEqual(first);
     });
 
     it('computes completion from required per-step targets without optional or excess work masking misses', () => {
