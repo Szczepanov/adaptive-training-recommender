@@ -192,6 +192,29 @@ function sameNonCatalogSessionSource(
     return false;
 }
 
+type RevisionEntry = NonNullable<CanonicalHistorySources['manualDefinitionRevisions']>[number];
+type CachedRevision = { candidate: RevisionEntry; blocksJson: string };
+const revisionsCache = new WeakMap<readonly RevisionEntry[], Map<string, CachedRevision[]>>();
+
+function getRevisionsMap(revisions: readonly RevisionEntry[]): Map<string, CachedRevision[]> {
+    let map = revisionsCache.get(revisions);
+    if (!map) {
+        map = new Map<string, CachedRevision[]>();
+        for (const candidate of revisions) {
+            const key = `${candidate.definition.id}:${candidate.definition.revision}:${candidate.contentHash}`;
+            const blocksJson = JSON.stringify(canonicalizeSessionData(candidate.definition.blocks));
+            const bucket = map.get(key);
+            if (bucket) {
+                bucket.push({ candidate, blocksJson });
+            } else {
+                map.set(key, [{ candidate, blocksJson }]);
+            }
+        }
+        revisionsCache.set(revisions, map);
+    }
+    return map;
+}
+
 function nonCatalogDisplayMetadata(
     execution: SessionExecution,
     prescription: ExecutionPrescription,
@@ -202,12 +225,15 @@ function nonCatalogDisplayMetadata(
     if (source.kind !== 'manual'
         || !sameNonCatalogSessionSource(source, prescription.sessionSource)
         || prescription.definitionHash !== source.contentHash) return undefined;
-    const revision = sources.manualDefinitionRevisions?.find(candidate =>
-        candidate.definition.id === source.definitionId
-        && candidate.definition.revision === source.revision
-        && candidate.contentHash === source.contentHash
-        && JSON.stringify(canonicalizeSessionData(candidate.definition.blocks))
-            === JSON.stringify(canonicalizeSessionData(prescription.blocks)));
+    if (!sources.manualDefinitionRevisions) return undefined;
+
+    const map = getRevisionsMap(sources.manualDefinitionRevisions);
+    const key = `${source.definitionId}:${source.revision}:${source.contentHash}`;
+    const candidates = map.get(key);
+    if (!candidates) return undefined;
+
+    const prescriptionBlocksJson = JSON.stringify(canonicalizeSessionData(prescription.blocks));
+    const revision = candidates.find(c => c.blocksJson === prescriptionBlocksJson)?.candidate;
     if (!revision) return undefined;
     return {
         title: revision.definition.title,
