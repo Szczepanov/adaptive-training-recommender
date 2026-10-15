@@ -128,7 +128,9 @@ def test_empty_garmin_set_list_is_preserved_to_clear_stale_firestore_sets():
 
 def test_strength_set_gate_is_independent_of_intensity_and_power_detail_gate():
     assert qualifies_for_strength_exercise_sets(_activity("strength_training"))
+    assert qualifies_for_strength_exercise_sets(_activity("STRENGTH_TRAINING"))
     assert qualifies_for_strength_exercise_sets(_activity("fitness_equipment"))
+    assert qualifies_for_strength_exercise_sets(_activity("Fitness_Equipment"))
     assert not qualifies_for_strength_exercise_sets(_activity("cycling"))
     assert not qualifies_for_strength_exercise_sets(_activity("running"))
     assert not qualifies_for_strength_exercise_sets(_activity("strength_training", None))
