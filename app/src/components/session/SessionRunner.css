@@ -1111,3 +1111,62 @@
         flex-wrap: wrap;
     }
 }
+
+/* #724: short-lived undo banners (logged-set Undo and removed-set restore). Controls meet the
+   44px target (docs/standards/ui-ux.md 1.2) and the banner never forces horizontal overflow. */
+.session-runner-container .undo-toast-banner {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem 0.75rem;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    background: #1e293b;
+    color: #e2e8f0;
+}
+
+.session-runner-container .undo-toast-banner .undo-action-btn {
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0.5rem 1rem;
+    border: 1px solid #60a5fa;
+    border-radius: 6px;
+    background: transparent;
+    color: #93c5fd;
+    font-size: 0.9rem;
+    cursor: pointer;
+}
+
+.session-runner-container .undo-toast-banner .undo-action-btn:focus-visible {
+    outline: 2px solid #93c5fd;
+    outline-offset: 2px;
+}
+
+.session-runner-container .save-edit-btn,
+.session-runner-container .cancel-edit-btn {
+    min-height: 44px;
+    min-width: 44px;
+}
+
+/* Always rendered so assistive tech keeps the live region; only its visual box is removed when
+   empty (taken out of flow so it adds no gap). */
+.session-runner-container .undo-live-region:empty {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    border: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
+
+.session-runner-container .undo-live-region {
+    padding: 0.5rem 0.75rem;
+    border: 1px solid #b45309;
+    border-radius: 8px;
+    background: #1e293b;
+    color: #fde68a;
+}

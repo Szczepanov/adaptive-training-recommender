@@ -459,6 +459,65 @@ test('captures the primary catalog strength warm-up journey', async ({ page }) =
   await capture(page, scenario, 'completion-summary', [
     'The completion summary remains available after partial warm-up execution.',
   ]);
+
+  await page.getByRole('button', { name: 'Abandon Session...' }).click();
+  await expect(page.getByRole('heading', { name: 'Abandon Session?' })).toBeVisible();
+  await expect(page.getByText(/permanently retained in your history/)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Yes, Abandon Session' })).toBeVisible();
+  await capture(page, scenario, 'abandon-confirmation', [
+    'Abandonment is a separate confirmation that states logged sets are retained, with a clear way back.',
+  ]);
+});
+
+test('captures just-logged set undo and in-place set correction', async ({ page }) => {
+  const scenario = VISUAL_SCENARIOS.find(candidate => candidate.id === 'session-runner-in-progress');
+  if (!scenario) throw new Error('Missing session runner visual scenario');
+  // The undo offer expires on a real timer; control the clock so capture timing cannot race it.
+  await page.clock.install();
+  await visitScenario(page, scenario);
+
+  await page.getByRole('button', { name: '＋ New session' }).click();
+  await page.getByRole('button', { name: 'From fixture' }).click();
+  const fixture = page.locator('.fixture-card').filter({ hasText: 'Full-Body Strength/Power Maintenance' });
+  await fixture.getByRole('button', { name: 'Start Session →' }).click();
+  await expect(page.getByRole('button', { name: 'Log repetition set' })).toBeVisible();
+  await page.clock.pauseAt(new Date(Date.now() + 1_000));
+
+  await page.getByRole('button', { name: 'Log repetition set' }).click();
+  await expect(page.getByText(/Set 1 logged/)).toBeVisible();
+  const undoSet1 = page.getByRole('button', { name: 'Undo set 1' });
+  await expect(undoSet1).toBeVisible();
+  expect((await undoSet1.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
+  await capture(page, scenario, 'logged-set-undo', [
+    'A short-lived Undo for the just-logged set is offered without blocking the next Log action.',
+  ]);
+
+  await page.getByRole('button', { name: 'Edit set 1' }).click();
+  await page.getByRole('spinbutton', { name: 'Repetitions for set 1' }).fill('0');
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(page.getByRole('alert').filter({ hasText: 'whole number of repetitions' })).toBeVisible();
+  await capture(page, scenario, 'set-correction-invalid', [
+    'An invalid correction stays open with an explanation and is never silently coerced.',
+  ]);
+
+  await page.getByRole('spinbutton', { name: 'Repetitions for set 1' }).fill('9');
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(page.getByText(/9 reps/)).toBeVisible();
+  await page.getByRole('button', { name: 'Undo set 1' }).click();
+  await expect(page.getByText('Set removed')).toBeVisible();
+  await capture(page, scenario, 'logged-set-undone', [
+    'Undoing the set removes that entry and offers a restore, without adding a compensating set.',
+  ]);
+
+  // log -> undo -> log: the new set must offer its own Undo, not the stale removed-set restore.
+  await expect(page.getByRole('button', { name: 'Log repetition set' })).toBeFocused();
+  await page.getByRole('button', { name: 'Log repetition set' }).click();
+  await expect(page.getByRole('button', { name: 'Undo set 1' })).toBeVisible();
+  await expect(page.getByText('Set removed')).toHaveCount(0);
+
+  // Once the window passes, the offer disappears on its own.
+  await page.clock.fastForward(11_000);
+  await expect(page.getByRole('button', { name: 'Undo set 1' })).toHaveCount(0);
 });
 
 test('captures saved custom-template preview and archived-library states', async ({ page }) => {

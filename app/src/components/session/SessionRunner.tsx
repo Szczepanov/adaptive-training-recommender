@@ -38,6 +38,9 @@ import fixture04 from '../../sessions/fixtures/04-friday-field-drills.json';
 import fixture05 from '../../sessions/fixtures/05-timed-trunk-and-tissue.json';
 import fixture06 from '../../sessions/fixtures/06-protocol-locked-sprint-jump-test.json';
 import fixture08 from '../../sessions/fixtures/08-recovery-spin-companion.json';
+import { runExclusive } from '../../utils/runExclusive';
+import { loggedSetLabel } from '../../sessions/setUndoState';
+import { LoggedSetUndoBanner } from './LoggedSetUndoBanner';
 
 const AVAILABLE_FIXTURES: SessionDefinition[] = [
     fixture01 as unknown as SessionDefinition,
@@ -195,6 +198,12 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
     const [correctingChoiceEntryId, setCorrectingChoiceEntryId] = useState<string | null>(null);
     const [editReps, setEditReps] = useState<string>('');
     const [editWeight, setEditWeight] = useState<string>('');
+    const [editError, setEditError] = useState<string | null>(null);
+    const [isFinishing, setIsFinishing] = useState(false);
+    /** Synchronous single-flight guard: state alone lets two same-frame taps both start a terminal write. */
+    const finishInFlightRef = useRef(false);
+    const saveEditInFlightRef = useRef(false);
+    const runnerRootRef = useRef<HTMLDivElement>(null);
     const [savedDefinitions, setSavedDefinitions] = useState<SessionDefinitionHeader[]>([]);
     const [savedDefinitionsError, setSavedDefinitionsError] = useState<string | null>(null);
     const [startingSavedDefinitionId, setStartingSavedDefinitionId] = useState<string | null>(null);
@@ -849,6 +858,7 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
     };
 
     const handleStartEdit = (entry: SessionEntry) => {
+        setEditError(null);
         setEditingEntryId(entry.id);
         if (entry.payload.kind === 'repetition') {
             setEditReps(String(entry.payload.reps));
@@ -856,14 +866,35 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
         }
     };
 
-    const handleSaveEdit = (entryId: string) => {
-        const r = parseInt(editReps, 10);
-        const w = editWeight.trim().length > 0 ? parseFloat(editWeight) : undefined;
-        if (!isNaN(r) && r > 0) {
-            runner.editEntry(entryId, { reps: r, weightKg: w });
+    const handleSaveEdit = (entryId: string) => runExclusive(saveEditInFlightRef, async () => {
+        const result = await runner.correctSet(entryId, { reps: editReps, weightKg: editWeight });
+        if (!result.ok) {
+            // Never silently coerce an invalid value or hide a rejected write: keep the editor open and say why.
+            setEditError(result.reason);
+            return;
         }
+        setEditError(null);
         setEditingEntryId(null);
+    });
+
+    /** The banner unmounts on Undo, so hand focus to the primary Log control (ui-ux 3.2). */
+    const moveFocusAfterUndo = () => {
+        const log = runnerRootRef.current?.querySelector<HTMLButtonElement>('.log-set-btn');
+        // The Log control can be disabled mid-submit; the step heading is always present and focusable.
+        (log && !log.disabled ? log : activeHeadingRef.current)?.focus();
     };
+    const handleUndoLoggedSet = () => {
+        void runner.undoLoggedSet().then(performed => { if (performed) moveFocusAfterUndo(); });
+    };
+    const handleRestoreRemoved = () => {
+        void runner.undo().then(performed => { if (performed) moveFocusAfterUndo(); });
+    };
+    const loggedUndoStepTitle = (() => {
+        const entry = runner.undoableLoggedEntry;
+        if (!entry) return undefined;
+        const step = (runner.definition?.blocks ?? []).flatMap(block => block.steps).find(candidate => candidate.id === entry.stepId);
+        return step ? stepName(step) : undefined;
+    })();
 
     const handleSaveCustomTemplate = async () => {
         if (!definition) return;
@@ -894,29 +925,34 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
         // (if any) still knows what just finished and what it separately unlocks.
         const finishedTitle = definition.title;
         const companions = definition.companionSessions;
-        try {
-            await action();
-            setShowCompletionSheet(false);
-            setShowAbandonConfirmation(false);
-            setCompletionError(null);
-            // A skipped/abandoned primary session still leaves an independently executable
-            // companion (e.g. the recovery spin) worth offering -- it is never gated on the
-            // primary's own completion.
-            if (companions && companions.length > 0) {
-                setCompanionPrompt({ finishedTitle, finishedAt: Date.now(), companions });
-            } else if (onClose && mode !== 'assessment') {
-                onClose();
+        await runExclusive(finishInFlightRef, async () => {
+            setIsFinishing(true);
+            try {
+                await action();
+                setShowCompletionSheet(false);
+                setShowAbandonConfirmation(false);
+                setCompletionError(null);
+                // A skipped/abandoned primary session still leaves an independently executable
+                // companion (e.g. the recovery spin) worth offering -- it is never gated on the
+                // primary's own completion.
+                if (companions && companions.length > 0) {
+                    setCompanionPrompt({ finishedTitle, finishedAt: Date.now(), companions });
+                } else if (onClose && mode !== 'assessment') {
+                    onClose();
+                }
+            } catch {
+                setCompletionError(errorMessage);
+            } finally {
+                setIsFinishing(false);
             }
-        } catch {
-            setCompletionError(errorMessage);
-        }
+        });
     };
 
     const inputProfile = activeStep ? resolveStepInputProfile(activeStep) : 'repetition_mass';
     const activeEffort = activeStep ? formatEffort(activeStep) : null;
 
     return (
-        <div className={`session-runner-container${mode === 'assessment' ? ' runner-mode-assessment' : ''}`}>
+        <div ref={runnerRootRef} className={`session-runner-container${mode === 'assessment' ? ' runner-mode-assessment' : ''}`}>
             {/* Top Bar */}
             <div className="session-top-bar">
                 <div className="session-header-left">
@@ -944,13 +980,23 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
             </div>
 
             {/* Undo Banner */}
-            {runner.canUndo && (
+            {runner.canUndo && !runner.undoableLoggedEntry && !showCompletionSheet && (
                 <div className="undo-toast-banner" role="alert">
                     <span>Set removed</span>
-                    <button type="button" className="undo-action-btn" onClick={runner.undo}>
+                    <button type="button" className="undo-action-btn" onClick={handleRestoreRemoved}>
                         Undo
                     </button>
                 </div>
+            )}
+
+            <div className="undo-live-region" role="status" aria-live="polite">{showCompletionSheet ? null : runner.restoreNotice}</div>
+
+            {runner.undoableLoggedEntry && !showCompletionSheet && (
+                <LoggedSetUndoBanner
+                    label={loggedSetLabel(runner.entries, runner.undoableLoggedEntry)}
+                    context={loggedUndoStepTitle}
+                    onUndo={handleUndoLoggedSet}
+                />
             )}
 
             {/* Active Step Panel */}
@@ -1100,6 +1146,8 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                                                     placeholder="kg"
                                                     className="edit-input"
                                                     aria-label={`Weight for set ${idx + 1} in kilograms`}
+                                                    aria-invalid={editError ? true : undefined}
+                                                    aria-describedby={editError ? 'set-edit-error' : undefined}
                                                 />
                                                 <input
                                                     type="number"
@@ -1109,13 +1157,16 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                                                     placeholder="reps"
                                                     className="edit-input"
                                                     aria-label={`Repetitions for set ${idx + 1}`}
+                                                    aria-invalid={editError ? true : undefined}
+                                                    aria-describedby={editError ? 'set-edit-error' : undefined}
                                                 />
-                                                <button type="button" className="save-edit-btn" onClick={() => handleSaveEdit(entry.id)}>
+                                                <button type="button" className="save-edit-btn" onClick={() => { void handleSaveEdit(entry.id); }}>
                                                     Save
                                                 </button>
-                                                <button type="button" className="cancel-edit-btn" onClick={() => setEditingEntryId(null)}>
+                                                <button type="button" className="cancel-edit-btn" onClick={() => { setEditError(null); setEditingEntryId(null); }}>
                                                     Cancel
                                                 </button>
+                                                {editError && <p id="set-edit-error" className="session-runner-error" role="alert">{editError}</p>}
                                             </div>
                                         ) : (
                                             <>
@@ -1241,7 +1292,7 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                     startedAt={runner.execution.startedAt}
                     totalSets={entries.length}
                     steps={stepSummaries}
-                    saving={false}
+                    saving={isFinishing}
                     openAbandonConfirmation={showAbandonConfirmation}
                     error={completionError}
                     hidden={showSaveTemplateModal}
