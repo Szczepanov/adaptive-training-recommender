@@ -10,6 +10,7 @@ from garmin_sync.identity_eligibility import (
     identity_bundle_key,
     is_bundle_baseline_eligible,
     resolve_bundle_identity_projection,
+    validate_automatic_identity_assessment,
     validate_identity_passport_current,
 )
 
@@ -306,3 +307,74 @@ def test_validate_identity_passport_current_valid() -> None:
 )
 def test_validate_identity_passport_current_invalid(invalid_value: object) -> None:
     assert validate_identity_passport_current(invalid_value) is False
+
+
+def test_validate_automatic_identity_assessment_valid() -> None:
+    assessment = _assessment()
+    assert validate_automatic_identity_assessment(assessment) is True
+
+    assessment_no_passport = _assessment(passportVersion=None)
+    assert validate_automatic_identity_assessment(assessment_no_passport) is True
+
+
+@pytest.mark.parametrize(
+    "invalid_value",
+    [
+        None,
+        "not_a_mapping",
+        123,
+        [],
+        # Missing required id
+        {**_assessment(), "id": ""},
+        # Missing required sourceNightKey
+        {**_assessment(), "sourceNightKey": None},
+        # Invalid automaticStatus
+        {**_assessment(), "automaticStatus": "INVALID_STATUS"},
+        # Invalid identityScore (NaN or string)
+        {**_assessment(), "identityScore": "0.42"},
+        # Invalid confidenceTier
+        {**_assessment(), "confidenceTier": "ULTRA_HIGH"},
+        # Invalid reasonCodes (not a list or invalid code inside)
+        {**_assessment(), "reasonCodes": "SESSION_TIMING_DISCORDANT"},
+        {**_assessment(), "reasonCodes": ["INVALID_REASON_CODE"]},
+        # Empty string passportVersion
+        {**_assessment(), "passportVersion": ""},
+        # Non-string passportVersion
+        {**_assessment(), "passportVersion": 123},
+        # Missing policyVersion
+        {**_assessment(), "policyVersion": ""},
+        # Missing featureSchemaVersion
+        {**_assessment(), "featureSchemaVersion": None},
+        # Missing assessedAt
+        {**_assessment(), "assessedAt": ""},
+        # Shared ref mismatched provider
+        {
+            **_assessment(),
+            "sharedBundleRef": {
+                **_assessment()["sharedBundleRef"],  # type: ignore[arg-type]
+                "provider": "mismatched_provider",
+            },
+        },
+        # Shared ref mismatched transport
+        {
+            **_assessment(),
+            "sharedBundleRef": {
+                **_assessment()["sharedBundleRef"],  # type: ignore[arg-type]
+                "transport": "mismatched_transport",
+            },
+        },
+        # Invalid sharedBundleRef (missing required field)
+        {
+            **_assessment(),
+            "sharedBundleRef": {
+                "id": "2026-08-27_shared_bed_health_aggregator",
+                "provider": "shared_bed",
+            },
+        },
+        # Invalid anchorBundleRefs (not a list or contains invalid ref)
+        {**_assessment(), "anchorBundleRefs": "not_a_list"},
+        {**_assessment(), "anchorBundleRefs": [{"invalid": "ref"}]},
+    ],
+)
+def test_validate_automatic_identity_assessment_invalid(invalid_value: object) -> None:
+    assert validate_automatic_identity_assessment(invalid_value) is False
