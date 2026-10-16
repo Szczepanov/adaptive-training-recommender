@@ -101,6 +101,16 @@ describe('ExternalPlanService', () => {
         });
     });
 
+    it('rejects an import whose session id exceeds the persisted identity cap, writing nothing (#945)', async () => {
+        const result = await new ExternalPlanService().import('u1', plan({
+            sessions: [{ ...plan().sessions[0], id: 's'.repeat(65) }],
+        }));
+
+        expect(result).toMatchObject({ status: 'INVALID', issues: [{ field: 'sessions[0].id', code: 'schema-validation-failed' }] });
+        expect(firestore.runTransaction).not.toHaveBeenCalled();
+        expect(firestore.committedDocs.size).toBe(0);
+    });
+
     it('writes revision, immutable activation and latest header atomically', async () => {
         const result = await new ExternalPlanService().import('u1', plan());
 

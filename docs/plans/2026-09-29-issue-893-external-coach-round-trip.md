@@ -24,7 +24,7 @@ secondary launch is available after primary completion, completing both bundle m
 two distinct executions and canonical occurrences.
 The former `test.fixme` regressions for V8 and V9 are fully active and passing in `external-plan-execution-states.pw.ts`.
 All 12 browser variant proof slots (V1–V12) and all acceptance criteria (C1–C6, R1–R9, E1–E7, P1–P5, S1–S9, B1–B6, A1–A5)
-are verified green. All four gaps H1–H4 are closed. Non-blocking follow-ups remain #940, #941, and #945.
+are verified green. All four gaps H1–H4 are closed. Follow-ups #940, #941 and #945 are resolved.
 Issue #893 is fully implemented and closed.
 
 ## 1. Goal

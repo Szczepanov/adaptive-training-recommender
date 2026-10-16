@@ -12,7 +12,7 @@ import {
     type AnyExternalPlanSession,
 } from '../sessions/externalPlanV2';
 import { EXTERNAL_PLAN_SCHEMA_V6 } from '../sessions/externalPlanV6';
-import { validateAnyExternalTrainingPlan } from '../sessions/externalPlanValidation';
+import { validateExternalPlanImport } from '../sessions/externalPlanValidation';
 import { SessionDefinitionPreview } from './session/SessionDefinitionPreview';
 import './ExternalPlanImport.css';
 
@@ -50,7 +50,7 @@ Top level: schema (literal "${EXTERNAL_PLAN_SCHEMA_V6}"), planId (lowercase slug
 
 restDays is a list of deliberate protected-rest directives. It may be empty. Each directive is exactly {"id": "<stable-unique-id>", "week": <1-based-week>, "day": "<lowercase-weekday>"}. Use the same monday/tuesday/wednesday/thursday/friday/saturday/sunday vocabulary as session placement. Do not put absolute dates in restDays: startDate is the plan's only authored absolute date, and the app resolves week/day to a calendar date. Do not use omission to mean protected rest — a date with neither a session nor a restDays directive is intentionally unplanned and may use the app's normal fallback. Never place a fixed session and a restDays directive on the same week/day.
 
-Do not compute calendar dates for sessions. Each session has id, title, priority (key/supporting/optional), and:
+Do not compute calendar dates for sessions. Each session has id (unique within the plan, at most 64 characters), title, priority (key/supporting/optional), and:
 
 - placement: week (1-based), optional preferredDay (lowercase weekday), flexibility (fixed/preferred/any_day), ifMissed (drop/reschedule_within_week/carry_forward).
 - gating: modality (cycling/running/strength/field/mobility/cross_training), intensity (recovery/easy/moderate/hard/max), durationMin, durationMax (minutes), environment (indoor/outdoor/either), equipment (subset of free_weights, cable_machine, treadmill, indoor_bike, pullup_bar).
@@ -72,8 +72,9 @@ Output as a downloadable JSON file.`;
  * Paste → validate → preview → confirm.
  *
  * Nothing is written until the athlete has seen what will be stored. Validation happens
- * against the same contract the engine reads back (`validateExternalTrainingPlan`), so a
- * plan that previews cleanly is a plan that will adjudicate — there is no second, laxer
+ * against the same contract the engine reads back, plus the import-only session-id bound
+ * (`validateExternalPlanImport`, #945), and `externalPlanService.import` re-checks it, so
+ * a plan that previews cleanly is a plan that will adjudicate — there is no second, laxer
  * import path.
  */
 export function ExternalPlanImport({ userId, onImported }: ExternalPlanImportProps) {
@@ -107,7 +108,7 @@ export function ExternalPlanImport({ userId, onImported }: ExternalPlanImportPro
             setPhase({ kind: 'invalid', issues: [{ field: 'document', message: `Not valid JSON: ${parsed.error}` }] });
             return;
         }
-        const result = validateAnyExternalTrainingPlan(parsed.value);
+        const result = validateExternalPlanImport(parsed.value);
         if (!result.isValid || !result.data) {
             setPhase({ kind: 'invalid', issues: result.errors.map(error => ({ field: error.field, message: error.message })) });
             return;

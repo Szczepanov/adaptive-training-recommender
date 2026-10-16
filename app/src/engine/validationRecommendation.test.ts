@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { validateRecommendation } from './validation';
+import { EXTERNAL_PLAN_SESSION_ID_MAX_CHARS, validateRecommendation } from './validation';
 
 function validV4Recommendation() {
     return {
@@ -328,5 +328,20 @@ describe('recommendation validation boundary', () => {
             },
         ];
         expect(validateRecommendation(raw).isValid).toBe(false);
+    });
+
+    it('bounds audit externalPlan.sessionId at the shared import cap (#945)', () => {
+        const withSessionId = (sessionId: string) => {
+            const base = validV4Recommendation();
+            return {
+                ...base,
+                recommendationAudit: {
+                    ...base.recommendationAudit,
+                    externalPlan: { planId: 'autumn-block', revision: 1, sessionId, contentHash: 'a'.repeat(64) },
+                },
+            };
+        };
+        expect(validateRecommendation(withSessionId('s'.repeat(EXTERNAL_PLAN_SESSION_ID_MAX_CHARS))).isValid).toBe(true);
+        expect(validateRecommendation(withSessionId('s'.repeat(EXTERNAL_PLAN_SESSION_ID_MAX_CHARS + 1))).isValid).toBe(false);
     });
 });

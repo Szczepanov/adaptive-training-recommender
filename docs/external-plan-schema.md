@@ -81,7 +81,7 @@ travel dates, and a travel change does not require re-importing the plan.
 | `revision` | yes | Integer ≥ 1. Must exceed the stored revision for the same `planId`. |
 | `startDate` | yes | `YYYY-MM-DD`, must be a Monday, Warsaw-local. Monday gives the imported artifact deterministic conventional training weeks; it is not the engine's rolling microcycle boundary. Placement/critique code translates between them. |
 | `weekCount` | yes | 1–26. Rejects the runaway-generation case and bounds the placement document. |
-| `sessions` | yes | 1–120 entries. |
+| `sessions` | yes | 1–120 entries. Each session `id` is unique within the plan and at most 64 characters: that is the persisted identity bound in the recommendation audit and `session_occurrences`. The cap is enforced at import (`validateExternalPlanImport`, #945); already-stored revisions with a longer id stay readable but cannot be adjudicated. |
 
 Rest days are **not** sessions. A week with four sessions leaves three days open, and the
 engine treats an unplanned day as available — it does not need to be told to rest.
@@ -92,7 +92,7 @@ engine treats an unplanned day as available — it does not need to be told to r
 
 ```jsonc
 {
-  "id": "w1-threshold",              // unique within the plan
+  "id": "w1-threshold",              // unique within the plan, at most 64 characters
   "title": "Threshold 3×12",
   "priority": "key",                 // key | supporting | optional
 
@@ -401,7 +401,7 @@ Paste this above the plan request when asking an AI to author or revise a plan.
 > `YYYY-MM-DD`), `weekCount`, optional `notes`, and `sessions`.
 >
 > Do not compute calendar dates for sessions and do not include rest days. Each session
-> has `id`, `title`, `priority` (`key`/`supporting`/`optional`), and:
+> has `id` (unique within the plan, at most 64 characters), `title`, `priority` (`key`/`supporting`/`optional`), and:
 >
 > - `placement`: `week` (1-based), optional `preferredDay` (lowercase weekday),
 >   `flexibility` (`fixed`/`preferred`/`any_day`), `ifMissed`
