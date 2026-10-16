@@ -14,7 +14,7 @@ export type PlannedExecutionStatus = {
     placement: 'as_authored' | 'intentionally_moved' | 'unknown';
     adjudication: 'as_authored' | 'app_dose_modified' | 'gate_replaced' | 'not_adjudicated' | 'unknown';
     athleteDisposition: 'accepted' | 'manually_replaced' | 'explicitly_skipped' | 'none' | 'unknown';
-    performance: 'completed' | 'partial_or_abandoned' | 'none_observed' | 'not_applicable' | 'unknown';
+    performance: 'completed' | 'in_progress' | 'partial_or_abandoned' | 'none_observed' | 'not_applicable' | 'unknown';
     occurrenceId?: string;
     performedOccurrenceId?: string;
     executionId?: string;
@@ -24,6 +24,11 @@ export type PlannedExecutionStatus = {
 
 export interface PlannedExecutionStatusInput {
     date: string;
+    /** #941: the caller's as-of calendar date (the brief's `targetDate`, which may
+     * be a historical `asOfDate`). Separates a session still running on the as-of
+     * day from one started earlier and never finished. Supplied by the caller so
+     * the projector stays clock-free and historical briefs stay deterministic. */
+    asOfDate: string;
     authored: PlannedExecutionStatus['authored'];
     authoredDate?: string;
     placementConfirmedMoved?: boolean;
@@ -186,6 +191,13 @@ export function projectPlannedExecutionStatus(input: PlannedExecutionStatusInput
                 : manuallyReplaced
                     ? (exactOccurrence?.state === 'missed' || exactOccurrence?.state === 'skipped' ? 'none_observed' : 'unknown')
                     : execution?.state === 'completed' ? performed ? 'completed' : 'unknown'
+                    // #941 (option 1): an `in_progress` execution on or after the
+                    // as-of day may still be going, so it is never reported as
+                    // partial/abandoned, whatever its entry count. Before that day
+                    // nothing auto-abandons stale executions, so one with entries
+                    // was started and never finished; with no entries it falls
+                    // through to the occurrence state below.
+                    : execution?.state === 'in_progress' && input.date >= input.asOfDate ? 'in_progress'
                     : execution?.state === 'abandoned' || (execution?.state === 'in_progress' && (executionRecord?.entries.length ?? 0) > 0) ? 'partial_or_abandoned'
                         : exactOccurrence?.state === 'missed' || exactOccurrence?.state === 'skipped'
                             ? 'none_observed' : 'unknown',

@@ -4,7 +4,7 @@ The Context Brief is the read-only handoff between the athlete record and an ext
 It is treated as a versioned API even though the wire format remains human/LLM-readable
 Markdown.
 
-This document describes the current v6 contract. Issue #894 established the versioned export
+This document describes the current v8 contract. Issue #894 established the versioned export
 contract through v3: purpose/window identity, source state and currency, canonical performed
 training, missingness semantics, purpose budgets, golden fixtures and service-built regression
 coverage. Issue #893 advanced that contract to v4 for the planning-only external-plan execution
@@ -12,6 +12,8 @@ round trip specified below. Issue #897 advances it to v5 with bounded measured p
 in planning exports. The final artifact remains Markdown; JSON is a versioned transport envelope
 around that same content. Morning D-1 adherence keeps its purpose-specific debrief path but consumes
 canonical performed-training facts; diagnostic preserves separately labelled raw provider provenance.
+Issue #929 advanced it to v7 (season roadmap). Issue #941 advances it to v8: the round-trip
+`performance` dimension gains `in progress` for an execution still running on the as-of day.
 
 ## Export boundary
 
@@ -66,7 +68,7 @@ create a second planning engine.
 
 ## Contract identity block
 
-Contract version `2026-10-context-brief-contract-v6` currently exposes one field per line so
+Contract version `2026-10-context-brief-contract-v8` currently exposes one field per line so
 each field is independently machine-readable:
 
 - `Contract version`;
@@ -160,7 +162,7 @@ Row vocabulary (underscores render as spaces):
 | placement | `as authored`, `intentionally moved`, `unknown` | Whether the session stayed on its authored date. An unconfirmed move renders `unknown`, never `missed`. |
 | adjudication | `as authored`, `app dose modified`, `gate replaced`, `not adjudicated`, `unknown` | What the app decided about the authored dose. `gate replaced` comes only from a saved `engineVerdict` `defer`/`skip` plus the canonical rest template, never from a mode fallback. `advisory` and verdict/template disagreement render `unknown`. |
 | athlete | `accepted`, `manually replaced`, `explicitly skipped`, `none`, `unknown` | What the athlete did. `manually replaced` is singleton-scoped (exactly one authored candidate that day) and never claims `completed`. Verified replacement attribution survives `superseded`; unrelated supersession gives `unknown`. |
-| performance | `completed`, `partial or abandoned`, `none observed`, `not applicable`, `unknown` | What was performed. `completed` requires the exact execution linked to the exact occurrence. Authored rest and unplanned work render `not applicable` with the observed work listed, never as completion. |
+| performance | `completed`, `in progress`, `partial or abandoned`, `none observed`, `not applicable`, `unknown` | What was performed. `completed` requires the exact execution linked to the exact occurrence. `in progress` is an execution still `in_progress` on or after the brief's `asOfDate`; one dated before `asOfDate` with entries renders `partial or abandoned` (#941). Authored rest and unplanned work render `not applicable` with the observed work listed, never as completion. |
 
 Further meaning rules:
 

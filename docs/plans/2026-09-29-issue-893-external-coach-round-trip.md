@@ -173,6 +173,7 @@ interface PlannedExecutionStatus {
 
   performance:
     | 'completed'
+    | 'in_progress' // #941: still in_progress on or after the as-of date
     | 'partial_or_abandoned'
     | 'none_observed'
     | 'not_applicable'
@@ -303,7 +304,7 @@ All 12 browser variant proof slots (V1–V12) are active and passing. V slots ar
 | E4 | A v1–v5 scale without exact reduced definition cannot accidentally launch the full dose. | [authoring] `does not allow scale to launch an older plan without an exact reduced definition`; [verdict E2E] `a scaled imported session shows the reduced version without launching the full structured dose` (desktop/mobile). | Located |
 | E5 | `skip`, `defer` and advisory event states cannot expose an executable Start path. | [verdict E2E] `a deferred imported session names its verdict and offers no Start path`; `an excluded imported session names its verdict and offers no Start path as written` (desktop/mobile); [authoring] `rejects target-event sessions because they are advisory fixed-activity inputs` | Located; verdict E2E passed; recommendation persistence resolved by [#953] |
 | E6 | Exact authored source and prescription hash are persisted with the execution. | [authoring] `creates and binds an external-plan occurrence when date is provided in options`; [round-trip E2E] `a validated v6 coach plan completes and Garmin enriches the same next-brief occurrence (V10)` | Located |
-| E7 | Partial/abandoned executions retain their actual evidence. | [execution] `retains occurrenceId + sessionSource + prescriptionHash when an external execution is abandoned`; [status] `labels an abandoned execution with entries partial_or_abandoned` | Located; V12 passed |
+| E7 | Partial/abandoned executions retain their actual evidence. | [execution] `retains occurrenceId + sessionSource + prescriptionHash when an external execution is abandoned`; [status] `labels an abandoned execution with entries partial_or_abandoned`; `reports an in_progress execution with entries before the as-of day as partial_or_abandoned` (#941) | Located; V12 passed |
 
 ## Canonical performed identity
 
@@ -323,7 +324,7 @@ All 12 browser variant proof slots (V1–V12) are active and passing. V slots ar
 | S2 | Performed-as-authored is distinguishable from app-dose-modified. | [status] `distinguishes scaled-completed from proceeded-as-authored by audited dose diff`; [state E2E] `V4 scale freezes the exact reduced definition and reports app dose modified` is active and asserts the exact next-brief row labelled app dose modified. | V4 active/passing on `main`; #964 hardens Start-to-snapshot proof |
 | S3 | Moved is distinguishable from missed. | [status] `pins intentionally_moved at the projector so refactors cannot break it silently`; `uses only an explicit missed occurrence as evidence of no performance` | Located; V3 passed |
 | S4 | Gate replacement is distinguishable from athlete replacement/non-adherence. | [status] `labels a defer-gated day gate_replaced with unknown performance when nothing executed`; `labels a skip-gated day gate_replaced`; `labels a single-session replace day manually_replaced with auditable evidence`; [state E2E] `V7 a gate replacement has exact labels and creates no external occurrence` is active and passing since [#953]; `V8 UI manual replacement names its exact replacement occurrence` is active and passing since [#951] (PR #998), asserting exact replacement occurrence and superseded state on the displaced occurrence. | Passed (V7, V8) |
-| S5 | Partial/abandoned is distinguishable from completed. | [status] `labels an abandoned execution with entries partial_or_abandoned`; `joins completed performance through exact occurrence and execution identity` | Located; V12 passed |
+| S5 | Partial/abandoned is distinguishable from completed. | [status] `labels an abandoned execution with entries partial_or_abandoned`; `joins completed performance through exact occurrence and execution identity`; `reports an in_progress execution with entries on the as-of day as in_progress` (#941) | Located; V12 passed |
 | S6 | Explicit skip/miss is distinguishable from missing/unavailable evidence. | [status] `labels an explicit skip explicitly_skipped with none_observed`; `uses only an explicit missed occurrence as evidence of no performance`; `does not infer a miss from a recent scheduled occurrence without execution` | Located |
 | S7 | Authored rest is distinguishable from no authored session. | [status] `keeps authored rest without work at not_applicable with no observed-work evidence`; `labels unplanned work not_applicable with observed-work evidence`; [active plan] `returns nothing for a day with nothing placed` | Located; V6 passed |
 | S8 | Authored rest + unexpected training is represented truthfully. | [status] `keeps authored rest distinct while reporting unexpected performed work` | Located; V6 passed |
