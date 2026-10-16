@@ -1,20 +1,22 @@
 import { useState } from 'react';
 import type { DataState } from '../engine/dataState';
-import type { ActivityPrescribedTarget, ActivityResponseTelemetry, ActivitySegmentSummary, NormalizedGarminActivity } from '../engine/models';
+import type { ActivityOverride, ActivityPrescribedTarget, ActivityResponseTelemetry, ActivitySegmentSummary, NormalizedGarminActivity } from '../engine/models';
 import { copyActivityJsonToClipboard } from '../utils/activityJsonExport';
 import {
   formatDuration,
-  formatLapDistance,
-  formatPace,
   formatRunningPower,
   formatTrainingEffectDescriptor,
   hasRunningDynamics,
   hrMeasurementDetail,
 } from './activityTelemetryFormat';
 import { ZoneBars } from './ZoneBars';
+import { ActivityLaps } from './ActivityLaps';
+import { ActivityDetailsEditor } from './ActivityDetailsEditor';
 import './ActivityTelemetry.css';
 
 interface ActivityTelemetryProps {
+  userId?: string;
+  activityOverrides?: Record<string, ActivityOverride>;
   state: DataState<NormalizedGarminActivity[]> | null;
   onReclassify?: (activityId: string) => void;
 }
@@ -108,7 +110,7 @@ function steadyHalfSummary(response: ActivityResponseTelemetry): string | null {
   return parts.length > 0 ? parts.join(' · ') : null;
 }
 
-export function ActivityTelemetry({ state, onReclassify }: ActivityTelemetryProps) {
+export function ActivityTelemetry({ state, onReclassify, userId, activityOverrides }: ActivityTelemetryProps) {
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   if (state === null) return <p className="activity-telemetry-state">Loading recent activities…</p>;
@@ -275,28 +277,9 @@ export function ActivityTelemetry({ state, onReclassify }: ActivityTelemetryProp
             {activity.hrInZones !== undefined && activity.hrInZones.length > 0 && (
               <ZoneBars title="Heart-rate zones" unit="bpm" zones={activity.hrInZones} />
             )}
-            {activity.laps !== undefined && activity.laps.length > 0 && (
-              <section className="activity-laps" aria-label="Lap summaries">
-                <h5>Lap summaries</h5>
-                <div className="activity-lap-table-wrap">
-                  <table>
-                    <thead><tr><th>Lap</th><th>Duration</th><th>Distance</th><th>Pace</th><th>Avg power</th><th>Avg HR</th></tr></thead>
-                    <tbody>
-                      {activity.laps.map((lap) => (
-                        <tr key={lap.lapIndex}>
-                          <td>{lap.lapIndex}</td>
-                          <td>{formatDuration(lap.durationSeconds)}</td>
-                          <td>{lap.distanceMeters !== undefined ? formatLapDistance(lap.distanceMeters) : '—'}</td>
-                          <td>{lap.averageSpeedMps !== undefined ? formatPace(lap.averageSpeedMps) : '—'}</td>
-                          <td>{lap.averagePowerWatts !== undefined ? `${Math.round(lap.averagePowerWatts)} W` : '—'}</td>
-                          <td>{lap.averageHrBpm !== undefined ? `${Math.round(lap.averageHrBpm)} bpm` : '—'}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </section>
-            )}
+            {userId && <ActivityDetailsEditor userId={userId} activityId={activity.activityId}
+              providerType={activity.type} legacyRpe={activityOverrides?.[activity.activityId]?.rpe} />}
+            <ActivityLaps activity={activity} userId={userId} />
             {activity.exerciseSets !== undefined && activity.exerciseSets.length > 0 && (
               <section className="activity-exercise-sets" aria-label="Exercise sets">
                 <h5>Strength sets &amp; reps</h5>

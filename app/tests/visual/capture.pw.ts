@@ -282,6 +282,65 @@ for (const scenario of VISUAL_SCENARIOS) {
   });
 }
 
+test('captures lap power editing and retry without losing entered watts', async ({ page }) => {
+  const scenario = VISUAL_SCENARIOS.find(item => item.id === 'data-activities-full')!;
+  await visitScenario(page, scenario);
+  const laps = page.getByRole('region', { name: 'Lap summaries', exact: true });
+  await laps.getByRole('button', { name: 'Edit lap 1 details', exact: true }).click();
+  const input = laps.getByRole('spinbutton', { name: 'Lap 1 average power (W)' });
+  await expect(input).toHaveValue('');
+  await input.fill('215');
+  await laps.getByRole('spinbutton', { name: 'Lap 1 RPE (1–10)' }).fill('7');
+  await capture(page, scenario, 'lap-power-edit');
+  await page.evaluate(async () => {
+    const modulePath = '/src/services/activityAnnotationService.ts';
+    const { activityAnnotationService } = await import(/* @vite-ignore */ modulePath);
+    const save = activityAnnotationService.saveLapAnnotation;
+    activityAnnotationService.saveLapAnnotation = async (...args: Parameters<typeof save>) => {
+      activityAnnotationService.saveLapAnnotation = save;
+      throw new Error(`Synthetic save failure for lap ${args[2]}`);
+    };
+  });
+  await laps.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(laps.getByRole('alert')).toContainText('Lap details were not saved');
+  await expect(input).toHaveValue('215');
+  await laps.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(laps).toContainText('215 W · manual');
+  await expect(laps).toContainText('RPE 7/10 · manual');
+  await expect(laps).toContainText('Garmin: 252 W');
+  await expect(laps.getByRole('button', { name: 'Edit lap 1 details', exact: true })).toBeFocused();
+  await capture(page, scenario, 'lap-power-saved');
+});
+
+test('captures optional activity effort and equipment without reclassification', async ({ page }) => {
+  const scenario = VISUAL_SCENARIOS.find(item => item.id === 'data-activities-full')!;
+  await visitScenario(page, scenario);
+  const details = page.getByRole('region', { name: 'Activity details', exact: true });
+  await details.getByRole('button', { name: 'Edit activity details' }).click();
+  const rpe = details.getByLabel('Whole-activity RPE (1–10, optional)');
+  await expect(rpe).toHaveValue('');
+  await rpe.fill('6.5');
+  await details.getByLabel('Actual equipment (optional)').fill('Airbike — Rogue/Assault');
+  await capture(page, scenario, 'activity-details-edit');
+  await page.evaluate(async () => {
+    const modulePath = '/src/services/activityAnnotationService.ts';
+    const { activityAnnotationService } = await import(/* @vite-ignore */ modulePath);
+    const save = activityAnnotationService.saveActivityAnnotation;
+    activityAnnotationService.saveActivityAnnotation = async () => {
+      activityAnnotationService.saveActivityAnnotation = save;
+      throw new Error('Synthetic activity annotation save failure');
+    };
+  });
+  await details.getByRole('button', { name: 'Save activity details' }).click();
+  await expect(details.getByRole('alert')).toContainText('Activity details were not saved');
+  await expect(rpe).toHaveValue('6.5');
+  await details.getByRole('button', { name: 'Save activity details' }).click();
+  await expect(details).toContainText('Whole-activity RPE: 6.5/10 · manual');
+  await expect(details).toContainText('Actual equipment: Airbike — Rogue/Assault');
+  await expect(details.getByRole('button', { name: 'Edit activity details' })).toBeFocused();
+  await capture(page, scenario, 'activity-details-saved');
+});
+
 test('captures navigation interaction states', async ({ page }) => {
   const scenario = VISUAL_SCENARIOS[0];
   await visitScenario(page, scenario);
