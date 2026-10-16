@@ -539,6 +539,7 @@ def test_normalize_activity_includes_lap_distance_and_pace_when_present():
                 lap_index=1,
                 duration_seconds=180.0,
                 average_hr_bpm=168.0,
+                max_hr_bpm=181.0,
                 distance_meters=800.0,
                 average_speed_mps=4.44,
             )
@@ -552,6 +553,7 @@ def test_normalize_activity_includes_lap_distance_and_pace_when_present():
             "lapIndex": 1,
             "durationSeconds": 180.0,
             "averageHrBpm": 168.0,
+            "maxHrBpm": 181.0,
             "distanceMeters": 800.0,
             "averageSpeedMps": 4.44,
         }

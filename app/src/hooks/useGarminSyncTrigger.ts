@@ -24,7 +24,8 @@ export interface UseGarminSyncTriggerResult {
  */
 export function useGarminSyncTrigger(
     userId: string | null | undefined,
-    onSynced?: () => void
+    onSynced?: () => void,
+    activityId?: string
 ): UseGarminSyncTriggerResult {
     const [request, setRequest] = useState<GarminSyncRequest | null>(null);
     const [triggering, setTriggering] = useState(false);
@@ -41,7 +42,7 @@ export function useGarminSyncTrigger(
     useEffect(() => {
         awaitingRequestedAtRef.current = null;
         setLocalError(null);
-    }, [userId]);
+    }, [userId, activityId]);
 
     useEffect(() => {
         if (!userId) {
@@ -97,7 +98,9 @@ export function useGarminSyncTrigger(
         setTriggering(true);
         setLocalError(null);
         try {
-            const requestedAt = await garminSyncRequestService.requestSync(userId);
+            const requestedAt = activityId
+                ? await garminSyncRequestService.requestActivityDetails(userId, activityId)
+                : await garminSyncRequestService.requestSync(userId);
             awaitingRequestedAtRef.current = requestedAt;
 
             // A request we join can finish between requestSync() resolving and the
@@ -125,13 +128,13 @@ export function useGarminSyncTrigger(
             return requestedAt;
         } catch (err) {
             console.error('Failed to request Garmin sync:', err);
-            setLocalError('Could not request sync — try again.');
+            setLocalError(activityId && err instanceof Error ? err.message : 'Could not request sync — try again.');
             awaitingRequestedAtRef.current = null;
             return null;
         } finally {
             setTriggering(false);
         }
-    }, [userId]);
+    }, [userId, activityId]);
 
     return { request, triggering, localError, isInFlight, isStale, triggerSync };
 }

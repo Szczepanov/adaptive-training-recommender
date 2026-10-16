@@ -8,7 +8,8 @@ export interface GarminSyncRequest {
      * transitions written by poll_manual_sync_requests's atomic claim -- the browser
      * (and Firestore rules) may only ever write 'pending'. */
     status: 'pending' | 'processing' | 'completed' | 'failed';
-    requestType?: 'sync' | 'initial_backfill' | 'backfill';
+    requestType?: 'sync' | 'initial_backfill' | 'backfill' | 'activity_details';
+    activityId?: string;
     days?: number;
     requestedAt: string;
     claimId?: string;
@@ -27,6 +28,32 @@ export interface GarminSyncRequest {
  * be in flight at a time.
  */
 export class GarminSyncRequestService {
+    async requestActivityDetails(userId: string, activityId: string): Promise<string> {
+        if (!userId || userId.includes('/') || !activityId.trim() || activityId.length > 128
+            || activityId.includes('/') || activityId === '.' || activityId === '..') {
+            throw new Error('Invalid activity details request.');
+        }
+        const ref = this.requestRef(userId);
+        const now = Date.now();
+        let requestedAt = new Date(now).toISOString();
+        await runTransaction(getDb(), async (transaction) => {
+            const snap = await transaction.get(ref);
+            const existing = snap.exists() ? (snap.data() as GarminSyncRequest) : null;
+            if (existing && isSyncRequestInFlight(existing) && !isSyncRequestStale(existing, now)) {
+                if (existing.requestType !== 'activity_details' || existing.activityId !== activityId) {
+                    throw new Error('Another Garmin request is already running. Wait for it to finish, then try again.');
+                }
+                requestedAt = existing.requestedAt;
+                return;
+            }
+            transaction.set(ref, {
+                userId, activityId, requestType: 'activity_details', status: 'pending',
+                requestedAt, completedAt: null, error: null,
+            } satisfies GarminSyncRequest);
+        });
+        return requestedAt;
+    }
+
     private requestRef(userId: string) {
         return doc(getDb(), `users/${userId}/garmin_sync_requests/latest`);
     }
@@ -60,6 +87,9 @@ export class GarminSyncRequestService {
             const snap = await transaction.get(ref);
             const existing = snap.exists() ? (snap.data() as GarminSyncRequest) : null;
             if (existing && isSyncRequestInFlight(existing) && !isSyncRequestStale(existing, now)) {
+                if (existing.requestType === 'activity_details') {
+                    throw new Error('An activity detail request is already running. Please wait for it to finish.');
+                }
                 requestedAt = existing.requestedAt;
                 return;
             }
@@ -84,6 +114,9 @@ export class GarminSyncRequestService {
             const snap = await transaction.get(ref);
             const existing = snap.exists() ? (snap.data() as GarminSyncRequest) : null;
             if (existing && isSyncRequestInFlight(existing) && !isSyncRequestStale(existing, now)) {
+                if (existing.requestType === 'activity_details') {
+                    throw new Error('An activity detail request is already running. Please wait for it to finish.');
+                }
                 requestedAt = existing.requestedAt;
                 return;
             }

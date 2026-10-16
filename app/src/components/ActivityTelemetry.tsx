@@ -11,11 +11,13 @@ import {
 } from './activityTelemetryFormat';
 import { ZoneBars } from './ZoneBars';
 import { ActivityLaps } from './ActivityLaps';
+import { ActivityDetailsFetchButton } from './ActivityDetailsFetchButton';
 import { ActivityDetailsEditor } from './ActivityDetailsEditor';
 import './ActivityTelemetry.css';
 
 interface ActivityTelemetryProps {
   userId?: string;
+  onDetailsFetched?: () => void;
   activityOverrides?: Record<string, ActivityOverride>;
   state: DataState<NormalizedGarminActivity[]> | null;
   onReclassify?: (activityId: string) => void;
@@ -110,7 +112,7 @@ function steadyHalfSummary(response: ActivityResponseTelemetry): string | null {
   return parts.length > 0 ? parts.join(' · ') : null;
 }
 
-export function ActivityTelemetry({ state, onReclassify, userId, activityOverrides }: ActivityTelemetryProps) {
+export function ActivityTelemetry({ state, onReclassify, userId, activityOverrides, onDetailsFetched }: ActivityTelemetryProps) {
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   if (state === null) return <p className="activity-telemetry-state">Loading recent activities…</p>;
@@ -279,6 +281,8 @@ export function ActivityTelemetry({ state, onReclassify, userId, activityOverrid
             )}
             {userId && <ActivityDetailsEditor userId={userId} activityId={activity.activityId}
               providerType={activity.type} legacyRpe={activityOverrides?.[activity.activityId]?.rpe} />}
+            {userId && <ActivityDetailsFetchButton key={`${userId}:${activity.activityId}`} userId={userId}
+              activityId={activity.activityId} hasLaps={!!activity.laps?.length} onFetched={onDetailsFetched} />}
             <ActivityLaps activity={activity} userId={userId} />
             {activity.exerciseSets !== undefined && activity.exerciseSets.length > 0 && (
               <section className="activity-exercise-sets" aria-label="Exercise sets">

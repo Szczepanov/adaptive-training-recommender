@@ -12,7 +12,11 @@ This guide containerizes the Python Garmin ingestion/sync package and deploys a 
   (`python -m garmin_sync push-pending-workouts-all`)
 * **`garmin-manual-sync`** -- polls every 15 minutes for a "Sync Now" request queued by the
   web app's clickable Garmin sync badge in the navigation bar (or the inline sync trigger)
-  and runs an immediate forced sync if one is pending
+  and runs an immediate forced sync if one is pending. The same queue also accepts
+  `requestType: 'activity_details'` with an `activityId` for an existing user activity:
+  the worker fetches that activity's stored date and enriches only its detail fields,
+  bypassing automatic sport/intensity eligibility. This requires the updated backend,
+  Firestore rules and frontend to be deployed together; it adds no scheduler or endpoint.
   (`python -m garmin_sync poll-manual-sync-all`)
 
 All four share one container image and one runtime service account. Run the sections below in order.

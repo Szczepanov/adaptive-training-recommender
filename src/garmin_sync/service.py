@@ -30,7 +30,7 @@ from .canonical import (
 from .config import Settings
 from .dates import get_date_range, get_date_string, local_today, n_days_ago, parse_date_string
 from .error_reporting import log_exception
-from .firestore_repository import FirestoreRecoveryRepository
+from .firestore_repository import ACTIVITY_DETAIL_FIELDS, FirestoreRecoveryRepository
 from .fit_activity import FitDeviceInventoryEntry
 from .fit_workout_identity import compute_fit_workout_identity
 from .garmin_client import GarminClientConfig, GarminClientWrapper
@@ -1909,6 +1909,93 @@ class GarminSyncService:
         self._finish_manual_sync_request(request_ref, claim_id, "completed", error=None)
         return True
 
+    def fetch_activity_details(self, activity_id: str) -> bool:
+        """Explicitly enrich one existing activity, independent of automatic eligibility."""
+        if (
+            not isinstance(activity_id, str)
+            or not activity_id.strip()
+            or len(activity_id) > 128
+            or "/" in activity_id
+            or activity_id in (".", "..")
+        ):
+            raise ValueError("Invalid activity identifier.")
+        stored = self.repository.get_activity(activity_id)
+        if (
+            not stored
+            or stored.get("activityId") is None
+            or str(stored["activityId"]) != activity_id
+        ):
+            raise ValueError("Activity is unavailable.")
+        target_iso = stored.get("date")
+        if (
+            not isinstance(target_iso, str)
+            or get_date_string(parse_date_string(target_iso)) != target_iso
+        ):
+            raise ValueError("Activity date is unavailable.")
+        provider = self._init_provider()
+        fetch_detail = getattr(provider, "fetch_activity_detail", None)
+        if not provider.capabilities.activity_details or not callable(fetch_detail):
+            raise ValueError("Activity details are unavailable.")
+        provider.clear_cache()
+        activities = provider.fetch_activities(target_iso, target_iso).canonical
+        activity = next(
+            (
+                item
+                for item in activities
+                if item.activity_id == activity_id and item.date == target_iso
+            ),
+            None,
+        )
+        if activity is None:
+            raise ValueError("Activity is unavailable from Garmin.")
+        result = fetch_detail(activity_id)
+        if result.canonical.activity_id != activity_id:
+            raise ValueError("Activity details are unavailable.")
+        normalized = normalize_activity(activity, "", result.canonical)
+        # Empty/absent endpoint results cannot erase previously available telemetry.
+        fields = {
+            key: value
+            for key, value in normalized.items()
+            if key in ACTIVITY_DETAIL_FIELDS and value is not None and value != [] and value != {}
+        }
+        if "laps" in fields:
+            existing_laps = {
+                lap["lapIndex"]: lap
+                for lap in stored.get("laps", [])
+                if isinstance(lap, dict) and "lapIndex" in lap
+            }
+            for lap in fields["laps"]:
+                existing_laps[lap["lapIndex"]] = {**existing_laps.get(lap["lapIndex"], {}), **lap}
+            fields["laps"] = list(existing_laps.values())
+        if fields:
+            self.repository.update_activity_details(activity_id, fields)
+        if getattr(result, "rate_limited", False):
+            raise GarminConnectTooManyRequestsError("Activity details were partially rate limited.")
+        if not fields:
+            raise ValueError("No activity details are available from Garmin.")
+        return True
+
+    def _run_activity_detail_request(
+        self, request_ref: Any, claim_id: str, activity_id: Any
+    ) -> bool:
+        error = None
+        try:
+            ok = self.fetch_activity_details(activity_id)
+        except GarminConnectTooManyRequestsError:
+            ok = False
+            error = "Garmin rate limited this request. Some details may have arrived; please retry later."
+        except Exception:
+            ok = False
+            error = "Activity details are unavailable from Garmin. Please try again later."
+            logger.warning("Manual activity detail request could not be completed.")
+        try:
+            self._finish_manual_sync_request(
+                request_ref, claim_id, "completed" if ok else "failed", error=error
+            )
+        except Exception:
+            logger.error("Manual activity detail request outcome could not be recorded.")
+        return ok
+
     def poll_manual_sync_requests(self) -> bool:
         """Poll for a manual "Sync Now" request queued by the web app
         (users/{uid}/garmin_sync_requests/latest) and, if one is pending, atomically
@@ -2003,6 +2090,10 @@ class GarminSyncService:
 
         if req_type == "initial_backfill":
             return self._run_initial_backfill_chunk(request_ref, claim_id, req_data)
+        if req_type == "activity_details":
+            return self._run_activity_detail_request(
+                request_ref, claim_id, req_data.get("activityId")
+            )
         if req_type == "backfill":
             logger.info(
                 f"Claimed manual sync request (type={req_type}, days={days}); running backfill..."

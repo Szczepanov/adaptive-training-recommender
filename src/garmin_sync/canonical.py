@@ -605,6 +605,7 @@ class CanonicalLapSummary:
     average_hr_bpm: float | None = None
     distance_meters: float | None = None
     average_speed_mps: float | None = None
+    max_hr_bpm: float | None = None
 
 
 @dataclass(frozen=True)

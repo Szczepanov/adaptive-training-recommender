@@ -44,6 +44,49 @@ function requestData(overrides: Partial<GarminSyncRequest> = {}): FakeSnapshot {
     };
 }
 
+describe('GarminSyncRequestService.requestActivityDetails', () => {
+    it.each(['requestSync', 'requestBackfill'] as const)('does not report a detail fetch as a successful %s', async method => {
+        mockTransactionGet.mockResolvedValue(requestData({ requestType: 'activity_details', activityId: 'elliptical-1' }));
+        await expect(new GarminSyncRequestService()[method]('user-1')).rejects.toThrow('activity detail request');
+        expect(mockTransactionSet).not.toHaveBeenCalled();
+    });
+    it('queues only the selected activity without widening a normal sync', async () => {
+        const service = new GarminSyncRequestService();
+        await service.requestActivityDetails('user-1', 'elliptical-1');
+        expect(mockTransactionSet).toHaveBeenCalledWith(
+            { path: 'users/user-1/garmin_sync_requests/latest' },
+            expect.objectContaining({ requestType: 'activity_details', activityId: 'elliptical-1', userId: 'user-1', status: 'pending' }),
+        );
+    });
+
+    it('joins the same live activity request and preserves its claim', async () => {
+        const requestedAt = new Date().toISOString();
+        mockTransactionGet.mockResolvedValue(requestData({ requestType: 'activity_details', activityId: 'elliptical-1', requestedAt, status: 'processing', claimId: 'worker' }));
+        await expect(new GarminSyncRequestService().requestActivityDetails('user-1', 'elliptical-1')).resolves.toBe(requestedAt);
+        expect(mockTransactionSet).not.toHaveBeenCalled();
+    });
+
+    it.each(['sync', 'backfill', 'activity_details'] as const)('does not join or replace another live %s request', async requestType => {
+        mockTransactionGet.mockResolvedValue(requestData({ requestType, activityId: 'other-activity' }));
+        await expect(new GarminSyncRequestService().requestActivityDetails('user-1', 'elliptical-1')).rejects.toThrow('Another Garmin request');
+        expect(mockTransactionSet).not.toHaveBeenCalled();
+    });
+
+    it('allows retrying a failed or stale request', async () => {
+        const service = new GarminSyncRequestService();
+        mockTransactionGet.mockResolvedValue(requestData({ status: 'failed' }));
+        await service.requestActivityDetails('user-1', 'elliptical-1');
+        mockTransactionGet.mockResolvedValue(requestData({ status: 'pending', requestedAt: new Date(Date.now() - STALE_AFTER_MS - 1000).toISOString() }));
+        await service.requestActivityDetails('user-1', 'elliptical-1');
+        expect(mockTransactionSet).toHaveBeenCalledTimes(2);
+    });
+
+    it.each(['', '../other', 'a/b', '.', '..'])('rejects invalid activity identifiers: %s', async id => {
+        await expect(new GarminSyncRequestService().requestActivityDetails('user-1', id)).rejects.toThrow('activity');
+        expect(mockTransactionSet).not.toHaveBeenCalled();
+    });
+});
+
 describe('GarminSyncRequestService.requestSync', () => {
     it('writes a pending request to users/{userId}/garmin_sync_requests/latest when none exists', async () => {
         const service = new GarminSyncRequestService();

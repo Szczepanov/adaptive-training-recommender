@@ -388,11 +388,20 @@
       function hasValidGarminSyncRequest(userId) {
         let data = request.resource.data;
         return hasOwnedUserId(userId)
-          && data.keys().hasOnly(['userId', 'status', 'requestedAt', 'completedAt', 'error', 'requestType', 'days'])
+          && data.keys().hasOnly(['userId', 'status', 'requestedAt', 'completedAt', 'error', 'requestType', 'days', 'activityId'])
           && data.keys().hasAll(['userId', 'status', 'requestedAt'])
           && data.status == 'pending'
           && data.requestedAt is string
-          && (!('requestType' in data) || data.requestType in ['sync', 'initial_backfill', 'backfill'])
+          && (!('requestType' in data) || data.requestType in ['sync', 'initial_backfill', 'backfill', 'activity_details'])
+          && ((('requestType' in data) && data.requestType == 'activity_details')
+            ? ('activityId' in data
+              && data.activityId is string
+              && data.activityId.trim().size() > 0
+              && data.activityId.size() <= 128
+              && !data.activityId.matches('.*/.*')
+              && !(data.activityId in ['.', '..'])
+              && exists(/databases/$(database)/documents/users/$(userId)/activities/$(data.activityId)))
+            : !('activityId' in data))
           && (!('days' in data) || (data.days is int && data.days >= 1 && data.days <= 365))
           && (!('completedAt' in data) || data.completedAt == null)
           && (!('error' in data) || data.error == null);

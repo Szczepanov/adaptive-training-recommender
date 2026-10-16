@@ -526,6 +526,9 @@ def _build_lap_summary(raw_lap: dict[str, Any]) -> CanonicalLapSummary | None:
         duration_seconds=duration,
         average_power_watts=_non_negative_number(raw_lap.get("averagePower")),
         average_hr_bpm=_non_negative_number(raw_lap.get("averageHR")),
+        max_hr_bpm=_non_negative_number(raw_lap.get("maxHR"))
+        if raw_lap.get("maxHR") is not None
+        else _non_negative_number(raw_lap.get("maxHeartRate")),
         distance_meters=_non_negative_number(raw_lap.get("distance")),
         average_speed_mps=_non_negative_number(raw_lap.get("averageSpeed")),
     )
@@ -1792,8 +1795,12 @@ class GarminProviderAdapter:
         # -- the whole reason running now qualifies for this fetch at all.
         empty_zones: list[dict[str, Any]] = []
         empty_splits: dict[str, Any] = {}
-        power_zones = _fetch_optional_endpoint(
-            lambda: self.client.get_activity_power_zones(activity_id), empty_zones
+        power_zones = (
+            _fetch_optional_endpoint(
+                lambda: self.client.get_activity_power_zones(activity_id), empty_zones
+            )
+            if type_str in _POWER_ACTIVITY_TYPES or _is_running_activity_type(type_str)
+            else None
         )
         hr_zones = _fetch_optional_endpoint(
             lambda: self.client.get_activity_hr_zones(activity_id), empty_zones

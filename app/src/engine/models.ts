@@ -1919,6 +1919,7 @@ export interface ActivityLapSummary {
     durationSeconds: number;
     averagePowerWatts?: number;
     averageHrBpm?: number;
+    maxHrBpm?: number;
     distanceMeters?: number;
     averageSpeedMps?: number;
 }

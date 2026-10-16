@@ -531,9 +531,9 @@ const fullTelemetryActivity: NormalizedGarminActivity = {
     { zoneNumber: 4, secondsInZone: 780, lowBoundary: 156 },
   ],
   laps: [
-    { lapIndex: 1, durationSeconds: 900, averagePowerWatts: 252, averageHrBpm: 149 },
+    { lapIndex: 1, durationSeconds: 900, averagePowerWatts: 252, averageHrBpm: 149, maxHrBpm: 171 },
     { lapIndex: 2, durationSeconds: 360, averagePowerWatts: 142, averageHrBpm: 132 },
-    { lapIndex: 3, durationSeconds: 900, averagePowerWatts: 248, averageHrBpm: 152 },
+    { lapIndex: 3, durationSeconds: 900, averagePowerWatts: 248, averageHrBpm: 152, maxHrBpm: 176 },
   ],
 };
 

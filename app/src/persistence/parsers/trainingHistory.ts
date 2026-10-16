@@ -75,11 +75,13 @@ function parseLaps(value: unknown): NormalizedGarminActivity['laps'] | undefined
         const durationSeconds = telemetryNumber(entry.durationSeconds);
         const averagePowerWatts = entry.averagePowerWatts === undefined ? undefined : telemetryNumber(entry.averagePowerWatts);
         const averageHrBpm = entry.averageHrBpm === undefined ? undefined : telemetryNumber(entry.averageHrBpm);
+        const maxHrBpm = entry.maxHrBpm === undefined ? undefined : telemetryNumber(entry.maxHrBpm);
         const distanceMeters = entry.distanceMeters === undefined ? undefined : telemetryNumber(entry.distanceMeters);
         const averageSpeedMps = entry.averageSpeedMps === undefined ? undefined : telemetryNumber(entry.averageSpeedMps);
         if (lapIndex === undefined || !Number.isInteger(lapIndex) || lapIndex < 1 || durationSeconds === undefined) return undefined;
         if (entry.averagePowerWatts !== undefined && averagePowerWatts === undefined) return undefined;
         if (entry.averageHrBpm !== undefined && averageHrBpm === undefined) return undefined;
+        if (entry.maxHrBpm !== undefined && maxHrBpm === undefined) return undefined;
         if (entry.distanceMeters !== undefined && distanceMeters === undefined) return undefined;
         if (entry.averageSpeedMps !== undefined && averageSpeedMps === undefined) return undefined;
         return {
@@ -87,6 +89,7 @@ function parseLaps(value: unknown): NormalizedGarminActivity['laps'] | undefined
             durationSeconds,
             ...(averagePowerWatts !== undefined ? { averagePowerWatts } : {}),
             ...(averageHrBpm !== undefined ? { averageHrBpm } : {}),
+            ...(maxHrBpm !== undefined ? { maxHrBpm } : {}),
             ...(distanceMeters !== undefined ? { distanceMeters } : {}),
             ...(averageSpeedMps !== undefined ? { averageSpeedMps } : {}),
         };
