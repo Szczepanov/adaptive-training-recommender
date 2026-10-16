@@ -7,6 +7,7 @@ import { planBlockService } from '../services/planBlockService';
 import { recommendationService } from '../services/recommendationService';
 import { recoverySnapshotService } from '../services/recoverySnapshotService';
 import { activityOverrideService } from '../services/activityOverrideService';
+import { activityAnnotationService, type ActivityAnnotation, type LapAnnotation } from '../services/activityAnnotationService';
 import { trainingSettingsService } from '../services/trainingSettingsService';
 import { trainingIntentProfileService } from '../services/trainingIntentProfileService';
 import { scheduleOverlayService } from '../services/scheduleOverlayService';
@@ -103,6 +104,18 @@ export function installVisualServices(fixture: VisualFixture): void {
   activityOverrideService.getOverridesSinceState = async () => ({ status: 'AVAILABLE', data: {}, revision: null });
   activityOverrideService.saveOverride = async () => true;
   activityOverrideService.deleteOverride = async () => true;
+  const lapAnnotations: Record<string, Record<string, LapAnnotation>> = {};
+  const activityAnnotations: Record<string, ActivityAnnotation> = {};
+  activityAnnotationService.getLapAnnotations = async (_userId, activityId) => ({ ...lapAnnotations[activityId] });
+  activityAnnotationService.saveLapAnnotation = async (_userId, activityId, lapIndex, values) => {
+    const annotations = lapAnnotations[activityId] ??= {};
+    if (values.averagePowerWatts === null && values.rpe === null) delete annotations[String(lapIndex)];
+    else annotations[String(lapIndex)] = { ...values, source: 'manual' };
+  };
+  activityAnnotationService.getActivityAnnotation = async (_userId, activityId) => activityAnnotations[activityId] ?? null;
+  activityAnnotationService.saveActivityAnnotation = async (_userId, activityId, values) => {
+    activityAnnotations[activityId] = { ...values, source: 'manual' };
+  };
   activityService.getActivitiesInRange = async () => ({
     status: 'AVAILABLE', data: fixture.activities, revision: null,
   });

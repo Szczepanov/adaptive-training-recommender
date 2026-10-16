@@ -46,6 +46,34 @@ applied. Once the athlete skips to the dashboard, Back and Forward restore the r
 visited without reapplying the startup check-in gate. The screen route is not an authorization
 boundary and does not expose user data.
 
+### Manual activity details and lap observations
+
+In Data → Activities, **Edit activity details** records optional whole-activity RPE
+(1–10) and actual equipment for any activity type, including activities without laps.
+The original Garmin type remains visible: an airbike recorded using Elliptical can be
+labelled "Airbike — Rogue/Assault" without changing its modality or intensity.
+
+Recorded laps expose **Edit watts / RPE** for independently recording optional average
+watts and lap RPE. Whole-activity effort is never inferred from lap effort. Unknown
+warm-up, rest and cooldown values stay missing, and clearing one field preserves the
+other. Provider duration, heart rate and original power remain intact and manual values
+are labelled separately. Both activity read models share `ActivityDetailsEditor` and
+`ActivityLaps`; failed reads offer Retry and failed saves preserve entries.
+
+`activityAnnotationService` stores user-scoped details in
+`users/{uid}/activity_annotations/{activityId}` and per-lap observations in its `laps`
+subcollection, separate from provider ingestion. Activity documents contain explicit
+nullable `rpe` and `equipmentLabel` fields with `source: 'manual'`; lap documents contain
+`lapIndex`, nullable `averagePowerWatts` and `rpe`, and the same source marker. Empty lap
+annotations are deleted. Existing RPE from `activity_overrides` is displayed only until
+the athlete saves a details record; explicit null prevents a cleared RPE from reappearing.
+The reclassification dialog preserves legacy RPE but no longer invents a default effort.
+
+These annotations are display-only: they do not change recommendation inputs, Garmin
+telemetry, or activity/context exports. No policy-version change or migration is required.
+Deploy the annotation security rules with the frontend. Rolling back the UI leaves
+annotations intact; the original provider records are never rewritten.
+
 ### Authentication and account isolation
 
 `AuthProvider` resolves `AuthPhase` (`CHECKING` / `LOGIN` / `AUTHENTICATED`) via Firebase

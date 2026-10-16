@@ -302,6 +302,42 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    match /users/{userId}/activity_annotations/{activityId} {
+      function hasValidAnnotationRpe(value) {
+        return value == null || (value is number && value >= 1 && value <= 10);
+      }
+
+      allow read, delete: if isOwner(userId);
+      allow create, update: if isOwner(userId)
+        && request.resource.data.keys().hasOnly(['rpe', 'equipmentLabel', 'source'])
+        && request.resource.data.keys().hasAll(['rpe', 'equipmentLabel', 'source'])
+        && hasValidAnnotationRpe(request.resource.data.rpe)
+        && (request.resource.data.equipmentLabel == null
+          || (request.resource.data.equipmentLabel is string
+            && request.resource.data.equipmentLabel.size() >= 1
+            && request.resource.data.equipmentLabel.size() <= 100
+            && request.resource.data.equipmentLabel.trim() == request.resource.data.equipmentLabel))
+        && request.resource.data.source == 'manual';
+
+      match /laps/{lapId} {
+        allow read, delete: if isOwner(userId);
+        allow create, update: if isOwner(userId)
+          && request.resource.data.keys().hasOnly(['lapIndex', 'averagePowerWatts', 'rpe', 'source'])
+          && request.resource.data.keys().hasAll(['lapIndex', 'averagePowerWatts', 'rpe', 'source'])
+          && request.resource.data.lapIndex is int
+          && request.resource.data.lapIndex >= 0
+          && request.resource.data.lapIndex <= 9007199254740991
+          && string(request.resource.data.lapIndex) == lapId
+          && (request.resource.data.averagePowerWatts == null
+            || (request.resource.data.averagePowerWatts is number
+              && request.resource.data.averagePowerWatts >= 0
+              && request.resource.data.averagePowerWatts <= 10000))
+          && hasValidAnnotationRpe(request.resource.data.rpe)
+          && (request.resource.data.averagePowerWatts != null || request.resource.data.rpe != null)
+          && request.resource.data.source == 'manual';
+      }
+    }
+
     match /users/{userId}/activity_overrides/{activityId} {
       function hasValidActivityOverride(userId, activityId) {
         let data = request.resource.data;

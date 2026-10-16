@@ -61,7 +61,6 @@ export const ActivityReclassificationModal = memo(function ActivityReclassificat
     const [selectedActivityId, setSelectedActivityId] = useState<string>('');
     const [modality, setModality] = useState<SessionTemplate['modality']>('Running');
     const [intensity, setIntensity] = useState<'easy' | 'moderate' | 'hard'>('moderate');
-    const [rpe, setRpe] = useState<number>(6);
     const [stimulusFocus, setStimulusFocus] = useState<keyof WorkoutStimulusProfile | ''>('');
     const [notes, setNotes] = useState('');
     const [saving, setSaving] = useState(false);
@@ -82,7 +81,6 @@ export const ActivityReclassificationModal = memo(function ActivityReclassificat
         if (override) {
             setModality(override.overriddenModality === 'Unknown' ? inferredModality(activity) : override.overriddenModality);
             setIntensity(override.overriddenIntensity === 'unknown' ? inferredIntensity(activity) : override.overriddenIntensity);
-            setRpe(override.rpe ?? 6);
             setStimulusFocus(override.stimulusFocus ?? '');
             setNotes(override.notes ?? '');
             return;
@@ -90,7 +88,6 @@ export const ActivityReclassificationModal = memo(function ActivityReclassificat
 
         setModality(inferredModality(activity));
         setIntensity(inferredIntensity(activity));
-        setRpe(6);
         setStimulusFocus('');
         setNotes('');
     };
@@ -130,7 +127,7 @@ export const ActivityReclassificationModal = memo(function ActivityReclassificat
                 originalIntensityTag: selectedActivity.intensityTag,
                 overriddenModality: modality,
                 overriddenIntensity: intensity,
-                rpe,
+                rpe: currentOverride?.rpe ?? null,
                 stimulusFocus: stimulusFocus || null,
                 notes: notes.trim() || null,
                 createdAt: currentOverride?.createdAt ?? new Date().toISOString(),
@@ -244,13 +241,7 @@ export const ActivityReclassificationModal = memo(function ActivityReclassificat
                         </div>
                     </div>
 
-                    <div className="form-group">
-                        <div className="slider-label-row">
-                            <label htmlFor="rpe-slider">Perceived Exertion (RPE):</label>
-                            <span className="rpe-value-badge">{rpe}/10</span>
-                        </div>
-                        <input id="rpe-slider" type="range" min="1" max="10" value={rpe} onChange={(e) => setRpe(Number(e.target.value))} className="range-input" />
-                    </div>
+                    <p>Record optional whole-activity RPE under Activity details in the Activities view.</p>
 
                     <div className="form-group">
                         <label htmlFor="stimulus-select">Primary Adaptation Focus (Optional):</label>

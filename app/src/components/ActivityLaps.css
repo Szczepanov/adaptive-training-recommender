@@ -1,0 +1,41 @@
+.lap-power-help { max-width: 55ch; }
+.lap-power-edit, .lap-power-provider { display: block; }
+.activity-laps button, .lap-power-editor input, .activity-details button, .activity-details input {
+  min-height: 44px;
+  background: var(--bg-surface-elevated, #27272a);
+  color: var(--text-main, #f4f4f5);
+  border: 1px solid var(--border-subtle, #3f3f46);
+  border-radius: 6px;
+  padding: 6px 10px;
+}
+.activity-laps button { min-width: 44px; }
+.activity-details { margin-top: 1rem; }
+.activity-details-form { display: grid; gap: 10px; max-width: 400px; margin-top: 10px; }
+.activity-details-form label { display: grid; gap: 4px; }
+.activity-details-form input { width: 100%; box-sizing: border-box; font: inherit; }
+.activity-details-form .lap-power-actions { flex-wrap: wrap; }
+.activity-laps button:disabled, .activity-details button:disabled { opacity: 0.6; }
+.lap-power-edit { margin-top: 4px; }
+.lap-power-editor { display: grid; gap: 8px; min-width: 180px; max-width: 240px; }
+.lap-power-editor label { display: grid; gap: 4px; }
+.lap-power-editor input { width: 100%; box-sizing: border-box; font: inherit; }
+.lap-power-editor > span, .lap-power-provider { font-size: 0.85em; }
+.lap-power-actions { display: flex; gap: 8px; }
+.activity-laps button:focus-visible, .lap-power-editor input:focus-visible, .activity-details button:focus-visible, .activity-details input:focus-visible { outline: 2px solid var(--accent-primary, #60a5fa); outline-offset: 2px; }
+@media (max-width: 600px) {
+  .activity-laps thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .activity-laps table, .activity-laps tbody { display: block; }
+  .activity-laps tr { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; padding: 12px 0; border-bottom: 1px solid var(--border-color); }
+  .activity-laps .activity-lap-table-wrap th, .activity-laps .activity-lap-table-wrap td { display: block; padding: 0; border: 0; text-align: left; overflow-wrap: anywhere; }
+  .activity-laps th, .activity-laps td:nth-child(5) { grid-column: 1 / -1; }
+  .activity-laps th::before { content: 'Lap '; }
+  .activity-laps td::before { content: attr(data-label); display: block; font-size: 0.85em; font-weight: 600; margin-bottom: 4px; }
+  .lap-power-editor { min-width: 0; max-width: none; }
+  .lap-power-editor input, .activity-details-form input { font-size: 16px; }
+}

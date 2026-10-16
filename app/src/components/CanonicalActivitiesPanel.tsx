@@ -5,9 +5,12 @@
  */
 import type { CompletedWorkoutView, ReconciliationSweepStatus } from '../training-occurrence/completedWorkoutView';
 import { CompletedWorkoutList } from './CompletedWorkoutList';
+import type { ActivityOverride } from '../engine/models';
 import { WorkoutWindowProjectionFailed, type DiagnosticsWindow } from './WorkoutSourceDiagnostics';
 
 interface CanonicalActivitiesPanelProps {
+  userId?: string;
+  activityOverrides?: Record<string, ActivityOverride>;
   /** `null` while loading (or when the cached window belongs to another user/date). */
   workouts: CompletedWorkoutView[] | null;
   /** The canonical read rejected: `workouts` is `null` but this is a failure, not loading. */
@@ -20,10 +23,12 @@ interface CanonicalActivitiesPanelProps {
   onLinkSources?: (structuredOccurrenceId: string, providerOccurrenceId: string) => void;
 }
 
-export function CanonicalActivitiesPanel({ workouts, failed, range, reconciliationSweep, onReclassify, onUnlinkSource, onLinkSources }: CanonicalActivitiesPanelProps) {
+export function CanonicalActivitiesPanel({ workouts, failed, range, reconciliationSweep, onReclassify, onUnlinkSource, onLinkSources, userId, activityOverrides }: CanonicalActivitiesPanelProps) {
   if (failed) return <WorkoutWindowProjectionFailed range={range} sweep={reconciliationSweep} />;
   return (
     <CompletedWorkoutList
+      userId={userId}
+      activityOverrides={activityOverrides}
       workouts={workouts}
       exportWindow={range}
       windowSweep={reconciliationSweep}

@@ -11,6 +11,14 @@ const base: NormalizedGarminActivity = {
 };
 
 describe('ActivityTelemetry', () => {
+  it('offers separate activity details for any sport even without recorded laps', () => {
+    for (const type of ['elliptical', 'running', 'strength_training']) {
+      const html = renderToStaticMarkup(<ActivityTelemetry userId="athlete" state={{ status: 'AVAILABLE', revision: null, data: [{ ...base, type }] }} />);
+      expect(html).toContain('aria-label="Activity details"');
+      expect(html).toContain(`Recorded by Garmin as: ${type.replaceAll('_', ' ')}`);
+      expect(html).not.toContain('Lap summaries');
+    }
+  });
   it('renders full telemetry', () => {
     const html = renderToStaticMarkup(<ActivityTelemetry state={{ status: 'AVAILABLE', revision: null, data: [{
       ...base,

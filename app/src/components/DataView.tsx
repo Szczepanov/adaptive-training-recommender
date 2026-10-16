@@ -1141,6 +1141,8 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery', onNav
             </div>
             {activitiesReadModelPolicy === 'canonical-v1' ? (
               <CanonicalActivitiesPanel
+                userId={userId}
+                activityOverrides={activityOverrides}
                 workouts={canonicalWindowIsCurrent ? canonicalWorkoutWindow.workouts : null}
                 failed={canonicalWindowIsCurrent && !!canonicalWorkoutWindow.error}
                 reconciliationSweep={canonicalWindowIsCurrent ? canonicalWorkoutWindow.reconciliationSweep : undefined}
@@ -1159,6 +1161,8 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery', onNav
               />
             ) : (
               <ActivityTelemetry
+                userId={userId}
+                activityOverrides={activityOverrides}
                 state={activityWindow && activityWindow.userId === userId && activityWindow.asOfDate === briefDate ? activityWindow.state : null}
                 onReclassify={() => setReclassifyModalOpen(true)}
               />
