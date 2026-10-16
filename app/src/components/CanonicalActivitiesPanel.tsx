@@ -10,6 +10,7 @@ import { WorkoutWindowProjectionFailed, type DiagnosticsWindow } from './Workout
 
 interface CanonicalActivitiesPanelProps {
   userId?: string;
+  onDetailsFetched?: () => void;
   activityOverrides?: Record<string, ActivityOverride>;
   /** `null` while loading (or when the cached window belongs to another user/date). */
   workouts: CompletedWorkoutView[] | null;
@@ -23,11 +24,12 @@ interface CanonicalActivitiesPanelProps {
   onLinkSources?: (structuredOccurrenceId: string, providerOccurrenceId: string) => void;
 }
 
-export function CanonicalActivitiesPanel({ workouts, failed, range, reconciliationSweep, onReclassify, onUnlinkSource, onLinkSources, userId, activityOverrides }: CanonicalActivitiesPanelProps) {
+export function CanonicalActivitiesPanel({ workouts, failed, range, reconciliationSweep, onReclassify, onUnlinkSource, onLinkSources, userId, activityOverrides, onDetailsFetched }: CanonicalActivitiesPanelProps) {
   if (failed) return <WorkoutWindowProjectionFailed range={range} sweep={reconciliationSweep} />;
   return (
     <CompletedWorkoutList
       userId={userId}
+      onDetailsFetched={onDetailsFetched}
       activityOverrides={activityOverrides}
       workouts={workouts}
       exportWindow={range}

@@ -1204,3 +1204,57 @@ def test_extract_exercise_sets():
     assert sets[0].duration_seconds == 35.0
     assert sets[0].rest_duration_seconds == 90.0
     assert sets[1].weight_kg == 70.0
+
+
+@pytest.mark.parametrize("field", ["maxHR", "maxHeartRate"])
+@pytest.mark.parametrize(
+    "value, expected",
+    [
+        (177, 177),
+        (0, 0),
+        (None, None),
+        ("177", None),
+        (True, None),
+        (-1, None),
+        (float("nan"), None),
+        (float("inf"), None),
+    ],
+)
+def test_lap_max_hr_aliases_and_validation(field, value, expected):
+    detail = canonicalize_activity_detail(
+        "synthetic",
+        {},
+        None,
+        None,
+        {"lapDTOs": [{"lapIndex": 1, "duration": 60, field: value}]},
+    )
+    assert detail.laps and detail.laps[0].max_hr_bpm == expected
+
+
+def test_explicit_elliptical_detail_keeps_hr_and_laps_without_power_request():
+    client = MagicMock()
+    client.get_activities_window.return_value = [
+        {
+            "activityId": 42,
+            "startTimeLocal": "2026-10-15T08:00:00",
+            "duration": 600,
+            "activityType": {"typeKey": "elliptical"},
+        }
+    ]
+    client.get_activity_hr_zones.return_value = [{"zoneNumber": 2, "secsInZone": 300}]
+    client.get_activity_splits.return_value = {
+        "lapDTOs": [
+            {"lapIndex": 1, "duration": 300, "averageHR": 145, "maxHR": 170},
+            {"lapIndex": 2, "duration": 300},
+        ]
+    }
+    adapter = GarminProviderAdapter(client)
+    adapter.fetch_activities("2026-10-15", "2026-10-15")
+    result = adapter.fetch_activity_detail("42")
+    client.get_activity_power_zones.assert_not_called()
+    client.get_activity_hr_zones.assert_called_once_with("42")
+    client.get_activity_splits.assert_called_once_with("42")
+    assert result.canonical.power_zones is None
+    assert result.canonical.hr_zones
+    assert result.canonical.laps and result.canonical.laps[0].max_hr_bpm == 170
+    assert result.canonical.laps[1].max_hr_bpm is None

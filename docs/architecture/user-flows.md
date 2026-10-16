@@ -48,6 +48,15 @@ boundary and does not expose user data.
 
 ### Manual activity details and lap observations
 
+Every Garmin activity in Data → Activities offers **Fetch activity details** (or
+**Refresh activity details** once laps exist), including Elliptical and aerobic-base
+activities excluded by automatic enrichment. It queues a targeted request for the
+background Garmin poller, normally checked within 15 minutes. Queued, processing,
+failed and delayed states remain visible, with retry after failure or delay. Completion
+reloads the activity window; Garmin may return no laps. Imported laps show average and
+maximum HR separately, with missing values left blank. The request preserves Garmin's
+classification, summary, sync provenance and separately stored manual annotations.
+
 In Data → Activities, **Edit activity details** records optional whole-activity RPE
 (1–10) and actual equipment for any activity type, including activities without laps.
 The original Garmin type remains visible: an airbike recorded using Elliptical can be

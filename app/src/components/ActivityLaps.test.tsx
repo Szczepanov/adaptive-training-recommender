@@ -8,7 +8,7 @@ vi.mock('../services/activityAnnotationService', () => ({
 
 describe('ActivityLaps', () => {
   const activity = { activityId: 'airbike-1', laps: [
-    { lapIndex: 1, durationSeconds: 600, averageHrBpm: 150 },
+    { lapIndex: 1, durationSeconds: 600, averageHrBpm: 150, maxHrBpm: 177 },
     { lapIndex: 2, durationSeconds: 120, averagePowerWatts: 100, averageHrBpm: 125 },
   ] };
 
@@ -16,6 +16,9 @@ describe('ActivityLaps', () => {
     const html = renderToStaticMarkup(<ActivityLaps activity={activity} />);
     expect(html).toContain('Lap summaries');
     expect(html).toContain('150 bpm');
+    expect(html).toContain('<th scope="col">Avg HR</th><th scope="col">Max HR</th>');
+    expect(html).toContain('<td data-label="Max HR">177 bpm</td>');
+    expect(html).toContain('<td data-label="Max HR">—</td>');
     expect(html).toContain('100 W');
     expect(html).not.toContain('Edit lap');
   });

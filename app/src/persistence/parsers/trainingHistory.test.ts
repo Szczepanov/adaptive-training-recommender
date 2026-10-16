@@ -172,7 +172,7 @@ describe('training-history persistence parsers', () => {
             ...activity,
             type: 'running',
             laps: [
-                { lapIndex: 1, durationSeconds: 180, averageHrBpm: 168, distanceMeters: 800, averageSpeedMps: 4.44 },
+                { lapIndex: 1, durationSeconds: 180, averageHrBpm: 168, maxHrBpm: 181, distanceMeters: 800, averageSpeedMps: 4.44 },
                 { lapIndex: 2, durationSeconds: 120, averageHrBpm: 140 },
             ],
         }, 'users/u1/activities/a-1', 'a-1');
@@ -181,13 +181,23 @@ describe('training-history persistence parsers', () => {
             status: 'AVAILABLE',
             data: {
                 laps: [
-                    { lapIndex: 1, durationSeconds: 180, distanceMeters: 800, averageSpeedMps: 4.44 },
+                    { lapIndex: 1, durationSeconds: 180, maxHrBpm: 181, distanceMeters: 800, averageSpeedMps: 4.44 },
                     { lapIndex: 2, durationSeconds: 120 },
                 ],
             },
         });
         if (parsed.status !== 'AVAILABLE') throw new Error('expected available activity');
         expect(parsed.data.laps?.[1].distanceMeters).toBeUndefined();
+        expect(parsed.data.laps?.[1].maxHrBpm).toBeUndefined();
+    });
+
+    it.each(['181', -1, NaN, Infinity, true, null])('drops malformed lap maximum HR %s', maxHrBpm => {
+        const parsed = parseNormalizedGarminActivity({
+            ...activity, laps: [{ lapIndex: 1, durationSeconds: 60, maxHrBpm }],
+        }, 'users/u1/activities/a-1', 'a-1');
+        expect(parsed.status).toBe('AVAILABLE');
+        if (parsed.status !== 'AVAILABLE') throw new Error('expected available activity');
+        expect(parsed.data.laps).toBeUndefined();
     });
 
     it('drops a lap with a corrupt distance/pace field while keeping the rest of the activity', () => {

@@ -97,7 +97,7 @@ function LapTable({ activity, userId }: ActivityLapsProps) {
     {savedLap !== null && <p role="status">Details saved for lap {savedLap}.</p>}
     <div className="activity-lap-table-wrap">
       <table>
-        <thead><tr><th scope="col">Lap</th><th scope="col">Duration</th><th scope="col">Distance</th><th scope="col">Pace</th><th scope="col">Avg power / RPE</th><th scope="col">Avg HR</th></tr></thead>
+        <thead><tr><th scope="col">Lap</th><th scope="col">Duration</th><th scope="col">Distance</th><th scope="col">Pace</th><th scope="col">Avg power / RPE</th><th scope="col">Avg HR</th><th scope="col">Max HR</th></tr></thead>
         <tbody>{activity.laps?.map(lap => {
           const manual = annotations?.[String(lap.lapIndex)]?.averagePowerWatts ?? undefined;
           const rpe = annotations?.[String(lap.lapIndex)]?.rpe ?? null;
@@ -130,6 +130,7 @@ function LapTable({ activity, userId }: ActivityLapsProps) {
               </>}
             </td>
             <td data-label="Avg HR">{lap.averageHrBpm !== undefined ? `${Math.round(lap.averageHrBpm)} bpm` : '—'}</td>
+            <td data-label="Max HR">{lap.maxHrBpm !== undefined ? `${Math.round(lap.maxHrBpm)} bpm` : '—'}</td>
           </tr>;
         })}</tbody>
       </table>

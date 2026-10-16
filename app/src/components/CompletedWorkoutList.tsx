@@ -23,11 +23,13 @@ import {
 import { DiagnosticsExportButton, WorkoutSourceDiagnostics, type DiagnosticsWindow } from './WorkoutSourceDiagnostics';
 import { ZoneBars } from './ZoneBars';
 import { ActivityLaps } from './ActivityLaps';
+import { ActivityDetailsFetchButton } from './ActivityDetailsFetchButton';
 import { ActivityDetailsEditor } from './ActivityDetailsEditor';
 import './ActivityTelemetry.css';
 
 interface CompletedWorkoutListProps {
   userId?: string;
+  onDetailsFetched?: () => void;
   activityOverrides?: Record<string, ActivityOverride>;
   workouts: CompletedWorkoutView[] | null;
   /** The displayed date window; when given, the list offers the bounded source-diagnostics
@@ -222,7 +224,7 @@ function GarminExerciseSetsTable({ sets }: { sets: NonNullable<NonNullable<Compl
   );
 }
 
-function GarminEnrichment({ workout, userId, legacyRpe }: { workout: CompletedWorkoutView; userId?: string; legacyRpe?: number | null }) {
+function GarminEnrichment({ workout, userId, legacyRpe, onDetailsFetched }: { workout: CompletedWorkoutView; userId?: string; legacyRpe?: number | null; onDetailsFetched?: () => void }) {
   const activity = workout.garmin;
   if (!activity) return null;
 
@@ -235,6 +237,8 @@ function GarminEnrichment({ workout, userId, legacyRpe }: { workout: CompletedWo
     <>
       <HeartRateSummary activity={activity} />
       {userId && <ActivityDetailsEditor userId={userId} activityId={activity.activityId} providerType={activity.type} legacyRpe={legacyRpe} />}
+      {userId && <ActivityDetailsFetchButton key={`${userId}:${activity.activityId}`} userId={userId}
+        activityId={activity.activityId} hasLaps={!!activity.laps?.length} onFetched={onDetailsFetched} />}
       <ActivityLaps activity={activity} userId={userId} />
       {(activity.trainingEffectAerobic != null || trainingEffectDescriptor) && (
         <p className="activity-te-metrics" style={{ fontSize: '0.8rem', color: 'var(--text-muted, #71717a)' }}>
@@ -335,7 +339,7 @@ function ProvenanceDisclosure({ workout, onUnlinkSource }: { workout: CompletedW
   );
 }
 
-export function CompletedWorkoutList({ workouts, exportWindow, windowSweep, onReclassify, onUnlinkSource, onLinkSources, userId, activityOverrides }: CompletedWorkoutListProps) {
+export function CompletedWorkoutList({ workouts, exportWindow, windowSweep, onReclassify, onUnlinkSource, onLinkSources, userId, activityOverrides, onDetailsFetched }: CompletedWorkoutListProps) {
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   if (workouts === null) return <p className="activity-telemetry-state">Loading recent activities…</p>;
@@ -413,7 +417,7 @@ export function CompletedWorkoutList({ workouts, exportWindow, windowSweep, onRe
             {onLinkSources && (
               <ManualLinkOffer workout={workout} candidates={manualLinkCandidatesFor(workout, workouts)} onLinkSources={onLinkSources} />
             )}
-            <GarminEnrichment workout={workout} userId={userId} legacyRpe={workout.garmin ? activityOverrides?.[workout.garmin.activityId]?.rpe : undefined} />
+            <GarminEnrichment workout={workout} userId={userId} onDetailsFetched={onDetailsFetched} legacyRpe={workout.garmin ? activityOverrides?.[workout.garmin.activityId]?.rpe : undefined} />
             {!workout.structured && !workout.garmin && (
               <p className="activity-telemetry-empty">No session or Garmin detail could be shown for this workout. The source checks below say why.</p>
             )}

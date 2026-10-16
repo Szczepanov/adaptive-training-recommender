@@ -140,6 +140,11 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery', onNav
     return () => { cancelled = true; };
   }, [activeTab, userId, adherenceStats]);
 
+  const handleActivityDetailsFetched = useCallback(() => {
+    setActivityWindow(null);
+    setCanonicalWorkoutWindow(null);
+  }, []);
+
   const briefDate = decisionInput?.date;
   const canonicalWindowIsCurrent = canonicalWorkoutWindow !== null
     && canonicalWorkoutWindow.userId === userId
@@ -1141,6 +1146,7 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery', onNav
             </div>
             {activitiesReadModelPolicy === 'canonical-v1' ? (
               <CanonicalActivitiesPanel
+                onDetailsFetched={handleActivityDetailsFetched}
                 userId={userId}
                 activityOverrides={activityOverrides}
                 workouts={canonicalWindowIsCurrent ? canonicalWorkoutWindow.workouts : null}
@@ -1161,6 +1167,7 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery', onNav
               />
             ) : (
               <ActivityTelemetry
+                onDetailsFetched={handleActivityDetailsFetched}
                 userId={userId}
                 activityOverrides={activityOverrides}
                 state={activityWindow && activityWindow.userId === userId && activityWindow.asOfDate === briefDate ? activityWindow.state : null}

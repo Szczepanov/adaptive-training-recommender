@@ -307,6 +307,7 @@ def normalize_activity(
                     else {}
                 ),
                 **({"averageHrBpm": lap.average_hr_bpm} if lap.average_hr_bpm is not None else {}),
+                **({"maxHrBpm": lap.max_hr_bpm} if lap.max_hr_bpm is not None else {}),
                 **(
                     {"distanceMeters": lap.distance_meters}
                     if lap.distance_meters is not None

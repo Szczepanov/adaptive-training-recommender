@@ -23,6 +23,19 @@ from .identity_eligibility import (
 
 logger = logging.getLogger(__name__)
 
+ACTIVITY_DETAIL_FIELDS = frozenset(
+    {
+        "laps",
+        "hrInZones",
+        "powerInZones",
+        "normalizedPower",
+        "intensityFactor",
+        "variabilityIndex",
+        "runningDynamics",
+        "exerciseSets",
+    }
+)
+
 
 def init_firestore_client(credentials_path: str | None = None) -> Any:
     """Initialize Firebase Admin SDK and return Firestore client."""
@@ -285,6 +298,41 @@ class FirestoreRecoveryRepository:
             .document(str(activity_id))
         )
         doc_ref.set(payload, merge=True)
+
+    def get_activity(self, activity_id: str) -> dict[str, Any] | None:
+        """Read one existing activity within this repository's user scope."""
+        snapshot = (
+            self._get_db()
+            .collection("users")
+            .document(self.user_id)
+            .collection("activities")
+            .document(activity_id)
+            .get()
+        )
+        return snapshot.to_dict() if snapshot.exists else None
+
+    def update_activity_details(self, activity_id: str, fields: dict[str, Any]) -> None:
+        """Update detail fields only; a concurrently deleted activity stays deleted."""
+        if not fields or not fields.keys() <= ACTIVITY_DETAIL_FIELDS:
+            raise ValueError("Only nonempty activity detail updates are allowed.")
+        updates: dict[str, Any] = {}
+        for key, value in fields.items():
+            if key == "runningDynamics":
+                if not isinstance(value, dict) or any(
+                    not isinstance(name, str) or "." in name for name in value
+                ):
+                    raise ValueError("Invalid running dynamics fields.")
+                updates.update({f"runningDynamics.{name}": item for name, item in value.items()})
+            else:
+                updates[key] = value
+        (
+            self._get_db()
+            .collection("users")
+            .document(self.user_id)
+            .collection("activities")
+            .document(activity_id)
+            .update(updates)
+        )
 
     def update_activity_enrichment(
         self,
