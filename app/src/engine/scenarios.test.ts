@@ -1,9 +1,9 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { SCENARIOS } from './simulation/scenarios';
 import { addDaysToLocalDateString } from '../utils/localDate';
 import {
     buildCalibrationReport, runAllScenarios, runFatigueFusionComparison, runScenario,
-    runSubjectiveDriftComparison, type ScenarioResult,
+    runSubjectiveDriftComparison, type ScenarioResult, type SimulationReport,
 } from './simulation/analyze';
 
 /**
@@ -13,13 +13,20 @@ import {
  * source of truth, not a parallel list duplicated between coverage and analysis.
  */
 
+// One whole-corpus run shared by every test in this file. `runAllScenarios()` runs each
+// scenario through the same `runScenario` defaults the per-scenario lookups need, so the
+// corpus is simulated once instead of once per scenario plus once per report-level test --
+// recomputing it pushed individual tests past the 15 s timeout under the parallel suite.
+let fullReport: SimulationReport;
 const results = new Map<string, ScenarioResult>();
+beforeAll(async () => {
+    fullReport = await runAllScenarios();
+    fullReport.scenarios.forEach(result => results.set(result.scenarioId, result));
+});
+
 async function getResult(scenarioId: string): Promise<ScenarioResult> {
-    if (results.has(scenarioId)) return results.get(scenarioId)!;
-    const scenario = SCENARIOS.find(s => s.id === scenarioId);
-    if (!scenario) throw new Error(`Unknown scenario id: ${scenarioId}`);
-    const result = await runScenario(scenario);
-    results.set(scenarioId, result);
+    const result = results.get(scenarioId);
+    if (!result) throw new Error(`Unknown scenario id: ${scenarioId}`);
     return result;
 }
 
@@ -206,14 +213,14 @@ describe('field_sport_general_target -- explicit preference is the Field sport s
     });
 
     it('reports a changed plan when Field preference differs from the matched Base baseline', async () => {
-        const report = await runAllScenarios();
+        const report = fullReport;
         expect(report.preferenceSensitivity).toContainEqual(expect.objectContaining({
             preferredModality: 'Field',
             changedPlannedDays: expect.any(Number),
         }));
         const fieldPreference = report.preferenceSensitivity.find(item => item.preferredModality === 'Field');
         expect(fieldPreference?.changedPlannedDays).toBeGreaterThan(0);
-    }, 15000);
+    });
 });
 
 describe('scenario quality diagnostics', () => {
@@ -239,10 +246,9 @@ describe('scenario quality diagnostics', () => {
     });
 
     it('runs matched fresh and stressed readiness trajectories instead of relying on one deterministic chain', async () => {
-        const report = await runAllScenarios();
-        expect(report.readinessSensitivity).toHaveLength(2);
-        expect(report.readinessSensitivity.map(result => result.trajectory)).toEqual(['fresh', 'stressed']);
-    }, 20000);
+        expect(fullReport.readinessSensitivity).toHaveLength(2);
+        expect(fullReport.readinessSensitivity.map(result => result.trajectory)).toEqual(['fresh', 'stressed']);
+    });
 
     it('sustained stress adds recovery and records any required-role loss with a typed safety/feasibility reason', async () => {
         const baseline = await getResult('cycling_criterium_A');
@@ -360,7 +366,7 @@ describe('Phase 6.4 calibration evidence', () => {
     });
 
     it('aggregates modes, gates, objectives, fixed activities, and contributor transitions descriptively', async () => {
-        const calibration = buildCalibrationReport(await runAllScenarios());
+        const calibration = buildCalibrationReport(fullReport);
         expect(calibration.evidenceType).toContain('not clinical calibration');
         expect(calibration.scenarios).toHaveLength(SCENARIOS.length);
         expect(calibration.aggregate.modeCounts.train + calibration.aggregate.modeCounts.modify + calibration.aggregate.modeCounts.recover)
@@ -413,6 +419,7 @@ describe('Phase 9.6 subjective-drift evidence gate', () => {
         // never introduces a constraint violation that 'off' didn't have.
         expect(comparison.aggregate.constraintViolationDelta).toBeGreaterThanOrEqual(0);
         expect(comparison.evidenceType).toBe('synthetic safety/regression evidence; not real-world usefulness evidence');
+    // Inherently long: the comparator simulates the whole corpus twice (drift off and on).
     }, 30000);
 
     it('attaches a real subjectiveBaseline to profile scenarios once enough prior history exists, and never on day 0', () => {
