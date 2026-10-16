@@ -369,6 +369,39 @@ describe('ContextBriefService', () => {
         expect(result.text).toContain(`${AS_OF} plan-a r1/ride-1: placement as authored; adjudication app dose modified; athlete accepted; performance completed; occurrence occ-1; execution exec-1; performed performed-1; prescription`);
     });
 
+    it('renders a historical live execution as in progress whatever the wall clock says (#941)', async () => {
+        const source = { planId: 'plan-a', revision: 1, sessionId: 'ride-1', contentHash: 'a'.repeat(64) };
+        const plan = {
+            schema: 'adaptive-training-recommender/external-plan@1', planId: 'plan-a', revision: 1,
+            title: 'Plan', startDate: '2026-08-10', weekCount: 1,
+            sessions: [{ id: 'ride-1', placement: { week: 1, preferredDay: 'saturday' } }],
+        };
+        source.contentHash = await computeContentHash(plan);
+        services.getOccurrencesInRangeState.mockResolvedValue({ status: 'AVAILABLE', data: [{
+            userId: 'u1', occurrenceId: 'occ-1', date: AS_OF, authority: 'external_plan', state: 'scheduled',
+            externalPlanRef: source, createdAt: '2026-08-14T00:00:00Z', updatedAt: '2026-08-15T06:00:00Z',
+        }] });
+        services.getExecutionsInRange.mockResolvedValue({ executions: [{ execution: {
+            userId: 'u1', executionId: 'exec-1', occurrenceId: 'occ-1', sessionSource: { kind: 'external_plan', ...source },
+            prescriptionHash: 'p'.repeat(64), date: AS_OF, startedAt: '2026-08-15T06:00:00Z',
+            updatedAt: '2026-08-15T06:20:00Z', state: 'in_progress', schemaVersion: 1,
+        }, entries: [{}] }], invalidRecords: 0 });
+        services.getRevisionState.mockResolvedValue({ status: 'AVAILABLE', data: plan });
+
+        // Only Date is faked, months after AS_OF: a call site that read the wall clock
+        // instead of the brief's targetDate would render this row partial or abandoned.
+        vi.useFakeTimers({ toFake: ['Date'] });
+        try {
+            vi.setSystemTime(new Date('2027-03-01T12:00:00.000Z'));
+            const result = await new ContextBriefService().build('u1', AS_OF, 14, 'full');
+            expect(result.text).toContain(`${AS_OF} plan-a r1/ride-1:`);
+            expect(result.text).toContain('performance in progress; occurrence occ-1; execution exec-1');
+            expect(result.text).not.toContain('partial or abandoned');
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
     describe('round-trip manual replacement hydration (PR-C C2)', () => {
         const nullAdherence = { respondedAt: null, followed: null, actualModality: null, actualDurationMin: null, skipped: false, notes: null };
 

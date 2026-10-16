@@ -335,7 +335,16 @@ Version history:
 - v4 → v5: planning-only measured performance evidence, including its exact relevance rules,
   current-state bounded reads, partial-read semantics, source-state requirement, and finite
   rendering bounds. The JSON transport envelope remains `context_brief_export_v2`.
+- v5 → v6 (#927): persisted long-horizon target and development authority from the decision
+  audit; `eventStrategy` may be `development_block`.
+- v6 → v7 (#929): season roadmap across A/B/C events, including supporting-event dose and
+  C-race replacement context.
+- v7 → v8 (#941): the round-trip `performance` dimension gains `in progress` for an execution
+  still `in_progress` on or after the brief's `asOfDate`. One dated before `asOfDate` with
+  entries stays `partial or abandoned`. Known limitation: the comparison uses the session's
+  calendar date, so a session that runs past Warsaw midnight renders `partial or abandoned` in a
+  brief built after midnight.
 
 Contract identity is asserted on every service-built artifact, and fixed-date semantic tests
 exclude only the generation timestamp. JSON's `context_brief_export_v2` transport version is
-independent of semantic contract v5. No recommendation authority is added by this export.
+independent of the semantic contract version. No recommendation authority is added by this export.
