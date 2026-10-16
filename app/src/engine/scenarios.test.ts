@@ -17,12 +17,15 @@ import {
 // scenario through the same `runScenario` defaults the per-scenario lookups need, so the
 // corpus is simulated once instead of once per scenario plus once per report-level test --
 // recomputing it pushed individual tests past the 15 s timeout under the parallel suite.
+// Inherently long: `make verify` runs this suite alongside E2E, the rules emulator, the
+// simulations and the build, where one corpus run has exceeded the 30 s hookTimeout.
+const CORPUS_RUN_TIMEOUT_MS = 120_000;
 let fullReport: SimulationReport;
 const results = new Map<string, ScenarioResult>();
 beforeAll(async () => {
     fullReport = await runAllScenarios();
     fullReport.scenarios.forEach(result => results.set(result.scenarioId, result));
-});
+}, CORPUS_RUN_TIMEOUT_MS);
 
 async function getResult(scenarioId: string): Promise<ScenarioResult> {
     const result = results.get(scenarioId);
@@ -420,7 +423,7 @@ describe('Phase 9.6 subjective-drift evidence gate', () => {
         expect(comparison.aggregate.constraintViolationDelta).toBeGreaterThanOrEqual(0);
         expect(comparison.evidenceType).toBe('synthetic safety/regression evidence; not real-world usefulness evidence');
     // Inherently long: the comparator simulates the whole corpus twice (drift off and on).
-    }, 30000);
+    }, 2 * CORPUS_RUN_TIMEOUT_MS);
 
     it('attaches a real subjectiveBaseline to profile scenarios once enough prior history exists, and never on day 0', () => {
         const scenario = SCENARIOS.find(item => item.id === 'subjective_slow_drifter');
