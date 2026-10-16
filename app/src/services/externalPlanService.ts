@@ -15,7 +15,7 @@ import { type ExternalTrainingPlanV3 } from '../sessions/externalPlanV3';
 import { type ExternalTrainingPlanV4 } from '../sessions/externalPlanV4';
 import { EXTERNAL_PLAN_SCHEMA_V5, type ExternalTrainingPlanV5 } from '../sessions/externalPlanV5';
 import { EXTERNAL_PLAN_SCHEMA_V6, type ExternalTrainingPlanV6 } from '../sessions/externalPlanV6';
-import { validateAnyExternalTrainingPlan } from '../sessions/externalPlanValidation';
+import { validateAnyExternalTrainingPlan, validateExternalPlanImport } from '../sessions/externalPlanValidation';
 import { isValidDate } from '../engine/validation';
 
 /** Re-exported so existing callers keep one import site. The implementation lives in
@@ -107,7 +107,7 @@ export class ExternalPlanService {
      * adjudicated keep their persisted recommendations and audits regardless.
      */
     async import(userId: string, raw: unknown, effectiveFromOverride: string | null = null): Promise<DataState<ImportResult>> {
-        const parsed = validateAnyExternalTrainingPlan(raw);
+        const parsed = validateExternalPlanImport(raw);
         if (!parsed.isValid || !parsed.data) {
             const issues: DataIssue[] = parsed.errors.map(error => ({
                 code: 'schema-validation-failed',

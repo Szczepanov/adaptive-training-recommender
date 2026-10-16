@@ -1439,7 +1439,7 @@ export function validateRecommendation(raw: any): ValidationResult<DailyRecommen
             && Number.isInteger((provenance as Record<string, unknown>).revision)
             && (provenance as Record<string, number>).revision >= 1
             && typeof (provenance as Record<string, unknown>).sessionId === 'string'
-            && (provenance as Record<string, string>).sessionId.length <= 64
+            && (provenance as Record<string, string>).sessionId.length <= EXTERNAL_PLAN_SESSION_ID_MAX_CHARS
             && typeof (provenance as Record<string, unknown>).contentHash === 'string'
             && (provenance as Record<string, string>).contentHash.length <= 128;
         const validSubjectiveDrift = (drift: unknown) => hasExactKeys(
@@ -1937,6 +1937,11 @@ const EXTERNAL_OBJECTIVES: ObjectiveKey[] = [
  * read and reject a runaway generation rather than storing it. */
 export const EXTERNAL_PLAN_MAX_WEEKS = 26;
 export const EXTERNAL_PLAN_MAX_SESSIONS = 120;
+/** #945: the persisted identity bound for an external-plan session id. The recommendation
+ * audit's `externalPlan.sessionId` and the `session_occurrences` rules (`externalPlanRef`)
+ * both cap it here, so a longer id can be imported but never adjudicated. Enforced at the
+ * import boundary only (`validateExternalPlanImport`); stored revisions stay readable. */
+export const EXTERNAL_PLAN_SESSION_ID_MAX_CHARS = 64;
 
 const PLAN_KEYS = ['schema', 'planId', 'revision', 'title', 'startDate', 'weekCount', 'notes', 'sessions'];
 const SESSION_KEYS = ['id', 'title', 'priority', 'placement', 'gating', 'objectives', 'prescription', 'scaling', 'isEvent'];
