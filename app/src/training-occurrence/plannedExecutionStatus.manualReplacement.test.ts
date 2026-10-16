@@ -24,6 +24,7 @@ describe('planned execution status after manual replacement', () => {
     it('keeps verified manually_replaced attribution when the prepared external occurrence is superseded', () => {
         const result = projectPlannedExecutionStatus({
             date: superseded.date,
+            asOfDate: superseded.date,
             authored: { kind: 'session', source },
             authoredDate: superseded.date,
             occurrenceId: superseded.occurrenceId,
@@ -49,6 +50,7 @@ describe('planned execution status after manual replacement', () => {
     it('does not turn an unrelated superseded occurrence into a manual replacement', () => {
         const result = projectPlannedExecutionStatus({
             date: superseded.date,
+            asOfDate: superseded.date,
             authored: { kind: 'session', source },
             authoredDate: superseded.date,
             occurrenceId: superseded.occurrenceId,

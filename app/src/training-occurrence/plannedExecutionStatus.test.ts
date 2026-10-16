@@ -5,7 +5,7 @@ import { externalTemplateId } from '../engine/externalSessionProfiles';
 import type { ExternalPlanSessionOccurrence, ManualSessionOccurrence, SessionEntry, SessionExecution } from '../sessions/models';
 import type { PerformedTrainingOccurrence } from './models';
 import { projectPlannedExecutionStatus, renderPlannedExecutionStatuses, type PlannedExecutionStatus, type PlannedExecutionStatusInput } from './plannedExecutionStatus';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 const source = { planId: 'plan-a', revision: 2, sessionId: 'ride-1', contentHash: 'a'.repeat(64) };
 const occurrence: ExternalPlanSessionOccurrence = {
@@ -27,7 +27,7 @@ const performed: PerformedTrainingOccurrence = {
 
 function input(overrides: Partial<PlannedExecutionStatusInput> = {}): PlannedExecutionStatusInput {
     return {
-        date: occurrence.date, authored: { kind: 'session', source }, authoredDate: occurrence.date,
+        date: occurrence.date, asOfDate: occurrence.date, authored: { kind: 'session', source }, authoredDate: occurrence.date,
         occurrenceId: occurrence.occurrenceId, occurrencesReadable: true, executionsReadable: true, performedReadable: true,
         occurrences: [occurrence], recommendations: [], executions: [], performedOccurrences: [],
         ...overrides,
@@ -636,5 +636,71 @@ describe('projectPlannedExecutionStatus remaining WP5.2 pins (PR-C C3)', () => {
         }));
         expect(result.performance).toBe('completed');
         expect(result.performedOccurrenceId).toBe('performed-1');
+    });
+});
+
+describe('projectPlannedExecutionStatus in_progress disposition (#941)', () => {
+    const live = { ...execution, state: 'in_progress' as const, completedAt: undefined };
+    const dayAfter = '2026-09-21';
+
+    it('reports an in_progress execution with entries on the as-of day as in_progress', () => {
+        const result = projectPlannedExecutionStatus(input({
+            executions: [{ execution: live, entries: [{} as SessionEntry] }],
+        }));
+        expect(result.performance).toBe('in_progress');
+    });
+
+    it('reports an in_progress execution with entries before the as-of day as partial_or_abandoned', () => {
+        const result = projectPlannedExecutionStatus(input({
+            asOfDate: dayAfter,
+            executions: [{ execution: live, entries: [{} as SessionEntry] }],
+        }));
+        expect(result.performance).toBe('partial_or_abandoned');
+    });
+
+    it('reports an in_progress execution with no entries on the as-of day as in_progress', () => {
+        const result = projectPlannedExecutionStatus(input({
+            executions: [{ execution: live, entries: [] }],
+        }));
+        expect(result.performance).toBe('in_progress');
+    });
+
+    it('reports an in_progress execution with no entries before the as-of day as unknown', () => {
+        const result = projectPlannedExecutionStatus(input({
+            asOfDate: dayAfter,
+            executions: [{ execution: live, entries: [] }],
+        }));
+        expect(result.performance).toBe('unknown');
+    });
+
+    it('keeps the in_progress result for a historical as-of date independent of the wall clock', () => {
+        const historical = { asOfDate: occurrence.date, executions: [{ execution: live, entries: [{} as SessionEntry] }] };
+        const first = projectPlannedExecutionStatus(input(historical));
+        vi.useFakeTimers();
+        try {
+            vi.setSystemTime(new Date('2027-03-01T12:00:00.000Z'));
+            expect(projectPlannedExecutionStatus(input(historical))).toEqual(first);
+        } finally {
+            vi.useRealTimers();
+        }
+        expect(first.performance).toBe('in_progress');
+    });
+
+    it('changes only performance for a live row', () => {
+        const executions = [{ execution: live, entries: [{} as SessionEntry] }];
+        const liveResult = projectPlannedExecutionStatus(input({ executions }));
+        const pastResult = projectPlannedExecutionStatus(input({ asOfDate: dayAfter, executions }));
+        expect({ ...liveResult, performance: undefined }).toEqual({ ...pastResult, performance: undefined });
+        expect(liveResult).toMatchObject({ athleteDisposition: 'accepted', executionId: 'exec-1' });
+    });
+
+    it('renders the live state as performance in progress', () => {
+        const result = projectPlannedExecutionStatus(input({
+            executions: [{ execution: live, entries: [{} as SessionEntry] }],
+        }));
+        const rows = renderPlannedExecutionStatuses([result]).filter(line => line.startsWith('- '));
+        expect(rows).toHaveLength(1);
+        expect(rows[0]).toContain('performance in progress;');
+        expect(rows[0]).not.toContain('partial or abandoned');
     });
 });

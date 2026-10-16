@@ -752,6 +752,7 @@ export class ContextBriefService {
                     if (state.status !== 'AVAILABLE') {
                         if (performedOccurrences.some(item => item.status === 'active' && item.localDate === date)) {
                             activeRestStatuses.push(projectPlannedExecutionStatus({
+                                asOfDate: targetDate,
                                 date, authored: { kind: 'none' }, occurrencesReadable: true, executionsReadable: true,
                                 performedReadable: true, occurrences, recommendations, executions, performedOccurrences,
                             }));
@@ -780,6 +781,7 @@ export class ContextBriefService {
                     }
                     const rest = externalRestContextForDate(active, date);
                     if (rest) activeRestStatuses.push(projectPlannedExecutionStatus({
+                        asOfDate: targetDate,
                         date,
                         authored: { kind: 'rest', planId: rest.planId, revision: rest.revision, restDirectiveId: rest.directive.id },
                         occurrencesReadable: true, executionsReadable: true, performedReadable: true,
@@ -788,6 +790,7 @@ export class ContextBriefService {
                     else if (placedOnDate.length === 0
                         && performedOccurrences.some(item => item.status === 'active' && item.localDate === date)) {
                         activeRestStatuses.push(projectPlannedExecutionStatus({
+                            asOfDate: targetDate,
                             date, authored: { kind: 'none' }, occurrencesReadable: true, executionsReadable: true,
                             performedReadable: true, occurrences, recommendations, executions, performedOccurrences,
                         }));
@@ -957,6 +960,7 @@ export class ContextBriefService {
                         && verified.source.contentHash === candidate.source.contentHash;
                     const replaceArchiveUnavailable = verified === undefined && replaceDates.includes(candidate.date);
                     return projectPlannedExecutionStatus({
+                        asOfDate: targetDate,
                         date: candidate.date,
                         authored: revisionMatchesSource && session
                             ? { kind: 'session', source: candidate.source }
@@ -992,6 +996,7 @@ export class ContextBriefService {
                     if (rest.date === recommendation.date && directive?.id === rest.restDirectiveId) {
                         restKeys.add(key);
                         restStatuses.push(projectPlannedExecutionStatus({
+                        asOfDate: targetDate,
                         date: recommendation.date,
                         authored: {
                             kind: 'rest', planId: rest.planId, revision: rest.revision,
@@ -1007,6 +1012,7 @@ export class ContextBriefService {
                         }));
                     } else {
                         restStatuses.push(projectPlannedExecutionStatus({
+                            asOfDate: targetDate,
                             date: recommendation.date,
                             authored: { kind: 'unknown', reason: 'rest provenance did not match the immutable plan revision' },
                             occurrencesReadable: true, executionsReadable: true, performedReadable: true,
@@ -1022,6 +1028,7 @@ export class ContextBriefService {
                     .filter(date => !verifiedReplace.has(date)
                         && ![...candidates.values()].some(candidate => candidate.date === date))
                     .map(date => projectPlannedExecutionStatus({
+                        asOfDate: targetDate,
                         date,
                         authored: { kind: 'unknown', reason: 'pre-replace authored identity could not be verified' },
                         replaceArchiveUnavailable: true,
