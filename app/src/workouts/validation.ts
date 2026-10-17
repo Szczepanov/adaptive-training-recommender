@@ -11,6 +11,7 @@ import type {
   WorkoutParameterStepField,
   WorkoutParameterUnit,
   WorkoutStep,
+  WorkoutVariantStepOverride,
 } from './models.ts';
 import { getActiveKnowledgeClaim } from '../knowledge/sportsKnowledgeRegistry.ts';
 import { MOVEMENT_COMPOSITION_PATTERNS } from '../sessions/movementCompositionContract.ts';
@@ -132,7 +133,10 @@ function validateParameterBindings(
   bindingSets: WorkoutParameterBindingSet[],
   errors: string[]
 ): void {
-  const workoutById = new Map(workouts.map((workout) => [workout.id, workout]));
+  // Optimization: use for...of loop instead of new Map(arr.map()) to avoid
+  // intermediate tuple array allocation overhead
+  const workoutById = new Map<string, WorkoutDefinition>();
+  for (const workout of workouts) workoutById.set(workout.id, workout);
   const bindingSetByWorkout = new Map<string, WorkoutParameterBindingSet>();
 
   for (const bindingSet of bindingSets) {
@@ -153,7 +157,10 @@ function validateParameterBindings(
       continue;
     }
 
-    const parameterById = new Map(parameters.map((parameter) => [parameter.id, parameter]));
+    // Optimization: use for...of loop instead of new Map(arr.map()) to avoid
+    // intermediate tuple array allocation overhead
+    const parameterById = new Map<string, WorkoutParameter>();
+    for (const parameter of parameters) parameterById.set(parameter.id, parameter);
     const boundStepsByParameter = new Map<string, Set<string>>();
 
     for (const binding of bindingSet.bindings) {
@@ -183,7 +190,10 @@ function validateParameterBindings(
 }
 
 function validateProgressionGraph(workouts: WorkoutDefinition[], errors: string[]): void {
-  const graph = new Map(workouts.map((workout) => [workout.id, workout.progressions]));
+  // Optimization: use for...of loop instead of new Map(arr.map()) to avoid
+  // intermediate tuple array allocation overhead
+  const graph = new Map<string, string[]>();
+  for (const workout of workouts) graph.set(workout.id, workout.progressions);
   const visiting = new Set<string>();
   const visited = new Set<string>();
 
@@ -420,7 +430,10 @@ export function validateWorkoutLibrary(
     for (const variant of workout.variants) {
       let totalSeconds = 0;
       let hasTimeBasedSteps = false;
-      const overrideMap = new Map(variant.stepOverrides.map((o) => [o.stepId, o]));
+      // Optimization: use for...of loop instead of new Map(arr.map()) to avoid
+      // intermediate tuple array allocation overhead
+      const overrideMap = new Map<string, WorkoutVariantStepOverride>();
+      for (const o of variant.stepOverrides) overrideMap.set(o.stepId, o);
       for (const block of workout.blocks) {
         for (const step of block.steps) {
           const override = overrideMap.get(step.id);

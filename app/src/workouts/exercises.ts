@@ -16,4 +16,7 @@ export const EXERCISES: ExerciseDefinition[] = [
   }),
   ...EXPANDED_EXERCISES,
 ];
-export const EXERCISES_BY_ID = new Map(EXERCISES.map(e => [e.id, e]));
+// Optimization: use for...of loop instead of new Map(arr.map()) to avoid
+// intermediate tuple array allocation overhead
+export const EXERCISES_BY_ID = new Map<string, ExerciseDefinition>();
+for (const e of EXERCISES) EXERCISES_BY_ID.set(e.id, e);
