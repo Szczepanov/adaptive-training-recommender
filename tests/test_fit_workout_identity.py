@@ -5,6 +5,7 @@ import pytest
 
 from garmin_sync.fit_workout_identity import (
     FIT_WORKOUT_FINGERPRINT_VERSION,
+    canonical_workout_to_fit_steps,
     compute_fit_workout_fingerprint,
     compute_fit_workout_identity,
     compute_workout_template_fingerprint,
@@ -99,3 +100,53 @@ def test_ftp_relative_template_requires_exact_export_context() -> None:
 
     with pytest.raises(ValueError, match="requires the athlete FTP used for Garmin export"):
         compute_workout_template_fingerprint(workout)
+
+
+# ADR-0051 D3/D5 depend on this flattened order: per-step rest and block recovery inside the
+# repeat group, the repeat-control step last, and one repeat group per set for multi-set work.
+# Rows are (name, duration type, duration value, target value); a repeat-control step's
+# duration value is its first child's index and its target value is the iteration count.
+_REPEAT_LAYOUTS = {
+    "cycling_block_repeat_with_block_recovery": [
+        ("Easy spin (140-160 W)", "time", 600.0, None),
+        ("Over (290-310 W)", "time", 120.0, None),
+        ("Rest interval", "time", 60.0, None),
+        ("Under (230-250 W)", "time", 90.0, None),
+        ("Block recovery", "time", 300.0, None),
+        (None, "repeat_until_steps_cmplt", 1.0, 3.0),
+        ("Easy spin (110-130 W)", "time", 300.0, None),
+    ],
+    "cycling_single_child_repeat": [
+        ("Easy spin (140-160 W)", "time", 600.0, None),
+        ("Sprint (500-600 W)", "time", 30.0, None),
+        (None, "repeat_until_steps_cmplt", 1.0, 5.0),
+        ("Easy spin (110-130 W)", "time", 300.0, None),
+    ],
+    "cycling_multi_set_intervals": [
+        ("Easy spin (140-160 W)", "time", 600.0, None),
+        ("Burst (380-400 W)", "time", 30.0, None),
+        ("Rest interval", "time", 30.0, None),
+        (None, "repeat_until_steps_cmplt", 1.0, 4.0),
+        ("Set recovery", "time", 240.0, None),
+        ("Burst (380-400 W)", "time", 30.0, None),
+        ("Rest interval", "time", 30.0, None),
+        (None, "repeat_until_steps_cmplt", 5.0, 4.0),
+        ("Easy spin (110-130 W)", "time", 300.0, None),
+    ],
+}
+
+
+@pytest.mark.parametrize("case_id", sorted(_REPEAT_LAYOUTS))
+def test_repeat_group_contract_cases_flatten_to_the_pinned_layout(case_id: str) -> None:
+    fixture_path = (
+        Path(__file__).resolve().parent / "fixtures" / "contracts" / "fit_workout_identity_v2.json"
+    )
+    cases = json.loads(fixture_path.read_text(encoding="utf-8"))["cases"]
+    workout = next(case["workout"] for case in cases if case["id"] == case_id)
+
+    steps = canonical_workout_to_fit_steps(workout)
+
+    assert [step.message_index for step in steps] == list(range(len(steps)))
+    assert [
+        (step.name, step.duration_type, step.duration_value, step.target_value) for step in steps
+    ] == (_REPEAT_LAYOUTS[case_id])

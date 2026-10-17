@@ -33,12 +33,12 @@ achievable without a new provider request:
    equals the activity's, the recording's FIT Workout Step list matches, index for index, the
    list Adaptive predicted from its export payload.
 2. Garmin flattens the uploaded payload into FIT steps on its side. Adaptive models that
-   flattening in TypeScript only (`garminPayloadToFitSteps`). Python never flattens: it reads
-   the recorded FIT steps and fingerprints them, and the shared
-   `tests/fixtures/contracts/fit_workout_identity_v2.json` vectors keep the two hash
-   implementations in step. In the model, each flattened index comes from exactly one
-   canonical export step, one generated rest or recovery step, or one repeat-control step.
-   Fingerprint equality, not the model, is what proves a given recording followed that layout.
+   flattening twice, with the same rules: `garminPayloadToFitSteps` in TypeScript and
+   `garmin_payload_to_fit_steps` in Python. Both compute template fingerprints from them, and
+   the shared `tests/fixtures/contracts/fit_workout_identity_v2.json` vectors keep the two in
+   step. In the model, each flattened index comes from exactly one canonical export step, one
+   generated rest or recovery step, or one repeat-control step. Fingerprint equality, not the
+   model, is what proves a given recording followed that layout.
 
 The missing pieces are therefore a **producer-side manifest** from flattened FIT index to
 Adaptive step, and **persisting the FIT step index** on each segment. Occurrence membership
@@ -105,10 +105,14 @@ workoutStepManifest {
 - Size is bounded by the flattened FIT step count of one workout.
 - Only TypeScript produces the manifest. The real Garmin upload, however, is built by Python
   `canonical_workout_to_garmin_payload`, while the manifest is derived from its TypeScript
-  mirror `canonicalWorkoutToGarminPayload`. A shared contract vector must therefore pin the
-  two payload builders to the same step layout, including repeat groups, generated rest and
-  block recovery. Fingerprint equality catches drift on any one recording, and the vector
+  mirror `canonicalWorkoutToGarminPayload`. The shared contract vector pins the two to the same
+  step layout. It covers a block-level repeat group with per-step rest and block recovery, a
+  single-child repeat and multi-set intervals, and `test_fit_workout_identity.py` pins those
+  flattened layouts. Fingerprint equality catches drift on any one recording, and the vector
   catches it before release.
+- One authored step can sit at several FIT indexes. Multi-set intervals emit one repeat group
+  per set, separated by a generated "Set recovery" step, so the same `stepId` appears once per
+  set. The manifest is therefore many-to-one from `messageIndex` to `stepId`.
 - The TypeScript flattening model handles one level of repeat group. A payload with a nested
   repeat group gets no manifest.
 
@@ -134,10 +138,12 @@ honouring repeat-control iterations. It then compresses the performed segments i
 equal consecutive `fitWorkoutStepIndex`, so a step recorded as more than one lap merges into
 one run. Each run must match the expected sequence in order.
 
-- The **longest matching prefix** is reconciled, with each run's round ordinal taken from its
-  position in the expansion. A step outside any repeat group has round ordinal 1. That covers
-  an early stop or partial workout. A step cut short, for example by advancing it early with
-  the lap button, still matches because only the index order is compared.
+- The **longest matching prefix** is reconciled, which covers an early stop or partial
+  workout. A step cut short, for example by advancing it early with the lap button, still
+  matches because only the index order is compared.
+- A run's round ordinal counts that `stepId`'s occurrences in the expansion so far, across
+  every index the step maps to, so the first repetition of a second set continues from the
+  last repetition of the first. A step that appears once has round ordinal 1.
 - From the first deviation onward, every segment keeps FIT identity. Deviations include a
   skipped step, a reorder, an extra round, an index the manifest lacks, and a segment with no
   `fitWorkoutStepIndex` (including manual-lap segments) in the middle of the sequence.
