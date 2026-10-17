@@ -169,9 +169,12 @@ comparability from recommendation modules also covers the new function.
 
 Code lands only after both checks pass:
 
-1. **Real-data evidence.** A new read-only diagnostic shows real completed catalog executions
-   whose semantic fingerprint equals a linked activity's. The existing workout-source
-   diagnostics do not report fingerprints, so this has to be added. If the count is zero, then
+1. **Real-data evidence.** A read-only diagnostic shows real completed catalog executions
+   whose semantic fingerprint equals a linked activity's. The workout-source diagnostics
+   export carries this as `fitWorkoutIdentityCounts` (see `session-execution.md`, "FIT
+   workout identity"). Reconciliation never links a semantic mismatch, so the export's
+   `unlinkedSameDayFitPairs.differentFingerprint` is what shows mismatched pairs. If the
+   `semantic_match` count is zero, then
    watch-edited or renamed workouts, Garmin re-canonicalization or missing FTP context defeat
    the premise. The workout name is part of the fingerprint. In that case the feature stays
    unavailable, and the reason is recorded.

@@ -97,6 +97,116 @@ describe('getCompletedWorkoutsInRange', () => {
         expect(view.garminExerciseSetsAreDiagnosticOnly).toBe(true);
     });
 
+    it('observes FIT workout identity from the execution and Garmin documents, not the link copies (ADR-0051 D7)', async () => {
+        const fingerprint = 'fit-workout-v2:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+        vi.mocked(repo.queryActiveInDateWindow).mockResolvedValue([occurrence({
+            sourceRefs: [
+                { kind: 'structured_execution', executionId: 'exec-1' },
+                { kind: 'provider_activity', provider: 'garmin', activityId: 'act-1' },
+            ],
+        })]);
+        vi.mocked(sessionExecutionService.getExecution).mockResolvedValue({
+            status: 'AVAILABLE',
+            data: { userId: 'user-1', executionId: 'exec-1', sessionSource: { kind: 'catalog', workoutId: 'w', catalogVersion: '1' }, date: '2026-08-26', startedAt: '2026-08-26T06:52:00.000Z', completedAt: '2026-08-26T07:32:00.000Z', updatedAt: '2026-08-26T07:32:00.000Z', state: 'completed', schemaVersion: 1, fitWorkoutFingerprint: fingerprint, fitWorkoutFingerprintKind: 'semantic_definition' },
+            revision: null,
+        });
+        // The definition read fails: the execution was still read, so its identity still counts.
+        vi.mocked(resolveSessionDefinition).mockResolvedValue({ status: 'MISSING' } as never);
+        vi.mocked(activityService.getActivitiesInRange).mockResolvedValue({
+            status: 'AVAILABLE',
+            data: [{ activityId: 'act-1', date: '2026-08-26', type: 'cycling', durationMin: 40, trainingEffectAerobic: null, trainingEffectAnaerobic: null, averageHr: null, activityTrainingLoad: null, intensityTag: 'moderate', fitWorkoutFingerprint: fingerprint, fitWorkoutFingerprintKind: 'semantic_definition' }],
+            revision: null,
+        });
+
+        const [view] = await getCompletedWorkoutsInRange('user-1', '2026-08-20', '2026-08-27');
+
+        expect(view.sourceReads.structured).toEqual({ status: 'definition_unresolved', definition: 'MISSING' });
+        expect(view.fitWorkoutIdentity).toEqual({ status: 'semantic_match' });
+    });
+
+    it('reports a failed execution read as not observable FIT identity, not as an absent fingerprint', async () => {
+        vi.mocked(repo.queryActiveInDateWindow).mockResolvedValue([occurrence({
+            sourceRefs: [
+                { kind: 'structured_execution', executionId: 'exec-1' },
+                { kind: 'provider_activity', provider: 'garmin', activityId: 'act-1' },
+            ],
+        })]);
+        vi.mocked(sessionExecutionService.getExecution).mockResolvedValue({ status: 'UNAVAILABLE' } as never);
+
+        const [view] = await getCompletedWorkoutsInRange('user-1', '2026-08-20', '2026-08-27');
+
+        expect(view.fitWorkoutIdentity).toEqual({ status: 'not_observable', reason: 'execution_unread' });
+    });
+
+    it('reports unreadable activities as not observable FIT identity on the provider side', async () => {
+        const fingerprint = 'fit-workout-v2:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+        vi.mocked(repo.queryActiveInDateWindow).mockResolvedValue([occurrence({
+            sourceRefs: [
+                { kind: 'structured_execution', executionId: 'exec-1' },
+                { kind: 'provider_activity', provider: 'garmin', activityId: 'act-1' },
+            ],
+        })]);
+        vi.mocked(sessionExecutionService.getExecution).mockResolvedValue({ status: 'AVAILABLE', data: { userId: 'user-1', executionId: 'exec-1', sessionSource: { kind: 'catalog', workoutId: 'w', catalogVersion: '1' }, date: '2026-08-26', startedAt: '2026-08-26T06:52:00.000Z', completedAt: '2026-08-26T07:32:00.000Z', updatedAt: '2026-08-26T07:32:00.000Z', state: 'completed', schemaVersion: 1, fitWorkoutFingerprint: fingerprint, fitWorkoutFingerprintKind: 'semantic_definition' }, revision: null });
+        vi.mocked(resolveSessionDefinition).mockResolvedValue({ status: 'MISSING' } as never);
+        vi.mocked(activityService.getActivitiesInRange).mockResolvedValue({ status: 'UNAVAILABLE' } as never);
+
+        const [view] = await getCompletedWorkoutsInRange('user-1', '2026-08-20', '2026-08-27');
+
+        expect(view.sourceReads.provider).not.toBe('available');
+        expect(view.fitWorkoutIdentity).toEqual({ status: 'not_observable', reason: 'provider_unread' });
+    });
+
+    it('lets a fingerprinted execution document beat a conflicting source-link copy', async () => {
+        const fingerprint = 'fit-workout-v2:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+        vi.mocked(repo.queryActiveInDateWindow).mockResolvedValue([occurrence({
+            sourceRefs: [
+                { kind: 'structured_execution', executionId: 'exec-1', fitWorkoutFingerprint: 'fit-workout-v2:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', fitWorkoutFingerprintKind: 'semantic_definition' },
+                { kind: 'provider_activity', provider: 'garmin', activityId: 'act-1' },
+            ],
+        })]);
+        vi.mocked(sessionExecutionService.getExecution).mockResolvedValue({ status: 'AVAILABLE', data: { userId: 'user-1', executionId: 'exec-1', sessionSource: { kind: 'catalog', workoutId: 'w', catalogVersion: '1' }, date: '2026-08-26', startedAt: '2026-08-26T06:52:00.000Z', completedAt: '2026-08-26T07:32:00.000Z', updatedAt: '2026-08-26T07:32:00.000Z', state: 'completed', schemaVersion: 1, fitWorkoutFingerprint: fingerprint, fitWorkoutFingerprintKind: 'semantic_definition' }, revision: null });
+        vi.mocked(resolveSessionDefinition).mockResolvedValue({
+            status: 'AVAILABLE',
+            data: { schemaVersion: 1, id: 'w', revision: 1, title: 'Ride', intent: 'training', blocks: [] },
+            revision: null,
+        });
+        vi.mocked(sessionExecutionService.getEntries).mockRejectedValue(new Error('unavailable'));
+        vi.mocked(activityService.getActivitiesInRange).mockResolvedValue({ status: 'AVAILABLE', data: [{ activityId: 'act-1', date: '2026-08-26', type: 'cycling', durationMin: 40, trainingEffectAerobic: null, trainingEffectAnaerobic: null, averageHr: null, activityTrainingLoad: null, intensityTag: 'moderate', fitWorkoutFingerprint: fingerprint, fitWorkoutFingerprintKind: 'semantic_definition' }], revision: null });
+
+        const [view] = await getCompletedWorkoutsInRange('user-1', '2026-08-20', '2026-08-27');
+
+        // entries_unavailable still carries the execution document's identity.
+        expect(view.sourceReads.structured).toEqual({ status: 'entries_unavailable' });
+        expect(view.fitWorkoutIdentity).toEqual({ status: 'semantic_match' });
+    });
+
+    it('reports a structured-only occurrence as not applicable for FIT workout identity', async () => {
+        vi.mocked(repo.queryActiveInDateWindow).mockResolvedValue([occurrence()]);
+        vi.mocked(sessionExecutionService.getExecution).mockResolvedValue({ status: 'MISSING' } as never);
+
+        const [view] = await getCompletedWorkoutsInRange('user-1', '2026-08-20', '2026-08-27');
+
+        expect(view.fitWorkoutIdentity).toEqual({ status: 'not_applicable', reason: 'no_provider_source' });
+        expect(view.singleSourceFitEvidence).toBeUndefined();
+    });
+
+    it('keeps a single-source row\'s own FIT identity for the unlinked-pair count', async () => {
+        const fingerprint = 'fit-workout-v2:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+        vi.mocked(repo.queryActiveInDateWindow).mockResolvedValue([occurrence({
+            sourceRefs: [{ kind: 'structured_execution', executionId: 'exec-1', fitWorkoutFingerprint: fingerprint, fitWorkoutFingerprintKind: 'semantic_definition' }],
+        })]);
+        vi.mocked(sessionExecutionService.getExecution).mockResolvedValue({ status: 'UNAVAILABLE' } as never);
+
+        const [view] = await getCompletedWorkoutsInRange('user-1', '2026-08-20', '2026-08-27');
+
+        // The execution read failed, so the link copy is the evidence.
+        expect(view.singleSourceFitEvidence).toEqual({
+            side: 'structured',
+            localDate: '2026-08-26',
+            evidence: { fingerprint, kind: 'semantic_definition' },
+        });
+    });
+
     it('attaches per-set rows and durable performed rest to the structured detail', async () => {
         vi.mocked(repo.queryActiveInDateWindow).mockResolvedValue([occurrence()]);
         vi.mocked(sessionExecutionService.getExecution).mockResolvedValue({

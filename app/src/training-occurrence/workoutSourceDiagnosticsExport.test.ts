@@ -29,11 +29,12 @@ describe('buildWorkoutDiagnosticsExport', () => {
         expect(exported.window).toEqual(window);
         expect(exported.projection).toBe('available');
         expect(Object.keys(exported)).toEqual([
-            'schema', 'generatedAt', 'window', 'reconciliationSweep', 'scopeNotes', 'projection', 'totalWorkouts', 'truncated', 'outboxDepth', 'workouts',
+            'schema', 'generatedAt', 'window', 'reconciliationSweep', 'scopeNotes', 'projection', 'totalWorkouts', 'truncated', 'outboxDepth', 'fitWorkoutIdentityCounts', 'unlinkedSameDayFitPairs', 'workouts',
         ]);
         expect(Object.keys(exported.workouts[0])).toEqual([
             'performedOccurrenceId', 'localDate', 'startedAt', 'endedAt', 'modality', 'sourceKeys', 'sourceKeyCount',
             'reconciliation', 'reconciliationOutcome', 'reconciliationSweep', 'sourceReads', 'sourceCompleteness', 'outbox', 'states', 'attention',
+            'fitWorkoutIdentity',
         ]);
     });
 
@@ -111,11 +112,54 @@ describe('buildWorkoutDiagnosticsExport', () => {
         expect(exported.scopeNotes.join(' ')).toMatch(/this device/i);
     });
 
+    it('counts FIT workout identity over the whole window, not only the exported slice (ADR-0051 D7)', () => {
+        const many = Array.from({ length: MAX_EXPORT_WORKOUTS + 5 }, (_, index) =>
+            workoutView({ performedOccurrenceId: `pto-${String(index).padStart(4, '0')}`, fitWorkoutIdentity: { status: 'semantic_match' } }));
+        const exported = buildAvailable({
+            status: 'available',
+            workouts: [...many, workoutView({ performedOccurrenceId: 'zz-legacy' })],
+        });
+        expect(exported.fitWorkoutIdentityCounts).toEqual({
+            semantic_match: MAX_EXPORT_WORKOUTS + 5,
+            semantic_mismatch: 0,
+            not_comparable: 0,
+            not_applicable: 0,
+            not_observable: 1,
+        });
+    });
+
+    it('exports a view built without the observation as not_observable, never as a mismatch', () => {
+        const [entry] = buildAvailable({ status: 'available', workouts: [workoutView()] }).workouts;
+        expect(entry.fitWorkoutIdentity).toEqual({ status: 'not_observable', reason: 'not_projected' });
+    });
+
+    it('surfaces unlinked same-day mismatched pairs, which reconciliation never links (ADR-0051 D7)', () => {
+        const evidence = (fingerprint: string) => ({ fingerprint, kind: 'semantic_definition' as const });
+        const exported = buildAvailable({
+            status: 'available',
+            workouts: [
+                structuredOnlyView({ performedOccurrenceId: 's1', singleSourceFitEvidence: { side: 'structured', localDate: '2026-08-26', evidence: evidence('fit-workout-v2:CANARY_A') } }),
+                garminOnlyView({ performedOccurrenceId: 'g1', singleSourceFitEvidence: { side: 'provider', localDate: '2026-08-26', evidence: evidence('fit-workout-v2:CANARY_B') } }),
+            ],
+        });
+        expect(exported.unlinkedSameDayFitPairs).toEqual({ sameFingerprint: 0, differentFingerprint: 1 });
+        expect(serializeWorkoutDiagnosticsExport(exported)).not.toContain('CANARY');
+    });
+
+    it('exports the observation status and reason only', () => {
+        const smuggled = { status: 'semantic_mismatch', reason: 'fingerprint_differs', fingerprint: 'fit-workout-v2:CANARY' } as never;
+        const exported = buildAvailable({ status: 'available', workouts: [workoutView({ fitWorkoutIdentity: smuggled })] });
+        expect(exported.workouts[0].fitWorkoutIdentity).toEqual({ status: 'semantic_mismatch', reason: 'fingerprint_differs' });
+        expect(serializeWorkoutDiagnosticsExport(exported)).not.toContain('CANARY');
+    });
+
     it('reports a failed window projection as state 8 and never as an empty or zero workout list', () => {
         const exported = build({ status: 'projection_failed' });
         expect(exported.projection).toBe('failed');
         expect(exported.totalWorkouts).toBeNull();
         expect(exported.outboxDepth).toBeNull();
+        expect(exported.fitWorkoutIdentityCounts).toBeNull();
+        expect(exported.unlinkedSameDayFitPairs).toBeNull();
         expect(exported.truncated).toBeNull();
         expect(exported.workouts).toBeNull();
         expect(exported.windowState).toEqual({ number: 8, code: 'read_model_projection_failed', status: 'holds' });

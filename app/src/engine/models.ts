@@ -2104,10 +2104,11 @@ export interface NormalizedGarminActivity {
     /** PR 5 (training-occurrence plan, ADR-0034 "FIT structured-workout identity"): a
      * versioned fingerprint of a device-recorded FIT workout structure (workout name +
      * step-index set), present only when Garmin activity HR-fidelity FIT decoding is
-     * enabled and found workout evidence. This is Garmin's on-device workout structure,
-     * not an Adaptive-authored prescription -- Adaptive does not push structured workouts
-     * to Garmin devices, so nothing yet correlates against this field in reconciliation
-     * scoring. Absence means no decodable workout structure, not "not yet computed". */
+     * enabled and found workout evidence. This is Garmin's on-device workout structure.
+     * When the recorded workout is one Adaptive exported, its semantic fingerprint can equal
+     * the execution's launch-time fingerprint, which reconciliation scoring
+     * (`reconciliationScore.ts`) and the ADR-0051 D7 diagnostic compare. Absence means no
+     * decodable workout structure, not "not yet computed". */
     fitWorkoutFingerprint?: string;
     fitWorkoutFingerprintKind?: FitWorkoutFingerprintKind;
     syncRunId?: string;
