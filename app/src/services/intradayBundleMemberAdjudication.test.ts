@@ -553,6 +553,8 @@ describe('adjudicateIntradayBundleMembers', () => {
         expect(result.statuses).toHaveLength(1);
         expect(result.statuses[0].status).toBe('pending');
         expect(result.statuses[0].reason).toContain('Awaiting explicit post-predecessor');
+        // The execution read must cover the whole day: its end bound is exclusive.
+        expect(sessionExecutionService.getExecutionsInRange).toHaveBeenCalledWith(USER_ID, DATE, '2026-09-08');
         // #896: the card can ask for the missing answer instead of stalling.
         expect(result.statuses[0].predecessorConfirmation).toMatchObject({
             sourceSession: { kind: 'execution', id: 'exec-am-1', date: DATE },

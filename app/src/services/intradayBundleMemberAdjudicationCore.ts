@@ -28,6 +28,7 @@ import type {
     ExternalPlanSessionOccurrence,
 } from '../sessions/models';
 import { isExternalPlanOccurrence } from '../sessions/models';
+import { addDaysToLocalDateString } from '../utils/localDate';
 import { gatePredecessorConfirmation, type PredecessorConfirmationPrompt } from './predecessorConfirmationGate';
 import { parseSessionOccurrenceDocument } from '../persistence/parsers/sessionDefinition';
 import type { BundlePlacementProposal } from '../engine/intradayBundlePlacement';
@@ -185,7 +186,9 @@ export async function adjudicateIntradayBundleMembers(
 
     // 1. Gather existing day state (occurrences, executions, aggregate)
     const allOccurrences = await occurrenceService.getOccurrencesForDate(userId, date);
-    const { executions } = await executionService.getExecutionsInRange(userId, date, date);
+    // `getExecutionsInRange` takes an exclusive end date: same-day bounds would read nothing,
+    // leaving every predecessor without its execution, completion time and `immediate` response.
+    const { executions } = await executionService.getExecutionsInRange(userId, date, addDaysToLocalDateString(date, 1));
     let aggregate = await aggregateService.get(userId, date);
 
     const sessionsById = new Map<string, ExternalPlanSessionV4>();
