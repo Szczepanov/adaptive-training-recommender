@@ -143,6 +143,202 @@
       "observedStepIndices": [],
       "expectedFingerprint": null,
       "expectedKind": null
+    },
+    {
+      "id": "cycling_block_repeat_with_block_recovery",
+      "workout": {
+        "schemaVersion": "canonical_workout_v1",
+        "title": "Over-Unders",
+        "workoutId": "cycling_over_unders",
+        "modality": "cycling",
+        "targetDurationMin": 45,
+        "exportedAt": "2026-10-17T06:00:00Z",
+        "blocks": [
+          {
+            "id": "warmup",
+            "name": "Warm-up",
+            "role": "warmup",
+            "steps": [
+              {
+                "id": "wu_step",
+                "name": "Easy spin",
+                "durationSeconds": 600,
+                "targets": [
+                  "140-160 W"
+                ]
+              }
+            ]
+          },
+          {
+            "id": "over_unders",
+            "name": "Over-unders",
+            "role": "main",
+            "repetitions": 3,
+            "restAfterSec": 300,
+            "steps": [
+              {
+                "id": "over_step",
+                "name": "Over",
+                "durationSeconds": 120,
+                "restAfterSec": 60,
+                "targets": [
+                  "290-310 W"
+                ]
+              },
+              {
+                "id": "under_step",
+                "name": "Under",
+                "durationSeconds": 90,
+                "targets": [
+                  "230-250 W"
+                ]
+              }
+            ]
+          },
+          {
+            "id": "cooldown",
+            "name": "Cool-down",
+            "role": "cooldown",
+            "steps": [
+              {
+                "id": "cd_step",
+                "name": "Easy spin",
+                "durationSeconds": 300,
+                "targets": [
+                  "110-130 W"
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "expectedFingerprint": "fit-workout-v2:a51352cf5c7831ba962140c934c7ed38",
+      "expectedKind": "semantic_definition"
+    },
+    {
+      "id": "cycling_single_child_repeat",
+      "workout": {
+        "schemaVersion": "canonical_workout_v1",
+        "title": "Seated Sprints",
+        "workoutId": "cycling_sprints",
+        "modality": "cycling",
+        "targetDurationMin": 45,
+        "exportedAt": "2026-10-17T06:00:00Z",
+        "blocks": [
+          {
+            "id": "warmup",
+            "name": "Warm-up",
+            "role": "warmup",
+            "steps": [
+              {
+                "id": "wu_step",
+                "name": "Easy spin",
+                "durationSeconds": 600,
+                "targets": [
+                  "140-160 W"
+                ]
+              }
+            ]
+          },
+          {
+            "id": "sprints",
+            "name": "Sprints",
+            "role": "main",
+            "steps": [
+              {
+                "id": "sprint_step",
+                "name": "Sprint",
+                "durationSeconds": 30,
+                "sets": 5,
+                "targets": [
+                  "500-600 W"
+                ]
+              }
+            ]
+          },
+          {
+            "id": "cooldown",
+            "name": "Cool-down",
+            "role": "cooldown",
+            "steps": [
+              {
+                "id": "cd_step",
+                "name": "Easy spin",
+                "durationSeconds": 300,
+                "targets": [
+                  "110-130 W"
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "expectedFingerprint": "fit-workout-v2:9078ecf65ba5ab0281dc95d562fb2a5b",
+      "expectedKind": "semantic_definition"
+    },
+    {
+      "id": "cycling_multi_set_intervals",
+      "workout": {
+        "schemaVersion": "canonical_workout_v1",
+        "title": "Microburst Sets",
+        "workoutId": "cycling_microbursts",
+        "modality": "cycling",
+        "targetDurationMin": 45,
+        "exportedAt": "2026-10-17T06:00:00Z",
+        "blocks": [
+          {
+            "id": "warmup",
+            "name": "Warm-up",
+            "role": "warmup",
+            "steps": [
+              {
+                "id": "wu_step",
+                "name": "Easy spin",
+                "durationSeconds": 600,
+                "targets": [
+                  "140-160 W"
+                ]
+              }
+            ]
+          },
+          {
+            "id": "bursts",
+            "name": "Microbursts",
+            "role": "main",
+            "steps": [
+              {
+                "id": "burst_step",
+                "name": "Burst",
+                "durationSeconds": 30,
+                "sets": 2,
+                "repetitions": 4,
+                "restAfterSec": 30,
+                "setRecoverySec": 240,
+                "targets": [
+                  "380-400 W"
+                ]
+              }
+            ]
+          },
+          {
+            "id": "cooldown",
+            "name": "Cool-down",
+            "role": "cooldown",
+            "steps": [
+              {
+                "id": "cd_step",
+                "name": "Easy spin",
+                "durationSeconds": 300,
+                "targets": [
+                  "110-130 W"
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "expectedFingerprint": "fit-workout-v2:1ba1af55e581158c6478e14f41957731",
+      "expectedKind": "semantic_definition"
     }
   ]
 }
