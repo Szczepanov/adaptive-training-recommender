@@ -3,6 +3,7 @@ import type { PerformedOccurrenceSourceRef } from './models';
 import {
     FIT_IDENTITY_OBSERVATION_STATUSES,
     countFitWorkoutIdentityObservations,
+    countUnlinkedSameDayFitPairs,
     observeFitWorkoutIdentity,
 } from './fitWorkoutIdentityDiagnostics';
 
@@ -136,5 +137,37 @@ describe('countFitWorkoutIdentityObservations', () => {
             not_applicable: 1,
             not_observable: 1,
         });
+    });
+});
+
+describe('countUnlinkedSameDayFitPairs', () => {
+    const sem = (fingerprint: string) => ({ fingerprint, kind: 'semantic_definition' as const });
+
+    it('counts same-day structured/recording pairs by fingerprint equality', () => {
+        expect(countUnlinkedSameDayFitPairs([
+            { side: 'structured', localDate: '2026-10-10', evidence: sem(SEMANTIC_A) },
+            { side: 'provider', localDate: '2026-10-10', evidence: sem(SEMANTIC_B) },
+            { side: 'structured', localDate: '2026-10-11', evidence: sem(SEMANTIC_A) },
+            { side: 'provider', localDate: '2026-10-11', evidence: sem(SEMANTIC_A) },
+        ])).toEqual({ sameFingerprint: 1, differentFingerprint: 1 });
+    });
+
+    it('never pairs across dates, within one side, or with index-fallback or undated rows', () => {
+        expect(countUnlinkedSameDayFitPairs([
+            { side: 'structured', localDate: '2026-10-10', evidence: sem(SEMANTIC_A) },
+            { side: 'provider', localDate: '2026-10-11', evidence: sem(SEMANTIC_B) },
+            { side: 'structured', localDate: '2026-10-11', evidence: sem(SEMANTIC_B) },
+            { side: 'provider', localDate: '2026-10-10', evidence: { fingerprint: SEMANTIC_A, kind: 'index_fallback' } },
+            { side: 'provider', evidence: sem(SEMANTIC_A) },
+        ])).toEqual({ sameFingerprint: 1, differentFingerprint: 0 });
+    });
+
+    it('counts every combination when a day has several unlinked rows on each side', () => {
+        expect(countUnlinkedSameDayFitPairs([
+            { side: 'structured', localDate: '2026-10-10', evidence: sem(SEMANTIC_A) },
+            { side: 'structured', localDate: '2026-10-10', evidence: sem(SEMANTIC_B) },
+            { side: 'provider', localDate: '2026-10-10', evidence: sem(SEMANTIC_A) },
+            { side: 'provider', localDate: '2026-10-10', evidence: sem(SEMANTIC_B) },
+        ])).toEqual({ sameFingerprint: 2, differentFingerprint: 2 });
     });
 });

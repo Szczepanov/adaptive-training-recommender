@@ -14,7 +14,7 @@
 import type { NormalizedGarminActivity } from '../engine/models';
 import type { PerformedSessionComparison } from '../sessions/performedComparison';
 import type { StructuredStepDetail } from './structuredSetDetail';
-import type { FitWorkoutIdentityObservation } from './fitWorkoutIdentityDiagnostics';
+import type { FitWorkoutIdentityObservation, SingleSourceFitEvidence } from './fitWorkoutIdentityDiagnostics';
 import { isProviderActivityRef, isStructuredExecutionRef, type PerformedTrainingOccurrence, type ReconciliationProvenance } from './models';
 
 export interface CompletedWorkoutSourceBadge {
@@ -120,6 +120,9 @@ export interface CompletedWorkoutView {
     /** ADR-0051 D7: execution vs provider semantic FIT fingerprint. Absent on views built
      * without it, which the export reports as `not_observable`, never as a mismatch. */
     fitWorkoutIdentity?: FitWorkoutIdentityObservation;
+    /** A single-source row's own FIT identity, used only to count unlinked same-day pairs.
+     * Never exported: the export copies an allow-list, not the view. */
+    singleSourceFitEvidence?: SingleSourceFitEvidence;
 }
 
 export function sourceBadgeFor(occurrence: Pick<PerformedTrainingOccurrence, 'sourceRefs'>): CompletedWorkoutSourceBadge {

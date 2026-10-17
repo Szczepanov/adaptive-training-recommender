@@ -19,8 +19,11 @@ import {
 import type { TrainingResponseSessionEvidence } from './trainingResponseEvidence';
 import {
     countFitWorkoutIdentityObservations,
+    countUnlinkedSameDayFitPairs,
     type FitIdentityObservationStatus,
     type FitWorkoutIdentityObservation,
+    type SingleSourceFitEvidence,
+    type UnlinkedSameDayFitPairs,
 } from './fitWorkoutIdentityDiagnostics';
 
 export const WORKOUT_DIAGNOSTICS_EXPORT_SCHEMA = 'workout-source-diagnostics-v2';
@@ -32,6 +35,7 @@ const SCOPE_NOTES = [
     'not_observable means the evidence needed to decide was not available. It is never an empty, zero or healthy result.',
     'Contains identifiers, source keys, states, reasons and timestamps only; no telemetry, exercise data or credentials.',
     'fitWorkoutIdentity compares FIT workout fingerprints only (ADR-0051 D7); fingerprints themselves are not exported.',
+    'unlinkedSameDayFitPairs counts unlinked structured/recording rows on the same local date by fingerprint equality; the date selects rows to count and never links them.',
 ] as const;
 
 export type ExportedStateAssessment =
@@ -84,6 +88,8 @@ export interface AvailableWorkoutDiagnosticsExport extends ExportEnvelope {
     outboxDepth: { queued: number; failed: number; workoutsWithUnreadableReceipts: number };
     /** Over every workout in the window, not only the exported (possibly truncated) slice. */
     fitWorkoutIdentityCounts: Record<FitIdentityObservationStatus, number>;
+    /** Mismatched pairs are never linked, so they are only visible here (ADR-0051 D7). */
+    unlinkedSameDayFitPairs: UnlinkedSameDayFitPairs;
     workouts: ExportedWorkout[];
     windowState?: never;
 }
@@ -95,6 +101,7 @@ export interface FailedWorkoutDiagnosticsExport extends ExportEnvelope {
     truncated: null;
     outboxDepth: null;
     fitWorkoutIdentityCounts: null;
+    unlinkedSameDayFitPairs: null;
     workouts: null;
     windowState: { number: 8; code: 'read_model_projection_failed'; status: 'holds' };
 }
@@ -232,6 +239,7 @@ export function buildWorkoutDiagnosticsExport(input: {
             truncated: null,
             outboxDepth: null,
             fitWorkoutIdentityCounts: null,
+            unlinkedSameDayFitPairs: null,
             workouts: null,
             windowState: { number: 8, code: 'read_model_projection_failed', status: 'holds' },
         };
@@ -244,6 +252,9 @@ export function buildWorkoutDiagnosticsExport(input: {
         truncated: ordered.length > MAX_EXPORT_WORKOUTS,
         outboxDepth: outboxDepth(ordered),
         fitWorkoutIdentityCounts: countFitWorkoutIdentityObservations(ordered.map(fitIdentityFor)),
+        unlinkedSameDayFitPairs: countUnlinkedSameDayFitPairs(
+            ordered.flatMap(view => (view.singleSourceFitEvidence ? [view.singleSourceFitEvidence] : [])) satisfies SingleSourceFitEvidence[],
+        ),
         workouts: ordered.slice(0, MAX_EXPORT_WORKOUTS).map(exportWorkout),
     };
 }

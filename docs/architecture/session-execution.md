@@ -318,6 +318,13 @@ real-data count that ADR-0051's feasibility gate reads, not ADR-0051 D2 itself: 
 exactly one provider source and ignores reconciliation state. It grants no identity or
 recommendation authority.
 
+Because `reconciliationScore.ts` `compareFitWorkoutIdentity` treats a semantic mismatch as a
+hard negative, a mismatched pair is never linked and can never appear as `semantic_mismatch`.
+The window-level `unlinkedSameDayFitPairs` (`sameFingerprint` / `differentFingerprint`) makes it
+visible: it pairs every structured-only row with every provider-only row on the same local date
+when both carry a semantic fingerprint. The date only selects which rows to count; it never
+links them or asserts they are one workout. Only the two counts are exported.
+
 ## Per-consumer double-count closure (#895 WP6)
 
 One physical workout (a structured execution plus a matched Garmin recording) must be counted or rendered once by every consumer that already reads canonical authority. `engine/tests/perConsumerDoubleCountInventory.test.ts` pushes one shared fixture through each migrated consumer; the suites in the last column prove arrival order, ambiguity and pending reconciliation.

@@ -187,6 +187,24 @@ describe('getCompletedWorkoutsInRange', () => {
         const [view] = await getCompletedWorkoutsInRange('user-1', '2026-08-20', '2026-08-27');
 
         expect(view.fitWorkoutIdentity).toEqual({ status: 'not_applicable', reason: 'no_provider_source' });
+        expect(view.singleSourceFitEvidence).toBeUndefined();
+    });
+
+    it('keeps a single-source row\'s own FIT identity for the unlinked-pair count', async () => {
+        const fingerprint = 'fit-workout-v2:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+        vi.mocked(repo.queryActiveInDateWindow).mockResolvedValue([occurrence({
+            sourceRefs: [{ kind: 'structured_execution', executionId: 'exec-1', fitWorkoutFingerprint: fingerprint, fitWorkoutFingerprintKind: 'semantic_definition' }],
+        })]);
+        vi.mocked(sessionExecutionService.getExecution).mockResolvedValue({ status: 'UNAVAILABLE' } as never);
+
+        const [view] = await getCompletedWorkoutsInRange('user-1', '2026-08-20', '2026-08-27');
+
+        // The execution read failed, so the link copy is the evidence.
+        expect(view.singleSourceFitEvidence).toEqual({
+            side: 'structured',
+            localDate: '2026-08-26',
+            evidence: { fingerprint, kind: 'semantic_definition' },
+        });
     });
 
     it('attaches per-set rows and durable performed rest to the structured detail', async () => {

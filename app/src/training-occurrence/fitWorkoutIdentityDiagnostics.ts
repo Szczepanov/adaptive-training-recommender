@@ -97,6 +97,38 @@ export function observeFitWorkoutIdentity(input: {
         : { status: 'semantic_mismatch', reason: 'fingerprint_differs' };
 }
 
+/** One single-source row's own semantic FIT identity, for the unlinked-pair count only. */
+export interface SingleSourceFitEvidence {
+    side: 'structured' | 'provider';
+    localDate?: string;
+    evidence: FitIdentityEvidence;
+}
+
+export interface UnlinkedSameDayFitPairs {
+    sameFingerprint: number;
+    differentFingerprint: number;
+}
+
+/**
+ * Reconciliation treats a semantic mismatch as a hard negative (`reconciliationScore.ts`
+ * `compareFitWorkoutIdentity`), so a mismatched execution/recording pair is never linked and
+ * cannot appear as `semantic_mismatch` above. Without this count, zero matches could not be told
+ * apart from "every pair mismatched and was split". Pairs a structured-only row with a
+ * provider-only row on the same local date, both semantic. The date only selects rows to count;
+ * it never makes a pair the same workout, and the result is a number, not a link.
+ */
+export function countUnlinkedSameDayFitPairs(rows: readonly SingleSourceFitEvidence[]): UnlinkedSameDayFitPairs {
+    const semantic = rows.filter(row => row.localDate && row.evidence.kind === 'semantic_definition');
+    const structured = semantic.filter(row => row.side === 'structured');
+    const recordings = semantic.filter(row => row.side === 'provider');
+    return structured.reduce((counts, execution) => recordings
+        .filter(recording => recording.localDate === execution.localDate)
+        .reduce((inner, recording) => recording.evidence.fingerprint === execution.evidence.fingerprint
+            ? { ...inner, sameFingerprint: inner.sameFingerprint + 1 }
+            : { ...inner, differentFingerprint: inner.differentFingerprint + 1 }, counts),
+    { sameFingerprint: 0, differentFingerprint: 0 });
+}
+
 export function countFitWorkoutIdentityObservations(
     observations: readonly FitWorkoutIdentityObservation[],
 ): Record<FitIdentityObservationStatus, number> {

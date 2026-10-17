@@ -27,15 +27,21 @@ import { isProviderActivityRef, isStructuredExecutionRef, type PerformedTraining
 import { sourceKeyForRef } from './sourceIdentity';
 import { performedTrainingOccurrenceRepository } from './repository';
 import { hydrateOccurrenceSourcesInRange, type HydratedProviderSource } from './occurrenceSourcesHydration';
-import { fitIdentityEvidenceOf, observeFitWorkoutIdentity, type FitIdentityEvidence } from './fitWorkoutIdentityDiagnostics';
+import {
+    fitIdentityEvidenceOf,
+    observeFitWorkoutIdentity,
+    type FitIdentityEvidence,
+    type SingleSourceFitEvidence,
+} from './fitWorkoutIdentityDiagnostics';
 
 interface StructuredHydration {
     structured?: CompletedWorkoutView['structured'];
     read: StructuredSourceRead;
-    /** The execution document's own FIT identity, whenever the execution itself was read. */
+    /** True once the execution document itself was read, whatever happened after. */
+    executionRead: boolean;
+    /** The execution document's own FIT identity, whenever it carries one. */
     executionFitIdentity?: FitIdentityEvidence;
 }
-
 
 /** A denied read is an authorization defect, not a transient source failure: keep failing the
  * whole window (the pre-WP5 contract) instead of rendering it as one row's "unavailable". */
@@ -51,14 +57,14 @@ async function resolveStructuredDetail(
 ): Promise<StructuredHydration> {
     const executionState = await sessionExecutionService.getExecution(userId, executionId);
     switch (executionState.status) {
-        case 'MISSING': return { read: { status: 'execution_missing' } };
-        case 'INVALID': return { read: { status: 'execution_invalid' } };
-        case 'UNAVAILABLE': return { read: { status: 'execution_unavailable' } };
+        case 'MISSING': return { read: { status: 'execution_missing' }, executionRead: false };
+        case 'INVALID': return { read: { status: 'execution_invalid' }, executionRead: false };
+        case 'UNAVAILABLE': return { read: { status: 'execution_unavailable' }, executionRead: false };
         case 'AVAILABLE': break;
     }
     const execution = executionState.data;
     const executionFitIdentity = fitIdentityEvidenceOf(execution);
-    const fit = executionFitIdentity ? { executionFitIdentity } : {};
+    const fit = { executionRead: true, ...(executionFitIdentity ? { executionFitIdentity } : {}) };
 
     const definitionState = await resolveSessionDefinition(userId, execution.sessionSource, execution.prescriptionHash);
     if (definitionState.status !== 'AVAILABLE') {
@@ -211,7 +217,7 @@ async function hydrateOccurrence(
 
     const structuredHydration: StructuredHydration = structuredRef
         ? await resolveStructuredDetail(userId, structuredRef.executionId)
-        : { read: { status: 'not_linked' } };
+        : { read: { status: 'not_linked' }, executionRead: false };
     const garmin = garminRef
         ? providerSources.find(source => source.ref.provider.toLowerCase() === 'garmin'
             && source.ref.activityId === garminRef.activityId)?.activity
@@ -227,9 +233,11 @@ async function hydrateOccurrence(
     // has no document read here, so only its source-link copy can count, never its absence.
     const providerDocumentRead = providerRefs.length === 1 && garmin !== undefined;
     const garminFitIdentity = providerDocumentRead ? fitIdentityEvidenceOf(garmin) : undefined;
-    // The execution document was read whenever hydration got past the execution fetch.
-    const executionDocumentRead = !['not_linked', 'execution_missing', 'execution_invalid', 'execution_unavailable']
-        .includes(structuredHydration.read.status);
+    const singleSourceFitEvidence = singleSourceFitEvidenceFor(
+        occurrence,
+        structuredHydration.executionFitIdentity ?? (structuredRef ? fitIdentityEvidenceOf(structuredRef) : undefined),
+        garminFitIdentity ?? (providerRefs.length === 1 ? fitIdentityEvidenceOf(providerRefs[0]) : undefined),
+    );
 
     return {
         performedOccurrenceId: occurrence.performedOccurrenceId,
@@ -247,11 +255,25 @@ async function hydrateOccurrence(
         fitWorkoutIdentity: observeFitWorkoutIdentity({
             sourceRefs: occurrence.sourceRefs,
             ...(structuredHydration.executionFitIdentity ? { executionDocument: structuredHydration.executionFitIdentity } : {}),
-            executionDocumentRead,
+            executionDocumentRead: structuredHydration.executionRead,
             ...(garminFitIdentity ? { providerDocument: garminFitIdentity } : {}),
             providerDocumentRead,
         }),
+        ...(singleSourceFitEvidence ? { singleSourceFitEvidence } : {}),
     };
+}
+
+/** Only a row with exactly one source has a side to pair (ADR-0051 D7 unlinked-pair count). */
+function singleSourceFitEvidenceFor(
+    occurrence: PerformedTrainingOccurrence,
+    execution: FitIdentityEvidence | undefined,
+    recording: FitIdentityEvidence | undefined,
+): SingleSourceFitEvidence | undefined {
+    if (occurrence.sourceRefs.length !== 1) return undefined;
+    const [ref] = occurrence.sourceRefs;
+    const side = isStructuredExecutionRef(ref) ? 'structured' : 'provider';
+    const evidence = side === 'structured' ? execution : recording;
+    return evidence ? { side, ...(occurrence.localDate ? { localDate: occurrence.localDate } : {}), evidence } : undefined;
 }
 
 /** The provider-activity fetch window hydration actually needs: one local day wider on
