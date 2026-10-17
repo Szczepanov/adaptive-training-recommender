@@ -17,6 +17,7 @@ import { recommendationService } from '../services/recommendationService';
 import { activityOverrideService } from '../services/activityOverrideService';
 import { computeContentHash } from '../engine/externalPlanHash';
 import { resolveSessionDefinition } from '../sessions/sessionDefinitionResolver';
+import { deliveredPatternWork } from '../sessions/deliveredComposition';
 import { addDaysToLocalDateString, getPreviousLocalDateString } from '../utils/localDate';
 import {
     deriveFactsFromOccurrence,
@@ -35,6 +36,9 @@ export interface GetPerformedTrainingFactsOptions {
     preloadedActivities?: readonly NormalizedGarminActivity[];
     /** Export-only provenance. Keep default decision snapshots and hashes unchanged. */
     includeDisplayProvenance?: boolean;
+    /** Export-only, with `includeDisplayProvenance`: read each structured execution's logged
+     * sets for the #813 exposure ledger. Off for exports that do not render the ledger. */
+    includeDeliveredComposition?: boolean;
     activityOverrides?: Readonly<Record<string, ActivityOverride>> | ReadonlyMap<string, ActivityOverride>;
 }
 
@@ -71,6 +75,20 @@ function workoutVariantForExecution(
     const prescription = recommendation?.prescription;
     if (!prescription || execution.sessionSource.kind !== 'catalog') return undefined;
     return prescription.workoutId === execution.sessionSource.workoutId ? prescription.variantId : undefined;
+}
+
+/** Export-only (issue #813 / #803): delivered unilateral lower-body work for the brief's
+ * exposure ledger. An unreadable entry list is reported as unknown, never as no exposure. */
+async function deliveredCompositionProvenance(
+    userId: string,
+    executionId: string,
+): Promise<Pick<PerformedExposureFact, 'deliveredUnilateralLowerBody' | 'deliveredCompositionUnavailable'>> {
+    try {
+        const work = deliveredPatternWork(await sessionExecutionService.getEntries(userId, executionId), 'unilateral_lower_body');
+        return work ? { deliveredUnilateralLowerBody: work } : {};
+    } catch {
+        return { deliveredCompositionUnavailable: true };
+    }
 }
 
 /**
@@ -230,6 +248,9 @@ export async function getPerformedTrainingFactsInRange(
         exposures.push(options.includeDisplayProvenance ? {
             ...facts.exposure,
             ...(hydrated.structured?.executionState ? { executionState: hydrated.structured.executionState } : {}),
+            ...(hydrated.structured && options.includeDeliveredComposition
+                ? await deliveredCompositionProvenance(userId, hydrated.structured.executionId)
+                : {}),
             providerActivityIds: [...new Set(providerSources
                 .filter(source => source.ref.provider.toLowerCase() === 'garmin')
                 .map(source => source.ref.activityId))].sort(),

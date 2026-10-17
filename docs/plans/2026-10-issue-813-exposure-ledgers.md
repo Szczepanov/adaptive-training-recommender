@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | `In progress` — the read-only ledgers have shipped; #803 unilateral, #806 long-aerobic-anchor, tissue-specific families and taper/event suppression remain open |
+| **Status** | `In progress` — the read-only ledgers and #803 unilateral delivered exposure have shipped; #806 long-aerobic-anchor, tissue-specific families and taper/event suppression remain open |
 | **Source** | [issue #813](https://github.com/Szczepanov/adaptive-training-recommender/issues/813) |
 | **Behaviour reference** | [`recommendation-engine.md` § Stressor and physical-capability exposure ledgers](../architecture/recommendation-engine.md) |
 | **Authority** | Presentation only. No decision-authority constant, no `POLICY_VERSION` change. |
@@ -21,18 +21,47 @@
 - Tests: `contextBriefExposureLedger.test.ts`, including a dedicated long-Z2 test and an
   explicit-`unknown` test for the unmodelled families.
 
+- #803 unilateral lower-body (owner decision 2026-10-17, recorded on #813):
+  `sessions/deliveredComposition.ts` `deliveredPatternWork` counts the logged working sets
+  whose entries carry `unilateral_lower_body`. `performedTrainingFactsService` attaches the
+  count as export-only `deliveredUnilateralLowerBody`, or `deliveredCompositionUnavailable`
+  when the entries can't be read. It does this only under `includeDisplayProvenance` plus
+  `includeDeliveredComposition`, which `ContextBriefService` sets for planning and diagnostic
+  but not morning (morning renders no ledger). So decision snapshots and hashes are
+  unchanged. The ledger confirms the row from that
+  evidence. Garmin records, imported-plan titles and authored-but-unlogged steps never
+  confirm or plan it.
+  - This is a reporting rule with no decision authority. It owns no threshold or cadence,
+    and no engine path reads it, so no knowledge claim, coverage item or alignment test is
+    added (ADR-0033 applies to decision-authority rules).
+  - `deliveredPatternWork` is the canonical "delivered" reading for this row. It trusts only
+    the entry's own stamp. The older `workouts/movementComposition.ts`
+    `deriveMovementCompositionEvidence` (tests only today) also trusts step metadata when
+    the exercise matches, so it would count pre-stamp entries (before #845). Converge on one
+    owner before either drives credit.
+  - Tests: `deliveredComposition.test.ts`, the #803 cases in
+    `contextBriefExposureLedger.test.ts`, `performedTrainingFactsService.deliveredComposition.test.ts`,
+    and the refreshed golden service artifacts.
+
 ## Remaining
 
 | Item | State | What is missing |
 |---|---|---|
-| `unilateral_lower_body` (#803) | Renders `unknown` ("no canonical exposure model yet") | #803 ships an *authored composition* contract (`sessions/movementCompositionContract.ts`, `workouts/movementComposition.ts`) that is documented as structured movement roles only that do not imply dose or stimulus credit. Canonical performed facts (`PerformedExposureFact`) carry no composition or delivered-step evidence and there is no `grants…Credit` helper for unilateral work. Wiring needs an owner decision on what counts as a delivered unilateral exposure (retained steps, dose floor) — a policy decision, not presentation. |
-| `long_aerobic_anchor` (#806) | Renders `unknown` | #806 owns a *planning requirement*: `weeklyAerobicDose.ts` `resolveWeeklyAerobicDoseEnvelope` derives `longAnchor` (workout id + minimum duration) from 28-day history. There is no completed-exposure credit helper, and "was a long anchor completed" depends on that athlete-specific per-run duration, which the brief would have to receive as a resolved result from evergreen planning (as #805 does) — and which this export path does not currently carry. Re-deriving it in the ledger would create a second owner of the threshold. |
+| `long_aerobic_anchor` (#806) | Renders `unknown` | #806 owns a *planning requirement*: `weeklyAerobicDose.ts` `resolveWeeklyAerobicDoseEnvelope` derives `longAnchor` (workout id + minimum duration) from 28-day history. There is no completed-exposure credit helper, and "was a long anchor completed" depends on that athlete-specific per-run duration, which the brief would have to receive as a resolved result from evergreen planning (as #805 does) — and which this export path does not currently carry. Re-deriving it in the ledger would create a second owner of the threshold. **Blocker (2026-10-17):** the clamped duration exists only inside `aerobicPackingForFloor` and is never exposed. The only transport, a runtime-only readout on `Recommendation` beside `capabilityMaintenance`, means an executable change to `rules.ts`, and `check-policy-drift.mjs` then requires a `POLICY_VERSION` bump with no recommendation change behind it. Options are recorded on #813. |
+| #803 evidence coverage | Partial | Confirmation needs the runner's entry stamp, so it depends on catalog tags. `split_squat`, `reverse_lunge`, `lateral_lunge` and `single_leg_hip_thrust` (`workouts/exercise-catalog-extensions.ts`) are unilateral by movement pattern but carry no `unilateral_lower_body` composition pattern. Sets on them, including the re-entry strength split-squat step and swaps to them, leave the row `unknown`; the failure is safe, never "absent". Other gaps: distance-dosed sets (`distance` entries) never count; entries logged before #845 carry no stamp; and the `useSessionRunner` stamping/swap logic has no test. A follow-up covers the tagging and a runner test. |
 | Hamstring knee-flexion / calf-soleus / grip-carry | Explicit `unknown`, no exposure date | No issue or canonical model exists. Intentionally never inferred from generic strength. |
 | Taper / event-specific suppression | Deferred | Needs design; not represented outside #805. |
 
 ## Context Brief contract version decision (#894 D3)
 
-`CONTEXT_BRIEF_CONTRACT_VERSION` stays `2026-10-context-brief-contract-v7`. #894 (D3 and its
+**v9 (2026-10-17, #803):** the unilateral lower-body row changes from permanently `unknown`
+to evidence-backed `confirmed`, the explanatory paragraph changes, and the row moves next to
+strength. Rendered output and row semantics change, so `CONTEXT_BRIEF_CONTRACT_VERSION` is
+bumped from v8 to v9. Wiring #806 later will need its own decision.
+
+Earlier decision for the completion slice (superseded by v8 for #941 and v9 above):
+
+`CONTEXT_BRIEF_CONTRACT_VERSION` stayed `2026-10-context-brief-contract-v7`. #894 (D3 and its
 contract-change risk mitigation) requires an explicit contract-version decision when required
 fields or the semantic meaning of a contract field change. The
 #813 completion slice changes no rendered output and no field semantics (tests and

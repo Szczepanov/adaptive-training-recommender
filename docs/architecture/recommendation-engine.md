@@ -449,8 +449,16 @@ read-only ledgers (`contextBriefExposureLedger.ts` `deriveExposureLedger` /
   a recoverable materialized `full`/`reduced` variant, and a non-readiness-modified dose
   confirms it. Unknown/legacy variants fail closed rather than being guessed as `full`
   (Garmin records and imported-plan titles cannot prove power content), and an active impact guardrail adds a note that plyometric
-  power is suspended while non-impact identities remain eligible. Families still without a
-  canonical model (unilateral #803, long aerobic anchor #806,
+  power is suspended while non-impact identities remain eligible. Unilateral lower-body
+  (#803) is confirmed only by delivered work: `sessions/deliveredComposition.ts`
+  `deliveredPatternWork` counts non-deleted working entries (non-warm-up repetitions,
+  durations, completed check-offs) whose `SessionEntry.compositionPatterns` carry
+  `unilateral_lower_body`. The runner stamps those patterns at log time, so a swap that
+  drops the pattern does not count. The count reaches the ledger as export-only
+  `deliveredUnilateralLowerBody` provenance on the canonical fact, attached only for the
+  planning and diagnostic briefs (`includeDeliveredComposition`). Authored-but-unlogged steps, imported-plan
+  titles and Garmin records never confirm or plan it, and an unreadable entry list is
+  reported as unknown. Families still without a canonical model (long aerobic anchor #806,
   hamstring/calf/grip) are `unknown` and are to be switched to those models' outputs as
   they land, not re-derived here. Unreadable activities, adherence,
   overrides, plan schedule or settings are stated as unknown, never as absence.
@@ -458,14 +466,12 @@ read-only ledgers (`contextBriefExposureLedger.ts` `deriveExposureLedger` /
   applied with explicit provenance and labelled display-only; each such row also prints the
   engine-recorded modality/intensity and cost row, because the engine's training history
   does not consume overrides.
-- **Deferred.** Taper/event-specific suppression is not yet represented, and the
-  #803 (unilateral) and #806 (long aerobic anchor) capability families remain `unknown`:
-  #803 ships only an authored composition contract (no completed-exposure credit helper or
-  delivered-step evidence on performed facts), and #806's anchor is a history-derived planning
-  requirement whose per-athlete duration this export does not carry. Wiring either needs an
-  owner decision, not presentation. Remaining status and the Context Brief contract-version
-  decision (#894 D3: no bump for the #813 completion slice, which changes no rendered output)
-  are recorded in [the #813 plan](../plans/2026-10-issue-813-exposure-ledgers.md).
+- **Deferred.** Taper/event-specific suppression is not yet represented. The #806 long
+  aerobic anchor remains `unknown`. Its per-athlete duration is resolved only inside
+  evergreen planning (`aerobicPackingForFloor`), and carrying it to the brief means
+  touching `rules.ts`, which the policy-drift check treats as a recommendation change.
+  Remaining status and the Context Brief contract-version decisions (v9 for #803) are
+  recorded in [the #813 plan](../plans/2026-10-issue-813-exposure-ledgers.md).
   Presentation only — `POLICY_VERSION` is unaffected.
 
 #### Recommendation feedback vs plan execution (issue #815)

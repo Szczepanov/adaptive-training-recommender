@@ -4,7 +4,7 @@ The Context Brief is the read-only handoff between the athlete record and an ext
 It is treated as a versioned API even though the wire format remains human/LLM-readable
 Markdown.
 
-This document describes the current v8 contract. Issue #894 established the versioned export
+This document describes the current v9 contract. Issue #894 established the versioned export
 contract through v3: purpose/window identity, source state and currency, canonical performed
 training, missingness semantics, purpose budgets, golden fixtures and service-built regression
 coverage. Issue #893 advanced that contract to v4 for the planning-only external-plan execution
@@ -14,6 +14,9 @@ around that same content. Morning D-1 adherence keeps its purpose-specific debri
 canonical performed-training facts; diagnostic preserves separately labelled raw provider provenance.
 Issue #929 advanced it to v7 (season roadmap). Issue #941 advances it to v8: the round-trip
 `performance` dimension gains `in progress` for an execution still running on the as-of day.
+Issue #813 advances it to v9: the planning/diagnostic physical-capability ledger's unilateral
+lower-body row (#803) changes from permanently `unknown` to `confirmed` when logged working sets
+on steps carrying the `unilateral_lower_body` movement pattern exist.
 
 ## Export boundary
 
@@ -68,7 +71,7 @@ create a second planning engine.
 
 ## Contract identity block
 
-Contract version `2026-10-context-brief-contract-v8` currently exposes one field per line so
+Contract version `2026-10-context-brief-contract-v9` currently exposes one field per line so
 each field is independently machine-readable:
 
 - `Contract version`;

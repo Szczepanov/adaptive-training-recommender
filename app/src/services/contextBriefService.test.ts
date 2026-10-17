@@ -180,7 +180,7 @@ describe('ContextBriefService', () => {
         expect(json.content).toBe(markdown);
         expect(json.unavailableSources).toEqual(result.unavailableSources);
         expect(json.schemaVersion).toBe('context_brief_export_v2');
-        expect(json.contractVersion).toBe('2026-10-context-brief-contract-v8');
+        expect(json.contractVersion).toBe('2026-10-context-brief-contract-v9');
         expect(markdown).toContain(`Contract version: ${json.contractVersion}`);
     });
 
@@ -252,7 +252,7 @@ describe('ContextBriefService', () => {
         expect(markdown).toContain('comparable raw change +5 kg (+3.3%); status insufficient_evidence');
         expect(markdown).toContain('source derived');
         expect(json.content).toBe(markdown);
-        expect(json.contractVersion).toBe('2026-10-context-brief-contract-v8');
+        expect(json.contractVersion).toBe('2026-10-context-brief-contract-v9');
         expect(result.unavailableSources).not.toContain('assessment benchmarks (incomplete or unavailable sources)');
     });
 
@@ -321,7 +321,7 @@ describe('ContextBriefService', () => {
 
     it('emits the planning round-trip section and preserves unavailable source reads as unknown', async () => {
         const empty = await new ContextBriefService().build('u1', AS_OF, 14, 'full');
-        expect(empty.contractVersion).toBe('2026-10-context-brief-contract-v8');
+        expect(empty.contractVersion).toBe('2026-10-context-brief-contract-v9');
         expect(empty.text).toContain('External-plan execution round trip (14-day window)');
         expect(empty.text).toContain('Missing activity is not treated as a missed session.');
 
@@ -935,11 +935,15 @@ describe('ContextBriefService', () => {
         expect(services.getOverridesSinceState).toHaveBeenCalledWith('u1', '2026-08-02');
         expect(full.text).toContain('Canonical performed-training facts were unreadable');
         expect(full.unavailableSources).toContain('canonical performed-training facts');
+        // The ledger-rendering export reads logged sets for the #803 unilateral row.
+        expect(services.getPerformedTrainingFactsInRange).toHaveBeenCalledWith(
+            'u1', '2026-08-02', '2026-08-16', expect.objectContaining({ includeDeliveredComposition: true }),
+        );
         services.getOverridesSinceState.mockClear();
         services.getPerformedTrainingFactsInRange.mockClear();
         await new ContextBriefService().build('u1', AS_OF, 2);
         expect(services.getOverridesSinceState).not.toHaveBeenCalled();
-        expect(services.getPerformedTrainingFactsInRange).toHaveBeenCalledWith('u1', '2026-08-13', '2026-08-16', { preloadedActivities: [], includeDisplayProvenance: true });
+        expect(services.getPerformedTrainingFactsInRange).toHaveBeenCalledWith('u1', '2026-08-13', '2026-08-16', { preloadedActivities: [], includeDisplayProvenance: true, includeDeliveredComposition: false });
     });
 
     it('keeps the D-1 morning contract for a one-day caller request', async () => {
@@ -949,7 +953,7 @@ describe('ContextBriefService', () => {
         expect(result.text).toContain('Yesterday\'s Closed-Loop Debrief (2026-08-14)');
         expect(services.getRecommendationsInRange).toHaveBeenCalledWith('u1', '2026-08-14', '2026-08-16');
         expect(services.getPerformedTrainingFactsInRange).toHaveBeenCalledWith(
-            'u1', '2026-08-13', '2026-08-16', { preloadedActivities: [], includeDisplayProvenance: true },
+            'u1', '2026-08-13', '2026-08-16', { preloadedActivities: [], includeDisplayProvenance: true, includeDeliveredComposition: false },
         );
     });
 

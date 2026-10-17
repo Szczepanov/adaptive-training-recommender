@@ -36,6 +36,13 @@ export interface PerformedExposureFact {
     executionState?: SessionExecutionState;
     /** Brief/export source linkage; omitted from decision snapshots unless explicitly requested. */
     providerActivityIds?: string[];
+    /** Brief/export only (issue #813 / #803): logged unilateral lower-body working sets from the
+     * structured execution (`deliveredPatternWork`). Absent = no such delivered evidence.
+     * Omitted from decision snapshots unless explicitly requested. */
+    deliveredUnilateralLowerBody?: { workingSets: number; stepIds: string[] };
+    /** Brief/export only: the structured execution's entries could not be read, so delivered
+     * composition is unknown rather than absent. */
+    deliveredCompositionUnavailable?: boolean;
     durationMin?: number;
     modality: SessionTemplate['modality'] | 'Unknown';
     category?: SessionTemplate['category'];
