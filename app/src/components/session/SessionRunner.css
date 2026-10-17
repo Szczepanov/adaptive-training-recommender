@@ -38,12 +38,6 @@
     border-radius: 4px;
 }
 
-.session-completion-sheet .checkbox-label {
-    display: flex;
-    align-items: center;
-    min-height: var(--touch-target-min, 44px);
-}
-
 .session-runner-container.no-active {
     max-width: 720px;
 }

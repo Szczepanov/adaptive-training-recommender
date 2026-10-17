@@ -269,6 +269,7 @@ function createMockSessionResponse(amOccId: string): SessionResponse {
         date: DATE,
         checkinRef: { date: DATE },
         sessionRpe: 3,
+        unexpectedFatigue: false,
         note: 'felt great',
         createdAt: '2026-09-07T06:05:00.000Z',
         updatedAt: '2026-09-07T06:05:00.000Z',
@@ -552,6 +553,102 @@ describe('adjudicateIntradayBundleMembers', () => {
         expect(result.statuses).toHaveLength(1);
         expect(result.statuses[0].status).toBe('pending');
         expect(result.statuses[0].reason).toContain('Awaiting explicit post-predecessor');
+        // #896: the card can ask for the missing answer instead of stalling.
+        expect(result.statuses[0].predecessorConfirmation).toMatchObject({
+            sourceSession: { kind: 'execution', id: 'exec-am-1', date: DATE },
+            occurrenceId: 'occ-am-1',
+        });
+    });
+
+    it('does not offer a launch on tissue-only feedback when the immediate response is missing (#896)', async () => {
+        const active = createPlan();
+        const bundlePlacement = createBundlePlacement();
+
+        // AM completed, but NO immediate response yet
+        const amOccId = 'occ-am-1';
+        const amOcc: ExternalPlanSessionOccurrence = {
+            userId: USER_ID,
+            occurrenceId: amOccId,
+            date: DATE,
+            authority: 'external_plan',
+            externalPlanRef: { planId: 'p-v4', revision: 1, sessionId: 'am-run', contentHash: 'hash-bundle-v4' },
+            state: 'completed',
+            placementOrder: 0,
+            windowBinding: createPrimaryWindowBinding(),
+            createdAt: '2026-09-07T05:00:00.000Z',
+            updatedAt: '2026-09-07T06:00:00.000Z',
+        };
+
+        const amExec = createMockExecution(amOccId);
+
+        seedOccurrences(amOcc);
+        vi.spyOn(sessionExecutionService, 'getExecutionsInRange').mockResolvedValue({ executions: [amExec], invalidRecords: 0 });
+        vi.spyOn(sessionResponseService, 'getResponseForWindow').mockResolvedValue(null);
+
+        const result = await adjudicateIntradayBundleMembers({
+            userId: USER_ID,
+            date: DATE,
+            activePlan: active,
+            bundlePlacement,
+            subjective: mockSubjective,
+            objective: mockObjective,
+            userContext: mockUserContext,
+            availability: mockAvailability,
+            ceilings,
+            evaluationInstant: '2026-09-07T12:00:00.000Z',
+            tissueResponses: [{ region: 'knee', morningState: 'normal', painDuringTraining: 'normal', afterTrainingState: 'normal' }],
+        });
+
+        expect(result.bindings).toHaveLength(0);
+        expect(result.statuses).toHaveLength(1);
+        expect(result.statuses[0].status).toBe('pending');
+        expect(result.statuses[0].reason).toBe('Answer the check-in for your earlier session to unlock this one.');
+        expect(result.statuses[0].predecessorConfirmation?.sourceSession).toEqual({ kind: 'execution', id: 'exec-am-1', date: DATE });
+    });
+
+    it('keeps prompting when the immediate response holds no explicit fatigue answer (#896)', async () => {
+        const active = createPlan();
+        const bundlePlacement = createBundlePlacement();
+
+        // AM completed; its immediate response carries sRPE and a note but no fatigue answer
+        const amOccId = 'occ-am-1';
+        const amOcc: ExternalPlanSessionOccurrence = {
+            userId: USER_ID,
+            occurrenceId: amOccId,
+            date: DATE,
+            authority: 'external_plan',
+            externalPlanRef: { planId: 'p-v4', revision: 1, sessionId: 'am-run', contentHash: 'hash-bundle-v4' },
+            state: 'completed',
+            placementOrder: 0,
+            windowBinding: createPrimaryWindowBinding(),
+            createdAt: '2026-09-07T05:00:00.000Z',
+            updatedAt: '2026-09-07T06:00:00.000Z',
+        };
+
+        const amExec = createMockExecution(amOccId);
+
+        seedOccurrences(amOcc);
+        vi.spyOn(sessionExecutionService, 'getExecutionsInRange').mockResolvedValue({ executions: [amExec], invalidRecords: 0 });
+        vi.spyOn(sessionResponseService, 'getResponseForWindow').mockResolvedValue({ ...createMockSessionResponse(amOccId), unexpectedFatigue: undefined });
+
+        const result = await adjudicateIntradayBundleMembers({
+            userId: USER_ID,
+            date: DATE,
+            activePlan: active,
+            bundlePlacement,
+            subjective: mockSubjective,
+            objective: mockObjective,
+            userContext: mockUserContext,
+            availability: mockAvailability,
+            ceilings,
+            evaluationInstant: '2026-09-07T12:00:00.000Z',
+        });
+
+        expect(result.bindings).toHaveLength(0);
+        expect(result.statuses).toHaveLength(1);
+        expect(result.statuses[0].status).toBe('pending');
+        expect(result.statuses[0].reason).toBe('Answer the check-in for your earlier session to unlock this one.');
+        expect(result.statuses[0].predecessorConfirmation?.sourceSession).toEqual({ kind: 'execution', id: 'exec-am-1', date: DATE });
     });
 
     it('excludes target member reservation to prevent self-consumption on consecutive reloads', async () => {

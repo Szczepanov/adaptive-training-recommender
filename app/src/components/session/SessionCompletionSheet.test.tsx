@@ -88,6 +88,9 @@ describe('SessionCompletionSheet', () => {
         expect(html).not.toContain('rpe-pill-btn selected');
         expect(html).not.toMatch(/<option value="\d(\.\d+)?" selected/);
         expect(html).not.toContain('checked=""');
+        expect(html).toContain('Unexpected fatigue during or after this session?');
+        expect(html).toMatch(/data-testid="fatigue-status"[^>]*>Not answered</);
+        expect(html).not.toContain('aria-pressed="true"');
     });
 
     it('disables the 100% option while required work is unfinished (#896)', () => {

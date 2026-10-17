@@ -79,6 +79,8 @@ import { GarminSyncNowButton } from './GarminSyncNowButton';
 import { DataConfidenceIndicator } from './DataConfidenceIndicator';
 import { MorningDecisionCard } from './MorningDecisionCard';
 import { AdditionalSessionsCard } from './session/AdditionalSessionsCard';
+import { recordPredecessorConfirmation } from './session/predecessorConfirmationAction';
+import type { PredecessorConfirmationPrompt } from '../services/predecessorConfirmationGate';
 import {
   claimIntradayMemberLaunch,
   releaseIntradayMemberClaim,
@@ -1108,6 +1110,14 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
     }
   }, [userId, decisionInput?.date, bundleMemberInputRevision, onStartSession, loadDashboardData]);
 
+  const handleConfirmPredecessor = useCallback(async (
+    prompt: PredecessorConfirmationPrompt,
+    unexpectedFatigue: boolean,
+  ) => {
+    await recordPredecessorConfirmation(userId, prompt, unexpectedFatigue);
+    await loadDashboardData();
+  }, [userId, loadDashboardData]);
+
   useEffect(() => {
     loadDashboardData();
   }, [loadDashboardData]);
@@ -1678,6 +1688,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
               <AdditionalSessionsCard
                 members={bundleMemberStatuses}
                 onStartMember={handleStartAdditionalSession}
+                onConfirmPredecessor={handleConfirmPredecessor}
               />
             </>
           )}

@@ -28,6 +28,7 @@ import type {
     ExternalPlanSessionOccurrence,
 } from '../sessions/models';
 import { isExternalPlanOccurrence } from '../sessions/models';
+import { gatePredecessorConfirmation, type PredecessorConfirmationPrompt } from './predecessorConfirmationGate';
 import { parseSessionOccurrenceDocument } from '../persistence/parsers/sessionDefinition';
 import type { BundlePlacementProposal } from '../engine/intradayBundlePlacement';
 import type { LedgerCeilings } from '../engine/dailyLedger';
@@ -95,6 +96,8 @@ export interface IntradayBundleMemberStatus {
     boundStartLocal?: string;
     boundEndLocal?: string;
     orderInBundle?: number;
+    /** #896: present when the member waits on the predecessor's post-session answer. */
+    predecessorConfirmation?: PredecessorConfirmationPrompt;
 }
 
 export interface IntradayBundleMemberAdjudicationResult {
@@ -306,6 +309,7 @@ export async function adjudicateIntradayBundleMembers(
         // Resolve predecessor evidence if required
         let predecessor: PredecessorEvidence | undefined;
         let predecessorExecutionId: string | null = null;
+        let predecessorExecutionDate: string | undefined;
         let predecessorOccurrenceId: string | null = null;
 
         if (targetSession.intraday.afterSessionId) {
@@ -320,6 +324,7 @@ export async function adjudicateIntradayBundleMembers(
                 let immediateResponse = null;
                 if (predExec) {
                     predecessorExecutionId = predExec.execution.executionId;
+                    predecessorExecutionDate = predExec.execution.date;
                     immediateResponse = await responseService.getResponseForWindow(
                         userId,
                         { kind: 'execution', id: predExec.execution.executionId },
@@ -433,7 +438,7 @@ export async function adjudicateIntradayBundleMembers(
         };
 
         // Adjudicate verdict pure
-        const verdict = reassessDependentBundleMember({
+        const rawVerdict = reassessDependentBundleMember({
             target: targetTarget,
             predecessor,
             evaluationInstant,
@@ -446,6 +451,15 @@ export async function adjudicateIntradayBundleMembers(
             acceptedSameDaySystemicCost: 0,
             inputRevision: computedRevision,
             plannedDose,
+        });
+
+        const { verdict, prompt: confirmationPrompt } = gatePredecessorConfirmation(rawVerdict, {
+            executionId: predecessorExecutionId,
+            executionDate: predecessorExecutionDate,
+            predecessorCompleted: predecessor?.state === 'completed',
+            hasExplicitFatigueAnswer: predecessor?.response?.unexpectedFatigue !== undefined,
+            occurrenceId: predecessorOccurrenceId,
+            title: intraday.afterSessionId ? sessionsById.get(intraday.afterSessionId)?.definition.title : undefined,
         });
 
         const windowBinding: OccurrenceWindowBinding = {
@@ -618,6 +632,7 @@ export async function adjudicateIntradayBundleMembers(
                 status: verdict.decision,
                 reason: verdict.reason,
                 occurrenceId: deterministicOccId,
+                ...(confirmationPrompt ? { predecessorConfirmation: confirmationPrompt } : {}),
             });
             continue;
         }

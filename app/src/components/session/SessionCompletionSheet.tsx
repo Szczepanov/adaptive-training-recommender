@@ -70,7 +70,7 @@ export const SessionCompletionSheet: React.FC<SessionCompletionSheetProps> = ({
 }) => {
     const [sessionRpe, setSessionRpe] = useState<number | undefined>(undefined);
     const [completedFraction, setCompletedFraction] = useState<number | undefined>(undefined);
-    const [unexpectedFatigue, setUnexpectedFatigue] = useState(false);
+    const [unexpectedFatigue, setUnexpectedFatigue] = useState<boolean | undefined>(undefined);
     const [notes, setNotes] = useState('');
     const [selectedRegion, setSelectedRegion] = useState<BodyRegion | ''>('');
     const [reportedPain, setReportedPain] = useState<TissueResponseLevel>('mild');
@@ -92,7 +92,7 @@ export const SessionCompletionSheet: React.FC<SessionCompletionSheetProps> = ({
         const payload: SessionCompletionPayload = buildCompletionPayload({
             sessionRpe,
             completedFraction,
-            unexpectedFatigueChecked: unexpectedFatigue,
+            unexpectedFatigue,
             notes,
             tissueFeedback,
             selectedRegion,
@@ -298,15 +298,28 @@ export const SessionCompletionSheet: React.FC<SessionCompletionSheetProps> = ({
                             )}
                         </div>
 
-                        <label className="checkbox-label" htmlFor="unexpected-fatigue-input">
-                            <input
-                                id="unexpected-fatigue-input"
-                                type="checkbox"
-                                checked={unexpectedFatigue}
-                                onChange={e => setUnexpectedFatigue(e.target.checked)}
-                            />
-                            <span>Unexpected fatigue during or after this session</span>
-                        </label>
+                        <div className="form-group fatigue-answer-group">
+                            <div id="unexpected-fatigue-label">
+                                <strong>Unexpected fatigue during or after this session?</strong>
+                                <span className="helper-text">Optional: tap an answer again to clear it.</span>
+                                <span className="helper-text" id="unexpected-fatigue-status" data-testid="fatigue-status" aria-live="polite">
+                                    {unexpectedFatigue === undefined ? 'Not answered' : `Selected: ${unexpectedFatigue ? 'Yes' : 'No'}`}
+                                </span>
+                            </div>
+                            <div className="rpe-button-row" role="group" aria-labelledby="unexpected-fatigue-label" aria-describedby="unexpected-fatigue-status">
+                                {([false, true] as const).map(value => (
+                                    <button
+                                        key={String(value)}
+                                        type="button"
+                                        className={`rpe-pill-btn fatigue-answer-btn ${unexpectedFatigue === value ? 'selected' : ''}`}
+                                        aria-pressed={unexpectedFatigue === value}
+                                        onClick={() => setUnexpectedFatigue(previous => (previous === value ? undefined : value))}
+                                    >
+                                        {value ? 'Yes' : 'No'}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
 
                         <div className="form-group">
                             <label htmlFor="session-notes-input">
