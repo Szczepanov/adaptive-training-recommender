@@ -27,11 +27,15 @@ import { isProviderActivityRef, isStructuredExecutionRef, type PerformedTraining
 import { sourceKeyForRef } from './sourceIdentity';
 import { performedTrainingOccurrenceRepository } from './repository';
 import { hydrateOccurrenceSourcesInRange, type HydratedProviderSource } from './occurrenceSourcesHydration';
+import { fitIdentityEvidenceOf, observeFitWorkoutIdentity, type FitIdentityEvidence } from './fitWorkoutIdentityDiagnostics';
 
 interface StructuredHydration {
     structured?: CompletedWorkoutView['structured'];
     read: StructuredSourceRead;
+    /** The execution document's own FIT identity, whenever the execution itself was read. */
+    executionFitIdentity?: FitIdentityEvidence;
 }
+
 
 /** A denied read is an authorization defect, not a transient source failure: keep failing the
  * whole window (the pre-WP5 contract) instead of rendering it as one row's "unavailable". */
@@ -53,10 +57,12 @@ async function resolveStructuredDetail(
         case 'AVAILABLE': break;
     }
     const execution = executionState.data;
+    const executionFitIdentity = fitIdentityEvidenceOf(execution);
+    const fit = executionFitIdentity ? { executionFitIdentity } : {};
 
     const definitionState = await resolveSessionDefinition(userId, execution.sessionSource, execution.prescriptionHash);
     if (definitionState.status !== 'AVAILABLE') {
-        return { read: { status: 'definition_unresolved', definition: definitionState.status } };
+        return { read: { status: 'definition_unresolved', definition: definitionState.status }, ...fit };
     }
 
     // Performed rest is enrichment: a failed read still renders the sets, just without
@@ -67,7 +73,7 @@ async function resolveStructuredDetail(
         entries = await sessionExecutionService.getEntries(userId, executionId);
     } catch (error) {
         if (isPermissionDenied(error)) throw error;
-        return { read: { status: 'entries_unavailable' } };
+        return { read: { status: 'entries_unavailable' }, ...fit };
     }
     const restEvents = await restEventsRead;
     const performedRest: PerformedRestAvailability = restEvents === null
@@ -81,6 +87,7 @@ async function resolveStructuredDetail(
             steps: buildStructuredStepDetails(definitionState.data, entries, restEvents ?? []),
             performedRest,
         },
+        ...fit,
     };
 }
 
@@ -216,6 +223,13 @@ async function hydrateOccurrence(
         reconciliationSweep: context.reconciliationSweep,
         ambiguousCounterpart: false,
     };
+    // `garmin` is the hydrated document for the Garmin ref only. A lone non-Garmin provider
+    // has no document read here, so only its source-link copy can count, never its absence.
+    const providerDocumentRead = providerRefs.length === 1 && garmin !== undefined;
+    const garminFitIdentity = providerDocumentRead ? fitIdentityEvidenceOf(garmin) : undefined;
+    // The execution document was read whenever hydration got past the execution fetch.
+    const executionDocumentRead = !['not_linked', 'execution_missing', 'execution_invalid', 'execution_unavailable']
+        .includes(structuredHydration.read.status);
 
     return {
         performedOccurrenceId: occurrence.performedOccurrenceId,
@@ -230,6 +244,13 @@ async function hydrateOccurrence(
         garmin,
         garminExerciseSetsAreDiagnosticOnly: !!structuredRef,
         sourceReads,
+        fitWorkoutIdentity: observeFitWorkoutIdentity({
+            sourceRefs: occurrence.sourceRefs,
+            ...(structuredHydration.executionFitIdentity ? { executionDocument: structuredHydration.executionFitIdentity } : {}),
+            executionDocumentRead,
+            ...(garminFitIdentity ? { providerDocument: garminFitIdentity } : {}),
+            providerDocumentRead,
+        }),
     };
 }
 

@@ -301,6 +301,23 @@ always shows all eight checks with their issue numbers. Status is spelled out in
 timestamps only: no telemetry, exercise data, titles, actors, free text or credentials. A failed
 window exports `projection: "failed"` with `null` counts, never `0`.
 
+**FIT workout identity (ADR-0051 D7).** Schema `workout-source-diagnostics-v2` adds one
+`fitWorkoutIdentity` observation per workout and window-level `fitWorkoutIdentityCounts` over
+every workout, including those past the 100-workout cap. The pure
+`fitWorkoutIdentityDiagnostics.ts` `observeFitWorkoutIdentity` compares the semantic FIT
+fingerprint of the occurrence's one structured execution with its one provider recording.
+Each side uses its hydrated document's fingerprint when it carries one, else the source-link
+copy, which can predate fingerprints on the link. The statuses are `semantic_match`,
+`semantic_mismatch` (`fingerprint_differs` / `fingerprint_version_differs`), `not_comparable`
+(a side's document was read and has no fingerprint, or only an `index_fallback` one),
+`not_applicable` (zero or several structured or provider sources) and `not_observable`
+(`execution_unread` / `provider_unread` when a needed document was not read and no link copy
+carries a fingerprint, including a lone non-Garmin provider; `not_projected` for a view built
+without the observation). Only status and reason are exported, never a fingerprint. This is the
+real-data count that ADR-0051's feasibility gate reads, not ADR-0051 D2 itself: it requires
+exactly one provider source and ignores reconciliation state. It grants no identity or
+recommendation authority.
+
 ## Per-consumer double-count closure (#895 WP6)
 
 One physical workout (a structured execution plus a matched Garmin recording) must be counted or rendered once by every consumer that already reads canonical authority. `engine/tests/perConsumerDoubleCountInventory.test.ts` pushes one shared fixture through each migrated consumer; the suites in the last column prove arrival order, ambiguity and pending reconciliation.

@@ -17,8 +17,13 @@ import {
     type StateAssessment,
 } from './workoutSourceDiagnostics';
 import type { TrainingResponseSessionEvidence } from './trainingResponseEvidence';
+import {
+    countFitWorkoutIdentityObservations,
+    type FitIdentityObservationStatus,
+    type FitWorkoutIdentityObservation,
+} from './fitWorkoutIdentityDiagnostics';
 
-export const WORKOUT_DIAGNOSTICS_EXPORT_SCHEMA = 'workout-source-diagnostics-v1';
+export const WORKOUT_DIAGNOSTICS_EXPORT_SCHEMA = 'workout-source-diagnostics-v2';
 export const MAX_EXPORT_WORKOUTS = 100;
 const MAX_EXPORT_SOURCE_KEYS = 20;
 
@@ -26,6 +31,7 @@ const SCOPE_NOTES = [
     'Diary write receipts (outbox) are read from this device only; zero here is not proof of "synced", and other devices cannot be checked from this one.',
     'not_observable means the evidence needed to decide was not available. It is never an empty, zero or healthy result.',
     'Contains identifiers, source keys, states, reasons and timestamps only; no telemetry, exercise data or credentials.',
+    'fitWorkoutIdentity compares FIT workout fingerprints only (ADR-0051 D7); fingerprints themselves are not exported.',
 ] as const;
 
 export type ExportedStateAssessment =
@@ -58,6 +64,7 @@ export interface ExportedWorkout {
     outbox: OutboxSnapshot;
     states: Record<FailureStateCode, ExportedStateAssessment>;
     attention: FailureStateCode[];
+    fitWorkoutIdentity: FitWorkoutIdentityObservation;
 }
 
 interface ExportEnvelope {
@@ -75,6 +82,8 @@ export interface AvailableWorkoutDiagnosticsExport extends ExportEnvelope {
     totalWorkouts: number;
     truncated: boolean;
     outboxDepth: { queued: number; failed: number; workoutsWithUnreadableReceipts: number };
+    /** Over every workout in the window, not only the exported (possibly truncated) slice. */
+    fitWorkoutIdentityCounts: Record<FitIdentityObservationStatus, number>;
     workouts: ExportedWorkout[];
     windowState?: never;
 }
@@ -85,6 +94,7 @@ export interface FailedWorkoutDiagnosticsExport extends ExportEnvelope {
     totalWorkouts: null;
     truncated: null;
     outboxDepth: null;
+    fitWorkoutIdentityCounts: null;
     workouts: null;
     windowState: { number: 8; code: 'read_model_projection_failed'; status: 'holds' };
 }
@@ -142,6 +152,21 @@ function exportStates(view: CompletedWorkoutView): Record<FailureStateCode, Expo
     return Object.fromEntries(entries) as Record<FailureStateCode, ExportedStateAssessment>;
 }
 
+function fitIdentityFor(view: CompletedWorkoutView): FitWorkoutIdentityObservation {
+    return view.fitWorkoutIdentity ?? { status: 'not_observable', reason: 'not_projected' };
+}
+
+/** Rebuilt member by member, like the read statuses: no fingerprint can ride along. */
+function exportFitIdentity(observation: FitWorkoutIdentityObservation): FitWorkoutIdentityObservation {
+    switch (observation.status) {
+        case 'semantic_match': return { status: 'semantic_match' };
+        case 'semantic_mismatch': return { status: 'semantic_mismatch', reason: observation.reason };
+        case 'not_comparable': return { status: 'not_comparable', reason: observation.reason };
+        case 'not_applicable': return { status: 'not_applicable', reason: observation.reason };
+        case 'not_observable': return { status: 'not_observable', reason: observation.reason };
+    }
+}
+
 function exportWorkout(view: CompletedWorkoutView): ExportedWorkout {
     const diagnostics = projectWorkoutSourceDiagnostics(view);
     const { reconciliation } = view;
@@ -173,6 +198,7 @@ function exportWorkout(view: CompletedWorkoutView): ExportedWorkout {
         outbox: exportOutbox(diagnostics.outbox),
         states: exportStates(view),
         attention: diagnostics.attention,
+        fitWorkoutIdentity: exportFitIdentity(fitIdentityFor(view)),
     };
 }
 
@@ -205,6 +231,7 @@ export function buildWorkoutDiagnosticsExport(input: {
             totalWorkouts: null,
             truncated: null,
             outboxDepth: null,
+            fitWorkoutIdentityCounts: null,
             workouts: null,
             windowState: { number: 8, code: 'read_model_projection_failed', status: 'holds' },
         };
@@ -216,6 +243,7 @@ export function buildWorkoutDiagnosticsExport(input: {
         totalWorkouts: ordered.length,
         truncated: ordered.length > MAX_EXPORT_WORKOUTS,
         outboxDepth: outboxDepth(ordered),
+        fitWorkoutIdentityCounts: countFitWorkoutIdentityObservations(ordered.map(fitIdentityFor)),
         workouts: ordered.slice(0, MAX_EXPORT_WORKOUTS).map(exportWorkout),
     };
 }
