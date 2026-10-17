@@ -138,12 +138,12 @@ honouring repeat-control iterations. It then compresses the performed segments i
 equal consecutive `fitWorkoutStepIndex`, so a step recorded as more than one lap merges into
 one run. Each run must match the expected sequence in order.
 
-- The **longest matching prefix** is reconciled. A run's round ordinal counts that `stepId`'s
-  occurrences in the expansion so far, across every index the step maps to, so the first
-  repetition of a second set continues from the last repetition of the first. A step that
-  appears once has round ordinal 1. That covers
-  an early stop or partial workout. A step cut short, for example by advancing it early with
-  the lap button, still matches because only the index order is compared.
+- The **longest matching prefix** is reconciled, which covers an early stop or partial
+  workout. A step cut short, for example by advancing it early with the lap button, still
+  matches because only the index order is compared.
+- A run's round ordinal counts that `stepId`'s occurrences in the expansion so far, across
+  every index the step maps to, so the first repetition of a second set continues from the
+  last repetition of the first. A step that appears once has round ordinal 1.
 - From the first deviation onward, every segment keeps FIT identity. Deviations include a
   skipped step, a reorder, an extra round, an index the manifest lacks, and a segment with no
   `fitWorkoutStepIndex` (including manual-lap segments) in the middle of the sequence.
