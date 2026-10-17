@@ -115,7 +115,7 @@ Architectural choices, system invariants, and technical trade-offs are documente
 * [**ADR-0048: Event Taxonomy, Format Identity, and Event-Specific Planning Semantics**](./adr/0048-event-taxonomy-and-format-semantics.md) — *Proposed.* Extended taxonomy and planning rules for generic events and fitness-races (like HYROX).
 * [**ADR-0049: Explicit Event-Bound Development Authority**](./adr/0049-event-bound-development-authority.md) — *Accepted.* Optional event-bound snapshots for intent blocks separating event-directed development from an unrelated imported block.
 * [**ADR-0050: Season Roadmap — Event Roles**](./adr/0050-season-roadmap-event-roles.md) — *Accepted.* A pure roadmap classifying A/B/C event roles and date conflicts that grants no execution authority.
-* [**ADR-0051: Cross-Source Workout-Step Identity**](./adr/0051-cross-source-workout-step-identity.md) — *Proposed.* An export-time step manifest bound to the semantic FIT fingerprint as the only admissible segment-to-step reference; gated on real-data feasibility before code.
+* [**ADR-0051: Cross-Source Workout-Step Identity**](./adr/0051-cross-source-workout-step-identity.md) — *Accepted; implementation gated on real-data feasibility.* An export-time step manifest bound to the semantic FIT fingerprint as the only admissible segment-to-step reference.
 
 ---
 

@@ -1,6 +1,6 @@
 # ADR-0051: Cross-source workout-step identity for activity-response segments
 
-- **Status:** Proposed
+- **Status:** Accepted (implementation gated by D7)
 - **Date:** 2026-10-17
 - **Related:** ADR-0023, ADR-0026, ADR-0031, ADR-0034, issues #814, #850, #895, #919, PR #917
 

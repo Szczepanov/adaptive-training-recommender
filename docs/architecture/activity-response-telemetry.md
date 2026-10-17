@@ -127,7 +127,7 @@ completion instants while segments expose elapsed offsets; no shared step identi
 guaranteed clock-alignment contract currently exists. Segments therefore retain their FIT/manual
 identity, and the response layer does not join timestamps heuristically. The
 `reconciled_workout_step` identity is reserved for a future deterministic alignment contract
-(proposed in [ADR-0051](../adr/0051-cross-source-workout-step-identity.md), not implemented):
+(accepted in [ADR-0051](../adr/0051-cross-source-workout-step-identity.md), not yet implemented):
 the current TypeScript read-side identity union and persistence parser do not accept it, so stale
 or prematurely-written persisted values fail closed with the optional `activityResponse` sidecar
 omitted rather than gaining semantic-step authority. The centralized
