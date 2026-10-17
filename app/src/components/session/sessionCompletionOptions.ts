@@ -36,9 +36,9 @@ export function resolveSubmittedTissueFeedback(
 export interface CompletionEvidenceDraft {
     sessionRpe?: number;
     completedFraction?: number;
-    /** Still persisted as a boolean: the `immediate` SessionResponse it creates is the athlete's
-     * post-session confirmation that the intraday flow waits for (see session-execution.md). */
-    unexpectedFatigueChecked: boolean;
+    /** Explicit No / Yes answer; `undefined` until the athlete picks one. A dependent same-day
+     * session that needs this confirmation asks for it on Home instead (session-execution.md). */
+    unexpectedFatigue?: boolean;
     notes: string;
     tissueFeedback: CompletionTissueFeedback[];
     selectedRegion: BodyRegion | '';
@@ -65,8 +65,8 @@ export function contradictsRequiredWork(completedFraction: number | undefined, m
 
 /**
  * Missing is not neutral, not zero and not an implicit negative answer (#896): only fields
- * the athlete actually answered are emitted. Unexpected fatigue is persisted as `true` when
- * ticked and omitted otherwise, because an untouched checkbox is not a "no fatigue" report.
+ * the athlete actually answered are emitted, unexpected fatigue included -- an unanswered
+ * question is not a "no fatigue" report.
  */
 export function buildCompletionPayload(draft: CompletionEvidenceDraft): CompletionEvidencePayload {
     const tissueFeedback = resolveSubmittedTissueFeedback(draft.tissueFeedback, draft.selectedRegion, draft.reportedPain);
@@ -76,7 +76,7 @@ export function buildCompletionPayload(draft: CompletionEvidenceDraft): Completi
     return {
         ...(draft.sessionRpe !== undefined ? { sessionRpe: draft.sessionRpe } : {}),
         ...(keepFraction ? { completedFraction: draft.completedFraction } : {}),
-        unexpectedFatigue: draft.unexpectedFatigueChecked,
+        ...(draft.unexpectedFatigue !== undefined ? { unexpectedFatigue: draft.unexpectedFatigue } : {}),
         ...(notes ? { notes } : {}),
         ...(tissueFeedback.length > 0 ? { tissueFeedback } : {}),
     };
