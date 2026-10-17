@@ -28,14 +28,17 @@ An end-to-end audit of the current code found:
 So no stable explicit step reference survives end to end today. Two transport facts make one
 achievable without a new provider request:
 
-1. When the execution's semantic fingerprint equals the activity's semantic fingerprint,
-   the FIT Workout Step messages in the recording are, by construction, the same flattened
-   step list that Adaptive generated from its export payload. That includes each step's
-   `messageIndex`.
-2. The flattening is deterministic and already implemented on both sides
-   (`garminPayloadToFitSteps` in TypeScript, the same order in Python). Each flattened index
-   comes from exactly one canonical export step, one generated rest or recovery step, or one
-   repeat-control step.
+1. The semantic fingerprint hashes every normalized step, and `messageIndex` is one of the
+   hashed fields (`normalizeStep` / `_normalized_step`). So when the execution's fingerprint
+   equals the activity's, the recording's FIT Workout Step list matches, index for index, the
+   list Adaptive predicted from its export payload.
+2. Garmin flattens the uploaded payload into FIT steps on its side. Adaptive models that
+   flattening in TypeScript only (`garminPayloadToFitSteps`). Python never flattens: it reads
+   the recorded FIT steps and fingerprints them, and the shared
+   `tests/fixtures/contracts/fit_workout_identity_v2.json` vectors keep the two hash
+   implementations in step. In the model, each flattened index comes from exactly one
+   canonical export step, one generated rest or recovery step, or one repeat-control step.
+   Fingerprint equality, not the model, is what proves a given recording followed that layout.
 
 The missing pieces are therefore a **producer-side manifest** from flattened FIT index to
 Adaptive step, and **persisting the FIT step index** on each segment. Occurrence membership
@@ -60,8 +63,8 @@ A segment may receive `reconciled_workout_step` only when **all** of the followi
    fails closed, as the response layer already does.
 2. The execution and the activity both carry `fitWorkoutFingerprintKind: semantic_definition`
    with the same fingerprint version, and the fingerprints are equal.
-3. The execution's frozen prescription carries a step manifest (D3) whose embedded
-   fingerprint equals that same fingerprint, and whose `prescriptionHash` equals the execution's.
+3. The execution carries a launch-time step manifest (D3) whose embedded fingerprint equals
+   that same fingerprint, and whose `prescriptionHash` equals the execution's.
 4. The segment's identity source is `fit_workout_step`, and it carries a persisted FIT step
    index (D4) that the manifest maps to an authored step.
 5. The segment's round ordinal is established by the program walk in D5.
@@ -86,8 +89,10 @@ workoutStepManifest {
 
 - `stepId` is the `SessionStep.id` in the frozen definition snapshot. The producer must resolve
   canonical export step to `SessionStep.id` explicitly. A positional guess across the two
-  adapters is not enough. If any authored export step cannot be resolved one-to-one, no
-  manifest is emitted.
+  adapters is not enough. For catalog launches, both `exportWorkoutPrescriptionToJson` and
+  `catalogSessionAdapter` copy the catalog step `id`, so the producer can resolve by equal id
+  and must assert that it is one-to-one. If any authored export step cannot be resolved
+  one-to-one, no manifest is emitted.
 - `generated_rest` and `repeat_control` entries are provider-only. Segments on them keep FIT
   identity.
 - The manifest is written once at launch, next to the fingerprint on the `SessionReferenceBinding`
@@ -97,11 +102,15 @@ workoutStepManifest {
   definition or from current settings, such as FTP.
   The fingerprint producer already refuses to run without the exact upload context, and the
   manifest inherits that refusal.
-- Size is bounded by the flattened FIT step count. Steps over the existing segment cap (64)
-  are not mapped.
-- TypeScript and Python must produce identical manifests for shared contract vectors, which
-  extends the existing `test_contracts_workout_export.py` and `fitWorkoutIdentity` parity
-  coverage.
+- Size is bounded by the flattened FIT step count of one workout.
+- Only TypeScript produces the manifest. The real Garmin upload, however, is built by Python
+  `canonical_workout_to_garmin_payload`, while the manifest is derived from its TypeScript
+  mirror `canonicalWorkoutToGarminPayload`. A shared contract vector must therefore pin the
+  two payload builders to the same step layout, including repeat groups, generated rest and
+  block recovery. Fingerprint equality catches drift on any one recording, and the vector
+  catches it before release.
+- The TypeScript flattening model handles one level of repeat group. A payload with a nested
+  repeat group gets no manifest.
 
 Only launch paths that produce a semantic fingerprint can produce a manifest. Today that is
 catalog launch only. External-plan, manual and unplanned sessions stay unavailable until their
@@ -111,7 +120,8 @@ own export-to-launch path computes both from one payload.
 
 `activity_response.py` already resolves each lap or record group to a `workout_step_index`. A
 new `derivationVersion` adds an optional `fitWorkoutStepIndex` to `fit_workout_step` segments
-only. This is additive, so older documents simply have no reconciled tier. It uses the
+only. A segment whose records span more than one step index already resolves to no index,
+and it stays without one. This is additive, so older documents simply have no reconciled tier. It uses the
 original-FIT acquisition already performed for HR fidelity. Historical activities gain it only
 through the existing operator `backfill-activity-response` command. No provider request,
 source or retained raw payload is added.
@@ -121,13 +131,18 @@ source or retained raw payload is added.
 Repeated children share one FIT index, so the index alone cannot say which repetition a
 segment is. A pure function expands the manifest into the full expected index sequence,
 honouring repeat-control iterations. It then compresses the performed segments into runs of
-equal consecutive `fitWorkoutStepIndex`, so lap-button splits inside one step merge into one
-run. Each run must match the expected sequence in order.
+equal consecutive `fitWorkoutStepIndex`, so a step recorded as more than one lap merges into
+one run. Each run must match the expected sequence in order.
 
 - The **longest matching prefix** is reconciled, with each run's round ordinal taken from its
-  position in the expansion. That covers an early stop or partial workout.
+  position in the expansion. A step outside any repeat group has round ordinal 1. That covers
+  an early stop or partial workout. A step cut short, for example by advancing it early with
+  the lap button, still matches because only the index order is compared.
 - From the first deviation onward, every segment keeps FIT identity. Deviations include a
-  skipped step, a reorder, an extra round, or an index the manifest lacks.
+  skipped step, a reorder, an extra round, an index the manifest lacks, and a segment with no
+  `fitWorkoutStepIndex` (including manual-lap segments) in the middle of the sequence.
+- When `segmentsTruncated` is set, the walk sees only the persisted segments. They are a
+  prefix, so the same rule applies, and nothing past the cap is reconciled.
 - A repeat group with a single child step cannot separate rounds from splits, so it fails
   closed for that group.
 - Duplicate manifest indexes, unknown manifest versions, or a fingerprint or `prescriptionHash`
@@ -135,6 +150,12 @@ run. Each run must match the expected sequence in order.
 
 The function is pure, with no Firestore, `fetch` or `Date.now()`. It runs at read time in the
 response layer. The upgraded identity is never written back to the activity document.
+
+So `reconciled_workout_step` is never a valid **persisted** `identitySource`. The #917
+hydration guard in `trainingHistory.ts` keeps rejecting it permanently, not just until this
+ADR is implemented. The reconciled tier exists only on the in-memory projection the join
+returns. That projection gets its own type, separate from the persisted
+`ActivitySegmentSummary`, so the persisted identity union is never widened.
 
 ### D6 — Authority is unchanged
 
@@ -148,17 +169,18 @@ comparability from recommendation modules also covers the new function.
 
 Code lands only after both checks pass:
 
-1. **Real-data evidence.** A diagnostic count, from the existing workout-source diagnostics,
-   shows real completed catalog executions whose semantic fingerprint equals a linked
-   activity's. If that count is zero, then edited-on-watch workouts, Garmin re-canonicalization
-   or missing FTP context defeat the premise, and the feature stays unavailable with that reason
-   recorded.
+1. **Real-data evidence.** A new read-only diagnostic shows real completed catalog executions
+   whose semantic fingerprint equals a linked activity's. The existing workout-source
+   diagnostics do not report fingerprints, so this has to be added. If the count is zero, then
+   watch-edited or renamed workouts, Garmin re-canonicalization or missing FTP context defeat
+   the premise. The workout name is part of the fingerprint. In that case the feature stays
+   unavailable, and the reason is recorded.
 2. **Vendor round-trip check.** At least one real Garmin recording of an Adaptive-exported
    workout with a repeat group confirms that Lap `wkt_step_index` follows the flattened
    `messageIndex` order assumed here.
 
-Until then, and until the producer, ingestion, join and tests land **together**,
-`reconciled_workout_step` stays rejected at hydration (the #917 guard).
+Until then, the reconciled tier is unavailable. When it ships, the producer, ingestion, join
+and tests land **together**. The persisted-value guard stays either way (D5).
 
 ## Alternatives considered
 
@@ -184,9 +206,10 @@ Until then, and until the producer, ingestion, join and tests land **together**,
 - Strength workouts are out of scope for v1. Their FIT exercise and set structure does not map
   to laps the same way, and ADR-0034 already gives exercise, load and repetition authority to
   the structured execution.
-- Implementation is multi-layer: the launch-time manifest producer with TS/Python parity, the
-  `activityResponse` derivation bump, the pure read-time join, and widening the hydration
-  identity union. All of these land in one change with the reordered, repeated, skipped,
-  partial, split-lap, provider-only and timestamps-close-but-no-reference negative fixtures.
+- Implementation is multi-layer: the launch-time manifest producer, the TS/Python payload
+  parity vector, the `activityResponse` derivation bump, and the pure read-time join with its
+  separate projection type. All of these land in one change, together with negative fixtures
+  for reordered, repeated, skipped, partial, split-lap, truncated and provider-only segments,
+  and for timestamps that are close but share no reference.
 - If D7 fails, `docs/architecture/activity-response-telemetry.md` and the status board record
   the concrete missing capability, and this ADR moves to Rejected.
