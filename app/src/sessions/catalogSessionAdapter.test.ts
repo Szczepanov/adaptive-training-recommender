@@ -6,6 +6,7 @@ import {
     createExecutionPrescriptionFromCatalog,
 } from './catalogSessionAdapter';
 import { validateSessionDefinition } from './validation';
+import { WORKOUTS_BY_ID } from '../workouts/catalog';
 
 function makeTestPrescription(templateId: string) {
     const rec = {
@@ -66,6 +67,22 @@ describe('Catalog Session Adapter (M3.1 / ADR-0023)', () => {
         expect(execPresc.prescriptionHash).toMatch(/^[0-9a-f]{64}$/);
         expect(execPresc.blocks.length).toBeGreaterThan(0);
         expect(execPresc.displayMetadata?.movementComposition?.[0].pattern).toBe('unilateral_lower_body');
+    });
+
+    it('stamps the re-entry split squat and warm-up lunge with unilateral composition (#803 tagging)', () => {
+        const reentry = WORKOUTS_BY_ID.get('strength_full_body_reentry_01')!;
+        const presc = {
+            ...structuredClone(makeTestPrescription('str_full_01')),
+            workoutId: reentry.id,
+            variantId: 'full' as const,
+            adjustedBlocks: structuredClone(reentry.blocks),
+            displayBlocks: [],
+        };
+        const definition = adaptCatalogPrescriptionToSessionDefinition(presc);
+        const steps = definition.blocks.flatMap(block => block.steps);
+        expect(steps.find(step => step.id === 'reentry_split_squat')?.compositionPatterns).toEqual(['unilateral_lower_body']);
+        expect(steps.find(step => step.id === 'reentry_warmup_lunge')?.compositionPatterns).toEqual(['unilateral_lower_body']);
+        expect(validateSessionDefinition(definition).ok).toBe(true);
     });
 
     it('carries an explicit relaxed composition into a return-to-training definition', () => {
