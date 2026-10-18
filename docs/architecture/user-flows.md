@@ -360,8 +360,34 @@ tissue disclosure must not require setting `painOrInjury`.
 
 The runner restores an existing execution when applicable, otherwise exposes saved/custom
 and built-in definitions, executes the selected prescription, records performed entries, and
-finishes through the completion flow. `StrengthOverloadHistory` is rendered below the runner
-at the `App` level.
+finishes through the completion flow. `App` wraps the runner and `StrengthOverloadHistory` in
+`SessionHistoryTabs` (#726):
+
+* With no session in progress, history renders below the picker.
+* While a session is `in_progress`, a Session | History tablist appears. It defaults to
+  Session each time a session starts and follows the WAI-ARIA tabs pattern (roving
+  `tabIndex`, arrow/Home/End keys).
+* Both panels stay mounted (`hidden`, never unmounted), and the session panel keeps one
+  stable position in the tree. So neither starting a session nor visiting History remounts
+  the runner or resets its timers and inputs.
+
+Inside the runner, the active exercise shows a compact "Last time" line
+(`workouts/overloadHistory.ts` `resolveRunnerLastTime` / `formatLastTimeComparison`).
+It gives the most recent earlier *completed* session's date, its heaviest working set
+labelled as such, and the working-set count. An abandoned attempt is never "last time".
+With no earlier completed log it says "No earlier log of this exercise in the last 90 days"
+(the history window, `OVERLOAD_HISTORY_WINDOW_DAYS`). It renders only once history has
+loaded cleanly for that exact exercise, so loading, an error or an unreadable session
+record shows nothing rather than a false claim.
+
+The weight prefill has its own gate (`resolveRunnerPrefillSet`) and keeps its earlier rule:
+the latest earlier session of any state. A hidden line therefore never removes the prefill.
+The runner's history read reloads once an execution in that runner finishes, so a companion
+session started without a remount sees it. It does not reload on every start or restore.
+The History tab's own table (`StrengthOverloadHistory`) loads once per Sessions screen mount.
+
+The runner, the tablist and the History panel share one deliberate column capped at 720 px,
+the same as the no-session picker, at full width below that (#725).
 
 An in-progress structured execution is global account state for resume purposes. A stored
 prescription that cannot be resolved is fail-closed instead of allowing a second session to

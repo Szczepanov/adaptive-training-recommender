@@ -50,7 +50,7 @@ describe('StrengthOverloadHistory', () => {
             exercises: [{ exerciseId: 'front_squat' }],
             selected: { exerciseId: 'front_squat' },
             history: [{
-                date: '2026-08-10', sessionId: 's1', setCount: 1, workingSetCount: 1, totalReps: 5, tonnageKg: 500,
+                date: '2026-08-10', sessionId: 's1', sessionState: 'completed', setCount: 1, workingSetCount: 1, totalReps: 5, tonnageKg: 500,
                 heaviestSet: { setIndex: 1, reps: 5, weightKg: 100, isWarmup: false, completedAt: '2026-08-10T18:10:00Z' },
             }],
         }));
@@ -67,7 +67,7 @@ describe('StrengthOverloadHistory', () => {
             exercises: [{ exerciseId: 'front_squat' }],
             selected: { exerciseId: 'front_squat' },
             history: [{
-                date: '2026-08-10', sessionId: 's1', setCount: 4, workingSetCount: 3, totalReps: 20, tonnageKg: 1200,
+                date: '2026-08-10', sessionId: 's1', sessionState: 'completed', setCount: 4, workingSetCount: 3, totalReps: 20, tonnageKg: 1200,
                 heaviestSet: { setIndex: 3, reps: 5, weightKg: 100, isWarmup: false, completedAt: '2026-08-10T18:10:00Z' },
             }],
         }));
@@ -83,7 +83,7 @@ describe('StrengthOverloadHistory', () => {
             exercises: [{ exerciseId: 'pull_up' }],
             selected: { exerciseId: 'pull_up' },
             history: [{
-                date: '2026-08-10', sessionId: 's1', setCount: 3, workingSetCount: 3, totalReps: 24, tonnageKg: 0,
+                date: '2026-08-10', sessionId: 's1', sessionState: 'completed', setCount: 3, workingSetCount: 3, totalReps: 24, tonnageKg: 0,
                 heaviestSet: { setIndex: 1, reps: 8, weightKg: null, isWarmup: false, completedAt: '2026-08-10T18:10:00Z' },
             }],
         }));
@@ -96,7 +96,7 @@ describe('StrengthOverloadHistory', () => {
             exercises: [{ exerciseId: 'front_squat' }],
             selected: { exerciseId: 'front_squat' },
             invalidRecords: 2,
-            history: [{ date: '2026-08-10', sessionId: 's1', setCount: 1, workingSetCount: 1, totalReps: 5, tonnageKg: 500, heaviestSet: null }],
+            history: [{ date: '2026-08-10', sessionId: 's1', sessionState: 'completed', setCount: 1, workingSetCount: 1, totalReps: 5, tonnageKg: 500, heaviestSet: null }],
         }));
         const html = renderToStaticMarkup(<StrengthOverloadHistory userId="u1" />);
         expect(html).toContain('2 session records could not be read');

@@ -19,14 +19,24 @@ export interface UseOverloadHistoryResult {
     invalidRecords: number;
 }
 
-const DEFAULT_WINDOW_DAYS = 90;
+/** History window the runner's "Last time" line and the overload table read. */
+export const OVERLOAD_HISTORY_WINDOW_DAYS = 90;
 
-export function useOverloadHistory(userId: string | null | undefined, windowDays: number = DEFAULT_WINDOW_DAYS): UseOverloadHistoryResult {
+/** `refreshKey`: re-read when it changes (the runner passes the current execution id, so a
+ *  companion session started without remounting sees the session just finished). */
+export function useOverloadHistory(
+    userId: string | null | undefined,
+    windowDays: number = OVERLOAD_HISTORY_WINDOW_DAYS,
+    refreshKey?: string,
+): UseOverloadHistoryResult {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [sessions, setSessions] = useState<StrengthSession[]>([]);
     const [invalidRecords, setInvalidRecords] = useState(0);
     const [selected, setSelected] = useState<ExerciseIdentity | null>(null);
+    // The key whose read last settled: until it matches `refreshKey`, the data on hand belongs
+    // to an older key and is reported as loading (no stale frame before the effect runs).
+    const [loadedKey, setLoadedKey] = useState<string | undefined>(refreshKey);
 
     useEffect(() => {
         // Same no-userId early-exit shape as App.tsx's loadDecisionInput effect; there is
@@ -38,6 +48,8 @@ export function useOverloadHistory(userId: string | null | undefined, windowDays
         }
         let cancelled = false;
         setLoading(true);
+        // A refreshKey read starts clean: a past failure must not hide a later good read.
+        setError(null);
         const today = getLocalDateString();
         const throughDateExclusive = addDaysToLocalDateString(today, 1);
         const startInclusive = addDaysToLocalDateString(throughDateExclusive, -windowDays);
@@ -51,15 +63,17 @@ export function useOverloadHistory(userId: string | null | undefined, windowDays
                 if (!cancelled) setError(err instanceof Error ? err.message : 'Could not load strength session history');
             })
             .finally(() => {
-                if (!cancelled) setLoading(false);
+                if (cancelled) return;
+                setLoading(false);
+                setLoadedKey(refreshKey);
             });
         return () => {
             cancelled = true;
         };
-    }, [userId, windowDays]);
+    }, [userId, windowDays, refreshKey]);
 
     const exercises = useMemo(() => distinctLoggedExercises(sessions), [sessions]);
     const history = useMemo(() => (selected ? summarizeExerciseAcrossSessions(sessions, selected) : []), [sessions, selected]);
 
-    return { loading, error, exercises, selected, select: setSelected, history, invalidRecords };
+    return { loading: loading || loadedKey !== refreshKey, error, exercises, selected, select: setSelected, history, invalidRecords };
 }

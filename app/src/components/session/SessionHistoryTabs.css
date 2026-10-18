@@ -1,0 +1,44 @@
+.session-history-tabs {
+    display: flex;
+    gap: 0.5rem;
+    max-width: 720px;
+    margin: 0 auto 0.75rem;
+    padding: 0 1rem;
+    box-sizing: border-box;
+    width: 100%;
+}
+
+.session-history-tab {
+    flex: 1 1 0;
+    min-height: var(--touch-target-min, 44px);
+    padding: 0.5rem 1rem;
+    border: 1px solid rgba(148, 163, 184, 0.4);
+    border-radius: 0.5rem;
+    background: transparent;
+    color: #cbd5e1;
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.session-history-tab.active {
+    border-color: #60a5fa;
+    background: rgba(37, 99, 235, 0.2);
+    color: #f8fafc;
+}
+
+.session-history-tab:focus-visible {
+    outline: 2px solid #93c5fd;
+    outline-offset: 2px;
+}
+
+.session-history-below {
+    margin-top: 1.5rem;
+}
+
+/* #725: in tab mode the History panel shares the runner and tablist column. */
+.session-history-panel {
+    max-width: 720px;
+    margin: 0 auto;
+    box-sizing: border-box;
+}

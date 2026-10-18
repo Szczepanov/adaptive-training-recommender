@@ -3,8 +3,13 @@ import type { RangeOrNumber, SessionDefinition, SessionEntry, SessionEntryPayloa
 import type { SessionStepSummary } from '../../workouts/strengthSessionEntry';
 import { projectSessionProgress } from '../../sessions/sessionProgressProjection';
 import { useSessionRunner } from '../../hooks/useSessionRunner';
-import { useOverloadHistory } from '../../hooks/useOverloadHistory';
-import type { ExerciseIdentity } from '../../workouts/overloadHistory';
+import { OVERLOAD_HISTORY_WINDOW_DAYS, useOverloadHistory } from '../../hooks/useOverloadHistory';
+import {
+    formatLastTimeComparison,
+    resolveRunnerLastTime,
+    resolveRunnerPrefillSet,
+    type ExerciseIdentity,
+} from '../../workouts/overloadHistory';
 import { resolveStepInputProfile } from '../../sessions/inputProfiles';
 import { comparePlannedVsPerformed } from '../../sessions/performedComparison';
 import { resolveEffectiveChoiceEntries } from '../../sessions/choiceResolution';
@@ -195,7 +200,15 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
     useEffect(() => {
         setSyncAnnouncement(previous => nextSyncAnnouncement(previous, runner.syncStatus));
     }, [runner.syncStatus]);
-    const overload = useOverloadHistory(userId);
+    // Re-read history once an execution in this runner finishes, so a companion session started
+    // without a remount sees it -- not on every start or restore, which would refetch for nothing
+    // and reset in-progress input when the prefill arrives (adjusting state during render).
+    const finishedExecutionId = runner.execution && runner.execution.state !== 'in_progress'
+        ? runner.execution.executionId
+        : undefined;
+    const [historyRefreshKey, setHistoryRefreshKey] = useState<string | undefined>(undefined);
+    if (finishedExecutionId && finishedExecutionId !== historyRefreshKey) setHistoryRefreshKey(finishedExecutionId);
+    const overload = useOverloadHistory(userId, OVERLOAD_HISTORY_WINDOW_DAYS, historyRefreshKey);
     const initialLaunchAttempted = useRef(false);
     const [showCompletionSheet, setShowCompletionSheet] = useState<boolean>(false);
     const [showAbandonConfirmation, setShowAbandonConfirmation] = useState<boolean>(false);
@@ -283,11 +296,15 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
         selectOverload(activeExerciseIdentity);
     }, [activeExerciseIdentity, selectOverload]);
 
-    const pastSummary = useMemo(() => {
-        if (!overload.history || overload.history.length === 0) return null;
-        const latestSession = [...overload.history].reverse().find(entry => entry.sessionId !== runner.execution?.executionId);
-        return latestSession?.heaviestSet ?? null;
-    }, [overload.history, runner.execution?.executionId]);
+    // #726: the displayed line and the weight prefill have separate gates (`overloadHistory.ts`).
+    const lastTime = useMemo(
+        () => resolveRunnerLastTime(overload, activeExerciseIdentity, runner.execution?.executionId),
+        [overload, activeExerciseIdentity, runner.execution?.executionId],
+    );
+    const pastSummary = useMemo(
+        () => resolveRunnerPrefillSet(overload, activeExerciseIdentity, runner.execution?.executionId),
+        [overload, activeExerciseIdentity, runner.execution?.executionId],
+    );
 
     const activeStep = runner.activeStep;
     const entries = runner.entries;
@@ -1027,9 +1044,9 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                             <h3 className="step-name" ref={activeHeadingRef} tabIndex={-1}>
                                 {stepName(activeStep)}
                             </h3>
-                            {pastSummary && (
-                                <span className="previous-context-chip">
-                                    Last: {pastSummary.weightKg !== null ? `${pastSummary.weightKg} kg` : 'BW'} × {pastSummary.reps}
+                            {lastTime && (
+                                <span className="previous-context-chip" data-testid="last-time">
+                                    {formatLastTimeComparison(lastTime, OVERLOAD_HISTORY_WINDOW_DAYS)}
                                 </span>
                             )}
                             {activeStep.notes && <p className="step-notes-text">{activeStep.notes}</p>}

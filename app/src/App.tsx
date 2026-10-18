@@ -37,6 +37,7 @@ const ManualSessionBuilder = lazy(() => import('./components/session/ManualSessi
 const SessionJsonImport = lazy(() => import('./components/session/SessionJsonImport').then(m => ({ default: m.SessionJsonImport })));
 const TestingWorkflow = lazy(() => import('./components/testing/TestingWorkflow').then(m => ({ default: m.TestingWorkflow })));
 
+import { SessionHistoryTabs } from './components/session/SessionHistoryTabs';
 import { getOnboardingDoneStorageKey, isOnboardingDismissedForUser } from './utils/onboardingStorage';
 
 function App() {
@@ -506,25 +507,28 @@ function App() {
               />
             ) : (
               <div className="sessions-screen-container">
-                <SessionRunner
-                  key={userId}
-                  userId={userId!}
-                  initialSession={sessionLaunch ?? undefined}
-                  onInitialSessionHandled={() => setSessionLaunch(null)}
-                  onImportSession={() => setSessionAuthoringMode('import')}
-                  onBuildSession={definition => {
-                    setSessionAuthoringDefinition(definition ?? null);
-                    setSessionAuthoringMode('manual');
-                  }}
-                  onSessionStateChange={session => {
-                    setActiveStructuredSession(session?.state === 'in_progress' ? session : null);
-                    if (session && session.state !== 'in_progress') setActiveStructuredIntent(null);
-                  }}
-                  onClose={() => handleNavigate('home')}
+                <SessionHistoryTabs
+                  sessionActive={activeStructuredSession?.state === 'in_progress'}
+                  session={(
+                    <SessionRunner
+                      key={userId}
+                      userId={userId!}
+                      initialSession={sessionLaunch ?? undefined}
+                      onInitialSessionHandled={() => setSessionLaunch(null)}
+                      onImportSession={() => setSessionAuthoringMode('import')}
+                      onBuildSession={definition => {
+                        setSessionAuthoringDefinition(definition ?? null);
+                        setSessionAuthoringMode('manual');
+                      }}
+                      onSessionStateChange={session => {
+                        setActiveStructuredSession(session?.state === 'in_progress' ? session : null);
+                        if (session && session.state !== 'in_progress') setActiveStructuredIntent(null);
+                      }}
+                      onClose={() => handleNavigate('home')}
+                    />
+                  )}
+                  history={<StrengthOverloadHistory key={userId} userId={userId!} />}
                 />
-                <div className="dashboard-card strength-history-card" style={{ marginTop: '1.5rem' }}>
-                  <StrengthOverloadHistory key={userId} userId={userId!} />
-                </div>
               </div>
             )
           )}
