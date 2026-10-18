@@ -45,6 +45,8 @@ export function useOverloadHistory(
         }
         let cancelled = false;
         setLoading(true);
+        // A refreshKey read starts clean: a past failure must not hide a later good read.
+        setError(null);
         const today = getLocalDateString();
         const throughDateExclusive = addDaysToLocalDateString(today, 1);
         const startInclusive = addDaysToLocalDateString(throughDateExclusive, -windowDays);
