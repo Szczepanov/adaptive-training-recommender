@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { distinctLoggedExercises, summarizeExerciseAcrossSessions, summarizeExerciseSession } from './overloadHistory';
+import {
+    distinctLoggedExercises,
+    formatLastTimeComparison,
+    resolveLastTimeComparison,
+    summarizeExerciseAcrossSessions,
+    summarizeExerciseSession,
+    type ExerciseSessionSummary,
+} from './overloadHistory';
 import type { LoggedSet, StrengthSession } from '../engine/models';
 
 function set(overrides: Partial<LoggedSet> = {}): LoggedSet {
@@ -120,5 +127,33 @@ describe('distinctLoggedExercises', () => {
     it('excludes an exercise entry that was added but never had a set logged', () => {
         const s = session({ exercises: [{ exerciseId: 'front_squat', sets: [] }] });
         expect(distinctLoggedExercises([s])).toEqual([]);
+    });
+});
+
+describe('resolveLastTimeComparison / formatLastTimeComparison (#726)', () => {
+    const summary = (overrides: Partial<ExerciseSessionSummary>): ExerciseSessionSummary => ({
+        date: '2026-10-10', sessionId: 's1', setCount: 4, workingSetCount: 3, totalReps: 20, tonnageKg: 900,
+        heaviestSet: set({ weightKg: 60, reps: 5 }), ...overrides,
+    });
+
+    it('uses the most recent session that is not the one in progress', () => {
+        const history = [summary({ sessionId: 'old', date: '2026-10-03' }), summary({ sessionId: 'prev', date: '2026-10-10' }), summary({ sessionId: 'now', date: '2026-10-17' })];
+        const comparison = resolveLastTimeComparison(history, 'now');
+        expect(comparison).toMatchObject({ kind: 'previous', date: '2026-10-10', workingSetCount: 3 });
+        expect(formatLastTimeComparison(comparison, 90)).toBe('Last time (2026-10-10): heaviest set 60 kg × 5 · 3 working sets');
+    });
+
+    it('reports no earlier log within the window when only the current session logged the exercise', () => {
+        const comparison = resolveLastTimeComparison([summary({ sessionId: 'now' })], 'now');
+        expect(comparison).toEqual({ kind: 'first_time' });
+        expect(formatLastTimeComparison(comparison, 90)).toBe('No earlier log of this exercise in the last 90 days');
+        expect(resolveLastTimeComparison([], 'now')).toEqual({ kind: 'first_time' });
+    });
+
+    it('labels bodyweight and warm-up-only sessions honestly', () => {
+        expect(formatLastTimeComparison({ kind: 'previous', date: '2026-10-10', heaviestSet: set({ weightKg: null, reps: 12 }), workingSetCount: 1 }, 90))
+            .toBe('Last time (2026-10-10): heaviest set bodyweight × 12 · 1 working set');
+        expect(formatLastTimeComparison({ kind: 'previous', date: '2026-10-10', heaviestSet: null, workingSetCount: 0 }, 90))
+            .toBe('Last time (2026-10-10): warm-up sets only');
     });
 });

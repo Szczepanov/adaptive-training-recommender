@@ -72,6 +72,25 @@ test('session runner logs both hold sides before rotating and keeps controls usa
   await expect(skipRest).toBeHidden();
   await assertNoBodyHorizontalOverflow(page);
 
+  // #726: while the session runs, history sits behind a History tab instead of under the
+  // logger, and visiting it must not reset the live runner.
+  // An unsaved value lives only in runner memory: a remount would restore 20 from the step.
+  await holdTime.fill('7');
+  const views = page.getByRole('tablist', { name: 'Sessions views' });
+  const sessionTab = views.getByRole('tab', { name: 'Session', exact: true });
+  const historyTab = views.getByRole('tab', { name: 'History', exact: true });
+  await expect(sessionTab).toHaveAttribute('aria-selected', 'true');
+  await assertEffectiveTarget(historyTab);
+  await historyTab.click();
+  await expect(page.getByRole('tabpanel', { name: 'History' })).toBeVisible();
+  await expect(activeHeading).toBeHidden();
+  await assertNoBodyHorizontalOverflow(page);
+  await historyTab.press('ArrowLeft');
+  await expect(sessionTab).toBeFocused();
+  await expect(sessionTab).toHaveAttribute('aria-selected', 'true');
+  await expect(activeHeading).toContainText(/copenhagen/i);
+  await expect(holdTime).toHaveValue('7');
+
   await finish.click();
   const completion = page.getByRole('dialog', { name: 'Complete Session' });
   await expect(completion).toBeVisible();

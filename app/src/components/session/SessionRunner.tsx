@@ -3,8 +3,13 @@ import type { RangeOrNumber, SessionDefinition, SessionEntry, SessionEntryPayloa
 import type { SessionStepSummary } from '../../workouts/strengthSessionEntry';
 import { projectSessionProgress } from '../../sessions/sessionProgressProjection';
 import { useSessionRunner } from '../../hooks/useSessionRunner';
-import { useOverloadHistory } from '../../hooks/useOverloadHistory';
-import type { ExerciseIdentity } from '../../workouts/overloadHistory';
+import { OVERLOAD_HISTORY_WINDOW_DAYS, useOverloadHistory } from '../../hooks/useOverloadHistory';
+import {
+    exerciseIdentityKey,
+    formatLastTimeComparison,
+    resolveLastTimeComparison,
+    type ExerciseIdentity,
+} from '../../workouts/overloadHistory';
 import { resolveStepInputProfile } from '../../sessions/inputProfiles';
 import { comparePlannedVsPerformed } from '../../sessions/performedComparison';
 import { resolveEffectiveChoiceEntries } from '../../sessions/choiceResolution';
@@ -195,7 +200,7 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
     useEffect(() => {
         setSyncAnnouncement(previous => nextSyncAnnouncement(previous, runner.syncStatus));
     }, [runner.syncStatus]);
-    const overload = useOverloadHistory(userId);
+    const overload = useOverloadHistory(userId, OVERLOAD_HISTORY_WINDOW_DAYS, runner.execution?.executionId);
     const initialLaunchAttempted = useRef(false);
     const [showCompletionSheet, setShowCompletionSheet] = useState<boolean>(false);
     const [showAbandonConfirmation, setShowAbandonConfirmation] = useState<boolean>(false);
@@ -283,11 +288,16 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
         selectOverload(activeExerciseIdentity);
     }, [activeExerciseIdentity, selectOverload]);
 
-    const pastSummary = useMemo(() => {
-        if (!overload.history || overload.history.length === 0) return null;
-        const latestSession = [...overload.history].reverse().find(entry => entry.sessionId !== runner.execution?.executionId);
-        return latestSession?.heaviestSet ?? null;
-    }, [overload.history, runner.execution?.executionId]);
+    // #726: only once history has loaded *for this exercise* -- during loading, an error, or
+    // the render before the selection effect catches up, nothing is shown rather than a
+    // misleading "first time".
+    const lastTime = useMemo(() => {
+        // An unreadable session record could hide a more recent log, so say nothing then.
+        if (!activeExerciseIdentity || overload.loading || overload.error || overload.invalidRecords > 0 || !overload.selected) return null;
+        if (exerciseIdentityKey(overload.selected) !== exerciseIdentityKey(activeExerciseIdentity)) return null;
+        return resolveLastTimeComparison(overload.history, runner.execution?.executionId);
+    }, [activeExerciseIdentity, overload.loading, overload.error, overload.invalidRecords, overload.selected, overload.history, runner.execution?.executionId]);
+    const pastSummary = lastTime?.kind === 'previous' ? lastTime.heaviestSet : null;
 
     const activeStep = runner.activeStep;
     const entries = runner.entries;
@@ -1027,9 +1037,9 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                             <h3 className="step-name" ref={activeHeadingRef} tabIndex={-1}>
                                 {stepName(activeStep)}
                             </h3>
-                            {pastSummary && (
-                                <span className="previous-context-chip">
-                                    Last: {pastSummary.weightKg !== null ? `${pastSummary.weightKg} kg` : 'BW'} × {pastSummary.reps}
+                            {lastTime && (
+                                <span className="previous-context-chip" data-testid="last-time">
+                                    {formatLastTimeComparison(lastTime, OVERLOAD_HISTORY_WINDOW_DAYS)}
                                 </span>
                             )}
                             {activeStep.notes && <p className="step-notes-text">{activeStep.notes}</p>}

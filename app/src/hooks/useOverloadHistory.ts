@@ -19,9 +19,16 @@ export interface UseOverloadHistoryResult {
     invalidRecords: number;
 }
 
-const DEFAULT_WINDOW_DAYS = 90;
+/** History window the runner's "Last time" line and the overload table read. */
+export const OVERLOAD_HISTORY_WINDOW_DAYS = 90;
 
-export function useOverloadHistory(userId: string | null | undefined, windowDays: number = DEFAULT_WINDOW_DAYS): UseOverloadHistoryResult {
+/** `refreshKey`: re-read when it changes (the runner passes the current execution id, so a
+ *  companion session started without remounting sees the session just finished). */
+export function useOverloadHistory(
+    userId: string | null | undefined,
+    windowDays: number = OVERLOAD_HISTORY_WINDOW_DAYS,
+    refreshKey?: string,
+): UseOverloadHistoryResult {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [sessions, setSessions] = useState<StrengthSession[]>([]);
@@ -56,7 +63,7 @@ export function useOverloadHistory(userId: string | null | undefined, windowDays
         return () => {
             cancelled = true;
         };
-    }, [userId, windowDays]);
+    }, [userId, windowDays, refreshKey]);
 
     const exercises = useMemo(() => distinctLoggedExercises(sessions), [sessions]);
     const history = useMemo(() => (selected ? summarizeExerciseAcrossSessions(sessions, selected) : []), [sessions, selected]);

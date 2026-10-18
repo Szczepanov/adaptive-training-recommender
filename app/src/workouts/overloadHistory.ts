@@ -105,3 +105,32 @@ export function distinctLoggedExercises(sessions: readonly StrengthSession[]): E
     }
     return [...seen.values()];
 }
+
+/** Issue #726: the runner's compact prior-session comparison for the active exercise. */
+export type LastTimeComparison =
+    | { kind: 'previous'; date: string; heaviestSet: LoggedSet | null; workingSetCount: number }
+    | { kind: 'first_time' };
+
+/** The most recent summarized session other than the one in progress. `first_time` means no
+ *  earlier session *in the loaded history window* logged this exercise, so its text names the
+ *  window. Callers ask only once that history has fully loaded and read cleanly. */
+export function resolveLastTimeComparison(
+    history: readonly ExerciseSessionSummary[],
+    currentSessionId: string | undefined,
+): LastTimeComparison {
+    const previous = [...history].reverse().find(summary => summary.sessionId !== currentSessionId);
+    return previous
+        ? { kind: 'previous', date: previous.date, heaviestSet: previous.heaviestSet, workingSetCount: previous.workingSetCount }
+        : { kind: 'first_time' };
+}
+
+/** Plain text for `resolveLastTimeComparison`. Shows the heaviest working set, labelled as
+ *  such: no estimate, trend or tonnage is implied to be progress. */
+export function formatLastTimeComparison(comparison: LastTimeComparison, windowDays: number): string {
+    if (comparison.kind === 'first_time') return `No earlier log of this exercise in the last ${windowDays} days`;
+    const sets = `${comparison.workingSetCount} working set${comparison.workingSetCount === 1 ? '' : 's'}`;
+    const top = comparison.heaviestSet;
+    if (!top) return `Last time (${comparison.date}): warm-up sets only`;
+    const load = top.weightKg !== null && top.weightKg > 0 ? `${top.weightKg} kg` : 'bodyweight';
+    return `Last time (${comparison.date}): heaviest set ${load} × ${top.reps} · ${sets}`;
+}
