@@ -1,0 +1,40 @@
+import { EXERCISES_BY_ID } from '../workouts/exercises';
+import type { SessionDefinition, SessionEntry, SessionStep } from './models';
+
+/**
+ * The composition evidence a logged entry carries: copied from the active step at log time.
+ * `deliveredPatternWork` (#803) and the #813 ledger read only this stamp, so a set logged on an
+ * untagged step never claims a movement family.
+ */
+export function entryCompositionStamp(step: SessionStep): Pick<SessionEntry, 'compositionPatterns' | 'degradedComposition'> {
+    return {
+        ...(step.compositionPatterns ? { compositionPatterns: step.compositionPatterns } : {}),
+        ...(step.degradedComposition ? { degradedComposition: step.degradedComposition } : {}),
+    };
+}
+
+/**
+ * Composition after an athlete swaps a step's exercise. Patterns come from the catalog
+ * exercise only -- a free-text replacement carries none, so later sets cannot claim the
+ * family. A catalog replacement that loses a required pattern records an explicit
+ * degradation; a free-text one does not (its evidence is simply unknown).
+ */
+export function swappedStepComposition(
+    step: SessionStep,
+    replacementRef: SessionStep['exerciseRef'],
+    movementComposition: SessionDefinition['movementComposition'],
+): Pick<SessionStep, 'compositionPatterns' | 'degradedComposition'> {
+    const compositionPatterns = replacementRef?.kind === 'catalog'
+        ? EXERCISES_BY_ID.get(replacementRef.exerciseId)?.compositionPatterns
+        : undefined;
+    const requiredPatterns = movementComposition
+        ?.filter(requirement => requirement.status === 'required' && requirement.stepIds.includes(step.id))
+        .map(requirement => requirement.pattern) ?? step.compositionPatterns ?? [];
+    const lostRequiredPattern = requiredPatterns.find(pattern => !compositionPatterns?.includes(pattern));
+    return {
+        ...(compositionPatterns?.length ? { compositionPatterns } : {}),
+        ...(lostRequiredPattern && replacementRef?.kind === 'catalog'
+            ? { degradedComposition: { pattern: lostRequiredPattern, reason: 'Athlete selected a catalog exercise that does not preserve this movement component.' } }
+            : {}),
+    };
+}
