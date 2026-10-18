@@ -365,13 +365,26 @@ Residual not proven by this inventory: the reserved-identity hydration path hard
   persisted, while required planned steps are unfinished. The fraction is not derived from
   execution: there is no provenance field for a derived value yet, so an unanswered fraction
   stays absent rather than being guessed.
-* `unexpectedFatigue` deliberately keeps its explicit boolean (`false` when unticked). The
-  `immediate` `SessionResponse` it creates is what the intraday flow
-  (`evaluateIntradayReassessment`, `intradayLaunchClaim`) treats as the athlete's post-session
-  confirmation; omitting it would leave an untouched completion with no `immediate` response and
-  stall a dependent same-day session with no recovery path. Making it a true unanswered/yes/no
-  question needs an owner decision on how intraday confirmation is obtained, and is not part of
-  this change.
+* `unexpectedFatigue` is an explicit No / Yes question that starts unanswered (tapping the
+  selected answer again clears it). An unanswered question persists nothing. It is not a
+  "no fatigue" report.
+* Because `SessionResponseService.recordOrUpdateResponse` writes no document when every fact
+  is absent, an untouched sheet leaves the completed execution without an `immediate`
+  `SessionResponse`. `intradayLaunchClaim` reads that response as the post-session
+  confirmation for any execution-backed predecessor of a dependent same-day bundle member.
+  The adjudication loop (`intradayBundleMemberAdjudicationCore.ts`) therefore applies
+  `gatePredecessorConfirmation` (`services/predecessorConfirmationGate.ts`). The gate is
+  stricter than the claim. A response that holds only sRPE or a note is not confirmation,
+  because `reassessDependentBundleMember` reads an absent `unexpectedFatigue` as "no
+  fatigue". So when the predecessor execution is completed but its `immediate` response is
+  missing or has no explicit fatigue answer, the member status carries a
+  `predecessorConfirmation` prompt, and a `proceed` verdict is downgraded to `pending`. For a
+  missing response the engine already returns `pending`, so the downgrade is defence in
+  depth. `AdditionalSessionsCard` renders the prompt as the same explicit No / Yes fatigue
+  question. The answer is written as the predecessor's `immediate` response
+  (`predecessorConfirmationAction.ts`) and Home re-adjudicates; because the write moved the
+  response's `updatedAt`, the new decision pins the new confirmation revision. Confirmation stays an explicit athlete answer, and nothing is recorded for an unanswered
+  prompt. A `reject` verdict is never prompted.
 * Empty notes stay absent; the tissue-feedback draft and next-day linkage are unchanged.
 
 Historical records that already carry `sessionRpe = 7` or `completedFraction = 1` are not

@@ -75,7 +75,9 @@ test('session runner logs both hold sides before rotating and keeps controls usa
   await finish.click();
   const completion = page.getByRole('dialog', { name: 'Complete Session' });
   await expect(completion).toBeVisible();
-  await assertEffectiveTarget(completion.locator('.checkbox-label'));
+  const fatigue = completion.getByRole('group', { name: /Unexpected fatigue during or after this session/ });
+  for (const answer of ['No', 'Yes']) await assertEffectiveTarget(fatigue.getByRole('button', { name: answer, exact: true }));
+  await expect(fatigue.getByRole('button', { pressed: true })).toHaveCount(0);
   await assertEffectiveTarget(completion.getByRole('button', { name: 'Finish & Save Session' }));
   await assertNoBodyHorizontalOverflow(page);
 });

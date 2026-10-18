@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import type { SessionReferenceBinding } from '../../sessions/models';
 import type { IntradayBundleMemberStatus } from '../../services/intradayBundleMemberAdjudication';
+import type { PredecessorConfirmationPrompt } from '../../services/predecessorConfirmationGate';
 import { isMemberLaunchable } from './additionalSessionLaunchability';
 import './AdditionalSessionsCard.css';
 
@@ -9,6 +10,9 @@ export interface AdditionalSessionsCardProps {
     /** Claims capacity and launches. Rejecting with a `StaleDecisionError` is expected, not
      * exceptional: the caller surfaces its `athleteMessage` and refreshes the dashboard. */
     onStartMember?: (binding: SessionReferenceBinding, member: IntradayBundleMemberStatus) => void | Promise<void>;
+    /** #896: saves the explicit answer as the predecessor's `immediate` response, then the
+     * caller re-adjudicates. Rejecting leaves the question in place for another try. */
+    onConfirmPredecessor?: (prompt: PredecessorConfirmationPrompt, unexpectedFatigue: boolean) => Promise<void>;
 }
 
 /**
@@ -24,8 +28,10 @@ export interface AdditionalSessionsCardProps {
  * A member with no window bounds still renders: the fields are presentation-only and absent
  * ones are simply omitted rather than filled with a plausible-looking default.
  */
-export const AdditionalSessionsCard: React.FC<AdditionalSessionsCardProps> = ({ members, onStartMember }) => {
+export const AdditionalSessionsCard: React.FC<AdditionalSessionsCardProps> = ({ members, onStartMember, onConfirmPredecessor }) => {
     const [startingSessionId, setStartingSessionId] = useState<string | null>(null);
+    const [confirmingSessionId, setConfirmingSessionId] = useState<string | null>(null);
+    const [confirmError, setConfirmError] = useState<{ sessionId: string; message: string } | null>(null);
 
     if (members.length === 0) return null;
 
@@ -36,6 +42,19 @@ export const AdditionalSessionsCard: React.FC<AdditionalSessionsCardProps> = ({ 
             await onStartMember(member.binding, member);
         } finally {
             setStartingSessionId(null);
+        }
+    };
+
+    const confirm = async (member: IntradayBundleMemberStatus, unexpectedFatigue: boolean) => {
+        if (!member.predecessorConfirmation || !onConfirmPredecessor) return;
+        setConfirmingSessionId(member.sessionId);
+        setConfirmError(null);
+        try {
+            await onConfirmPredecessor(member.predecessorConfirmation, unexpectedFatigue);
+        } catch {
+            setConfirmError({ sessionId: member.sessionId, message: 'Could not save your answer. Try again.' });
+        } finally {
+            setConfirmingSessionId(null);
         }
     };
 
@@ -60,6 +79,38 @@ export const AdditionalSessionsCard: React.FC<AdditionalSessionsCardProps> = ({ 
                                 </span>
                                 {!launchable && (
                                     <span className="additional-session-reason" role="note">{member.reason}</span>
+                                )}
+                                {member.predecessorConfirmation && onConfirmPredecessor && (
+                                    <div
+                                        className="additional-session-confirm"
+                                        role="group"
+                                        aria-labelledby={`confirm-${member.sessionId}`}
+                                    >
+                                        <span id={`confirm-${member.sessionId}`}>
+                                            Unexpected fatigue during or after {member.predecessorConfirmation.title ?? 'your earlier session'}?
+                                        </span>
+                                        <span className="additional-session-confirm-actions">
+                                            <button
+                                                type="button"
+                                                disabled={confirmingSessionId !== null}
+                                                aria-label={`No unexpected fatigue after ${member.predecessorConfirmation.title ?? 'your earlier session'}`}
+                                                onClick={() => void confirm(member, false)}
+                                            >
+                                                No
+                                            </button>
+                                            <button
+                                                type="button"
+                                                disabled={confirmingSessionId !== null}
+                                                aria-label={`Yes, unexpected fatigue after ${member.predecessorConfirmation.title ?? 'your earlier session'}`}
+                                                onClick={() => void confirm(member, true)}
+                                            >
+                                                Yes
+                                            </button>
+                                        </span>
+                                        {confirmError?.sessionId === member.sessionId && (
+                                            <span className="additional-session-confirm-error" role="alert">{confirmError.message}</span>
+                                        )}
+                                    </div>
                                 )}
                             </div>
                             {launchable && (

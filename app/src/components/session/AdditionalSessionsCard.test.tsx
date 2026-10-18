@@ -27,6 +27,45 @@ function member(overrides: Partial<IntradayBundleMemberStatus> = {}): IntradayBu
     };
 }
 
+describe('AdditionalSessionsCard predecessor confirmation (#896)', () => {
+    const prompt = { sourceSession: { kind: 'execution' as const, id: 'exec-am', date: '2026-10-17' }, title: 'Morning strength' };
+    const waiting = member({
+        status: 'pending',
+        reason: 'Answer the check-in for your earlier session to unlock this one.',
+        binding: undefined,
+        predecessorConfirmation: prompt,
+    });
+
+    it('asks an explicit No / Yes question for the predecessor and still offers no Start control', () => {
+        const html = renderToStaticMarkup(
+            <AdditionalSessionsCard members={[waiting]} onStartMember={vi.fn()} onConfirmPredecessor={vi.fn()} />,
+        );
+        expect(html).toContain('Unexpected fatigue during or after Morning strength?');
+        expect(html).toContain('>No</button>');
+        expect(html).toContain('>Yes</button>');
+        expect(html).toContain('aria-label="No unexpected fatigue after Morning strength"');
+        expect(html).toContain('aria-label="Yes, unexpected fatigue after Morning strength"');
+        expect(html).not.toContain('>Start</button>');
+        expect(html).toContain('role="group"');
+    });
+
+    it('falls back to a generic predecessor label when the title is unknown', () => {
+        const html = renderToStaticMarkup(
+            <AdditionalSessionsCard
+                members={[member({ ...waiting, predecessorConfirmation: { sourceSession: prompt.sourceSession } })]}
+                onConfirmPredecessor={vi.fn()}
+            />,
+        );
+        expect(html).toContain('Unexpected fatigue during or after your earlier session?');
+    });
+
+    it('renders no question when the caller cannot record an answer', () => {
+        const html = renderToStaticMarkup(<AdditionalSessionsCard members={[waiting]} onStartMember={vi.fn()} />);
+        expect(html).not.toContain('<button');
+        expect(html).toContain('Answer the check-in for your earlier session');
+    });
+});
+
 describe('AdditionalSessionsCard (H4 plan step 10)', () => {
     it('renders a launchable member with its resolved window and order label', () => {
         const html = renderToStaticMarkup(
