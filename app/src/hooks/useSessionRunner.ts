@@ -1,5 +1,5 @@
-import { entryCompositionStamp, swappedStepComposition } from '../sessions/compositionStamping';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { entryCompositionStamp, swappedStepComposition } from '../sessions/compositionStamping';
 import type {
     SessionDefinition,
     SessionExecution,
