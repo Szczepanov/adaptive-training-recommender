@@ -1,4 +1,4 @@
-import type { LoggedExercise, LoggedSet, StrengthSession } from '../engine/models';
+import type { LoggedExercise, LoggedSet, StrengthSession, StrengthSessionState } from '../engine/models';
 
 /**
  * Per-exercise progressive-overload aggregation (S1.7, ADR-0021). Reads the raw per-set
@@ -30,6 +30,8 @@ function matchesIdentity(exercise: LoggedExercise, identity: ExerciseIdentity): 
 export interface ExerciseSessionSummary {
     date: string;
     sessionId: string;
+    /** The session's own state; the history table keeps every state, "Last time" only completed. */
+    sessionState: StrengthSessionState;
     setCount: number;
     workingSetCount: number;
     totalReps: number;
@@ -69,6 +71,7 @@ export function summarizeExerciseSession(session: StrengthSession, identity: Exe
     return {
         date: session.date,
         sessionId: session.sessionId,
+        sessionState: session.state,
         setCount: sets.length,
         workingSetCount: workingSets.length,
         totalReps,
@@ -111,14 +114,16 @@ export type LastTimeComparison =
     | { kind: 'previous'; date: string; heaviestSet: LoggedSet | null; workingSetCount: number }
     | { kind: 'first_time' };
 
-/** The most recent summarized session other than the one in progress. `first_time` means no
- *  earlier session *in the loaded history window* logged this exercise, so its text names the
- *  window. Callers ask only once that history has fully loaded and read cleanly. */
+/** The most recent *completed* summarized session other than the one in progress (owner
+ *  decision on #725: an abandoned attempt is not "last time"). `first_time` means no earlier
+ *  completed session *in the loaded history window* logged this exercise, so its text names
+ *  the window. Callers ask only once that history has fully loaded and read cleanly. */
 export function resolveLastTimeComparison(
     history: readonly ExerciseSessionSummary[],
     currentSessionId: string | undefined,
 ): LastTimeComparison {
-    const previous = [...history].reverse().find(summary => summary.sessionId !== currentSessionId);
+    const previous = [...history].reverse()
+        .find(summary => summary.sessionId !== currentSessionId && summary.sessionState === 'completed');
     return previous
         ? { kind: 'previous', date: previous.date, heaviestSet: previous.heaviestSet, workingSetCount: previous.workingSetCount }
         : { kind: 'first_time' };
@@ -133,4 +138,42 @@ export function formatLastTimeComparison(comparison: LastTimeComparison, windowD
     if (!top) return `Last time (${comparison.date}): warm-up sets only`;
     const load = top.weightKg !== null && top.weightKg > 0 ? `${top.weightKg} kg` : 'bodyweight';
     return `Last time (${comparison.date}): heaviest set ${load} × ${top.reps} · ${sets}`;
+}
+
+/** What the runner knows about the loaded overload history for its gating decisions. */
+export interface RunnerHistoryView {
+    loading: boolean;
+    error: string | null;
+    invalidRecords: number;
+    selected: ExerciseIdentity | null;
+    history: readonly ExerciseSessionSummary[];
+}
+
+/** True when `history` belongs to `identity` (the selection effect may lag one render). */
+function historyIsFor(view: RunnerHistoryView, identity: ExerciseIdentity | null): boolean {
+    return !!identity && !!view.selected
+        && exerciseIdentityKey(view.selected) === exerciseIdentityKey(identity);
+}
+
+/** #726 display gate: show "Last time" only from a clean, complete, matching read, so
+ *  loading, an error or an unreadable record never produce a false claim. */
+export function resolveRunnerLastTime(
+    view: RunnerHistoryView,
+    identity: ExerciseIdentity | null,
+    currentSessionId: string | undefined,
+): LastTimeComparison | null {
+    if (view.loading || view.error || view.invalidRecords > 0 || !historyIsFor(view, identity)) return null;
+    return resolveLastTimeComparison(view.history, currentSessionId);
+}
+
+/** The weight prefill keeps its pre-#726 rule: the latest earlier session of any state that
+ *  logged the exercise, independent of whether the "Last time" line is shown. Only a
+ *  mismatched selection is excluded, so a lagging render never prefills another exercise. */
+export function resolveRunnerPrefillSet(
+    view: RunnerHistoryView,
+    identity: ExerciseIdentity | null,
+    currentSessionId: string | undefined,
+): LoggedSet | null {
+    if (!historyIsFor(view, identity)) return null;
+    return [...view.history].reverse().find(summary => summary.sessionId !== currentSessionId)?.heaviestSet ?? null;
 }

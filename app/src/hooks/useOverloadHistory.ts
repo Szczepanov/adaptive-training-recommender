@@ -34,6 +34,9 @@ export function useOverloadHistory(
     const [sessions, setSessions] = useState<StrengthSession[]>([]);
     const [invalidRecords, setInvalidRecords] = useState(0);
     const [selected, setSelected] = useState<ExerciseIdentity | null>(null);
+    // The key whose read last settled: until it matches `refreshKey`, the data on hand belongs
+    // to an older key and is reported as loading (no stale frame before the effect runs).
+    const [loadedKey, setLoadedKey] = useState<string | undefined>(refreshKey);
 
     useEffect(() => {
         // Same no-userId early-exit shape as App.tsx's loadDecisionInput effect; there is
@@ -60,7 +63,9 @@ export function useOverloadHistory(
                 if (!cancelled) setError(err instanceof Error ? err.message : 'Could not load strength session history');
             })
             .finally(() => {
-                if (!cancelled) setLoading(false);
+                if (cancelled) return;
+                setLoading(false);
+                setLoadedKey(refreshKey);
             });
         return () => {
             cancelled = true;
@@ -70,5 +75,5 @@ export function useOverloadHistory(
     const exercises = useMemo(() => distinctLoggedExercises(sessions), [sessions]);
     const history = useMemo(() => (selected ? summarizeExerciseAcrossSessions(sessions, selected) : []), [sessions, selected]);
 
-    return { loading, error, exercises, selected, select: setSelected, history, invalidRecords };
+    return { loading: loading || loadedKey !== refreshKey, error, exercises, selected, select: setSelected, history, invalidRecords };
 }

@@ -3,6 +3,9 @@ import {
     distinctLoggedExercises,
     formatLastTimeComparison,
     resolveLastTimeComparison,
+    resolveRunnerLastTime,
+    resolveRunnerPrefillSet,
+    type RunnerHistoryView,
     summarizeExerciseAcrossSessions,
     summarizeExerciseSession,
     type ExerciseSessionSummary,
@@ -132,7 +135,7 @@ describe('distinctLoggedExercises', () => {
 
 describe('resolveLastTimeComparison / formatLastTimeComparison (#726)', () => {
     const summary = (overrides: Partial<ExerciseSessionSummary>): ExerciseSessionSummary => ({
-        date: '2026-10-10', sessionId: 's1', setCount: 4, workingSetCount: 3, totalReps: 20, tonnageKg: 900,
+        date: '2026-10-10', sessionId: 's1', sessionState: 'completed', setCount: 4, workingSetCount: 3, totalReps: 20, tonnageKg: 900,
         heaviestSet: set({ weightKg: 60, reps: 5 }), ...overrides,
     });
 
@@ -155,5 +158,45 @@ describe('resolveLastTimeComparison / formatLastTimeComparison (#726)', () => {
             .toBe('Last time (2026-10-10): heaviest set bodyweight × 12 · 1 working set');
         expect(formatLastTimeComparison({ kind: 'previous', date: '2026-10-10', heaviestSet: null, workingSetCount: 0 }, 90))
             .toBe('Last time (2026-10-10): warm-up sets only');
+    });
+});
+
+describe('runner gates: resolveRunnerLastTime / resolveRunnerPrefillSet (#726)', () => {
+    const squat = { exerciseId: 'front_squat' };
+    const summary = (overrides: Partial<ExerciseSessionSummary>): ExerciseSessionSummary => ({
+        date: '2026-10-10', sessionId: 's1', sessionState: 'completed', setCount: 3, workingSetCount: 3, totalReps: 15, tonnageKg: 900,
+        heaviestSet: set({ weightKg: 60, reps: 5 }), ...overrides,
+    });
+    const view = (overrides: Partial<RunnerHistoryView> = {}): RunnerHistoryView => ({
+        loading: false, error: null, invalidRecords: 0, selected: squat, history: [summary({})], ...overrides,
+    });
+
+    it('ignores an abandoned attempt for "Last time" but still prefills from it', () => {
+        const history = [summary({ sessionId: 'done', date: '2026-10-08', heaviestSet: set({ weightKg: 60, reps: 5 }) }),
+            summary({ sessionId: 'quit', date: '2026-10-12', sessionState: 'abandoned', heaviestSet: set({ weightKg: 20, reps: 5 }) })];
+        expect(resolveRunnerLastTime(view({ history }), squat, 'now')).toMatchObject({ kind: 'previous', date: '2026-10-08' });
+        expect(resolveRunnerPrefillSet(view({ history }), squat, 'now')?.weightKg).toBe(20);
+    });
+
+    it.each([
+        ['loading', { loading: true }],
+        ['an error', { error: 'offline' }],
+        ['an unreadable record', { invalidRecords: 1 }],
+    ] as const)('hides the line during %s but keeps the weight prefill', (_label, override) => {
+        expect(resolveRunnerLastTime(view(override), squat, 'now')).toBeNull();
+        expect(resolveRunnerPrefillSet(view(override), squat, 'now')?.weightKg).toBe(60);
+    });
+
+    it('shows and prefills nothing while the selection lags behind the active exercise', () => {
+        const lagging = view({ selected: { exerciseId: 'bench_press' } });
+        expect(resolveRunnerLastTime(lagging, squat, 'now')).toBeNull();
+        expect(resolveRunnerPrefillSet(lagging, squat, 'now')).toBeNull();
+        expect(resolveRunnerLastTime(view({ selected: null }), squat, 'now')).toBeNull();
+        expect(resolveRunnerLastTime(view(), null, 'now')).toBeNull();
+    });
+
+    it('matches free-text identities case- and whitespace-insensitively', () => {
+        const freeText = view({ selected: { exerciseId: null, freeTextName: 'Hotel Lunges ' } });
+        expect(resolveRunnerLastTime(freeText, { exerciseId: null, freeTextName: 'hotel lunges' }, 'now')).toMatchObject({ kind: 'previous' });
     });
 });

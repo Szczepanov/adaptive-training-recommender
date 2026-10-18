@@ -31,7 +31,7 @@ vi.mock('../../hooks/useSessionRunner', () => ({
 
 vi.mock('../../hooks/useOverloadHistory', () => ({
     OVERLOAD_HISTORY_WINDOW_DAYS: 90,
-    useOverloadHistory: () => ({ history: [], select: vi.fn() }),
+    useOverloadHistory: () => ({ loading: false, error: null, invalidRecords: 0, selected: null, exercises: [], history: [], select: vi.fn() }),
 }));
 
 vi.mock('../../services/sessionDefinitionService', () => ({

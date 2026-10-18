@@ -5,9 +5,9 @@ import { projectSessionProgress } from '../../sessions/sessionProgressProjection
 import { useSessionRunner } from '../../hooks/useSessionRunner';
 import { OVERLOAD_HISTORY_WINDOW_DAYS, useOverloadHistory } from '../../hooks/useOverloadHistory';
 import {
-    exerciseIdentityKey,
     formatLastTimeComparison,
-    resolveLastTimeComparison,
+    resolveRunnerLastTime,
+    resolveRunnerPrefillSet,
     type ExerciseIdentity,
 } from '../../workouts/overloadHistory';
 import { resolveStepInputProfile } from '../../sessions/inputProfiles';
@@ -200,7 +200,15 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
     useEffect(() => {
         setSyncAnnouncement(previous => nextSyncAnnouncement(previous, runner.syncStatus));
     }, [runner.syncStatus]);
-    const overload = useOverloadHistory(userId, OVERLOAD_HISTORY_WINDOW_DAYS, runner.execution?.executionId);
+    // Re-read history once an execution in this runner finishes, so a companion session started
+    // without a remount sees it -- not on every start or restore, which would refetch for nothing
+    // and reset in-progress input when the prefill arrives (adjusting state during render).
+    const finishedExecutionId = runner.execution && runner.execution.state !== 'in_progress'
+        ? runner.execution.executionId
+        : undefined;
+    const [historyRefreshKey, setHistoryRefreshKey] = useState<string | undefined>(undefined);
+    if (finishedExecutionId && finishedExecutionId !== historyRefreshKey) setHistoryRefreshKey(finishedExecutionId);
+    const overload = useOverloadHistory(userId, OVERLOAD_HISTORY_WINDOW_DAYS, historyRefreshKey);
     const initialLaunchAttempted = useRef(false);
     const [showCompletionSheet, setShowCompletionSheet] = useState<boolean>(false);
     const [showAbandonConfirmation, setShowAbandonConfirmation] = useState<boolean>(false);
@@ -288,16 +296,15 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
         selectOverload(activeExerciseIdentity);
     }, [activeExerciseIdentity, selectOverload]);
 
-    // #726: only once history has loaded *for this exercise* -- during loading, an error, or
-    // the render before the selection effect catches up, nothing is shown rather than a
-    // misleading "first time".
-    const lastTime = useMemo(() => {
-        // An unreadable session record could hide a more recent log, so say nothing then.
-        if (!activeExerciseIdentity || overload.loading || overload.error || overload.invalidRecords > 0 || !overload.selected) return null;
-        if (exerciseIdentityKey(overload.selected) !== exerciseIdentityKey(activeExerciseIdentity)) return null;
-        return resolveLastTimeComparison(overload.history, runner.execution?.executionId);
-    }, [activeExerciseIdentity, overload.loading, overload.error, overload.invalidRecords, overload.selected, overload.history, runner.execution?.executionId]);
-    const pastSummary = lastTime?.kind === 'previous' ? lastTime.heaviestSet : null;
+    // #726: the displayed line and the weight prefill have separate gates (`overloadHistory.ts`).
+    const lastTime = useMemo(
+        () => resolveRunnerLastTime(overload, activeExerciseIdentity, runner.execution?.executionId),
+        [overload, activeExerciseIdentity, runner.execution?.executionId],
+    );
+    const pastSummary = useMemo(
+        () => resolveRunnerPrefillSet(overload, activeExerciseIdentity, runner.execution?.executionId),
+        [overload, activeExerciseIdentity, runner.execution?.executionId],
+    );
 
     const activeStep = runner.activeStep;
     const entries = runner.entries;

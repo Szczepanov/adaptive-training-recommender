@@ -35,3 +35,10 @@
 .session-history-below {
     margin-top: 1.5rem;
 }
+
+/* #725: in tab mode the History panel shares the runner and tablist column. */
+.session-history-panel {
+    max-width: 720px;
+    margin: 0 auto;
+    box-sizing: border-box;
+}

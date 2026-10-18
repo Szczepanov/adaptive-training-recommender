@@ -86,7 +86,7 @@ export const SessionHistoryTabs: React.FC<SessionHistoryTabsProps> = ({ sessionA
                 id={`${baseId}-panel-history`}
                 {...(sessionActive ? { role: 'tabpanel', 'aria-labelledby': `${baseId}-tab-history` } : {})}
                 hidden={sessionActive && view !== 'history'}
-                className={`dashboard-card strength-history-card${sessionActive ? '' : ' session-history-below'}`}
+                className={`dashboard-card strength-history-card${sessionActive ? ' session-history-panel' : ' session-history-below'}`}
             >
                 {history}
             </div>

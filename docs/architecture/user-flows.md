@@ -372,14 +372,22 @@ finishes through the completion flow. `App` wraps the runner and `StrengthOverlo
   the runner or resets its timers and inputs.
 
 Inside the runner, the active exercise shows a compact "Last time" line
-(`workouts/overloadHistory.ts` `resolveLastTimeComparison` / `formatLastTimeComparison`).
-It gives the most recent earlier session's date, its heaviest working set labelled as such,
-and the working-set count. With no earlier log it says "No earlier log of this exercise in
-the last 90 days" (the history window, `OVERLOAD_HISTORY_WINDOW_DAYS`). It renders only once
-history has loaded cleanly for that exact exercise, so loading, an error or an unreadable
-session record shows nothing rather than a false claim. History reloads when a new
-execution starts, so a companion session sees the session just finished. The runner is one deliberate column capped at 720 px, the same as the
-no-session picker, at full width below that (#725).
+(`workouts/overloadHistory.ts` `resolveRunnerLastTime` / `formatLastTimeComparison`).
+It gives the most recent earlier *completed* session's date, its heaviest working set
+labelled as such, and the working-set count. An abandoned attempt is never "last time".
+With no earlier completed log it says "No earlier log of this exercise in the last 90 days"
+(the history window, `OVERLOAD_HISTORY_WINDOW_DAYS`). It renders only once history has
+loaded cleanly for that exact exercise, so loading, an error or an unreadable session
+record shows nothing rather than a false claim.
+
+The weight prefill has its own gate (`resolveRunnerPrefillSet`) and keeps its earlier rule:
+the latest earlier session of any state. A hidden line therefore never removes the prefill.
+The runner's history read reloads once an execution in that runner finishes, so a companion
+session started without a remount sees it. It does not reload on every start or restore.
+The History tab's own table (`StrengthOverloadHistory`) loads once per Sessions screen mount.
+
+The runner, the tablist and the History panel share one deliberate column capped at 720 px,
+the same as the no-session picker, at full width below that (#725).
 
 An in-progress structured execution is global account state for resume purposes. A stored
 prescription that cannot be resolved is fail-closed instead of allowing a second session to
