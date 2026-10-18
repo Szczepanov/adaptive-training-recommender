@@ -48,11 +48,12 @@ expected outcomes and a result template for the manual gates below.
 5. **#872:** evaluate a bounded real prospective captured-context corpus when supplied;
    retain fail-closed provenance and separate broad-history activation.
 
-#896's remaining derived completion fraction needs an explicit denominator, provenance and
-conflict contract before schema work. Its current fraction is an optional athlete report,
-with 100% prohibited when required work is known incomplete. #806 waits for the next genuine
-`POLICY_VERSION` change, as recorded in #962; taper suppression still needs design. These
-are design/coordination boundaries, not permission to invent evidence or policy.
+#896 uses the issue's explicit athlete-report option for completion fraction; an automatic
+fraction/provenance schema is not required to finish that contract. Its
+[acceptance audit](../analysis/2026-10-18-issue-896-completion-missingness-acceptance.md)
+records the criterion evidence and added browser persistence proofs (in review). #806 waits
+for the next genuine `POLICY_VERSION` change, as recorded in #962; taper suppression still
+needs design. Actual-device acceptance is deferred by the owner and remains pending, not waived.
 
 ## Status lifecycle
 

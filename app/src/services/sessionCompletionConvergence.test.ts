@@ -70,6 +70,28 @@ describe('convergeCompletedExecution', () => {
         expect(mocks.reconcile).toHaveBeenCalledWith('u1', execution, 'Strength');
     });
 
+    it.each([
+        {},
+        { sessionRpe: 7, completedFraction: 0.75, unexpectedFatigue: false },
+        { completedFraction: 0, unexpectedFatigue: false },
+    ])('preserves stored optional facts without inventing answers on retry: %j (#896)', async facts => {
+        const reloaded: SessionExecution = JSON.parse(JSON.stringify({
+            ...execution,
+            sessionRpe: 7,
+            completionEvidence: { submittedAt: execution.updatedAt, ...facts },
+        }));
+        await convergeCompletedExecution('u1', reloaded);
+        await convergeCompletedExecution('u1', reloaded);
+        expect(mocks.response).toHaveBeenCalledTimes(2);
+        for (const call of mocks.response.mock.calls) expect(call[5]).toEqual(facts);
+    });
+
+    it('does not reinterpret legacy completion without canonical feedback (#896)', async () => {
+        await convergeCompletedExecution('u1', { ...execution, completionEvidence: undefined, sessionRpe: 7 });
+        expect(mocks.response).not.toHaveBeenCalled();
+        expect(mocks.reconcile).toHaveBeenCalled();
+    });
+
     it('does not turn a downstream outage into a failed canonical completion', async () => {
         mocks.response.mockRejectedValueOnce(new Error('response unavailable'));
         mocks.occurrence.mockRejectedValueOnce(new Error('occurrence unavailable'));

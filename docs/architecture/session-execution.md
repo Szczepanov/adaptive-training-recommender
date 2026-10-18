@@ -365,8 +365,15 @@ Residual not proven by this inventory: the reserved-identity hydration path hard
   clears it). An untouched sheet persists none; selecting 7 persists 7.
 * `completedFraction` is persisted only when chosen. "All of it (100%)" is disabled, and never
   persisted, while required planned steps are unfinished. The fraction is not derived from
-  execution: there is no provenance field for a derived value yet, so an unanswered fraction
-  stays absent rather than being guessed.
+  execution. This is the explicit athlete-report option in #896, not an incomplete
+  automatic derivation. An unanswered fraction stays absent. `SessionCompletionEvidence`
+  plus `submittedAt` records the submitted report; canonical planned/performed entries remain
+  independently available. The report never overrides structured completion counts or the
+  separately derived diagnostic `deliveredDose.completionRatio`. Non-100% choices are coarse
+  athlete estimates, not set-count ratios; 100% contradicting required work is omitted. A
+  future derived subjective-completion field would need its own definition/provenance and
+  conflict contract before mixing the two. No new schema field is required for the current
+  report-only contract.
 * `unexpectedFatigue` is an explicit No / Yes question that starts unanswered (tapping the
   selected answer again clears it). An unanswered question persists nothing. It is not a
   "no fatigue" report.

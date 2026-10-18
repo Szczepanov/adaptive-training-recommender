@@ -124,8 +124,24 @@ describe('deriveCanonicalBroadExposure', () => {
         expect(deriveCanonicalBroadExposure(occurrence(refs), hydrated)).toEqual({ status: 'unknown', reason });
     });
 
+    it.each([
+        [undefined, ''],
+        [0, 'easy'],
+        [7, 'hard'],
+    ])('keeps absent sRPE distinct from explicit %s in diagnostic history (#896)', (sessionRpe, intensity) => {
+        const hydrated = sources({
+            executionsById: new Map([['e-1', execution({
+                sessionSource: strengthPrescription.sessionSource, prescriptionHash: 'ph-1', sessionRpe,
+            })]]),
+            entriesByExecutionId: new Map([['e-1', [setEntry('1')]]]),
+            prescriptionsByHash: new Map([['ph-1', strengthPrescription]]),
+        });
+        expect(deriveCanonicalBroadExposure(occurrence([structuredRef], { modality: 'strength' }), hydrated))
+            .toMatchObject({ status: 'derived', exposure: { trainingRecordLike: { intensity_tag: intensity } } });
+    });
+
     it('derives manual strength from performed sets, session duration and RPE', () => {
-        const manual = execution({ sessionSource: strengthPrescription.sessionSource, prescriptionHash: 'ph-1', sessionRpe: 8 });
+        const manual = execution({ sessionSource: strengthPrescription.sessionSource, prescriptionHash: 'ph-1', sessionRpe: 8, completionEvidence: { submittedAt: '2026-08-06T11:00:00Z', completedFraction: 0.75 } });
         const hydrated = sources({
             executionsById: new Map([['e-1', manual]]),
             entriesByExecutionId: new Map([['e-1', [setEntry('1'), setEntry('2'), setEntry('3', 'e-1', true), { ...setEntry('4'), stepId: 'warmup-press' }]]]),
@@ -138,6 +154,8 @@ describe('deriveCanonicalBroadExposure', () => {
             trainingRecordLike: { type: 'Upper Maintenance', duration_min: 45 }, modality: 'Strength',
             deliveredDose: { plannedDurationMin: 55, completionRatio: 0.5 }, stimulusConfidence: 'inferred',
         });
+        // Performed dose and the athlete's coarse report remain separate evidence.
+        expect(manual.completionEvidence?.completedFraction).toBe(0.75);
         expect(Object.values(derived.exposure.costProfile).every(value => Number.isFinite(value) && value > 0)).toBe(true);
         expect(Object.values(derived.exposure.stimulusProfile ?? {}).every(value => Number.isFinite(value) && value >= 0)).toBe(true);
         const audit = pairLiveAndCanonicalHistory({

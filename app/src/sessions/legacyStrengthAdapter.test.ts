@@ -6,6 +6,21 @@ import {
 } from './legacyStrengthAdapter';
 
 describe('Legacy Strength Session Adapter (M2.7 / ADR-0023)', () => {
+    it.each([undefined, 7])('preserves historical sRPE %s without synthesizing completion feedback (#896)', sessionRpe => {
+        const legacy: StrengthSession = {
+            userId: 'user-123', sessionId: 'old-session', date: '2026-08-18',
+            startedAt: '2026-08-18T10:00:00Z', completedAt: '2026-08-18T10:45:00Z',
+            updatedAt: '2026-08-18T10:45:00Z', state: 'completed', sessionRpe,
+            exercises: [], schemaVersion: 1,
+        };
+        const normalized = adaptStrengthSessionToNormalizedExecution(legacy);
+        expect(normalized.execution.sessionRpe).toBe(sessionRpe);
+        expect(normalized.execution).not.toHaveProperty('completionEvidence');
+        const restored = adaptNormalizedExecutionToStrengthSession(normalized);
+        if (sessionRpe === undefined) expect(restored).not.toHaveProperty('sessionRpe');
+        else expect(restored.sessionRpe).toBe(7);
+    });
+
     it('purely maps a completed v1 strength session with catalog and free-text exercises', () => {
         const legacy: StrengthSession = {
             userId: 'user-123',
