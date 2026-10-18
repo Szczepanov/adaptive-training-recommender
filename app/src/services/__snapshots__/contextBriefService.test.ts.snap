@@ -3,7 +3,7 @@
 exports[`ContextBriefService > golden service artifact: 2-day daily export 1`] = `
 "# Morning Training & Readiness Brief
 
-Contract version: 2026-10-context-brief-contract-v8
+Contract version: 2026-10-context-brief-contract-v9
 Purpose: morning
 As-of date: 2026-08-15 (Europe/Warsaw calendar date)
 Retrospective detail window: 2026-08-14 → 2026-08-15 (2 days)
@@ -97,7 +97,7 @@ No recommendation recorded for today yet (check-in may be pending or sync in pro
 exports[`ContextBriefService > golden service artifact: 14-day diagnostic export 1`] = `
 "# Training context brief
 
-Contract version: 2026-10-context-brief-contract-v8
+Contract version: 2026-10-context-brief-contract-v9
 Purpose: diagnostic
 As-of date: 2026-08-15 (Europe/Warsaw calendar date)
 Retrospective detail window: 2026-08-02 → 2026-08-15 (14 days)
@@ -220,11 +220,12 @@ Completed sessions only: Garmin records and answered adherence reconciled as the
 
 ### Physical-capability exposure
 
-Read-only status. \`confirmed\` = completed in this window; \`planned\` = imported plan session in the next 7 days only (never counted as done); \`unknown\` = not observed in this window or no canonical model; \`deliberately_suspended\` = blocked by a current safety limit or a deliberate planning suspension, not neglect. \`overdue\` is reported only for change of direction and sport skill, and only from the evergreen planner's resolved #805 capability-maintenance cadence when this export carries it; no other family has an authoritative cadence/max-gap policy. Not yet represented: taper/event-specific suppression outside #805, and the #803/#806 capability models. Neuromuscular power (#802), impact (#804), change of direction and sport skill (#805) are confirmed only by exact authored identities.
+Read-only status. \`confirmed\` = completed in this window; \`planned\` = imported plan session in the next 7 days only (never counted as done); \`unknown\` = not observed in this window or no canonical model; \`deliberately_suspended\` = blocked by a current safety limit or a deliberate planning suspension, not neglect. \`overdue\` is reported only for change of direction and sport skill, and only from the evergreen planner's resolved #805 capability-maintenance cadence when this export carries it; no other family has an authoritative cadence/max-gap policy. Not yet represented: taper/event-specific suppression outside #805, and the #806 long-anchor model. Neuromuscular power (#802), impact (#804), change of direction and sport skill (#805) are confirmed only by exact authored identities; unilateral lower-body (#803) only by logged working sets on steps carrying that structured movement pattern.
 - Aerobic endurance: confirmed · last confirmed 2026-08-14 — canonical performed occurrence (provider_activity; exact)
 - Cycling quality (tempo+ / race): confirmed · last confirmed 2026-08-14 — Garmin measured effort (garmin; inferred)
 - Strength: unknown
 - Neuromuscular power: unknown
+- Unilateral lower-body: unknown
 - Running familiarity: unknown
 - Field / multidirectional sport: unknown
 - Impact / jump-land: unknown
@@ -232,7 +233,6 @@ Read-only status. \`confirmed\` = completed in this window; \`planned\` = import
 - Acceleration / deceleration: unknown · no resolved capability-maintenance cadence in this export; overdue status is not reported
 - Change of direction / multidirectional: unknown · no resolved capability-maintenance cadence in this export; overdue status is not reported
 - Sport skill: unknown · no resolved capability-maintenance cadence in this export; overdue status is not reported
-- Unilateral lower-body: unknown · no canonical exposure model yet (#803)
 - Long aerobic anchor: unknown · no canonical exposure model yet (#806)
 - Hamstring knee-flexion / calf-soleus / grip-carry: unknown · no canonical exposure model yet (no issue yet)
 - Note: Training settings missing or unreadable: safety suspensions are unknown, not absent.
@@ -300,7 +300,7 @@ Use this exact day-block format so it remains compatible with 1-click plan impor
 exports[`ContextBriefService > golden service artifact: 14-day full export 1`] = `
 "# Training context brief
 
-Contract version: 2026-10-context-brief-contract-v8
+Contract version: 2026-10-context-brief-contract-v9
 Purpose: planning
 As-of date: 2026-08-15 (Europe/Warsaw calendar date)
 Retrospective detail window: 2026-08-02 → 2026-08-15 (14 days)
@@ -432,11 +432,12 @@ Completed sessions only: Garmin records and answered adherence reconciled as the
 
 ### Physical-capability exposure
 
-Read-only status. \`confirmed\` = completed in this window; \`planned\` = imported plan session in the next 7 days only (never counted as done); \`unknown\` = not observed in this window or no canonical model; \`deliberately_suspended\` = blocked by a current safety limit or a deliberate planning suspension, not neglect. \`overdue\` is reported only for change of direction and sport skill, and only from the evergreen planner's resolved #805 capability-maintenance cadence when this export carries it; no other family has an authoritative cadence/max-gap policy. Not yet represented: taper/event-specific suppression outside #805, and the #803/#806 capability models. Neuromuscular power (#802), impact (#804), change of direction and sport skill (#805) are confirmed only by exact authored identities.
+Read-only status. \`confirmed\` = completed in this window; \`planned\` = imported plan session in the next 7 days only (never counted as done); \`unknown\` = not observed in this window or no canonical model; \`deliberately_suspended\` = blocked by a current safety limit or a deliberate planning suspension, not neglect. \`overdue\` is reported only for change of direction and sport skill, and only from the evergreen planner's resolved #805 capability-maintenance cadence when this export carries it; no other family has an authoritative cadence/max-gap policy. Not yet represented: taper/event-specific suppression outside #805, and the #806 long-anchor model. Neuromuscular power (#802), impact (#804), change of direction and sport skill (#805) are confirmed only by exact authored identities; unilateral lower-body (#803) only by logged working sets on steps carrying that structured movement pattern.
 - Aerobic endurance: confirmed · last confirmed 2026-08-14 — canonical performed occurrence (provider_activity; exact)
 - Cycling quality (tempo+ / race): confirmed · last confirmed 2026-08-14 — Garmin measured effort (garmin; inferred)
 - Strength: unknown
 - Neuromuscular power: unknown
+- Unilateral lower-body: unknown
 - Running familiarity: unknown
 - Field / multidirectional sport: unknown
 - Impact / jump-land: unknown
@@ -444,7 +445,6 @@ Read-only status. \`confirmed\` = completed in this window; \`planned\` = import
 - Acceleration / deceleration: unknown · no resolved capability-maintenance cadence in this export; overdue status is not reported
 - Change of direction / multidirectional: unknown · no resolved capability-maintenance cadence in this export; overdue status is not reported
 - Sport skill: unknown · no resolved capability-maintenance cadence in this export; overdue status is not reported
-- Unilateral lower-body: unknown · no canonical exposure model yet (#803)
 - Long aerobic anchor: unknown · no canonical exposure model yet (#806)
 - Hamstring knee-flexion / calf-soleus / grip-carry: unknown · no canonical exposure model yet (no issue yet)
 - Note: Training settings missing or unreadable: safety suspensions are unknown, not absent.

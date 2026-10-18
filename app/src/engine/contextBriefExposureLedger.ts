@@ -11,9 +11,14 @@
  *   drive live weekly coverage credit, confirm capabilities with their own provenance —
  *   including in-app structured executions that have no Garmin record or adherence answer.
  *
- * Deferred, not modelled here: capability families owned by #801–#806 and the tissue-specific
- * families are reported `unknown` until those canonical models exist; taper/event-specific
+ * Deferred, not modelled here: the #806 long aerobic anchor and the tissue-specific families are
+ * reported `unknown` until a canonical model reaches this export; taper/event-specific
  * suppression is not represented yet.
+ *
+ * Issue #803: unilateral lower-body work is confirmed only from logged working sets whose
+ * entries carry the `unilateral_lower_body` composition pattern (`deliveredPatternWork`,
+ * surfaced on the canonical fact as export-only provenance). Authored composition, imported
+ * plan titles and Garmin records never confirm or plan it.
  *
  * Issue #805: change of direction and sport skill are confirmed only through exact
  * `grantsAthleticCapabilityCredit` identities. `overdue` / cadence-driven suspension is emitted
@@ -279,6 +284,8 @@ interface CapabilitySpec {
     suspension: (safety: SafetyState) => string | null;
     /** Issue #805: the capability whose resolved cadence status this row reads, if any. */
     athleticCapability?: AthleticCapabilityKey;
+    /** Extra provenance appended when a canonical fact confirms the row. */
+    factDetail?: (fact: PerformedExposureFact) => string;
 }
 
 /** Exact #805 capability confirmation from a canonical fact with a known authored variant. */
@@ -333,6 +340,17 @@ const CAPABILITIES: readonly CapabilitySpec[] = [
             isReadinessModifiedDose: f.isReadinessModifiedDose,
         }),
         label: 'Neuromuscular power',
+        confirms: () => false,
+        plans: () => false,
+        suspension: safety => modalityBlocked(safety, 'Strength'),
+    },
+    {
+        // Issue #803 (owner decision 2026-10-17): only logged unilateral working sets count --
+        // never authored composition, warm-ups, imported-plan titles or Garmin records.
+        key: 'unilateral_lower_body',
+        confirmsFact: f => (f.deliveredUnilateralLowerBody?.workingSets ?? 0) > 0,
+        factDetail: f => `${f.deliveredUnilateralLowerBody?.workingSets ?? 0} unilateral lower-body working set(s) logged`,
+        label: 'Unilateral lower-body',
         confirms: () => false,
         plans: () => false,
         suspension: safety => modalityBlocked(safety, 'Strength'),
@@ -410,7 +428,6 @@ const CAPABILITIES: readonly CapabilitySpec[] = [
 
 /** Families without a canonical exposure model yet. Reported, never inferred. */
 const UNMODELLED: ReadonlyArray<{ key: string; label: string; source: string; impact: boolean }> = [
-    { key: 'unilateral_lower_body', label: 'Unilateral lower-body', source: '#803', impact: false },
     { key: 'long_aerobic_anchor', label: 'Long aerobic anchor', source: '#806', impact: false },
     { key: 'hamstring_calf_grip', label: 'Hamstring knee-flexion / calf-soleus / grip-carry', source: 'no issue yet', impact: false },
 ];
@@ -452,14 +469,21 @@ function capabilityEntry(spec: CapabilitySpec, events: readonly ResolvedEvent[],
     // structured-execution provenance the Garmin/adherence path cannot see.
     const useFact = lastFact !== null && (lastEvent === null || lastFact.localDate >= lastEvent.event.date);
     const lastDate = useFact ? lastFact.localDate : lastEvent?.event.date ?? null;
-    const lastProvenance = useFact ? factProvenance(lastFact) : lastEvent ? provenanceOf(lastEvent.event, lastEvent.override) : null;
+    const lastProvenance = useFact
+        ? `${factProvenance(lastFact)}${spec.factDetail ? `; ${spec.factDetail(lastFact)}` : ''}`
+        : lastEvent ? provenanceOf(lastEvent.event, lastEvent.override) : null;
     const planned = (input.plannedSessions ?? [])
         .filter(session => session.date >= input.asOfDate && spec.plans(session))
         .sort((a, b) => a.date.localeCompare(b.date))[0] ?? null;
     const suspension = spec.suspension(safety);
     const notes: string[] = [];
-    if (spec.key === 'strength' && safety.guardrails.has('avoid_heavy_lower_body')) {
+    if ((spec.key === 'strength' || spec.key === 'unilateral_lower_body') && safety.guardrails.has('avoid_heavy_lower_body')) {
         notes.push('heavy lower-body loading suspended by an active safety limit');
+    }
+    if (spec.key === 'unilateral_lower_body') {
+        const unreadable = (input.performedFacts ?? []).filter(fact => fact.deliveredCompositionUnavailable
+            && fact.localDate >= input.lookbackStart && fact.localDate <= input.asOfDate).length;
+        if (unreadable > 0) notes.push(`logged sets of ${unreadable} structured session(s) were unreadable; unilateral work there is unknown`);
     }
     if (spec.key === 'neuromuscular_power' && impactBlocked(safety)) {
         notes.push('impact (plyometric) power suspended by an active safety limit; non-impact power identities remain eligible');
@@ -581,7 +605,8 @@ export function renderExposureLedger(ledger: ExposureLedger, lookbackStart: stri
         `Read-only status. \`confirmed\` = completed in this window; \`planned\` = imported plan session in the next ${PLANNED_HORIZON_DAYS} days only (never counted as done); `
             + '`unknown` = not observed in this window or no canonical model; `deliberately_suspended` = blocked by a current safety limit or a deliberate planning suspension, not neglect. '
             + '`overdue` is reported only for change of direction and sport skill, and only from the evergreen planner\'s resolved #805 capability-maintenance cadence when this export carries it; no other family has an authoritative cadence/max-gap policy. '
-            + 'Not yet represented: taper/event-specific suppression outside #805, and the #803/#806 capability models. Neuromuscular power (#802), impact (#804), change of direction and sport skill (#805) are confirmed only by exact authored identities.',
+            + 'Not yet represented: taper/event-specific suppression outside #805, and the #806 long-anchor model. Neuromuscular power (#802), impact (#804), change of direction and sport skill (#805) are confirmed only by exact authored identities; '
+            + 'unilateral lower-body (#803) only by logged working sets on steps carrying that structured movement pattern.',
     );
     for (const entry of ledger.capabilities) lines.push(formatCapability(entry));
     for (const note of ledger.notes) lines.push(`- Note: ${note}`);

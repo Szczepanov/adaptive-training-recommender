@@ -697,6 +697,8 @@ export class ContextBriefService {
                     // Reuse the already widened activity read so linked evidence still hydrates.
                     preloadedActivities: activities,
                     includeDisplayProvenance: true,
+                    // Only planning/diagnostic render the exposure ledger that reads logged sets.
+                    includeDeliveredComposition: purpose !== 'morning',
                 },
             )).exposures;
         } catch (error) {

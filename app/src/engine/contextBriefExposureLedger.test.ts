@@ -116,8 +116,65 @@ describe('exposure ledger (#813)', () => {
             expect(entry.lastConfirmed).toBeNull();
             expect(entry.lastConfirmedProvenance).toBeNull();
             expect(entry.nextPlanned).toBeNull();
-            expect(entry.note).toContain('no canonical exposure model yet');
         }
+        for (const key of ['hamstring_calf_grip', 'long_aerobic_anchor']) {
+            expect(cap(ledger.capabilities, key).note).toContain('no canonical exposure model yet');
+        }
+        // #803 is modelled now: generic strength without logged unilateral sets stays unknown.
+        expect(cap(ledger.capabilities, 'unilateral_lower_body').note).toBeNull();
+    });
+
+    describe('unilateral lower-body (#803 delivered-exposure rule)', () => {
+        const structuredFact = (overrides: Partial<PerformedExposureFact> = {}): PerformedExposureFact => ({
+            performedOccurrenceId: 'occ-uni', localDate: '2026-09-22', modality: 'Strength', category: 'Lower-body Strength',
+            confidence: 'exact', sourceKinds: ['structured_execution'], evidenceTier: 'completedStructuredWorkout', ...overrides,
+        });
+
+        it('confirms from logged unilateral working sets and states their count in the provenance', () => {
+            const ledger = deriveExposureLedger(input({
+                performedFacts: [structuredFact({ deliveredUnilateralLowerBody: { workingSets: 6, stepIds: ['split-squat'] } })],
+            }));
+            const entry = cap(ledger.capabilities, 'unilateral_lower_body');
+            expect(entry.status).toBe('confirmed');
+            expect(entry.lastConfirmed).toBe('2026-09-22');
+            expect(entry.lastConfirmedProvenance).toContain('structured_execution');
+            expect(entry.lastConfirmedProvenance).toContain('6 unilateral lower-body working set(s) logged');
+        });
+
+        it('never confirms from provider-only facts, planned sessions or Garmin strength records', () => {
+            const ledger = deriveExposureLedger(input({
+                activities: [activity({ activityId: 'g', type: 'strength_training', date: '2026-09-21' })],
+                performedFacts: [structuredFact({ sourceKinds: ['provider_activity'], confidence: 'inferred', evidenceTier: 'durationIntensity' })],
+                plannedSessions: [{ date: '2026-09-26', modality: 'Strength', intensity: 'moderate', title: 'Bulgarian split squats' }],
+            }));
+            const entry = cap(ledger.capabilities, 'unilateral_lower_body');
+            expect(entry.status).toBe('unknown');
+            expect(entry.lastConfirmed).toBeNull();
+            expect(entry.nextPlanned).toBeNull();
+        });
+
+        it('reports unreadable logged sets as unknown, not as no exposure', () => {
+            const ledger = deriveExposureLedger(input({ performedFacts: [structuredFact({ deliveredCompositionUnavailable: true })] }));
+            const entry = cap(ledger.capabilities, 'unilateral_lower_body');
+            expect(entry.status).toBe('unknown');
+            expect(entry.note).toContain('logged sets of 1 structured session(s) were unreadable');
+        });
+
+        it('is deliberately suspended when strength is restricted and notes a heavy lower-body limit', () => {
+            const fact = structuredFact({ deliveredUnilateralLowerBody: { workingSets: 2, stepIds: ['step-up'] } });
+            const restricted = deriveExposureLedger(input({
+                performedFacts: [fact],
+                preferences: { unavailableModalities: ['Strength'] } as unknown as ExposureLedgerInput['preferences'],
+            }));
+            expect(cap(restricted.capabilities, 'unilateral_lower_body').status).toBe('deliberately_suspended');
+            const guarded = deriveExposureLedger(input({
+                performedFacts: [fact],
+                trainingSettings: settings({
+                    guardrails: { avoid_high_impact: false, avoid_heavy_lower_body: true, avoid_overhead_pressing: false, avoid_heavy_spinal_loading: false },
+                }),
+            }));
+            expect(cap(guarded.capabilities, 'unilateral_lower_body').note).toContain('heavy lower-body loading suspended');
+        });
     });
 
     it('reports the engine cost vector split into systemic and mechanical parts, unchanged', () => {
