@@ -160,7 +160,8 @@ C: Adaptive completed ___; Garmin saved ___; Connect synced ___; appeared in app
    one/multiple canonical occurrences ___; manual link/unlink/resync cases ___
 D: diagnostic window ___; relevant sample present ___; projection/sweep status ___;
    fitWorkoutIdentityCounts ___; unlinkedSameDayFitPairs ___;
-   repeat-group device/workout/layout ___; original FIT private reference ___
+   repeat-group device/workout/layout ___; wkt_step_index vs flattened messageIndex order ___;
+   original FIT private reference ___
 Errors and not-run cases:
 Private evidence references (do not paste raw health files or identifiers publicly):
 ```
