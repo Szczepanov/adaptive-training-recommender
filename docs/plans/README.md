@@ -22,6 +22,39 @@ docs/architecture/  living reference     "how it works now"      updated with th
 
 ---
 
+## Immediate backlog sequence (#962, reconciled 2026-10-18)
+
+Reconciled against `origin/main` `cf43c3bb`: #1120, #1121, #1123 and #1124
+are merged. #725/#726's Session/History tabs, completed-session "Last time" comparison,
+720 px runner and refreshed visual review shipped in #1123. #803's catalog tags and
+runner-stamp coverage shipped in #1124; custom-session and historical-stamp limitations
+remain in the [#813 plan](./2026-10-issue-813-exposure-ledgers.md). The
+[actual-device checklist](../ops/actual-device-backlog-acceptance.md) gives exact UI actions,
+expected outcomes and a result template for the manual gates below.
+
+1. **Before the 19 October baseline window:** execute #897's actual-phone draft/reload,
+   offline-save/reconnect and single-occurrence checks. Use the
+   [acceptance audit's collection procedure](../analysis/2026-10-12-issue-897-postmerge-acceptance.md).
+   Cold-offline launch and storage eviction remain unproved; if the phone check cannot be
+   completed first, capture with connectivity and retry final saves online.
+2. **#895 closure:** collect real Garmin arrival/re-sync and actual-device evidence or an
+   explicit owner waiver. The criterion-8 read-model regression now asserts structured
+   semantics survive HR enrichment; it does not replace device acceptance.
+3. **#725/#726 and #727–#729:** perform the remaining real-device, keyboard and
+   screen-reader checks. Visual refresh is already delivered, not an outstanding build task.
+4. **#919 D7:** obtain the owner's source-diagnostics counts and one Garmin recording of an
+   Adaptive-exported repeat-group workout before manifest/ingestion/join implementation.
+   #1119's repeat-group parity vector is merged. Zero `semantic_match` rejects ADR-0051.
+5. **#872:** evaluate a bounded real prospective captured-context corpus when supplied;
+   retain fail-closed provenance and separate broad-history activation.
+
+#896 uses the issue's explicit athlete-report option for completion fraction; an automatic
+fraction/provenance schema is not required to finish that contract. Its
+[acceptance audit](../analysis/2026-10-18-issue-896-completion-missingness-acceptance.md)
+records the criterion evidence and added browser persistence proofs (in review). #806 waits
+for the next genuine `POLICY_VERSION` change, as recorded in #962; taper suppression still
+needs design. Actual-device acceptance is deferred by the owner and remains pending, not waived.
+
 ## Status lifecycle
 
 Status answers **"is the design agreed?"** — separately from **"can work start now?"**,

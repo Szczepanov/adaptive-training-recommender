@@ -352,6 +352,8 @@ Residual not proven by this inventory: the reserved-identity hydration path hard
 
 **Arrival order and manual decisions.** Execution-first, provider-first, late provider detail, late offline execution, same-source device updates, concurrent enrichment, two genuine same-day workouts and persisted ambiguity converge to the same stable occurrence identity (`emulator/reconciliationOrdering.emulator.test.ts`). Manual link, unlink and keep-separate decisions survive source enrichment, retry and repeated reconciliation sweeps. That proof drives the reconciliation sweep with decisions seeded through the repository. Python daily `sync` never writes occurrences or source links and the explicit `backfill-training-occurrences` command is create-only (`tests/test_training_occurrence_backfill.py::test_manual_reconciliation_preservation`); the UI link/unlink click wiring is unit-tested (`CompletedWorkoutList.interaction.test.tsx`, `completedWorkoutActions.test.ts`); and the `DataView` and `CanonicalActivitiesPanel` glue, plus the stored decision surviving a later sweep, is proven through the real UI against the Auth and Firestore emulators (`app/tests/e2e/activities-manual-reconciliation.pw.ts`: unlink and link each survive a re-synced activity, reload and re-sweep). Real Garmin arrival timing and real-device behavior remain unproven.
 
+**Enrichment preserves the diary.** `training-occurrence/activitiesReadModelService.test.ts` rebuilds the same occurrence before provider linking, after late Garmin HR enrichment and after a same-ID telemetry refresh. The complete structured projection stays equal, including warm-up/work set identity, exercise, load/reps/RIR, required-work completion and actual/prescribed rest; conflicting Garmin-recognized sets remain diagnostic-only. This is a synthetic read-model proof, complementary to the reconciliation emulator and component-rendering proofs above.
+
 **Limits.** Synthetic and emulator proofs do not establish cold-offline app launch, real-device storage durability, a real network drop mid-write, real Garmin arrival timing, or set-logging latency between sets.
 
 ## Completion-evidence missingness (#896)
@@ -363,8 +365,15 @@ Residual not proven by this inventory: the reserved-identity hydration path hard
   clears it). An untouched sheet persists none; selecting 7 persists 7.
 * `completedFraction` is persisted only when chosen. "All of it (100%)" is disabled, and never
   persisted, while required planned steps are unfinished. The fraction is not derived from
-  execution: there is no provenance field for a derived value yet, so an unanswered fraction
-  stays absent rather than being guessed.
+  execution. This is the explicit athlete-report option in #896, not an incomplete
+  automatic derivation. An unanswered fraction stays absent. `SessionCompletionEvidence`
+  plus `submittedAt` records the submitted report; canonical planned/performed entries remain
+  independently available. The report never overrides structured completion counts or the
+  separately derived diagnostic `deliveredDose.completionRatio`. Non-100% choices are coarse
+  athlete estimates, not set-count ratios; 100% contradicting required work is omitted. A
+  future derived subjective-completion field would need its own definition/provenance and
+  conflict contract before mixing the two. No new schema field is required for the current
+  report-only contract.
 * `unexpectedFatigue` is an explicit No / Yes question that starts unanswered (tapping the
   selected answer again clears it). An unanswered question persists nothing. It is not a
   "no fatigue" report.

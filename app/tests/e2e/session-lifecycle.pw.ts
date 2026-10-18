@@ -1,5 +1,7 @@
+import { collection, getDocs } from 'firebase/firestore';
 import type { Page } from '@playwright/test';
 import { expect, test } from './support/test';
+import { inspectAthlete } from './support/emulator';
 import {
   openFixturePicker,
   provisionAthlete,
@@ -34,21 +36,58 @@ async function jumpWallClock(page: Page, jumpMs: number, signals: ResyncSignal[]
   };
 }
 
-test('an athlete can launch and complete a reviewed session', async ({ page }) => {
-  const athlete = await provisionAthlete();
+for (const feedback of ['untouched', 'answered', 'cleared'] as const) {
+  test(`completion preserves ${feedback} subjective evidence after reload (#896)`, async ({ page }) => {
+    const athlete = await provisionAthlete();
+    await signInThroughUi(page, athlete);
+    await openFixturePicker(page);
+    await page.getByRole('button', { name: 'Start Session →', exact: true }).first().click();
+    await page.getByRole('button', { name: /Finish Session \(/ }).click();
+    const sheet = page.getByRole('dialog', { name: 'Complete Session' });
+    await expect(sheet).toBeVisible();
+    await expect(sheet.getByText(/Incomplete Required Steps/)).toBeVisible();
+    await expect(sheet.locator('option[value="1"]')).toBeDisabled();
+    const effort = sheet.getByRole('group', { name: /Whole-Session Effort/ }).getByRole('button', { name: '7', exact: true });
+    const fatigue = sheet.getByRole('group', { name: /Unexpected fatigue/ }).getByRole('button', { name: 'No', exact: true });
+    const fraction = sheet.getByLabel('How much of the planned session did you complete?');
+    if (feedback !== 'untouched') {
+      await effort.click();
+      await fatigue.click();
+      await fraction.selectOption('0.75');
+    }
+    if (feedback === 'cleared') {
+      await effort.click();
+      await fatigue.click();
+      await fraction.selectOption('');
+    }
+    await sheet.getByRole('button', { name: 'Finish & Save Session', exact: true }).click();
+    await expect.poll(async () => (await readSessionExecutions(athlete)).filter(execution => execution.state === 'completed').length).toBe(1);
 
-  await signInThroughUi(page, athlete);
-  await openFixturePicker(page);
-  await page.getByRole('button', { name: 'Start Session →', exact: true }).first().click();
-  await page.getByRole('button', { name: /Finish Session \(/ }).click();
-  await expect(page.getByRole('dialog', { name: 'Complete Session' })).toBeVisible();
-  await page.getByRole('button', { name: 'Finish & Save Session', exact: true }).click();
-
-  await expect.poll(async () => {
-    const executions = await readSessionExecutions(athlete);
-    return executions.filter(execution => execution.state === 'completed').length;
-  }).toBe(1);
-});
+    const readStored = () => inspectAthlete(athlete, async db => {
+      const [executions, responses] = await Promise.all([
+        getDocs(collection(db, 'users', athlete.userId, 'session_executions')),
+        getDocs(collection(db, 'users', athlete.userId, 'session_responses')),
+      ]);
+      return { executions: executions.docs.map(item => item.data()), responses: responses.docs.map(item => item.data()) };
+    });
+    if (feedback === 'answered') await expect.poll(async () => (await readStored()).responses.length).toBe(1);
+    await page.reload();
+    const stored = await readStored();
+    expect(stored.executions).toHaveLength(1);
+    const [execution] = stored.executions;
+    expect(execution.completionEvidence.submittedAt).toEqual(expect.any(String));
+    if (feedback === 'answered') {
+      expect(execution.sessionRpe).toBe(7);
+      expect(execution.completionEvidence).toMatchObject({ sessionRpe: 7, completedFraction: 0.75, unexpectedFatigue: false });
+      expect(stored.responses).toHaveLength(1);
+      expect(stored.responses[0]).toMatchObject({ sessionRpe: 7, completedFraction: 0.75, unexpectedFatigue: false });
+    } else {
+      expect(execution).not.toHaveProperty('sessionRpe');
+      expect(Object.keys(execution.completionEvidence)).toEqual(['submittedAt']);
+      expect(stored.responses).toEqual([]);
+    }
+  });
+}
 
 test('the live session clock is wall-clock correct after a background-style time jump (#908)', async ({ page }) => {
   const athlete = await provisionAthlete();
