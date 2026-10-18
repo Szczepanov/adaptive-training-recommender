@@ -207,7 +207,7 @@ describe('getCompletedWorkoutsInRange', () => {
         });
     });
 
-    it('attaches per-set rows and durable performed rest to the structured detail', async () => {
+    it('preserves structured set semantics and rest across late Garmin HR enrichment and refresh (#895)', async () => {
         vi.mocked(repo.queryActiveInDateWindow).mockResolvedValue([occurrence()]);
         vi.mocked(sessionExecutionService.getExecution).mockResolvedValue({
             status: 'AVAILABLE',
@@ -216,12 +216,15 @@ describe('getCompletedWorkoutsInRange', () => {
         });
         vi.mocked(resolveSessionDefinition).mockResolvedValue({
             status: 'AVAILABLE',
-            data: { schemaVersion: 1, id: 'w', revision: 1, title: 'Heavy Squat Day', intent: 'training', blocks: [{ id: 'b1', role: 'main', steps: [{ id: 'squat', kind: 'exercise', title: 'Back Squat', dose: { kind: 'repetition', sets: 1, reps: 5 }, rest: 180 }] }] } as never,
+            data: { schemaVersion: 1, id: 'w', revision: 1, title: 'Heavy Squat Day', intent: 'training', blocks: [{ id: 'b1', role: 'main', steps: [{ id: 'squat', kind: 'exercise', title: 'Back Squat', exerciseRef: { kind: 'catalog', exerciseId: 'back_squat' }, dose: { kind: 'repetition', sets: 3, reps: 5 }, rest: 180 }] }] } as never,
             revision: null,
         });
         vi.mocked(sessionExecutionService.getEntries).mockResolvedValue([{
+            id: 'warmup', executionId: 'exec-1', stepId: 'squat', completedAt: '2026-08-26T06:55:00.000Z', createdAt: '2026-08-26T06:55:00.000Z', updatedAt: '2026-08-26T06:55:00.000Z',
+            payload: { kind: 'repetition', setIndex: 0, reps: 8, weightKg: 40, isWarmup: true },
+        }, {
             id: 'e1', executionId: 'exec-1', stepId: 'squat', completedAt: '2026-08-26T07:00:00.000Z', createdAt: '2026-08-26T07:00:00.000Z', updatedAt: '2026-08-26T07:00:00.000Z',
-            payload: { kind: 'repetition', setIndex: 0, reps: 5, weightKg: 100 },
+            payload: { kind: 'repetition', setIndex: 1, reps: 5, weightKg: 100, isWarmup: false, gauge: { scale: 'rir', value: 2 } },
         }]);
         vi.mocked(sessionExecutionService.getRestEvents).mockResolvedValue([{
             id: 'rest-1', executionId: 'exec-1', afterEntryId: 'e1', prescribedSeconds: 180, startedAt: '2026-08-26T07:00:00.000Z', endedAt: '2026-08-26T07:03:20.000Z', actualSeconds: 200, endReason: 'next_set_started', createdAt: '2026-08-26T07:03:20.000Z', updatedAt: '2026-08-26T07:03:20.000Z',
@@ -230,7 +233,46 @@ describe('getCompletedWorkoutsInRange', () => {
         const [view] = await getCompletedWorkoutsInRange('user-1', '2026-08-20', '2026-08-27');
 
         expect(view.structured?.performedRest).toBe('recorded');
-        expect(view.structured?.steps[0].sets[0].rest).toEqual({ prescribedSeconds: 180, actualSeconds: 200, endReason: 'next_set_started' });
+        expect(view.structured?.steps[0].sets[1].rest).toEqual({ prescribedSeconds: 180, actualSeconds: 200, endReason: 'next_set_started' });
+        expect(view.structured?.steps[0].sets.map(set => ({ entryId: set.entryId, isWarmup: set.isWarmup, payload: set.payload }))).toEqual([
+            { entryId: 'warmup', isWarmup: true, payload: { kind: 'repetition', setIndex: 0, reps: 8, weightKg: 40, isWarmup: true } },
+            { entryId: 'e1', isWarmup: false, payload: { kind: 'repetition', setIndex: 1, reps: 5, weightKg: 100, isWarmup: false, gauge: { scale: 'rir', value: 2 } } },
+        ]);
+        expect(view.structured?.comparison).toMatchObject({
+            completedStepsCount: 0,
+            missingRequiredStepsCount: 1,
+            stepComparisons: [{ stepId: 'squat', completedSets: 1, isComplete: false }],
+        });
+        expect(view.garmin).toBeUndefined();
+        const originalStructured = structuredClone(view.structured);
+
+        vi.mocked(repo.queryActiveInDateWindow).mockResolvedValue([occurrence({
+            sourceRefs: [
+                { kind: 'structured_execution', executionId: 'exec-1' },
+                { kind: 'provider_activity', provider: 'garmin', activityId: 'act-1' },
+            ],
+            reconciliation: { state: 'matched', matcherVersion: 'matcher-v1', confidence: 0.9 },
+        })]);
+        for (const averageHr of [120, 126]) {
+            vi.mocked(activityService.getActivitiesInRange).mockResolvedValue({
+                status: 'AVAILABLE',
+                data: [{
+                    activityId: 'act-1', date: '2026-08-26', type: 'strength_training', durationMin: 45,
+                    trainingEffectAerobic: 2, trainingEffectAnaerobic: 1, averageHr, maxHr: 158,
+                    activityTrainingLoad: 90, intensityTag: 'moderate',
+                    exerciseSets: [{ setOrder: 0, setType: 'active', exerciseName: 'wrong_exercise_guess', repetitionCount: 99, weightKg: 3 }],
+                }],
+                revision: null,
+            });
+            const enriched = await getCompletedWorkoutsInRange('user-1', '2026-08-20', '2026-08-27');
+            expect(enriched).toHaveLength(1);
+            expect(enriched[0].performedOccurrenceId).toBe(view.performedOccurrenceId);
+            expect(enriched[0].sourceBadge).toEqual({ hasStructured: true, hasProvider: true, providers: ['garmin'] });
+            expect(enriched[0].garmin).toMatchObject({ activityId: 'act-1', averageHr, maxHr: 158 });
+            expect(enriched[0].garmin?.exerciseSets?.[0]).toMatchObject({ exerciseName: 'wrong_exercise_guess', repetitionCount: 99, weightKg: 3 });
+            expect(enriched[0].garminExerciseSetsAreDiagnosticOnly).toBe(true);
+            expect(enriched[0].structured).toEqual(originalStructured);
+        }
     });
 
     it('still renders sets when the performed-rest read fails', async () => {
