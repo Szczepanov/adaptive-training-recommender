@@ -83,6 +83,21 @@ describe('getPerformedTrainingFactsInRange delivered composition (#803)', () => 
         expect(snapshot.exposures[0].deliveredCompositionUnavailable).toBeUndefined();
     });
 
+    it('ignores sets logged after the export window so a historical brief cannot confirm them', async () => {
+        const lateSet: SessionEntry = {
+            ...unilateralSet, id: 'e2',
+            // 23:30Z on 2026-10-16 is already 2026-10-17 in Warsaw -- outside [DAY, 2026-10-17).
+            completedAt: '2026-10-16T23:30:00.000Z', createdAt: '2026-10-16T23:30:00.000Z', updatedAt: '2026-10-16T23:30:00.000Z',
+        };
+        vi.mocked(sessionExecutionService.getEntries).mockResolvedValue([unilateralSet, lateSet]);
+        const windowed = await getPerformedTrainingFactsInRange('user-1', DAY, '2026-10-17', EXPORT);
+        expect(windowed.exposures[0].deliveredUnilateralLowerBody).toEqual({ workingSets: 1, stepIds: ['split-squat'] });
+
+        vi.mocked(sessionExecutionService.getEntries).mockResolvedValue([lateSet]);
+        const onlyLate = await getPerformedTrainingFactsInRange('user-1', DAY, '2026-10-16', EXPORT);
+        expect(onlyLate.exposures[0]).not.toHaveProperty('deliveredUnilateralLowerBody');
+    });
+
     it('reports an unreadable entry list as unknown on the export path', async () => {
         vi.mocked(sessionExecutionService.getEntries).mockRejectedValue(new Error('offline'));
         const snapshot = await getPerformedTrainingFactsInRange('user-1', DAY, '2026-10-16', EXPORT);

@@ -18,7 +18,7 @@ import { activityOverrideService } from '../services/activityOverrideService';
 import { computeContentHash } from '../engine/externalPlanHash';
 import { resolveSessionDefinition } from '../sessions/sessionDefinitionResolver';
 import { deliveredPatternWork } from '../sessions/deliveredComposition';
-import { addDaysToLocalDateString, getPreviousLocalDateString } from '../utils/localDate';
+import { addDaysToLocalDateString, getLocalDateString, getPreviousLocalDateString } from '../utils/localDate';
 import {
     deriveFactsFromOccurrence,
     categoryForWorkoutId,
@@ -78,13 +78,18 @@ function workoutVariantForExecution(
 }
 
 /** Export-only (issue #813 / #803): delivered unilateral lower-body work for the brief's
- * exposure ledger. An unreadable entry list is reported as unknown, never as no exposure. */
+ * exposure ledger. An unreadable entry list is reported as unknown, never as no exposure.
+ * Only sets logged before the requested exclusive end date count, so a historical export
+ * never confirms work that was logged after its as-of day. */
 async function deliveredCompositionProvenance(
     userId: string,
     executionId: string,
+    toDateExclusive: string,
 ): Promise<Pick<PerformedExposureFact, 'deliveredUnilateralLowerBody' | 'deliveredCompositionUnavailable'>> {
     try {
-        const work = deliveredPatternWork(await sessionExecutionService.getEntries(userId, executionId), 'unilateral_lower_body');
+        const entries = (await sessionExecutionService.getEntries(userId, executionId))
+            .filter(entry => getLocalDateString(new Date(entry.completedAt)) < toDateExclusive);
+        const work = deliveredPatternWork(entries, 'unilateral_lower_body');
         return work ? { deliveredUnilateralLowerBody: work } : {};
     } catch {
         return { deliveredCompositionUnavailable: true };
@@ -249,7 +254,7 @@ export async function getPerformedTrainingFactsInRange(
             ...facts.exposure,
             ...(hydrated.structured?.executionState ? { executionState: hydrated.structured.executionState } : {}),
             ...(hydrated.structured && options.includeDeliveredComposition
-                ? await deliveredCompositionProvenance(userId, hydrated.structured.executionId)
+                ? await deliveredCompositionProvenance(userId, hydrated.structured.executionId, toDateExclusive)
                 : {}),
             providerActivityIds: [...new Set(providerSources
                 .filter(source => source.ref.provider.toLowerCase() === 'garmin')
