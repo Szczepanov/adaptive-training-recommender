@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { entryCompositionStamp, swappedStepComposition } from '../sessions/compositionStamping';
 import type {
     SessionDefinition,
     SessionExecution,
@@ -31,7 +32,6 @@ import type { ActiveRestState, RestEventFields } from '../sessions/restEventTimi
 import type { RestEndReason } from '../sessions/models';
 import { resolveEffectiveInjuryConstraints, resolveInjuryRestrictions } from '../engine/injuryPolicy';
 import { ineligibleAlternativeOptionIds } from '../engine/sessionChoiceEligibility';
-import { EXERCISES_BY_ID } from '../workouts/exercises.ts';
 import type { BodyRegion, FitWorkoutFingerprintKind, RegionTissueResponse } from '../engine/models';
 import type { SessionCompletionPayload } from '../components/session/SessionCompletionSheet';
 import { commitSetCorrection, LOGGED_SET_UNDO_WINDOW_MS, planLoggedSetUndo, runLoggedSetUndo } from '../sessions/setCorrection';
@@ -598,8 +598,7 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
             executionId: execution.executionId,
             stepId: activeStep.id,
             exerciseRef: activeStep.exerciseRef,
-            ...(activeStep.compositionPatterns ? { compositionPatterns: activeStep.compositionPatterns } : {}),
-            ...(activeStep.degradedComposition ? { degradedComposition: activeStep.degradedComposition } : {}),
+            ...entryCompositionStamp(activeStep),
             ...(side ? { side } : {}),
             ...(governingChoice
                 ? { governingChoiceEntryId: governingChoice.id, selectedOptionId: governingChoice.payload.optionId }
@@ -857,25 +856,17 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
                     if (sIdx !== stepIndex) return step;
                     const resolvedTitle = replacement.title
                         ?? (replacement.exerciseRef?.kind === 'catalog' ? replacement.exerciseRef.exerciseId : (replacement.exerciseRef?.kind === 'unresolved_free_text' ? replacement.exerciseRef.name : step.id));
-                    const compositionPatterns = replacement.exerciseRef?.kind === 'catalog'
-                        ? EXERCISES_BY_ID.get(replacement.exerciseRef.exerciseId)?.compositionPatterns
-                        : undefined;
-                    const requiredPatterns = prev.movementComposition
-                        ?.filter(requirement => requirement.status === 'required' && requirement.stepIds.includes(step.id))
-                        .map(requirement => requirement.pattern) ?? step.compositionPatterns ?? [];
-                    const lostRequiredPattern = requiredPatterns.find(pattern => !compositionPatterns?.includes(pattern));
+                    const composition = swappedStepComposition(step, replacement.exerciseRef, prev.movementComposition);
                     const nextStep: SessionStep = {
                         ...step,
                         exerciseRef: replacement.exerciseRef,
                         degradedComposition: undefined,
-                        ...(lostRequiredPattern && replacement.exerciseRef?.kind === 'catalog'
-                            ? { degradedComposition: { pattern: lostRequiredPattern, reason: 'Athlete selected a catalog exercise that does not preserve this movement component.' } }
-                            : {}),
+                        ...(composition.degradedComposition ? { degradedComposition: composition.degradedComposition } : {}),
                         title: resolvedTitle,
                         ...(replacement.dose ? { dose: replacement.dose } : {}),
                         ...(replacement.rest !== undefined ? { rest: replacement.rest } : {}),
                     };
-                    if (compositionPatterns?.length) nextStep.compositionPatterns = compositionPatterns;
+                    if (composition.compositionPatterns) nextStep.compositionPatterns = composition.compositionPatterns;
                     else delete nextStep.compositionPatterns;
                     if (replacement.tempo === null) delete nextStep.tempo;
                     else if (replacement.tempo !== undefined) nextStep.tempo = replacement.tempo;
