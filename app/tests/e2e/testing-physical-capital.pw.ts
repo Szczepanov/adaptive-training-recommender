@@ -44,6 +44,60 @@ function wlSingleRepCsv(weightKg: number, tags: string, ascentVelocity: number, 
   return lines.join('\n');
 }
 
+test('raw result capture: abandonment requires confirmation and return preserves entered values', async ({ page }, testInfo) => {
+  const athlete = await provisionAthlete();
+  const date = await seedRecoverySnapshot(athlete);
+  await signInThroughUi(page, athlete);
+  await completeTypicalCheckin(page, athlete, date);
+  await page.locator('.navbar-desktop-menu').getByRole('button', { name: /More/ }).click();
+  await page.locator('#desktop-more-panel').getByRole('button', { name: /Testing/ }).click();
+  await page.getByRole('button', { name: 'Cycling 20-minute TT · rev 1' }).click();
+  await page.getByLabel(/power_source_id/).fill('trainer-power');
+  await page.getByLabel(/bike_setup_id/).fill('bike-a');
+  await page.getByLabel(/test_environment/).fill('indoor');
+  await page.getByLabel(/course_or_trainer_id/).fill('trainer-a');
+  await page.getByRole('button', { name: 'Confirm lock and start' }).click();
+  await page.getByRole('button', { name: /Finish Session \(/ }).click();
+  await page.getByRole('button', { name: 'Finish & Save Session', exact: true }).click();
+  const capture = page.locator('.testing-card').filter({ has: page.getByRole('heading', { name: 'Record raw result' }) });
+  await expect(capture).toBeVisible();
+  const attemptId = await capture.locator('code').innerText();
+  const rawValue = capture.locator('input[inputmode="decimal"]');
+  await rawValue.fill('250');
+  await capture.getByLabel('Validity note').fill('Steady pacing');
+  await capture.getByLabel('Provider', { exact: true }).fill('Synthetic trainer');
+
+  await capture.getByRole('button', { name: 'Abandon attempt', exact: true }).click();
+  await expect(capture.getByRole('alert')).toContainText('discard unsaved values');
+  await expect(page.getByRole('heading', { name: 'Assessment abandoned — no benchmark recorded' })).toHaveCount(0);
+  await expect(capture.getByRole('button', { name: 'Save raw observation(s)' })).toHaveCount(0);
+  await capture.getByRole('alert').screenshot({ path: testInfo.outputPath('raw-abandon-desktop.png') });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(capture.getByRole('button', { name: 'Return to capture' })).toBeVisible();
+  await expect(capture.getByRole('button', { name: 'Confirm & abandon attempt' })).toBeVisible();
+  await capture.getByRole('alert').screenshot({ path: testInfo.outputPath('raw-abandon-mobile.png') });
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await capture.getByRole('button', { name: 'Return to capture' }).click();
+  await expect(rawValue).toHaveValue('250');
+  await expect(capture.getByLabel('Validity note')).toHaveValue('Steady pacing');
+  await expect(capture.getByLabel('Provider', { exact: true })).toHaveValue('Synthetic trainer');
+  await expect(capture.getByLabel('power_source_id', { exact: true })).toHaveValue('trainer-power');
+  await expect(capture.locator('code')).toHaveText(attemptId);
+
+  await capture.getByRole('button', { name: 'Abandon attempt', exact: true }).click();
+  await capture.getByRole('button', { name: 'Confirm & abandon attempt' }).click();
+  await expect(page.getByRole('heading', { name: 'Assessment abandoned — no benchmark recorded' })).toBeVisible();
+  await page.getByRole('button', { name: 'Start a fresh attempt' }).click();
+  await expect(page.getByRole('heading', { name: 'Lock comparison context' })).toBeVisible();
+  await page.getByRole('button', { name: 'Confirm lock and start' }).click();
+  await expect(page.locator('.testing-lock-summary')).not.toContainText(attemptId);
+  await page.getByRole('button', { name: /Finish Session \(/ }).click();
+  await page.getByRole('button', { name: 'Finish & Save Session', exact: true }).click();
+  await expect(capture).toBeVisible();
+  await expect(capture.getByRole('button', { name: 'Abandon attempt', exact: true })).toBeVisible();
+  await expect(capture.getByRole('alert')).toHaveCount(0);
+});
+
 test('fixed-load velocity: import, reload, offline retry, history and exports preserve one assessment', async ({ page }) => {
   const athlete = await provisionAthlete();
   const date = await seedRecoverySnapshot(athlete);

@@ -883,7 +883,7 @@ export function buildContextBrief(input: ContextBriefInput): string {
     const intent = planningOrder && renderedIntent.length === 0
         ? [`## 2. ${SECTION_TITLE.intentFirst}`, '', 'No active goals or training intent profile recorded.']
         : renderedIntent;
-    const assessments = purpose === 'planning' && input.assessmentEvidence
+    const assessments = (purpose === 'planning' || purpose === 'morning') && input.assessmentEvidence
         ? renderAssessmentBrief(input.assessmentEvidence, asOfDate) : [];
     const objectiveLines = renderObjective(snapshots, windowDays, `## ${n(3, 2)}. ${SECTION_TITLE.objective}`, planningOrder);
     // Issue #812: the explanatory synthesis leads the recovery section so core evidence and

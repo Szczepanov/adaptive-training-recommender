@@ -1,4 +1,5 @@
 import type { BriefPurpose, BriefWindowPreset } from '../engine/contextBrief';
+import type { MeasuredBenchmarkExport } from '../observations/contextBriefAssessments';
 
 export const CONTEXT_BRIEF_EXPORT_SCHEMA_VERSION = 'context_brief_export_v2' as const;
 
@@ -14,6 +15,8 @@ export interface ContextBriefExportSource {
   /** Semantic Markdown contract version; distinct from the JSON transport envelope schema. */
   contractVersion: string;
   unavailableSources: readonly string[];
+  /** Structured physical capital benchmarks derived from completed and explicitly bound assessments. */
+  measuredBenchmarks?: readonly MeasuredBenchmarkExport[];
 }
 
 export interface ContextBriefJsonExport {
@@ -32,6 +35,8 @@ export interface ContextBriefJsonExport {
   unavailableSources: string[];
   contentType: 'text/markdown';
   content: string;
+  /** Structured physical capital benchmarks derived from completed and explicitly bound assessments. */
+  measuredBenchmarks?: MeasuredBenchmarkExport[];
 }
 
 /**
@@ -58,6 +63,9 @@ export function buildContextBriefJsonExport(
     unavailableSources: [...brief.unavailableSources],
     contentType: 'text/markdown',
     content: brief.text,
+    ...(brief.measuredBenchmarks !== undefined
+      ? { measuredBenchmarks: brief.measuredBenchmarks.map(item => ({ ...item })) }
+      : {}),
   };
 }
 

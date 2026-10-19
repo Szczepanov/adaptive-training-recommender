@@ -256,6 +256,34 @@ describe('TrialCaptureTable', () => {
         expect(html.match(/<fieldset class="trial-row-card" disabled="">/g)).toHaveLength(1);
         expect(html).not.toContain('aria-label="Remove Trial 1"');
     });
+
+    it('renders abandon attempt action when onAbandon is provided to TrialCaptureTable', () => {
+        const jumpAttempt: AssessmentAttempt = {
+            id: 'att-jump',
+            protocolRef: { id: STANDING_BROAD_JUMP_PROTOCOL.id, revision: 1 },
+            scheduledDate: '2026-10-20',
+            state: 'in_progress',
+            purpose: 'baseline',
+        };
+
+        const html = renderToStaticMarkup(
+            <TrialCaptureTable
+                userId="user-1"
+                protocol={STANDING_BROAD_JUMP_PROTOCOL}
+                attempt={jumpAttempt}
+                contextValues={{ test_environment: 'indoor-gym-floor' }}
+                onContextChange={vi.fn()}
+                defaultDevice={{ provider: 'tape-measure' }}
+                onDefaultDeviceChange={vi.fn()}
+                onSave={vi.fn()}
+                saving={false}
+                onAbandon={vi.fn()}
+            />,
+        );
+
+        expect(html).toContain('Abandon attempt');
+        expect(html).toContain('Save assessment trials');
+    });
 });
 
 describe('TrialCorrectionPanel', () => {

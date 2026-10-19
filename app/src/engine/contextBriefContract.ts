@@ -17,7 +17,7 @@ import type { BriefPurpose } from './contextBriefPurpose';
  * omit it for deterministic unit tests. `ContextBriefService.build` is the
  * complete export boundary and always supplies it.
  */
-export const CONTEXT_BRIEF_CONTRACT_VERSION = '2026-10-context-brief-contract-v9';
+export const CONTEXT_BRIEF_CONTRACT_VERSION = '2026-10-context-brief-contract-v10';
 
 export interface BriefContractMetadata {
     purpose: BriefPurpose;
@@ -127,8 +127,8 @@ export function assertRenderedBriefContract(
         || !text.includes('- Current-day plan authority inputs:'))) {
         throw new Error('Context Brief source state and currency missing');
     }
-    if (expected.requireSourceState && expected.purpose === 'planning'
+    if (expected.requireSourceState && (expected.purpose === 'planning' || expected.purpose === 'morning')
         && (!text.includes('## Measured performance evidence') || !text.includes('- Assessment benchmarks:'))) {
-        throw new Error('Context Brief planning assessment evidence/source state missing');
+        throw new Error('Context Brief planning or morning assessment evidence/source state missing');
     }
 }

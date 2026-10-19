@@ -153,6 +153,49 @@ export class AssessmentAttemptService {
         return result.attempts;
     }
 
+    /**
+     * Bounded query for auto-discovery in ContextBrief: lists completed attempts across all protocols.
+     */
+    async listCompletedAttemptsWithDiagnostics(
+        userId: string,
+        maxAttempts?: number,
+    ): Promise<{ attempts: AssessmentAttempt[]; unreadableCount: number; truncated?: boolean }> {
+        if (maxAttempts !== undefined && (!Number.isSafeInteger(maxAttempts) || maxAttempts < 1)) {
+            throw new Error('maxAttempts must be a positive safe integer');
+        }
+        const attempts = query(
+            collection(this.db, 'users', userId, 'assessment_attempts'),
+            where('state', '==', 'completed'),
+            ...(maxAttempts === undefined ? [] : [orderBy(documentId(), 'asc'), limit(maxAttempts + 1)]),
+        );
+        const snapshots = await getDocs(attempts);
+        const candidates: AssessmentAttempt[] = [];
+        let unreadableCount = 0;
+        for (const snapshot of snapshots.docs.slice(0, maxAttempts)) {
+            const attempt = snapshot.data() as AssessmentAttempt;
+            try {
+                assertValidAssessmentAttempt(attempt);
+                if (attempt.id === snapshot.id && attempt.state === 'completed') {
+                    candidates.push(attempt);
+                } else {
+                    unreadableCount++;
+                }
+            } catch {
+                unreadableCount++;
+            }
+        }
+        const sorted = candidates.sort((a, b) => {
+            const dateA = a.startedAt ?? `${a.scheduledDate ?? ''}T00:00:00`;
+            const dateB = b.startedAt ?? `${b.scheduledDate ?? ''}T00:00:00`;
+            return dateA.localeCompare(dateB);
+        });
+        return {
+            attempts: sorted,
+            unreadableCount,
+            ...(maxAttempts === undefined ? {} : { truncated: snapshots.docs.length > maxAttempts }),
+        };
+    }
+
     async startAttempt(userId: string, attemptId: string, startedAt: string): Promise<void> {
         await this.transitionAttempt(userId, attemptId, current => {
             if (current.state !== 'scheduled') throw new Error(`Cannot start assessment from ${current.state}`);

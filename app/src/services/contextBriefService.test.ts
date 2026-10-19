@@ -153,7 +153,7 @@ describe('ContextBriefService', () => {
         services.listRecommendationRevisions.mockResolvedValue({ status: 'AVAILABLE', data: [], revision: null });
         services.getActiveBlocksWithDiagnostics.mockResolvedValue({ blocks: [], unreadableCount: 0, truncated: false });
         services.getOutcomeEvaluationRevision.mockResolvedValue(null);
-        services.loadPlanningAssessmentSources.mockResolvedValue([]);
+        services.loadPlanningAssessmentSources.mockResolvedValue({ sources: [], relevanceState: 'available', relevanceNotes: [], omittedCount: 0 });
     });
 
     it('exports compact planning benchmarks and partial-source diagnostics through Markdown and JSON v2 with semantic v5', async () => {
@@ -163,10 +163,10 @@ describe('ContextBriefService', () => {
             subjectRef: { kind: 'exercise', exerciseId: 'back_squat' },
         } } as UserGoal;
         services.getActiveGoalsState.mockResolvedValue({ status: 'AVAILABLE', data: [goal] });
-        services.loadPlanningAssessmentSources.mockResolvedValue([{
+        services.loadPlanningAssessmentSources.mockResolvedValue({ relevanceState: 'available', relevanceNotes: [], omittedCount: 0, sources: [{
             binding: { protocolId, metricId: 'strength_1rm_kg' }, attempts: [], observations: [],
             unreadableCount: 1, truncated: false, unavailable: false,
-        }]);
+        }] });
         const result = await new ContextBriefService().build('u1', AS_OF, 14, 'full');
         const markdown = formatContextBriefExport(result, 'markdown');
         const json = JSON.parse(formatContextBriefExport(result, 'json'));
@@ -180,7 +180,7 @@ describe('ContextBriefService', () => {
         expect(json.content).toBe(markdown);
         expect(json.unavailableSources).toEqual(result.unavailableSources);
         expect(json.schemaVersion).toBe('context_brief_export_v2');
-        expect(json.contractVersion).toBe('2026-10-context-brief-contract-v9');
+        expect(json.contractVersion).toBe('2026-10-context-brief-contract-v10');
         expect(markdown).toContain(`Contract version: ${json.contractVersion}`);
     });
 
@@ -204,7 +204,7 @@ describe('ContextBriefService', () => {
     it('distinguishes missing and failed relevance reads, and treats unbound protocol references as unsupported', async () => {
         const empty = await new ContextBriefService().build('u1', AS_OF, 14, 'full');
         expect(empty.text).toContain('No supported assessment binding');
-        expect(services.loadPlanningAssessmentSources).not.toHaveBeenCalled();
+        expect(services.loadPlanningAssessmentSources).toHaveBeenCalledWith('u1', [], AS_OF);
         services.getActiveBlocksWithDiagnostics.mockRejectedValueOnce(new Error('offline'));
         const failed = await new ContextBriefService().build('u1', AS_OF, 14, 'full');
         expect(failed.text).toContain('Relevance unavailable');
@@ -215,15 +215,35 @@ describe('ContextBriefService', () => {
         expect(unsupported.text).toContain('unsupported for measured assessment evidence');
     });
 
-    it.each(['daily', 'diagnostic'] as const)('does not add assessment reads or compact section to %s', async preset => {
+    it.each(['morning', 'planning'] as const)('reports incomplete completed assessment discovery in %s exports', async purpose => {
+        services.loadPlanningAssessmentSources.mockResolvedValueOnce({ sources: [], relevanceState: 'incomplete', relevanceNotes: ['Completed assessment discovery incomplete: attempt sample truncated.'], omittedCount: 2 });
+        const result = await new ContextBriefService().build('u1', AS_OF, purpose === 'morning' ? 2 : 14, purpose === 'morning' ? 'daily' : 'full');
+        expect(result.text).toContain('Relevance incomplete');
+        expect(result.text).toContain('Completed assessment discovery incomplete');
+        expect(result.text).not.toContain('No supported assessment binding');
+        expect(result.text).toContain('2 relevant binding(s) omitted');
+        expect(result.unavailableSources).toContain('assessment relevance (completed assessment discovery)');
+    });
+
+    it('does not add assessment reads or compact section to diagnostic', async () => {
         services.getActiveGoalsState.mockResolvedValue({ status: 'AVAILABLE', data: [{ status: 'active', performanceTarget: {
             kind: 'performance_metric', metricId: 'strength_1rm_kg', subjectRef: { kind: 'exercise', exerciseId: 'back_squat' }, targetValue: 180,
         } }] });
-        const result = await new ContextBriefService().build('u1', AS_OF, preset === 'daily' ? 2 : 14, preset);
+        const result = await new ContextBriefService().build('u1', AS_OF, 14, 'diagnostic');
         expect(result.text).not.toContain('## Measured performance evidence');
         expect(services.loadPlanningAssessmentSources).not.toHaveBeenCalled();
         expect(services.getActiveBlocksWithDiagnostics).not.toHaveBeenCalled();
         expect(services.getOutcomeEvaluationRevision).not.toHaveBeenCalled();
+    });
+
+    it('adds assessment reads and compact section to daily (morning)', async () => {
+        services.getActiveGoalsState.mockResolvedValue({ status: 'AVAILABLE', data: [{ status: 'active', performanceTarget: {
+            kind: 'performance_metric', metricId: 'strength_1rm_kg', subjectRef: { kind: 'exercise', exerciseId: 'back_squat' }, targetValue: 180,
+        } }] });
+        const result = await new ContextBriefService().build('u1', AS_OF, 2, 'daily');
+        expect(result.text).toContain('## Measured performance evidence');
+        expect(services.loadPlanningAssessmentSources).toHaveBeenCalled();
+        expect(services.getActiveBlocksWithDiagnostics).toHaveBeenCalled();
     });
 
     it('preserves measured values, older baselines and raw change in both service-built transports', async () => {
@@ -233,7 +253,7 @@ describe('ContextBriefService', () => {
         services.getActiveGoalsState.mockResolvedValue({ status: 'AVAILABLE', data: [{ status: 'active', performanceTarget: {
             kind: 'performance_metric', metricId: 'strength_1rm_kg', subjectRef: { kind: 'exercise', exerciseId: 'back_squat' }, targetValue: 180,
         } }] });
-        services.loadPlanningAssessmentSources.mockResolvedValue([{
+        services.loadPlanningAssessmentSources.mockResolvedValue({ relevanceState: 'available', relevanceNotes: [], omittedCount: 0, sources: [{
             binding: { protocolId: protocolRef.id, metricId: 'strength_1rm_kg' },
             attempts: ids.map((id, i) => ({ id, protocolRef, state: 'completed', purpose: i ? 'checkpoint' : 'baseline' })),
             observations: ids.map((id, i) => ({
@@ -243,7 +263,7 @@ describe('ContextBriefService', () => {
                     comparisonSeriesKey: 'rack-a', comparisonCanonicalizationVersion: 'ov-series-v1', source: 'derived', context: {},
                 },
             })), unreadableCount: 0, truncated: false, unavailable: false,
-        }]);
+        }] });
         const result = await new ContextBriefService().build('u1', AS_OF, 14, 'full');
         const markdown = formatContextBriefExport(result, 'markdown');
         const json = JSON.parse(formatContextBriefExport(result, 'json'));
@@ -252,8 +272,14 @@ describe('ContextBriefService', () => {
         expect(markdown).toContain('comparable raw change +5 kg (+3.3%); status insufficient_evidence');
         expect(markdown).toContain('source derived');
         expect(json.content).toBe(markdown);
-        expect(json.contractVersion).toBe('2026-10-context-brief-contract-v9');
+        expect(json.contractVersion).toBe('2026-10-context-brief-contract-v10');
         expect(result.unavailableSources).not.toContain('assessment benchmarks (incomplete or unavailable sources)');
+        expect(result.measuredBenchmarks).toBeDefined();
+        expect(result.measuredBenchmarks).toHaveLength(1);
+        expect(result.measuredBenchmarks?.[0].best?.value).toBe(155);
+        expect(result.measuredBenchmarks?.[0].current.value).toBe(155);
+        expect(result.measuredBenchmarks?.[0].baseline.value).toBe(150);
+        expect(json.measuredBenchmarks).toEqual(result.measuredBenchmarks);
     });
 
     it('caps frozen evaluation reads deterministically and reports relevance truncation', async () => {
@@ -297,7 +323,7 @@ describe('ContextBriefService', () => {
             bindings: [{ metricId: 'strength_1rm_kg', protocolRef: { id: 'strength-back-squat-1rm', revision: 2 } }],
         });
         const result = await new ContextBriefService().build('u1', AS_OF, 14, 'full');
-        expect(services.loadPlanningAssessmentSources).not.toHaveBeenCalled();
+        expect(services.loadPlanningAssessmentSources).toHaveBeenCalledWith('u1', [], AS_OF);
         if (kind === 'missing') expect(result.text).toContain('Frozen evaluations: 1 missing; 0 unreadable');
         else if (kind === 'unreadable') expect(result.text).toContain('Frozen evaluations: 0 missing; 1 unreadable');
         else expect(result.text).toContain('unsupported for measured assessment evidence');
@@ -321,7 +347,7 @@ describe('ContextBriefService', () => {
 
     it('emits the planning round-trip section and preserves unavailable source reads as unknown', async () => {
         const empty = await new ContextBriefService().build('u1', AS_OF, 14, 'full');
-        expect(empty.contractVersion).toBe('2026-10-context-brief-contract-v9');
+        expect(empty.contractVersion).toBe('2026-10-context-brief-contract-v10');
         expect(empty.text).toContain('External-plan execution round trip (14-day window)');
         expect(empty.text).toContain('Missing activity is not treated as a missed session.');
 

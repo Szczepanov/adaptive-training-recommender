@@ -38,6 +38,7 @@ interface TrialCaptureTableProps {
     saving: boolean;
     presentationHints?: PerformanceTestPresentationHints;
     initialTrials?: readonly AssessmentTrial[];
+    onAbandon?: () => Promise<void> | void;
 }
 
 interface TrialCaptureRow extends DraftTrialRow {
@@ -71,6 +72,7 @@ export const TrialCaptureTable: React.FC<TrialCaptureTableProps> = ({
     saving,
     presentationHints,
     initialTrials,
+    onAbandon,
 }) => {
     const capture = protocol.capture!;
     const isFixedLoad = isFixedLoadVelocityProtocol(protocol);
@@ -130,6 +132,7 @@ export const TrialCaptureTable: React.FC<TrialCaptureTableProps> = ({
 
     const [rows, setRows] = useState<TrialCaptureRow[]>(initializeRows);
     const [missingConfirmationRequired, setMissingConfirmationRequired] = useState(false);
+    const [abandonConfirmationRequired, setAbandonConfirmationRequired] = useState(false);
     const [clientError, setClientError] = useState<string | null>(null);
     const importedMethod = useMemo(() => {
         if (!isFixedLoad) return undefined;
@@ -497,7 +500,33 @@ export const TrialCaptureTable: React.FC<TrialCaptureTableProps> = ({
                 </button>
             )}
 
-            {missingConfirmationRequired ? (
+            {abandonConfirmationRequired ? (
+                <div className="testing-card abandon-attempt-warning" role="alert">
+                    <p>
+                        Abandoning will cancel this assessment attempt. No benchmark observations will be saved.
+                    </p>
+                    <div className="testing-actions">
+                        <button
+                            type="button"
+                            className="testing-secondary"
+                            onClick={() => setAbandonConfirmationRequired(false)}
+                            disabled={saving}
+                        >
+                            Return to capture
+                        </button>
+                        <button
+                            type="button"
+                            className="testing-secondary testing-danger-btn"
+                            onClick={async () => {
+                                if (onAbandon) await onAbandon();
+                            }}
+                            disabled={saving}
+                        >
+                            Confirm & abandon attempt
+                        </button>
+                    </div>
+                </div>
+            ) : missingConfirmationRequired ? (
                 <div className="testing-card missing-benchmark-warning" role="alert">
                     <p>
                         No valid trial was recorded for one or more metrics. Saving will complete the attempt
@@ -524,6 +553,16 @@ export const TrialCaptureTable: React.FC<TrialCaptureTableProps> = ({
                 </div>
             ) : (
                 <div className="testing-actions">
+                    {onAbandon && (
+                        <button
+                            type="button"
+                            className="testing-secondary testing-danger-btn"
+                            onClick={() => setAbandonConfirmationRequired(true)}
+                            disabled={saving}
+                        >
+                            Abandon attempt
+                        </button>
+                    )}
                     <button
                         type="button"
                         className="testing-primary"
