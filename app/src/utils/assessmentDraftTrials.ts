@@ -57,8 +57,8 @@ export function hasDeviceWithoutProvider(device: MetricObservationDevice | undef
     return !!device && !device.provider?.trim() && !!(device.model?.trim() || device.deviceId?.trim());
 }
 
-export function isRowUntouched(row: DraftTrialRow): boolean {
-    return Object.keys(row.values).length === 0
+export function isRowUntouched(row: DraftTrialRow, carryForwardFieldIds: readonly string[] = []): boolean {
+    return Object.keys(row.values).every(fieldId => carryForwardFieldIds.includes(fieldId))
         && !row.sourceRef
         && !row.notes
         && !row.invalidReason

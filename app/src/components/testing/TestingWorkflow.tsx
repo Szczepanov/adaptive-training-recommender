@@ -12,6 +12,7 @@ import { getMetricDefinition } from '../../observations/registry';
 import { getComparisonDimensionDefinition } from '../../observations/protocols';
 import {
     getPerformanceTestDefinition,
+    PERFORMANCE_TEST_DEFINITIONS,
 } from '../../observations/performanceTestingCatalog';
 import {
     buildComparisonContextFromStrings,
@@ -718,7 +719,9 @@ export const TestingWorkflow: React.FC<TestingWorkflowProps> = ({ userId, onClos
                         }}
                         onSave={handleSaveTrialAssessment}
                         saving={busy}
-                        presentationHints={catalogDefinitionId ? getPerformanceTestDefinition(catalogDefinitionId)?.presentationHints : undefined}
+                        presentationHints={PERFORMANCE_TEST_DEFINITIONS.find(definition =>
+                            definition.protocol.id === protocol.id && definition.protocol.revision === protocol.revision
+                        )?.presentationHints}
                         initialTrials={trials}
                         onAbandon={handleAbandonCaptureAttempt}
                     />

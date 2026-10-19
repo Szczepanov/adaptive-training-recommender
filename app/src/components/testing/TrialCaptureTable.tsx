@@ -326,20 +326,20 @@ export const TrialCaptureTable: React.FC<TrialCaptureTableProps> = ({
         () => {
             try {
                 const context = isFixedLoad ? buildComparisonContextFromStrings(protocol, contextValues) : {};
-                const activeRows = rows.filter(row => storedOrdinals.has(row.ordinal) || !isRowUntouched(row));
+                const activeRows = rows.filter(row => storedOrdinals.has(row.ordinal) || !isRowUntouched(row, presentationHints?.carryForwardFieldIds));
                 return draftRowsToTrials(activeRows, attempt.id, context, defaultDevice, previewCreatedAt);
             } catch {
                 return [];
             }
         },
-        [rows, attempt.id, previewCreatedAt, isFixedLoad, protocol, contextValues, defaultDevice, storedOrdinals],
+        [rows, attempt.id, previewCreatedAt, isFixedLoad, protocol, contextValues, defaultDevice, storedOrdinals, presentationHints?.carryForwardFieldIds],
     );
 
     // Build the persisted trial records: typed comparison context (same parsing as the derived
     // observations), normalized device provenance and one createdAt per save.
     const buildTrialsForSave = (): { trials: AssessmentTrial[] } | { error: string } => {
         setHasAttemptedSave(true);
-        const activeRows = rows.filter(row => storedOrdinals.has(row.ordinal) || !isRowUntouched(row));
+        const activeRows = rows.filter(row => storedOrdinals.has(row.ordinal) || !isRowUntouched(row, presentationHints?.carryForwardFieldIds));
         if (activeRows.length === 0) {
             return { error: 'At least one trial is required. Please record attempt values before saving.' };
         }
@@ -474,12 +474,6 @@ export const TrialCaptureTable: React.FC<TrialCaptureTableProps> = ({
                 <div className="testing-card raw-video-reminder" role="note">
                     <strong>Raw video reminder:</strong> {rawVideoInstruction.text}
                 </div>
-            )}
-
-            {clientError && (
-                <p className="testing-error" role="alert">
-                    {clientError}
-                </p>
             )}
 
             {isFixedLoad && <p>Use the same exact load and equipment/camera setup for every benchmark repetition. Imported files lock their actual measurement method. Failed or off-load repetitions must be practice or invalid.</p>}
@@ -630,6 +624,12 @@ export const TrialCaptureTable: React.FC<TrialCaptureTableProps> = ({
                 </button>
             )}
 
+            {clientError && (
+                <div className="testing-error testing-error-bottom" role="alert" tabIndex={-1} ref={bottomErrorRef}>
+                    <strong>Validation error:</strong> {clientError}
+                </div>
+            )}
+
             {abandonConfirmationRequired ? (
                 <div className="testing-card abandon-attempt-warning" role="alert">
                     <p>
@@ -683,11 +683,6 @@ export const TrialCaptureTable: React.FC<TrialCaptureTableProps> = ({
                 </div>
             ) : (
                 <>
-                    {clientError && (
-                        <div className="testing-error testing-error-bottom" role="alert" tabIndex={-1} ref={bottomErrorRef}>
-                            <strong>Validation error:</strong> {clientError}
-                        </div>
-                    )}
                     <div className="testing-actions">
                         {onAbandon && (
                             <button

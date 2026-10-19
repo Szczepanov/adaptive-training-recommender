@@ -16,6 +16,16 @@ import {
 } from './physicalCapitalProtocols';
 
 describe('performance testing catalog', () => {
+    it.each([
+        'strength-bench-press-1rm-r2',
+        'strength-back-squat-1rm-r2',
+        'field-seated-medball-chest-throw-3kg-r2',
+    ])('requires an athlete-declared equipment identity for %s', id => {
+        const definition = getPerformanceTestDefinition(id);
+        expect(definition.protocol.comparisonContext.seriesDefining).toContain('equipment_setup_id');
+        expect(definition.defaultContext.equipment_setup_id).toBeUndefined();
+    });
+
     it('contains the pinned catalog test set including bundled physical-capital protocols', () => {
         expect(PERFORMANCE_TEST_DEFINITIONS.map(definition => definition.id)).toEqual([
             'cycling-20m-tt-r1',

@@ -1,8 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import type { DraftTrialRow } from './assessmentDraftStorage';
-import { draftRowsToTrials, hasDeviceWithoutProvider } from './assessmentDraftTrials';
+import { draftRowsToTrials, hasDeviceWithoutProvider, isRowUntouched } from './assessmentDraftTrials';
 
 describe('assessmentDraftTrials', () => {
+    it('ignores carry-forward setup values without discarding recorded results or provenance', () => {
+        const row: DraftTrialRow = { ordinal: 3, values: { standing_reach_cm: 220 }, validity: 'valid' };
+        expect(isRowUntouched(row, ['standing_reach_cm'])).toBe(true);
+        expect(isRowUntouched(row)).toBe(false);
+        expect(isRowUntouched({ ...row, values: { ...row.values, touch_height_cm: 270 } }, ['standing_reach_cm'])).toBe(false);
+        expect(isRowUntouched({ ...row, notes: 'Incomplete jump' }, ['standing_reach_cm'])).toBe(false);
+        expect(isRowUntouched({ ...row, sourceRef: 'imported-trial' }, ['standing_reach_cm'])).toBe(false);
+        expect(isRowUntouched({ ...row, validity: 'practice' }, ['standing_reach_cm'])).toBe(false);
+    });
+
     it('passes import sourceRef and context through to trial records', () => {
         const rows: DraftTrialRow[] = [{
             ordinal: 1,

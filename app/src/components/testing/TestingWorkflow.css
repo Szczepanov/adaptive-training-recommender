@@ -176,20 +176,20 @@
   border-radius: 6px;
   background: rgba(220, 38, 38, 0.08);
   border-left: 4px solid #dc2626;
-  color: #dc2626;
+  color: #f87171;
   font-size: 0.85rem;
   font-weight: 600;
 }
 
 .testing-field-error {
-  color: #dc2626;
+  color: #f87171;
   font-size: 0.8rem;
   font-weight: 500;
   margin-top: 2px;
 }
 
 .required-indicator {
-  color: #dc2626;
+  color: #f87171;
   margin-left: 2px;
   font-weight: bold;
 }
@@ -199,7 +199,7 @@
   margin-bottom: 8px;
   background: rgba(220, 38, 38, 0.08);
   border-left: 4px solid #dc2626;
-  color: #dc2626;
+  color: #f87171;
   border-radius: 4px;
 }
 

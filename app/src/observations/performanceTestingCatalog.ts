@@ -926,7 +926,6 @@ export const PERFORMANCE_TEST_DEFINITIONS: readonly PerformanceTestDefinition[] 
         protocol: BENCH_PRESS_1RM_PROTOCOL_V2,
         sessionDefinition: benchPressSession,
         defaultContext: {
-            equipment_setup_id: 'standard-power-rack',
             warmup_revision: 'standard-strength-warmup-r1',
         },
         expectedSource: 'Manual entry of athlete-selected attempt loads and success/miss outcome (optional WL Analysis velocity).',
@@ -937,7 +936,6 @@ export const PERFORMANCE_TEST_DEFINITIONS: readonly PerformanceTestDefinition[] 
         protocol: BACK_SQUAT_1RM_PROTOCOL_V2,
         sessionDefinition: backSquatSession,
         defaultContext: {
-            equipment_setup_id: 'standard-power-rack',
             warmup_revision: 'standard-strength-warmup-r1',
         },
         expectedSource: 'Manual entry of athlete-selected attempt loads and success/miss outcome (optional WL Analysis velocity).',
@@ -970,9 +968,7 @@ export const PERFORMANCE_TEST_DEFINITIONS: readonly PerformanceTestDefinition[] 
         family: 'field',
         protocol: SEATED_MEDBALL_THROW_PROTOCOL_V2,
         sessionDefinition: seatedMedballThrowSession,
-        defaultContext: {
-            equipment_setup_id: 'standard-throw-station',
-        },
+        defaultContext: {},
         expectedSource: 'Manual entry of measured distance from wall to initial ball contact point; declare the repeatable wall/floor/ball station before starting.',
     },
     {

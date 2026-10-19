@@ -44,6 +44,49 @@ function wlSingleRepCsv(weightKg: number, tags: string, ascentVelocity: number, 
   return lines.join('\n');
 }
 
+test('CMJ capture ignores unused carry-forward rows and focuses missing required fields', async ({ page }, testInfo) => {
+  const athlete = await provisionAthlete();
+  const date = await seedRecoverySnapshot(athlete);
+  await signInThroughUi(page, athlete);
+  await completeTypicalCheckin(page, athlete, date);
+  await page.locator('.navbar-desktop-menu').getByRole('button', { name: /More/ }).click();
+  await page.locator('#desktop-more-panel').getByRole('button', { name: /Testing/ }).click();
+  await page.getByRole('button', { name: 'Wall-touch countermovement jump · rev 2' }).click();
+  await page.getByLabel(/equipment_setup_id/).fill('wall-a');
+  await page.getByRole('button', { name: 'Confirm lock and start' }).click();
+  await page.getByRole('button', { name: /Finish Session \(/ }).click();
+  await page.getByRole('button', { name: 'Finish & Save Session', exact: true }).click();
+
+  const capture = page.locator('.trial-capture-section');
+  const rows = capture.locator('.trial-row-card');
+  const firstRow = rows.first();
+  await firstRow.getByLabel(/Standing reach/).fill('220');
+  await expect(rows.nth(1).getByLabel(/Standing reach/)).toHaveValue('220');
+  await firstRow.getByLabel(/Touch height/).fill('270');
+  await page.reload();
+  await expect(firstRow.getByLabel(/Touch height/)).toHaveValue('270');
+  await expect(rows.nth(2).getByLabel(/Standing reach/)).toHaveValue('220');
+  // A partially recorded second jump must still be validated.
+  await rows.nth(1).getByLabel(/Standing reach/).fill('');
+  await rows.nth(1).getByLabel(/Touch height/).fill('275');
+  await capture.getByRole('button', { name: 'Save assessment trials' }).click();
+  await expect(rows.nth(1).getByLabel(/Standing reach/)).toHaveAttribute('aria-invalid', 'true');
+  await expect(rows.nth(1).getByLabel(/Standing reach/)).toBeFocused();
+  await expect(capture.locator('.testing-error-bottom')).toContainText('Standing reach');
+  await capture.screenshot({ path: testInfo.outputPath('cmj-validation-desktop.png') });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await capture.screenshot({ path: testInfo.outputPath('cmj-validation-mobile.png') });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+
+  // Clearing the measured result leaves only carried setup values in unused rows.
+  await rows.nth(1).getByLabel(/Touch height/).fill('');
+  await rows.nth(1).getByLabel(/Standing reach/).fill('220');
+  await expect(capture.locator('.canonical-preview-container')).toContainText('50 cm');
+  await capture.getByRole('button', { name: 'Save assessment trials' }).click();
+  await expect(page.getByRole('heading', { name: 'Assessment recorded' })).toBeVisible();
+  await expect(page.locator('.testing-observations')).toContainText('50 cm');
+});
+
 test('raw result capture: abandonment requires confirmation and return preserves entered values', async ({ page }, testInfo) => {
   const athlete = await provisionAthlete();
   const date = await seedRecoverySnapshot(athlete);
