@@ -464,8 +464,12 @@ export const TrialCaptureTable: React.FC<TrialCaptureTableProps> = ({
     return (
         <section className="testing-card trial-capture-section">
             <header className="trial-capture-header">
+                <div className="trial-capture-step-badge">Step 2 of 2 · Log Measurements</div>
                 <h3>Record assessment trials</h3>
-                <p>
+                <p className="trial-capture-subtitle">
+                    Enter the measurements from the attempts you just completed in the workout session.
+                </p>
+                <p className="trial-attempt-meta">
                     Attempt <code>{attempt.id}</code> · {protocol.title} (rev {protocol.revision})
                 </p>
             </header>
@@ -482,17 +486,47 @@ export const TrialCaptureTable: React.FC<TrialCaptureTableProps> = ({
                 open={setupDetailsOpen}
                 onToggle={e => setSetupDetailsOpen(e.currentTarget.open)}
             >
-                <summary>Attempt context & device setup (shared across trials)</summary>
+                <summary>Attempt context &amp; device setup (shared across trials)</summary>
                 <div className="testing-grid">
                     {protocol.comparisonContext.required.map(dimension => {
                         const definition = getComparisonDimensionDefinition(dimension);
                         const isMissing = missingContextKeys.has(dimension) || (hasAttemptedSave && (!contextValues[dimension] || contextValues[dimension].trim() === ''));
                         return (
-                            <label key={dimension}>
+                            <label key={dimension} className="dimension-field-group">
                                 <span>
-                                    {dimension} <small>({definition.description})</small>
+                                    <strong>{definition.displayName}</strong> <span className="dimension-technical-id">({dimension})</span>
                                     <span className="required-indicator" aria-hidden="true">*</span>
                                 </span>
+                                {definition.athleteGuidance && (
+                                    <span className="dimension-guidance">{definition.athleteGuidance}</span>
+                                )}
+                                {definition.presets && definition.presets.length > 0 && !(isFixedLoad && storedOrdinals.size > 0) && (
+                                    <div className="dimension-presets" role="group" aria-label={`Suggested options for ${definition.displayName}`}>
+                                        {definition.presets.map(preset => (
+                                            <button
+                                                key={preset.id}
+                                                type="button"
+                                                className={`preset-chip ${contextValues[dimension] === preset.id ? 'active' : ''}`}
+                                                disabled={saving}
+                                                onClick={() => {
+                                                    onContextChange({
+                                                        ...contextValues,
+                                                        [dimension]: preset.id,
+                                                    });
+                                                    if (missingContextKeys.has(dimension)) {
+                                                        setMissingContextKeys(prev => {
+                                                            const next = new Set(prev);
+                                                            next.delete(dimension);
+                                                            return next;
+                                                        });
+                                                    }
+                                                }}
+                                            >
+                                                {preset.label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
                                 <input
                                     type={definition.valueKind === 'number' ? 'number' : 'text'}
                                     step={definition.valueKind === 'number' ? 'any' : undefined}
@@ -501,6 +535,7 @@ export const TrialCaptureTable: React.FC<TrialCaptureTableProps> = ({
                                         || (dimension === 'measurement_method_id' && importedMethod !== undefined
                                             && contextValues[dimension] === importedMethod))}
                                     disabled={saving}
+                                    placeholder={definition.athleteGuidance ?? `Enter ${definition.displayName}`}
                                     className={isMissing ? 'trial-input trial-input-invalid' : 'trial-input'}
                                     aria-invalid={isMissing ? 'true' : undefined}
                                     aria-required="true"

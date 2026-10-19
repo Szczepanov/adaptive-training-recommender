@@ -261,6 +261,28 @@
     padding: 0.75rem 0.75rem 0.75rem;
 }
 
+.assessment-runner-hint {
+    background: rgba(245, 158, 11, 0.12);
+    border: 1px solid #d97706;
+    border-radius: 6px;
+    padding: 8px 12px;
+    margin: 8px 0;
+    font-size: 0.85rem;
+    color: #fef3c7;
+    line-height: 1.4;
+}
+
+.assessment-completion-guidance {
+    background: rgba(59, 130, 246, 0.12);
+    border: 1px solid #2563eb;
+    border-radius: 6px;
+    padding: 10px 14px;
+    margin: 0 0 16px;
+    font-size: 0.9rem;
+    color: #dbeafe;
+    line-height: 1.4;
+}
+
 .completion-record-provenance {
     margin: 0.25rem 0 0 0;
     font-size: 0.85rem;

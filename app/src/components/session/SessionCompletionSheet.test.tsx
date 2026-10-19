@@ -348,6 +348,8 @@ describe('SessionCompletionSheet', () => {
 
         expect(html).toContain('Finishing saves a SessionExecution for this AssessmentAttempt.');
         expect(html).toContain('The AssessmentAttempt is completed only after its observations are saved.');
+        expect(html).toContain('Physical session complete!');
+        expect(html).toContain('Next, enter the measurements');
         expect(html).not.toContain('completes the linked AssessmentAttempt record');
     });
 });
