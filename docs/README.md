@@ -122,6 +122,7 @@ Architectural choices, system invariants, and technical trade-offs are documente
 ### 🔍 Reviews & Analysis
 Point-in-time assessments of the system as built, including gaps between documented decisions and implemented behaviour:
 
+* [**2026-10-18 Issue #896 completion missingness acceptance audit**](./analysis/2026-10-18-issue-896-completion-missingness-acceptance.md) — Acceptance audit regarding completion missingness.
 * [**2026-10-12 Issue #897 — Post-merge acceptance audit**](./analysis/2026-10-12-issue-897-postmerge-acceptance.md) — Acceptance and status reconciliation following WP8.2 and WP6.6 delivery.
 * [**2026-10-08 Lane A: issue #897 implementation handoff**](./analysis/2026-10-08-lane-a-implementation-handoff.md) — Point-in-time analysis and handoff for issue #897.
 * [**2026-10-05 Event taxonomy recon — fitness-race / HYROX support**](./analysis/2026-10-05-event-taxonomy-fitness-race-hyrox.md) — Point-in-time architecture analysis for event taxonomy, HYROX Open Singles, exact coverage and executable sessions.
@@ -259,6 +260,8 @@ Point-in-time assessments of the system as built, including gaps between documen
 ### 🗺️ Implementation Plans
 How agreed changes get made. Mutable, status-tracked, and expected to go stale — see [`docs/plans/`](./plans/) for the index and conventions.
 
+* [**Issue #927 Long-horizon event-directed development authority**](./plans/2026-10-14-issue-927-development-authority.md) — *In progress.* Implementation plan for a distant cycling A event owning current adaptation intent through an explicitly authored, date-local development block.
+* [**Issue #813 — Stressor and physical-capability exposure ledgers**](./plans/2026-10-issue-813-exposure-ledgers.md) — *In progress.* Implementation plan for stressor and physical-capability exposure ledgers in the Context Brief.
 * [**Event taxonomy + HYROX fitness-race implementation plan**](./plans/2026-10-05-event-taxonomy-fitness-race-hyrox.md) — *Ready.* P0 implementation plan for fitness races and HYROX support following ADR-0048.
 * [**Issue #895 WP2 + WP3 — lifecycle and exact resume delivery**](./plans/2026-10-05-issue-895-wp2-wp3-lifecycle-resume.md) — *Implemented.* Scoped WP2/WP3 delivery for structured session resume state.
 * [**Firestore Security Rules Modularization & Budget Refactoring**](./plans/2026-10-08-firestore-rules-modularization-and-budget-refactor.md) — *In progress.* Rules and tooling refactoring.
@@ -310,6 +313,7 @@ How agreed changes get made. Mutable, status-tracked, and expected to go stale �
 In-depth technical design documents covering system subsystems:
 
 * [**Wearable Ingestion Pipeline & Telemetry Architecture**](./architecture/ingestion-pipeline.md) — Current Garmin provider boundary, recovery/profile/activity ownership, archive/rebuild semantics, auto-sync coordination, and workout publication.
+* [**Multi-resolution activity response telemetry**](./architecture/activity-response-telemetry.md) — A bounded observation layer between native wearable traces and context-brief response features.
 * [**Recommendation Engine**](./architecture/recommendation-engine.md) — The two selection paths, module map, self-normalised strain scoring, `train`/`modify`/`recover` modes, candidate ranking, and the authority ordering.
 * [**Performance Outcome Evidence**](./architecture/performance-outcome-evidence.md) — Current OV0–OV2 evidence architecture: bounded metric/protocol contracts, deterministic comparison series, append-only observation corrections, assessment/competition records, manual adapter and Firestore enforcement, with no selection authority.
 * [**Health Anomaly Shadow Architecture**](./architecture/health-anomaly-shadow.md) — Evaluator boundary, fail-closed runtime selection, episode continuity, immutable assessment revisions, and prospective outcome capture.
