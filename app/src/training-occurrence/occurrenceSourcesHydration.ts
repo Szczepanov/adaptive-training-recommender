@@ -45,10 +45,10 @@ export async function hydrateOccurrenceSourcesInRange(
             : activityService.getActivitiesInRange(userId, activityStart, activityEnd),
     ]);
     const activities = activitiesState.status === 'AVAILABLE' ? activitiesState.data : [];
-    const activitiesById = new Map(
-        activities
-            .map(activity => [activity.activityId, activity] as const),
-    );
+    const activitiesById = new Map<string, typeof activities[0]>();
+    for (const activity of activities) {
+        activitiesById.set(activity.activityId, activity);
+    }
     const rows = occurrences.map(occurrence => ({
         occurrence,
         providerSources: occurrence.sourceRefs.filter(isProviderActivityRef).map(ref => {
