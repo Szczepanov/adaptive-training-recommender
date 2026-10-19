@@ -43,6 +43,7 @@ import { renderSensorEvidence } from './contextBriefSensorEvidence';
 import { synthesizeRecoveryEvidence } from './contextBriefRecoverySynthesis';
 import { briefContractHeaderLines } from './contextBriefContract';
 import type { PerformedExposureFact } from './performedTrainingFacts';
+import { renderAssessmentBrief, type AssessmentBriefInput } from '../observations/contextBriefAssessments';
 
 export const UPCOMING_CONTEXT_DAYS = 7;
 export const RECOVERY_TIMELINE_DAYS = 7;
@@ -107,6 +108,8 @@ export interface ContextBriefPlanningHandoffInput {
     purpose?: BriefPurpose;
     /** Issue #894: ISO generation timestamp. Ephemeral — omitted from semantic determinism. */
     generatedAt?: string;
+    /** Physical-capital assessment evidence derived from completed/bound tests. */
+    assessmentEvidence?: AssessmentBriefInput;
 }
 
 function resolvePurpose(input: ContextBriefPlanningHandoffInput): BriefPurpose {
@@ -1050,6 +1053,9 @@ export function buildMorningCoachBrief(input: ContextBriefPlanningHandoffInput):
     }
 
     // 6. Morning Coach Instructions
+    if (input.assessmentEvidence) {
+        lines.push('', ...renderAssessmentBrief(input.assessmentEvidence, targetDate));
+    }
     lines.push('', ...renderMorningCoachInstructions());
 
     return lines.join('\n');

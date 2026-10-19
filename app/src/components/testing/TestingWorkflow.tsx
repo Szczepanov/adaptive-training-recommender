@@ -516,6 +516,22 @@ export const TestingWorkflow: React.FC<TestingWorkflowProps> = ({ userId, onClos
         }
     };
 
+    const handleAbandonCaptureAttempt = async () => {
+        if (!attempt) return;
+        setBusy(true);
+        setError(null);
+        try {
+            await assessmentAttemptService.abandonAttempt(userId, attempt.id, 'Abandoned during result capture.');
+            clearAssessmentDraft(userId, attempt.id);
+            setAttempt(current => current ? { ...current, state: 'abandoned' } : current);
+            setStage('abandoned');
+        } catch (reason) {
+            setError(reason instanceof Error ? reason.message : 'Could not abandon attempt.');
+        } finally {
+            setBusy(false);
+        }
+    };
+
     const metricRows = useMemo(() => protocol?.metricIds.map(getMetricDefinition) ?? [], [protocol]);
     // Trial corrections re-derive against the context the benchmark was saved with; the edited
     // form values are only a fallback and may be incomplete after a reload, so never throw here.
@@ -688,6 +704,7 @@ export const TestingWorkflow: React.FC<TestingWorkflowProps> = ({ userId, onClos
                         saving={busy}
                         presentationHints={catalogDefinitionId ? getPerformanceTestDefinition(catalogDefinitionId)?.presentationHints : undefined}
                         initialTrials={trials}
+                        onAbandon={handleAbandonCaptureAttempt}
                     />
                 ) : (
                     <section className="testing-card">
@@ -709,7 +726,10 @@ export const TestingWorkflow: React.FC<TestingWorkflowProps> = ({ userId, onClos
                         <div className="testing-grid">
                             {protocol.comparisonContext.required.map(dimension => <label key={dimension}>{dimension}<input value={contextValues[dimension] ?? ''} onChange={event => setContextValues(current => ({ ...current, [dimension]: event.target.value }))} /></label>)}
                         </div>
-                        <button type="button" className="testing-primary" disabled={busy} onClick={saveObservations}>{busy ? 'Saving…' : 'Save raw observation(s)'}</button>
+                        <div className="testing-actions">
+                            <button type="button" className="testing-secondary testing-danger-btn" disabled={busy} onClick={handleAbandonCaptureAttempt}>Abandon attempt</button>
+                            <button type="button" className="testing-primary" disabled={busy} onClick={saveObservations}>{busy ? 'Saving…' : 'Save raw observation(s)'}</button>
+                        </div>
                     </section>
                 )
             )}

@@ -77,7 +77,8 @@ import { intentBlockService } from './intentBlockService';
 import { outcomeEvaluationService } from './outcomeEvaluationService';
 import {
     ASSESSMENT_BRIEF_MAX_BINDINGS, assessmentBriefBindingsForGoals, assessmentBriefBindingKey,
-    assessmentBriefDefinition, type AssessmentBriefBinding, type AssessmentBriefInput,
+    assessmentBriefDefinition, deriveMeasuredBenchmarks, type AssessmentBriefBinding, type AssessmentBriefInput,
+    type MeasuredBenchmarkExport,
 } from '../observations/contextBriefAssessments';
 import { compareCodeUnits } from '../utils/canonicalJson';
 
@@ -98,6 +99,8 @@ export interface ContextBriefResult {
     /** Sources that could not be read. The brief still renders; it says what is missing
      * rather than presenting a partial window as complete. */
     unavailableSources: string[];
+    /** Structured physical capital benchmarks derived from completed and explicitly bound assessments. */
+    measuredBenchmarks?: readonly MeasuredBenchmarkExport[];
 }
 
 function lastNCalendarDates(endDateInclusive: string, days: number): string[] {
@@ -350,7 +353,7 @@ export class ContextBriefService {
             // Issue #813: exposure-ledger inputs, bounded to the render window and not read at
             // all for the morning brief, which does not render the ledgers.
             purpose === 'morning' ? Promise.resolve(null) : activityOverrideService.getOverridesSinceState(userId, startDate),
-            purpose === 'planning' ? intentBlockService.getActiveBlocksWithDiagnostics(userId, targetDate) : Promise.resolve(null),
+            (purpose === 'planning' || purpose === 'morning') ? intentBlockService.getActiveBlocksWithDiagnostics(userId, targetDate) : Promise.resolve(null),
         ] as const);
 
         const snapshots: DailyRecoverySnapshot[] = [];
@@ -446,7 +449,7 @@ export class ContextBriefService {
         }
 
         let assessmentEvidence: AssessmentBriefInput | undefined;
-        if (purpose === 'planning') {
+        if (purpose === 'planning' || purpose === 'morning') {
             const goalBindings = assessmentBriefBindingsForGoals(goals);
             const bindings = new Map<string, AssessmentBriefBinding>(goalBindings.bindings.map(b => [assessmentBriefBindingKey(b), b]));
             let unsupportedCount = goalBindings.unsupportedCount;
@@ -512,9 +515,7 @@ export class ContextBriefService {
                 if (unreadableEvaluations) unavailableSources.push('assessment relevance (frozen evaluations)');
             }
             const selectedBindings = [...bindings.values()].sort((a, b) => compareCodeUnits(assessmentBriefBindingKey(a), assessmentBriefBindingKey(b)));
-            const sources = selectedBindings.length
-                ? await assessmentHistoryService.loadPlanningAssessmentSources(userId, selectedBindings.slice(0, ASSESSMENT_BRIEF_MAX_BINDINGS), targetDate)
-                : [];
+            const sources = await assessmentHistoryService.loadPlanningAssessmentSources(userId, selectedBindings.slice(0, ASSESSMENT_BRIEF_MAX_BINDINGS), targetDate);
             if (sources.some(s => s.unavailable || s.truncated || s.unreadableCount)) {
                 unavailableSources.push('assessment benchmarks (incomplete or unavailable sources)');
             }
@@ -1152,6 +1153,7 @@ export class ContextBriefService {
             preset,
             purpose,
             generatedAt,
+            assessmentEvidence,
         });
 
         const latestDate = (dates: readonly string[]): string | null =>
@@ -1218,6 +1220,8 @@ export class ContextBriefService {
             requireSourceState: true,
         });
 
+        const measuredBenchmarks = assessmentEvidence ? deriveMeasuredBenchmarks(assessmentEvidence, targetDate) : undefined;
+
         return {
             text,
             startDate,
@@ -1227,6 +1231,7 @@ export class ContextBriefService {
             purpose,
             contractVersion: CONTEXT_BRIEF_CONTRACT_VERSION,
             unavailableSources,
+            ...(measuredBenchmarks !== undefined ? { measuredBenchmarks } : {}),
         };
     }
 }

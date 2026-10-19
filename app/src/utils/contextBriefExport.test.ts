@@ -86,4 +86,33 @@ describe('contextBriefExport', () => {
     expect(blob.type).toBe('text/markdown;charset=utf-8');
     expect(await blob.text()).toBe(BRIEF.text);
   });
+
+  it('includes measuredBenchmarks in JSON export envelope when present', () => {
+    const briefWithBenchmarks: ContextBriefExportSource = {
+      ...BRIEF,
+      measuredBenchmarks: [
+        {
+          protocolId: 'standing-broad-jump',
+          protocolRevision: 1,
+          metricId: 'jump_distance_cm',
+          title: 'Standing Broad Jump',
+          comparisonSeriesKey: 'standing-broad-jump:1:jump_distance_cm:default',
+          status: 'improving',
+          current: { value: 215, unit: 'cm', date: '2026-09-28' },
+          best: { value: 220, unit: 'cm', date: '2026-09-20' },
+          baseline: { value: 200, unit: 'cm', date: '2026-09-01' },
+        },
+      ],
+    };
+    const exported = buildContextBriefJsonExport(briefWithBenchmarks, '2026-09-28T07:00:00.000Z');
+    expect(exported.measuredBenchmarks).toBeDefined();
+    expect(exported.measuredBenchmarks).toHaveLength(1);
+    expect(exported.measuredBenchmarks?.[0].best?.value).toBe(220);
+    expect(exported.measuredBenchmarks?.[0].current.value).toBe(215);
+
+    // Verify omission when undefined
+    const exportedWithout = buildContextBriefJsonExport(BRIEF, '2026-09-28T07:00:00.000Z');
+    expect(exportedWithout.measuredBenchmarks).toBeUndefined();
+    expect('measuredBenchmarks' in exportedWithout).toBe(false);
+  });
 });

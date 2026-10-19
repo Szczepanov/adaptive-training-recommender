@@ -39,7 +39,7 @@ import type { AnthropometryEntry } from '../anthropometry/models';
 import { isBenchmarkEligibleAttempt } from '../observations/assessmentEvidenceEligibility';
 import {
     ASSESSMENT_BRIEF_MAX_ATTEMPTS, ASSESSMENT_BRIEF_MAX_BINDINGS,
-    assessmentBriefBindingKey, type AssessmentBriefBinding, type AssessmentBriefSource,
+    assessmentBriefBindingKey, assessmentBriefBindingsForCompletedAttempts, type AssessmentBriefBinding, type AssessmentBriefSource,
 } from '../observations/contextBriefAssessments';
 import { compareCodeUnits } from '../utils/canonicalJson';
 
@@ -189,6 +189,26 @@ export class AssessmentHistoryService {
     ): Promise<AssessmentBriefSource[]> {
         const selected = [...bindings].sort((a, b) => compareCodeUnits(assessmentBriefBindingKey(a), assessmentBriefBindingKey(b)))
             .slice(0, ASSESSMENT_BRIEF_MAX_BINDINGS);
+
+        if (selected.length < ASSESSMENT_BRIEF_MAX_BINDINGS && typeof this.attemptService.listCompletedAttemptsWithDiagnostics === 'function') {
+            try {
+                const completedResult = await this.attemptService.listCompletedAttemptsWithDiagnostics(userId, ASSESSMENT_BRIEF_MAX_ATTEMPTS);
+                const candidateBindings = assessmentBriefBindingsForCompletedAttempts(completedResult.attempts, asOfDate);
+                for (const candidate of candidateBindings) {
+                    if (selected.length >= ASSESSMENT_BRIEF_MAX_BINDINGS) break;
+                    const alreadyCovered = selected.some(b =>
+                        b.protocolId === candidate.protocolId && b.metricId === candidate.metricId
+                        && (b.protocolRevision === undefined || candidate.protocolRevision === undefined || b.protocolRevision === candidate.protocolRevision)
+                    );
+                    if (!alreadyCovered) {
+                        selected.push(candidate);
+                    }
+                }
+            } catch {
+                // If completed attempt discovery fails, proceed with explicit bindings.
+            }
+        }
+
         const sources: AssessmentBriefSource[] = [];
         const protocolIds = [...new Set(selected.map(b => b.protocolId))];
         for (const protocolId of protocolIds) {

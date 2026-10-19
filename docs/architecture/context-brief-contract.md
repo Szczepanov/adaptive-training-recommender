@@ -4,7 +4,7 @@ The Context Brief is the read-only handoff between the athlete record and an ext
 It is treated as a versioned API even though the wire format remains human/LLM-readable
 Markdown.
 
-This document describes the current v9 contract. Issue #894 established the versioned export
+This document describes the current v10 contract. Issue #894 established the versioned export
 contract through v3: purpose/window identity, source state and currency, canonical performed
 training, missingness semantics, purpose budgets, golden fixtures and service-built regression
 coverage. Issue #893 advanced that contract to v4 for the planning-only external-plan execution
@@ -17,6 +17,10 @@ Issue #929 advanced it to v7 (season roadmap). Issue #941 advances it to v8: the
 Issue #813 advances it to v9: the planning/diagnostic physical-capability ledger's unilateral
 lower-body row (#803) changes from permanently `unknown` to `confirmed` when logged working sets
 on steps carrying the `unilateral_lower_body` movement pattern exist.
+Contract v10 expands measured performance evidence to daily morning exports (`purpose: 'morning'`),
+adds bounded auto-discovery of completed assessment protocols, distinguishes Current value vs
+Best (PR) value within the active comparison series, and includes structured `measuredBenchmarks`
+in the JSON transport envelope (`context_brief_export_v2`).
 
 ## Export boundary
 
@@ -71,7 +75,7 @@ create a second planning engine.
 
 ## Contract identity block
 
-Contract version `2026-10-context-brief-contract-v9` currently exposes one field per line so
+Contract version `2026-10-context-brief-contract-v10` currently exposes one field per line so
 each field is independently machine-readable:
 
 - `Contract version`;
@@ -347,6 +351,11 @@ Version history:
   entries stays `partial or abandoned`. Known limitation: the comparison uses the session's
   calendar date, so a session that runs past Warsaw midnight renders `partial or abandoned` in a
   brief built after midnight.
+- v8 → v9 (#813): physical-capability ledger unilateral lower-body confirmation from logged sets.
+- v9 → v10: daily morning export (`purpose: 'morning'`) now includes measured performance evidence
+  alongside planning exports; auto-discovery of tested assessment protocols up to the 12-binding cap;
+  distinguishes Current observation and active-series Best (PR) observation; exposes structured
+  `measuredBenchmarks` in `ContextBriefJsonExport`.
 
 Contract identity is asserted on every service-built artifact, and fixed-date semantic tests
 exclude only the generation timestamp. JSON's `context_brief_export_v2` transport version is

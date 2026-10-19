@@ -1,10 +1,11 @@
 import type { UserGoal } from '../engine/models';
 import type { AssessmentAttempt, MetricObservationHead, MetricObservationRevision } from './models';
-import { buildAssessmentHistory } from './assessmentHistory';
+import { buildAssessmentHistory, type AssessmentHistoryRow, type AssessmentHistorySeries } from './assessmentHistory';
 import { isBenchmarkEligibleAttempt } from './assessmentEvidenceEligibility';
 import { getAssessmentProtocolForExercise } from './exerciseAssessmentBridge';
 import { PERFORMANCE_TEST_DEFINITIONS } from './performanceTestingCatalog';
 import { PHYSICAL_CAPITAL_PROTOCOL_REVISIONS } from './physicalCapitalProtocols';
+import { getMetricDefinition } from './registry';
 import { compareCodeUnits } from '../utils/canonicalJson';
 import { getLocalDateString } from '../utils/localDate';
 
@@ -73,6 +74,52 @@ export function assessmentBriefBindingsForGoals(goals: readonly UserGoal[]): { b
     };
 }
 
+export function assessmentBriefBindingsForCompletedAttempts(
+    attempts: readonly AssessmentAttempt[],
+    asOfDate: string,
+): AssessmentBriefBinding[] {
+    const bindings = new Map<string, AssessmentBriefBinding>();
+    for (const attempt of attempts) {
+        if (!isBenchmarkEligibleAttempt(attempt)) continue;
+        if (attempt.state !== 'completed') continue;
+        if (attempt.completedAt && getLocalDateString(new Date(attempt.completedAt)) > asOfDate) continue;
+        const definition = PERFORMANCE_TEST_DEFINITIONS.find(d => d.protocol.id === attempt.protocolRef.id);
+        const protocol = attempt.protocolRef.revision === undefined || attempt.protocolRef.revision === definition?.protocol.revision
+            ? definition?.protocol
+            : PHYSICAL_CAPITAL_PROTOCOL_REVISIONS.find(p => p.id === attempt.protocolRef.id && p.revision === attempt.protocolRef.revision);
+        if (!protocol) continue;
+        for (const metricId of protocol.metricIds) {
+            const binding: AssessmentBriefBinding = {
+                protocolId: protocol.id,
+                metricId,
+                ...(definition && definition.protocol.revision === protocol.revision ? {} : { protocolRevision: protocol.revision }),
+            };
+            if (assessmentBriefDefinition(binding)) {
+                bindings.set(assessmentBriefBindingKey(binding), binding);
+            }
+        }
+    }
+    return [...bindings.values()].sort((a, b) => compareCodeUnits(assessmentBriefBindingKey(a), assessmentBriefBindingKey(b)));
+}
+
+export function selectSeriesBestRow(series: AssessmentHistorySeries): AssessmentHistoryRow | null {
+    const eligible = series.observations.filter(
+        row => row.validity === 'valid' && row.attemptPurpose !== 'familiarization',
+    );
+    if (eligible.length === 0) return null;
+    const direction = getMetricDefinition(series.metricId).direction;
+    if (direction === 'context_only') return null;
+    return eligible.reduce((best, candidate) => {
+        if (direction === 'higher_is_better') {
+            return candidate.value > best.value ? candidate : best;
+        }
+        if (direction === 'lower_is_better') {
+            return candidate.value < best.value ? candidate : best;
+        }
+        return best;
+    });
+}
+
 function token(value: string): string {
     const normalized = value.replace(/[\r\n\t]+/g, ' ').replace(/[<>`*|]/g, '').trim();
     return normalized.length > 96 ? `${normalized.slice(0, 47)}…${normalized.slice(-48)}` : normalized;
@@ -92,7 +139,7 @@ export function renderAssessmentBrief(input: AssessmentBriefInput, asOfDate: str
     }
     lines.push(...(input.relevanceNotes ?? []).slice(0, 3));
     if (sources.length === 0 && input.relevanceState === 'available') {
-        lines.push('No supported assessment binding in active typed goals or explicitly bound block objectives.');
+        lines.push('No supported assessment binding in active typed goals, explicitly bound block objectives, or completed assessments.');
     }
     for (const source of sources.slice(0, ASSESSMENT_BRIEF_MAX_BINDINGS)) {
         const definition = assessmentBriefDefinition(source.binding);
@@ -137,14 +184,89 @@ export function renderAssessmentBrief(input: AssessmentBriefInput, asOfDate: str
             continue;
         }
         const baseline = series.baseline!;
+        const best = selectSeriesBestRow(series);
+        const bestSegment = best ? `; best ${best.value} ${token(best.unit)} (${best.localDate})` : '';
         const comparison = series.progress.absoluteChange === undefined
             ? 'no comparable repeat yet'
             : `comparable raw change ${signed(series.progress.absoluteChange, 2)} ${token(benchmark.unit)}${series.progress.percentChange === undefined ? '' : ` (${signed(series.progress.percentChange, 1)}%)`}`;
         const incompatible = metric.otherSeries.filter(s => s.baseline !== null).length;
-        lines.push(`- ${label}: measured benchmark ${value}; baseline ${baseline.value} ${token(baseline.unit)} (${baseline.localDate}); ${comparison}; status ${series.progress.status}; ${provenance}${incompatible ? `; ${incompatible} other non-comparable series (no cross-series delta)` : ''}.`);
+        lines.push(`- ${label}: measured benchmark ${value}${bestSegment}; baseline ${baseline.value} ${token(baseline.unit)} (${baseline.localDate}); ${comparison}; status ${series.progress.status}; ${provenance}${incompatible ? `; ${incompatible} other non-comparable series (no cross-series delta)` : ''}.`);
     }
     const omitted = input.omittedCount + Math.max(0, sources.length - ASSESSMENT_BRIEF_MAX_BINDINGS);
     if (omitted) lines.push(`- ${omitted} relevant binding(s) omitted from this bounded section.`);
     if (input.unsupportedCount) lines.push(`- ${input.unsupportedCount} explicit target/binding(s) unsupported for measured assessment evidence; no profile estimate is promoted to a measurement.`);
     return lines;
+}
+
+export interface MeasuredBenchmarkPointExport {
+    value: number;
+    unit: string;
+    date: string;
+}
+
+export interface MeasuredBenchmarkExport {
+    protocolId: string;
+    protocolRevision: number;
+    metricId: string;
+    title: string;
+    comparisonSeriesKey: string;
+    status: string;
+    current: MeasuredBenchmarkPointExport;
+    best?: MeasuredBenchmarkPointExport;
+    baseline: MeasuredBenchmarkPointExport;
+}
+
+export function deriveMeasuredBenchmarks(input: AssessmentBriefInput, asOfDate: string): MeasuredBenchmarkExport[] {
+    const sources = [...input.sources].sort((a, b) => compareCodeUnits(assessmentBriefBindingKey(a.binding), assessmentBriefBindingKey(b.binding)));
+    const results: MeasuredBenchmarkExport[] = [];
+    for (const source of sources.slice(0, ASSESSMENT_BRIEF_MAX_BINDINGS)) {
+        const definition = assessmentBriefDefinition(source.binding);
+        if (!definition || source.unavailable) continue;
+        const incomplete = source.unreadableCount > 0 || source.truncated;
+        if (incomplete) continue;
+        const attempts = source.attempts.filter(a => isBenchmarkEligibleAttempt(a));
+        const attemptsById = new Map(attempts.map(a => [a.id, a]));
+        const observations = source.observations.filter(({ head, revision: r }) => {
+            const attempt = attemptsById.get(r.assessmentAttemptId);
+            return attempt && r.validity === 'valid' && head.headRevision === r.revision
+                && head.observationKey === r.observationKey && head.assessmentAttemptId === r.assessmentAttemptId
+                && head.metricId === r.metricId && r.metricId === source.binding.metricId
+                && r.protocolRef.id === source.binding.protocolId
+                && r.protocolRef.id === attempt.protocolRef.id && r.protocolRef.revision === attempt.protocolRef.revision
+                && (source.binding.protocolRevision === undefined || r.protocolRef.revision === source.binding.protocolRevision)
+                && Number.isFinite(Date.parse(r.observedAt)) && getLocalDateString(new Date(r.observedAt)) <= asOfDate;
+        });
+        const metric = buildAssessmentHistory({ definitions: [definition], attempts, observations }).tests[0]?.metrics
+            .find(m => m.metricId === source.binding.metricId);
+        const series = metric?.activeSeries;
+        const benchmark = series?.latest ?? series?.baseline;
+        if (!benchmark || !series || !series.baseline) continue;
+        const best = selectSeriesBestRow(series);
+        results.push({
+            protocolId: source.binding.protocolId,
+            protocolRevision: series.protocolRevision,
+            metricId: source.binding.metricId,
+            title: definition.protocol.title,
+            comparisonSeriesKey: series.comparisonSeriesKey,
+            status: series.progress.status,
+            current: {
+                value: benchmark.value,
+                unit: benchmark.unit,
+                date: benchmark.localDate,
+            },
+            ...(best ? {
+                best: {
+                    value: best.value,
+                    unit: best.unit,
+                    date: best.localDate,
+                },
+            } : {}),
+            baseline: {
+                value: series.baseline.value,
+                unit: series.baseline.unit,
+                date: series.baseline.localDate,
+            },
+        });
+    }
+    return results;
 }

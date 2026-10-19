@@ -73,6 +73,26 @@ describe('AssessmentAttemptService', () => {
         expect(firestore.orderBy).toHaveBeenCalledWith('__name__', 'asc');
     });
 
+    it('lists completed attempts with diagnostics, sentinel truncation, and malformed counting', async () => {
+        const completedAttempt: AssessmentAttempt = {
+            ...validAttempt,
+            state: 'completed',
+            startedAt: '2026-03-30T09:00:00.000Z',
+            completedAt: '2026-03-30T10:00:00.000Z',
+        };
+        firestore.getDocs.mockResolvedValue({ docs: [
+            docSnapshot(true, completedAttempt),
+            docSnapshot(true, { ...completedAttempt, id: 'bad', state: 'invalid_state' }, 'bad'),
+            docSnapshot(true, { ...completedAttempt, id: 'sentinel' }, 'sentinel'),
+        ] });
+        const result = await service.listCompletedAttemptsWithDiagnostics('u1', 2);
+        expect(result.attempts).toEqual([completedAttempt]);
+        expect(result.unreadableCount).toBe(1);
+        expect(result.truncated).toBe(true);
+        expect(firestore.where).toHaveBeenCalledWith('state', '==', 'completed');
+        expect(firestore.limit).toHaveBeenCalledWith(3);
+    });
+
     it('exports a default instance initialized with default db', () => {
         expect(assessmentAttemptService).toBeInstanceOf(AssessmentAttemptService);
     });

@@ -18,7 +18,10 @@ function setup() {
         source: 'manual', context: {}, observedAt: attempt.completedAt!, createdAt: attempt.completedAt!,
     };
     const head = { observationKey: revision.observationKey, assessmentAttemptId: 'a', metricId: revision.metricId, headRevision: 2, createdAt: revision.createdAt, updatedAt: revision.createdAt };
-    const attempts = { listAttemptsForProtocolWithDiagnostics: vi.fn().mockResolvedValue({ attempts: [attempt], unreadableCount: 0, truncated: false }) };
+    const attempts = {
+        listAttemptsForProtocolWithDiagnostics: vi.fn().mockResolvedValue({ attempts: [attempt], unreadableCount: 0, truncated: false }),
+        listCompletedAttemptsWithDiagnostics: vi.fn().mockResolvedValue({ attempts: [], unreadableCount: 0, truncated: false }),
+    };
     const observations = { getHead: vi.fn().mockResolvedValue(head), getRevision: vi.fn().mockResolvedValue(revision), listCurrentObservationsForMetricWithDiagnostics: vi.fn(), listRevisionsForObservation: vi.fn() };
     const trials = { listTrialsForAttempt: vi.fn() };
     const snapshots = { getRecoverySnapshotsInRangeState: vi.fn() };
@@ -77,5 +80,25 @@ describe('bounded planning assessment reads', () => {
         expect(sources[0]).toMatchObject({ unreadableCount: 3, truncated: true });
         const bindings = Array.from({ length: 30 }, (_, i) => ({ protocolId: `p-${i}`, metricId: 'strength_1rm_kg' }));
         expect(await s.service.loadPlanningAssessmentSources('u1', bindings, '2026-10-11')).toHaveLength(12);
+    });
+
+    it('auto-discovers completed attempts when explicit bindings are fewer than 12', async () => {
+        const s = setup();
+        s.attempts.listCompletedAttemptsWithDiagnostics.mockResolvedValue({
+            attempts: [
+                {
+                    id: 'completed-jump',
+                    protocolRef: { id: 'field-standing-broad-jump', revision: 2 },
+                    state: 'completed',
+                    purpose: 'baseline',
+                    completedAt: '2026-10-10T10:00:00Z',
+                },
+            ],
+            unreadableCount: 0,
+            truncated: false,
+        });
+        const sources = await s.service.loadPlanningAssessmentSources('u1', [], '2026-10-11');
+        expect(s.attempts.listCompletedAttemptsWithDiagnostics).toHaveBeenCalledWith('u1', 100);
+        expect(sources.map(src => src.binding.protocolId)).toContain('field-standing-broad-jump');
     });
 });
