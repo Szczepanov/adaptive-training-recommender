@@ -36,7 +36,7 @@ function setup() {
 describe('bounded planning assessment reads', () => {
     it('reads current canonical revisions selectively, deduplicates protocol reads and keeps an old baseline without detail/body mass', async () => {
         const s = setup();
-        const sources = await s.service.loadPlanningAssessmentSources('u1', [s.binding, { ...s.binding, protocolRevision: PROTOCOL.revision }], '2026-10-11');
+        const { sources } = await s.service.loadPlanningAssessmentSources('u1', [s.binding, { ...s.binding, protocolRevision: PROTOCOL.revision }], '2026-10-11');
         expect(sources[0].observations[0].revision.value).toBe(150);
         expect(sources[0].observations[0].revision.revision).toBe(2);
         expect(s.attempts.listAttemptsForProtocolWithDiagnostics).toHaveBeenCalledExactlyOnceWith('u1', PROTOCOL.id, 100);
@@ -56,7 +56,7 @@ describe('bounded planning assessment reads', () => {
             { ...s.attempt, id: 'future', completedAt: '2026-10-11T22:30:00Z' },
             { ...s.attempt, id: 'bench', protocolRef: { id: 'strength-bench-press-1rm', revision: 2 } },
         ], unreadableCount: 0, truncated: false });
-        const sources = await s.service.loadPlanningAssessmentSources('u1', [s.binding], '2026-10-11');
+        const { sources } = await s.service.loadPlanningAssessmentSources('u1', [s.binding], '2026-10-11');
         expect(sources[0].observations).toEqual([]);
         expect(s.observations.getHead).not.toHaveBeenCalled();
     });
@@ -64,22 +64,22 @@ describe('bounded planning assessment reads', () => {
     it('distinguishes an empty source, query failure, missing current revision and head identity mismatch', async () => {
         const s = setup();
         s.observations.getHead.mockResolvedValueOnce(null);
-        expect((await s.service.loadPlanningAssessmentSources('u1', [s.binding], '2026-10-11'))[0]).toMatchObject({ unavailable: false, unreadableCount: 0, observations: [] });
+        expect((await s.service.loadPlanningAssessmentSources('u1', [s.binding], '2026-10-11')).sources[0]).toMatchObject({ unavailable: false, unreadableCount: 0, observations: [] });
         s.observations.getRevision.mockResolvedValueOnce(null);
-        expect((await s.service.loadPlanningAssessmentSources('u1', [s.binding], '2026-10-11'))[0].unreadableCount).toBe(1);
+        expect((await s.service.loadPlanningAssessmentSources('u1', [s.binding], '2026-10-11')).sources[0].unreadableCount).toBe(1);
         s.observations.getHead.mockResolvedValueOnce({ ...s.head, assessmentAttemptId: 'unknown' });
-        expect((await s.service.loadPlanningAssessmentSources('u1', [s.binding], '2026-10-11'))[0].unreadableCount).toBe(1);
+        expect((await s.service.loadPlanningAssessmentSources('u1', [s.binding], '2026-10-11')).sources[0].unreadableCount).toBe(1);
         s.attempts.listAttemptsForProtocolWithDiagnostics.mockRejectedValueOnce(new Error('offline'));
-        expect((await s.service.loadPlanningAssessmentSources('u1', [s.binding], '2026-10-11'))[0].unavailable).toBe(true);
+        expect((await s.service.loadPlanningAssessmentSources('u1', [s.binding], '2026-10-11')).sources[0].unavailable).toBe(true);
     });
 
     it('carries attempt truncation and unreadable counts and bounds callers before querying', async () => {
         const s = setup();
         s.attempts.listAttemptsForProtocolWithDiagnostics.mockResolvedValue({ attempts: [s.attempt], unreadableCount: 3, truncated: true });
-        const sources = await s.service.loadPlanningAssessmentSources('u1', [s.binding], '2026-10-11');
+        const { sources } = await s.service.loadPlanningAssessmentSources('u1', [s.binding], '2026-10-11');
         expect(sources[0]).toMatchObject({ unreadableCount: 3, truncated: true });
         const bindings = Array.from({ length: 30 }, (_, i) => ({ protocolId: `p-${i}`, metricId: 'strength_1rm_kg' }));
-        expect(await s.service.loadPlanningAssessmentSources('u1', bindings, '2026-10-11')).toHaveLength(12);
+        expect((await s.service.loadPlanningAssessmentSources('u1', bindings, '2026-10-11')).sources).toHaveLength(12);
     });
 
     it('auto-discovers completed attempts when explicit bindings are fewer than 12', async () => {
@@ -97,8 +97,34 @@ describe('bounded planning assessment reads', () => {
             unreadableCount: 0,
             truncated: false,
         });
-        const sources = await s.service.loadPlanningAssessmentSources('u1', [], '2026-10-11');
+        const { sources } = await s.service.loadPlanningAssessmentSources('u1', [], '2026-10-11');
         expect(s.attempts.listCompletedAttemptsWithDiagnostics).toHaveBeenCalledWith('u1', 100);
         expect(sources.map(src => src.binding.protocolId)).toContain('field-standing-broad-jump');
     });
+
+    it.each(['failed', 'truncated', 'unreadable'] as const)('reports %s completed-attempt discovery even without bindings', async kind => {
+        const s = setup();
+        if (kind === 'failed') s.attempts.listCompletedAttemptsWithDiagnostics.mockRejectedValueOnce(new Error('offline'));
+        else s.attempts.listCompletedAttemptsWithDiagnostics.mockResolvedValueOnce({ attempts: [], unreadableCount: kind === 'unreadable' ? 1 : 0, truncated: kind === 'truncated' });
+        const result = await s.service.loadPlanningAssessmentSources('u1', [], '2026-10-11');
+        expect(result).toMatchObject({ sources: [], relevanceState: kind === 'failed' ? 'unavailable' : 'incomplete' });
+        expect(result.relevanceNotes?.join(' ')).toContain('Completed assessment discovery');
+    });
+
+    it('does not let an explicit historical revision hide the current completed protocol', async () => {
+        const s = setup();
+        s.attempts.listCompletedAttemptsWithDiagnostics.mockResolvedValueOnce({ attempts: [{ ...s.attempt, protocolRef: { ...s.attempt.protocolRef, revision: 2 } }], unreadableCount: 0, truncated: false });
+        const result = await s.service.loadPlanningAssessmentSources('u1', [{ ...s.binding, protocolRevision: 1 }], '2026-10-11');
+        expect(result.sources.map(source => source.binding)).toEqual([
+            { ...s.binding, protocolRevision: 1 }, s.binding,
+        ]);
+    });
+
+    it('deduplicates a discovered current protocol already pinned explicitly', async () => {
+        const s = setup();
+        s.attempts.listCompletedAttemptsWithDiagnostics.mockResolvedValueOnce({ attempts: [{ ...s.attempt, protocolRef: { ...s.attempt.protocolRef, revision: 2 } }], unreadableCount: 0, truncated: false });
+        const result = await s.service.loadPlanningAssessmentSources('u1', [{ ...s.binding, protocolRevision: 2 }], '2026-10-11');
+        expect(result.sources).toHaveLength(1);
+    });
+
 });

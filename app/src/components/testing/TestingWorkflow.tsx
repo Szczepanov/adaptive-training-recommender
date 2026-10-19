@@ -120,6 +120,7 @@ export const TestingWorkflow: React.FC<TestingWorkflowProps> = ({ userId, onClos
     const [correctionValue, setCorrectionValue] = useState('');
     const [correctionReason, setCorrectionReason] = useState('');
     const [busy, setBusy] = useState(false);
+    const [abandonConfirmationRequired, setAbandonConfirmationRequired] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [recovering, setRecovering] = useState(true);
     const startInFlight = useRef(false);
@@ -557,6 +558,7 @@ export const TestingWorkflow: React.FC<TestingWorkflowProps> = ({ userId, onClos
         setExecution(null);
         setSaved([]);
         setTrials([]);
+        setAbandonConfirmationRequired(false);
         setError(null);
         setStage('ready');
     };
@@ -726,10 +728,20 @@ export const TestingWorkflow: React.FC<TestingWorkflowProps> = ({ userId, onClos
                         <div className="testing-grid">
                             {protocol.comparisonContext.required.map(dimension => <label key={dimension}>{dimension}<input value={contextValues[dimension] ?? ''} onChange={event => setContextValues(current => ({ ...current, [dimension]: event.target.value }))} /></label>)}
                         </div>
-                        <div className="testing-actions">
-                            <button type="button" className="testing-secondary testing-danger-btn" disabled={busy} onClick={handleAbandonCaptureAttempt}>Abandon attempt</button>
-                            <button type="button" className="testing-primary" disabled={busy} onClick={saveObservations}>{busy ? 'Saving…' : 'Save raw observation(s)'}</button>
-                        </div>
+                        {abandonConfirmationRequired ? (
+                            <div className="testing-card abandon-attempt-warning" role="alert">
+                                <p>Abandoning will permanently cancel this assessment attempt and discard unsaved values. Any evidence already saved will remain, but this attempt cannot be resumed.</p>
+                                <div className="testing-actions">
+                                    <button type="button" className="testing-secondary" disabled={busy} onClick={() => setAbandonConfirmationRequired(false)}>Return to capture</button>
+                                    <button type="button" className="testing-secondary testing-danger-btn" disabled={busy} onClick={handleAbandonCaptureAttempt}>Confirm &amp; abandon attempt</button>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="testing-actions">
+                                <button type="button" className="testing-secondary testing-danger-btn" disabled={busy} onClick={() => setAbandonConfirmationRequired(true)}>Abandon attempt</button>
+                                <button type="button" className="testing-primary" disabled={busy} onClick={saveObservations}>{busy ? 'Saving…' : 'Save raw observation(s)'}</button>
+                            </div>
+                        )}
                     </section>
                 )
             )}

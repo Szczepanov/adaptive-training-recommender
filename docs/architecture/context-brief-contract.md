@@ -57,7 +57,7 @@ that same Markdown and has its own, separate schema version:
 
 JSON transport schema `context_brief_export_v2` exposes `contractVersion` explicitly at the
 top level as well as inside the Markdown content. This prevents a JSON consumer from confusing
-transport-envelope versioning with Context Brief semantic versioning. The v1 → v2 bump is an
+transport-envelope versioning with Context Brief semantic versioning. The v1 â†’ v2 bump is an
 explicit schema decision because the envelope gained a required semantic-contract field.
 
 ## Purpose mapping
@@ -95,7 +95,7 @@ does not claim the longer planning/diagnostic subjective-baseline or sensor-evid
 
 The source-state section identifies the relevant recovery snapshot and wearable metric dates,
 check-in date, Garmin activity read, canonical completed-training read, current plan inputs,
-planning assessment-benchmark relevance/read state, and comparison evidence state. It distinguishes measured, missing, unavailable, invalid,
+planning/morning assessment-benchmark relevance/read state, and comparison evidence state. It distinguishes measured, missing, unavailable, invalid,
 unsupported/not collected, and not applicable; a measured zero remains a value, not missingness.
 Where source data has a semantic date, the brief reports its age against the as-of date and
 flags a date older than the expected day as stale. Transport sync/update timestamps are
@@ -155,7 +155,7 @@ authored and what happened"), not a forensic log.
 Row format:
 
 ```text
-- <date> <authored>: placement …; adjudication …; athlete …; performance …[; provenance].[ observed-work note]
+- <date> <authored>: placement â€¦; adjudication â€¦; athlete â€¦; performance â€¦[; provenance].[ observed-work note]
 ```
 
 `<authored>` is `planId rN/sessionId`, `planId rN rest/restDirectiveId`, `none`, or `unknown`.
@@ -187,12 +187,12 @@ Identity and provenance:
   provenance). No title similarity.
 - Exact joins always use the complete persisted identifiers. Rendering is a bounded display
   projection only: every identifier token is normalized to one line and capped at 96
-  characters, preserving a prefix and suffix separated by `…` when clipping is required.
+  characters, preserving a prefix and suffix separated by `â€¦` when clipping is required.
   Display clipping never participates in identity matching.
 - Rendered provenance ids are `occurrence`, `execution`, `performed`, and
   `prescription` (hash) only.
 - On replace days the row carries `replaced by occurrence <id>`, attributing the
-  archive-named (pre-replace) revision — never today's active plan.
+  archive-named (pre-replace) revision â€” never today's active plan.
 - A row degraded by an archive-read failure carries
   `replacement source unavailable (archive read failed)`, so a read failure reads
   distinctly from not-determinable `unknown`.
@@ -238,12 +238,12 @@ give identical semantic output; only `Generated at` varies.
 
 ## Measured performance evidence
 
-Planning exports render `## Measured performance evidence` after goals. It is an observational,
-bounded assessment summary, never an input to recommendation selection. Morning and diagnostic
-exports neither read nor render it; diagnostic assessment export remains the detailed evidence
-surface. `ContextBriefService.build` includes its relevance/read state in the required planning
-source-state lines, and `assertRenderedBriefContract` rejects a service-built planning artifact
-without them.
+Planning exports render `## Measured performance evidence` after goals; morning exports render
+it before Morning Coach Instructions. It is an observational, bounded assessment summary, never
+an input to recommendation selection. Diagnostic briefs omit it; diagnostic assessment export
+remains the detailed evidence surface. `ContextBriefService.build` includes its relevance/read
+state in the required planning/morning source-state lines, and `assertRenderedBriefContract`
+rejects either service-built artifact without them.
 
 Only exact, supported bindings enter the section:
 
@@ -251,7 +251,9 @@ Only exact, supported bindings enter the section:
   a `performance_test` target binds the catalog protocol ID, exact revision, and metric;
 - explicit block bindings: the latest validated intent revision that covers `asOfDate`, followed
   by the exact frozen evaluation revision pinned in `successCriteria.evaluationRef`, whose status
-  is `active`, `completed`, or `archived`. The metric and protocol revision must match exactly.
+  is `active`, `completed`, or `archived`. The metric and protocol revision must match exactly;
+- completed eligible catalog assessments fill remaining binding slots after explicit bindings.
+  An explicit historical revision does not hide a completed current revision.
 
 Titles, capabilities, `PlanBlock` travel fields, and unbound targets never infer relevance.
 Bundled current and historical protocol revisions are supported; an unknown/unbound target is
@@ -259,21 +261,23 @@ reported as unsupported rather than silently mapped to a profile estimate.
 
 The service preserves a finite, current-state read: 20 ID-ordered block headers plus one
 sentinel, then current validated revision/header-state reads; 20 deduplicated evaluation
-references; 12 deduplicated bindings; and 100 ID-ordered attempts per protocol plus one
-sentinel. It reads only eligible attempt/metric heads and current revisions, never metric-wide
-observations, trial rows, revision chains, or extra body-mass data. It does not reconstruct
+references; 12 deduplicated bindings; a discovery sample of 100 ID-ordered completed attempts
+plus one sentinel when binding slots remain; and 100 ID-ordered attempts per protocol plus one
+sentinel. Failed, unreadable or truncated discovery remains explicit in relevance diagnostics,
+even when no bindings are found. Known bindings omitted by the cap are counted. It reads only
+eligible attempt/metric heads and current revisions, never metric-wide observations, trial rows, revision chains, or extra body-mass data. It does not reconstruct
 historical as-of authoring state. Rendering independently caps rows at 12 and bounds displayed
 IDs/device tokens to a single line of 96 characters.
 
 Projection reuses `buildAssessmentHistory` and `computeSeriesProgress`: completed,
 non-familiarization attempts with known parents and Warsaw observation/completion dates on or
 before `asOfDate` are eligible; a baseline has no 14-day cutoff. Complete sources report the
-benchmark, baseline, unit/date and comparable raw change, or explicitly report no comparable
-repeat. Benchmark and baseline values retain stored precision; the raw absolute change uses the
+benchmark, active-series best, baseline, unit/date and comparable raw change, or explicitly report
+no comparable repeat. Benchmark and baseline values retain stored precision; the raw absolute change uses the
 History two-decimal display and percentage uses one decimal. Missing reliability still yields
 `insufficient_evidence`; other incompatible series are
 counted but receive no cross-series numeric delta. A truncated or unreadable source may render
-its measured sample but withholds whole-history baseline/latest/comparison and never makes an
+its measured sample but withholds whole-history best/baseline/latest/comparison and never makes an
 absence-of-repeat claim. Missing source, query failure, and unsupported binding stay distinct;
 partial relevance diagnostics retain valid goal evidence while saying relevant bindings may have
 been omitted.
@@ -331,28 +335,28 @@ missingness, provenance, authority and information-budget guarantees are not wea
 
 Version history:
 
-- v1 → v2: canonical performed-training authority (one deduped occurrence per workout).
-- v2 → v3: required source state/currency semantics.
-- v3 → v4: round-trip semantics — `not adjudicated`, `none` and `as authored` narrowed for
+- v1 â†’ v2: canonical performed-training authority (one deduped occurrence per workout).
+- v2 â†’ v3: required source state/currency semantics.
+- v3 â†’ v4: round-trip semantics â€” `not adjudicated`, `none` and `as authored` narrowed for
   identical persisted inputs (existing labels repurposed, never silently), plus the row
   vocabulary, replacement/archive provenance, deterministic total ordering, newest-20 row
   selection, and per-row identifier/observed-work bounds specified above. Planning exports
   produced between PR-C's merge and this bump carry v3 identity with v4 semantics; the bump
   bounds that window after the fact.
-- v4 → v5: planning-only measured performance evidence, including its exact relevance rules,
+- v4 â†’ v5: planning-only measured performance evidence, including its exact relevance rules,
   current-state bounded reads, partial-read semantics, source-state requirement, and finite
   rendering bounds. The JSON transport envelope remains `context_brief_export_v2`.
-- v5 → v6 (#927): persisted long-horizon target and development authority from the decision
+- v5 â†’ v6 (#927): persisted long-horizon target and development authority from the decision
   audit; `eventStrategy` may be `development_block`.
-- v6 → v7 (#929): season roadmap across A/B/C events, including supporting-event dose and
+- v6 â†’ v7 (#929): season roadmap across A/B/C events, including supporting-event dose and
   C-race replacement context.
-- v7 → v8 (#941): the round-trip `performance` dimension gains `in progress` for an execution
+- v7 â†’ v8 (#941): the round-trip `performance` dimension gains `in progress` for an execution
   still `in_progress` on or after the brief's `asOfDate`. One dated before `asOfDate` with
   entries stays `partial or abandoned`. Known limitation: the comparison uses the session's
   calendar date, so a session that runs past Warsaw midnight renders `partial or abandoned` in a
   brief built after midnight.
-- v8 → v9 (#813): physical-capability ledger unilateral lower-body confirmation from logged sets.
-- v9 → v10: daily morning export (`purpose: 'morning'`) now includes measured performance evidence
+- v8 â†’ v9 (#813): physical-capability ledger unilateral lower-body confirmation from logged sets.
+- v9 â†’ v10: daily morning export (`purpose: 'morning'`) now includes measured performance evidence
   alongside planning exports; auto-discovery of tested assessment protocols up to the 12-binding cap;
   distinguishes Current observation and active-series Best (PR) observation; exposes structured
   `measuredBenchmarks` in `ContextBriefJsonExport`.

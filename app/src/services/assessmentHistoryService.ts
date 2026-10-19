@@ -39,7 +39,7 @@ import type { AnthropometryEntry } from '../anthropometry/models';
 import { isBenchmarkEligibleAttempt } from '../observations/assessmentEvidenceEligibility';
 import {
     ASSESSMENT_BRIEF_MAX_ATTEMPTS, ASSESSMENT_BRIEF_MAX_BINDINGS,
-    assessmentBriefBindingKey, assessmentBriefBindingsForCompletedAttempts, type AssessmentBriefBinding, type AssessmentBriefSource,
+    assessmentBriefBindingKey, assessmentBriefBindingsForCompletedAttempts, assessmentBriefDefinition, type AssessmentBriefBinding, type AssessmentBriefSource, type AssessmentBriefInput,
 } from '../observations/contextBriefAssessments';
 import { compareCodeUnits } from '../utils/canonicalJson';
 
@@ -178,7 +178,7 @@ export class AssessmentHistoryService {
     }
 
     /**
-     * Planning-only, protocol-selective ID-ordered sample with a truncation sentinel.
+     * Brief-only, protocol-selective ID-ordered sample with a truncation sentinel.
      * No date lookback: older baselines remain eligible. No trials, chains or body mass.
      * Partial reads are preserved so the pure projection can withhold comparison claims.
      */
@@ -186,26 +186,34 @@ export class AssessmentHistoryService {
         userId: string,
         bindings: readonly AssessmentBriefBinding[],
         asOfDate: string,
-    ): Promise<AssessmentBriefSource[]> {
+    ): Promise<Pick<AssessmentBriefInput, 'sources' | 'relevanceState' | 'relevanceNotes' | 'omittedCount'>> {
         const selected = [...bindings].sort((a, b) => compareCodeUnits(assessmentBriefBindingKey(a), assessmentBriefBindingKey(b)))
             .slice(0, ASSESSMENT_BRIEF_MAX_BINDINGS);
 
-        if (selected.length < ASSESSMENT_BRIEF_MAX_BINDINGS && typeof this.attemptService.listCompletedAttemptsWithDiagnostics === 'function') {
+        let relevanceState: AssessmentBriefInput['relevanceState'] = 'available';
+        const relevanceNotes: string[] = [];
+        let omittedCount = Math.max(0, bindings.length - selected.length);
+        if (selected.length < ASSESSMENT_BRIEF_MAX_BINDINGS) {
             try {
                 const completedResult = await this.attemptService.listCompletedAttemptsWithDiagnostics(userId, ASSESSMENT_BRIEF_MAX_ATTEMPTS);
+                if (completedResult.unreadableCount || completedResult.truncated) {
+                    relevanceState = 'incomplete';
+                    relevanceNotes.push(`Completed assessment discovery incomplete: ${completedResult.unreadableCount} unreadable record(s)${completedResult.truncated ? '; ID-ordered attempt sample truncated at 100' : ''}.`);
+                }
                 const candidateBindings = assessmentBriefBindingsForCompletedAttempts(completedResult.attempts, asOfDate);
                 for (const candidate of candidateBindings) {
-                    if (selected.length >= ASSESSMENT_BRIEF_MAX_BINDINGS) break;
                     const alreadyCovered = selected.some(b =>
                         b.protocolId === candidate.protocolId && b.metricId === candidate.metricId
-                        && (b.protocolRevision === undefined || candidate.protocolRevision === undefined || b.protocolRevision === candidate.protocolRevision)
+                        && (b.protocolRevision === undefined || b.protocolRevision === assessmentBriefDefinition(candidate)?.protocol.revision)
                     );
                     if (!alreadyCovered) {
-                        selected.push(candidate);
+                        if (selected.length < ASSESSMENT_BRIEF_MAX_BINDINGS) selected.push(candidate);
+                        else omittedCount++;
                     }
                 }
             } catch {
-                // If completed attempt discovery fails, proceed with explicit bindings.
+                relevanceState = 'unavailable';
+                relevanceNotes.push('Completed assessment discovery unavailable: source read failed.');
             }
         }
 
@@ -252,7 +260,7 @@ export class AssessmentHistoryService {
                 }
             }
         }
-        return sources;
+        return { sources, relevanceState, relevanceNotes, omittedCount };
     }
 
     /**

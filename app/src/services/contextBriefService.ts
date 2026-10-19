@@ -515,11 +515,17 @@ export class ContextBriefService {
                 if (unreadableEvaluations) unavailableSources.push('assessment relevance (frozen evaluations)');
             }
             const selectedBindings = [...bindings.values()].sort((a, b) => compareCodeUnits(assessmentBriefBindingKey(a), assessmentBriefBindingKey(b)));
-            const sources = await assessmentHistoryService.loadPlanningAssessmentSources(userId, selectedBindings.slice(0, ASSESSMENT_BRIEF_MAX_BINDINGS), targetDate);
+            const assessmentRead = await assessmentHistoryService.loadPlanningAssessmentSources(userId, selectedBindings.slice(0, ASSESSMENT_BRIEF_MAX_BINDINGS), targetDate);
+            const { sources } = assessmentRead;
+            if (assessmentRead.relevanceState !== 'available') {
+                if (assessmentRead.relevanceState === 'unavailable' || relevanceState === 'available') relevanceState = assessmentRead.relevanceState;
+                unavailableSources.push('assessment relevance (completed assessment discovery)');
+                relevanceNotes.unshift(...(assessmentRead.relevanceNotes ?? []));
+            }
             if (sources.some(s => s.unavailable || s.truncated || s.unreadableCount)) {
                 unavailableSources.push('assessment benchmarks (incomplete or unavailable sources)');
             }
-            assessmentEvidence = { sources, unsupportedCount, omittedCount: Math.max(0, selectedBindings.length - ASSESSMENT_BRIEF_MAX_BINDINGS), relevanceState, relevanceNotes };
+            assessmentEvidence = { sources, unsupportedCount, omittedCount: Math.max(0, selectedBindings.length - ASSESSMENT_BRIEF_MAX_BINDINGS) + assessmentRead.omittedCount, relevanceState, relevanceNotes };
         }
 
         const fixedActivitiesReadable = fixedActivityResult.status === 'fulfilled'

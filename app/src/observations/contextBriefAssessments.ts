@@ -135,7 +135,7 @@ export function renderAssessmentBrief(input: AssessmentBriefInput, asOfDate: str
     const lines = ['## Measured performance evidence', '',
         'Assessment benchmarks only; observational evidence, with no recommendation authority. Dates are Europe/Warsaw.'];
     if (input.relevanceState !== 'available') {
-        lines.push(`Relevance ${input.relevanceState}: goal/block bindings could not be read completely; the section may omit relevant evidence.`);
+        lines.push(`Relevance ${input.relevanceState}: goal/block bindings or completed assessments could not be read completely; the section may omit relevant evidence.`);
     }
     lines.push(...(input.relevanceNotes ?? []).slice(0, 3));
     if (sources.length === 0 && input.relevanceState === 'available') {

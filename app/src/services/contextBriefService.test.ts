@@ -153,7 +153,7 @@ describe('ContextBriefService', () => {
         services.listRecommendationRevisions.mockResolvedValue({ status: 'AVAILABLE', data: [], revision: null });
         services.getActiveBlocksWithDiagnostics.mockResolvedValue({ blocks: [], unreadableCount: 0, truncated: false });
         services.getOutcomeEvaluationRevision.mockResolvedValue(null);
-        services.loadPlanningAssessmentSources.mockResolvedValue([]);
+        services.loadPlanningAssessmentSources.mockResolvedValue({ sources: [], relevanceState: 'available', relevanceNotes: [], omittedCount: 0 });
     });
 
     it('exports compact planning benchmarks and partial-source diagnostics through Markdown and JSON v2 with semantic v5', async () => {
@@ -163,10 +163,10 @@ describe('ContextBriefService', () => {
             subjectRef: { kind: 'exercise', exerciseId: 'back_squat' },
         } } as UserGoal;
         services.getActiveGoalsState.mockResolvedValue({ status: 'AVAILABLE', data: [goal] });
-        services.loadPlanningAssessmentSources.mockResolvedValue([{
+        services.loadPlanningAssessmentSources.mockResolvedValue({ relevanceState: 'available', relevanceNotes: [], omittedCount: 0, sources: [{
             binding: { protocolId, metricId: 'strength_1rm_kg' }, attempts: [], observations: [],
             unreadableCount: 1, truncated: false, unavailable: false,
-        }]);
+        }] });
         const result = await new ContextBriefService().build('u1', AS_OF, 14, 'full');
         const markdown = formatContextBriefExport(result, 'markdown');
         const json = JSON.parse(formatContextBriefExport(result, 'json'));
@@ -215,6 +215,16 @@ describe('ContextBriefService', () => {
         expect(unsupported.text).toContain('unsupported for measured assessment evidence');
     });
 
+    it.each(['morning', 'planning'] as const)('reports incomplete completed assessment discovery in %s exports', async purpose => {
+        services.loadPlanningAssessmentSources.mockResolvedValueOnce({ sources: [], relevanceState: 'incomplete', relevanceNotes: ['Completed assessment discovery incomplete: attempt sample truncated.'], omittedCount: 2 });
+        const result = await new ContextBriefService().build('u1', AS_OF, purpose === 'morning' ? 2 : 14, purpose === 'morning' ? 'daily' : 'full');
+        expect(result.text).toContain('Relevance incomplete');
+        expect(result.text).toContain('Completed assessment discovery incomplete');
+        expect(result.text).not.toContain('No supported assessment binding');
+        expect(result.text).toContain('2 relevant binding(s) omitted');
+        expect(result.unavailableSources).toContain('assessment relevance (completed assessment discovery)');
+    });
+
     it('does not add assessment reads or compact section to diagnostic', async () => {
         services.getActiveGoalsState.mockResolvedValue({ status: 'AVAILABLE', data: [{ status: 'active', performanceTarget: {
             kind: 'performance_metric', metricId: 'strength_1rm_kg', subjectRef: { kind: 'exercise', exerciseId: 'back_squat' }, targetValue: 180,
@@ -243,7 +253,7 @@ describe('ContextBriefService', () => {
         services.getActiveGoalsState.mockResolvedValue({ status: 'AVAILABLE', data: [{ status: 'active', performanceTarget: {
             kind: 'performance_metric', metricId: 'strength_1rm_kg', subjectRef: { kind: 'exercise', exerciseId: 'back_squat' }, targetValue: 180,
         } }] });
-        services.loadPlanningAssessmentSources.mockResolvedValue([{
+        services.loadPlanningAssessmentSources.mockResolvedValue({ relevanceState: 'available', relevanceNotes: [], omittedCount: 0, sources: [{
             binding: { protocolId: protocolRef.id, metricId: 'strength_1rm_kg' },
             attempts: ids.map((id, i) => ({ id, protocolRef, state: 'completed', purpose: i ? 'checkpoint' : 'baseline' })),
             observations: ids.map((id, i) => ({
@@ -253,7 +263,7 @@ describe('ContextBriefService', () => {
                     comparisonSeriesKey: 'rack-a', comparisonCanonicalizationVersion: 'ov-series-v1', source: 'derived', context: {},
                 },
             })), unreadableCount: 0, truncated: false, unavailable: false,
-        }]);
+        }] });
         const result = await new ContextBriefService().build('u1', AS_OF, 14, 'full');
         const markdown = formatContextBriefExport(result, 'markdown');
         const json = JSON.parse(formatContextBriefExport(result, 'json'));
