@@ -1,10 +1,11 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { assertValidAssessmentTrial } from '../../observations/assessmentTrials';
 import { reduceAssessmentTrials } from '../../observations/assessmentReducers';
 import type {
     AssessmentAttempt,
     AssessmentTrial,
     AssessmentTrialScalar,
+    ComparisonDimension,
     MeasurementProtocol,
     MetricObservationDevice,
 } from '../../observations/models';
@@ -20,7 +21,7 @@ import {
     saveAssessmentDraft,
     type DraftTrialRow,
 } from '../../utils/assessmentDraftStorage';
-import { draftRowsToTrials, hasDeviceWithoutProvider } from '../../utils/assessmentDraftTrials';
+import { draftRowsToTrials, hasDeviceWithoutProvider, isRowUntouched } from '../../utils/assessmentDraftTrials';
 import { CanonicalResultPreview } from './CanonicalResultPreview';
 import { TrialRow } from './TrialRow';
 import { WlAnalysisImportPanel } from './WlAnalysisImportPanel';
@@ -134,6 +135,28 @@ export const TrialCaptureTable: React.FC<TrialCaptureTableProps> = ({
     const [missingConfirmationRequired, setMissingConfirmationRequired] = useState(false);
     const [abandonConfirmationRequired, setAbandonConfirmationRequired] = useState(false);
     const [clientError, setClientError] = useState<string | null>(null);
+    const [rowValidationErrors, setRowValidationErrors] = useState<Record<number, { invalidFields: string[]; error?: string }>>({});
+    const [missingContextKeys, setMissingContextKeys] = useState<Set<ComparisonDimension>>(new Set());
+    const [hasAttemptedSave, setHasAttemptedSave] = useState(false);
+    const [setupDetailsOpen, setSetupDetailsOpen] = useState(() =>
+        isFixedLoad || protocol.comparisonContext.required.some(dim => !contextValues[dim]?.trim()),
+    );
+    const bottomErrorRef = useRef<HTMLDivElement | null>(null);
+
+    const scrollToFirstError = () => {
+        setTimeout(() => {
+            const firstInvalid = document.querySelector<HTMLElement>(
+                '.trial-input-invalid, .testing-input-invalid, [aria-invalid="true"]'
+            );
+            if (firstInvalid) {
+                firstInvalid.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                firstInvalid.focus();
+            } else if (bottomErrorRef.current) {
+                bottomErrorRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+        }, 50);
+    };
+
     const importedMethod = useMemo(() => {
         if (!isFixedLoad) return undefined;
         const importedEvidence = rows.filter(row => row.validity === 'valid'
@@ -219,6 +242,14 @@ export const TrialCaptureTable: React.FC<TrialCaptureTableProps> = ({
 
     // Handle carry-forward hints (e.g. standing_reach_cm for CMJ)
     const updateRowWithCarryForward = (index: number, updated: DraftTrialRow) => {
+        const ordinal = rows[index]?.ordinal;
+        if (ordinal && rowValidationErrors[ordinal]) {
+            setRowValidationErrors(curr => {
+                const next = { ...curr };
+                delete next[ordinal];
+                return next;
+            });
+        }
         setRows(current => {
             if (storedOrdinals.has(current[index].ordinal)) return current;
             const next = [...current];
@@ -278,6 +309,14 @@ export const TrialCaptureTable: React.FC<TrialCaptureTableProps> = ({
 
     const removeAttempt = (index: number) => {
         if (rows.length <= 1 || storedOrdinals.has(rows[index].ordinal)) return;
+        const ordinal = rows[index].ordinal;
+        if (rowValidationErrors[ordinal]) {
+            setRowValidationErrors(curr => {
+                const next = { ...curr };
+                delete next[ordinal];
+                return next;
+            });
+        }
         setRows(current => current.filter((_, idx) => idx !== index));
     };
 
@@ -287,19 +326,33 @@ export const TrialCaptureTable: React.FC<TrialCaptureTableProps> = ({
         () => {
             try {
                 const context = isFixedLoad ? buildComparisonContextFromStrings(protocol, contextValues) : {};
-                return draftRowsToTrials(rows, attempt.id, context, defaultDevice, previewCreatedAt);
+                const activeRows = rows.filter(row => storedOrdinals.has(row.ordinal) || !isRowUntouched(row, presentationHints?.carryForwardFieldIds));
+                return draftRowsToTrials(activeRows, attempt.id, context, defaultDevice, previewCreatedAt);
             } catch {
                 return [];
             }
         },
-        [rows, attempt.id, previewCreatedAt, isFixedLoad, protocol, contextValues, defaultDevice],
+        [rows, attempt.id, previewCreatedAt, isFixedLoad, protocol, contextValues, defaultDevice, storedOrdinals, presentationHints?.carryForwardFieldIds],
     );
 
     // Build the persisted trial records: typed comparison context (same parsing as the derived
     // observations), normalized device provenance and one createdAt per save.
     const buildTrialsForSave = (): { trials: AssessmentTrial[] } | { error: string } => {
-        if (rows.length === 0) return { error: 'At least one trial is required.' };
-        const pendingImportReview = rows.find(row => row.importReview
+        setHasAttemptedSave(true);
+        const activeRows = rows.filter(row => storedOrdinals.has(row.ordinal) || !isRowUntouched(row, presentationHints?.carryForwardFieldIds));
+        if (activeRows.length === 0) {
+            return { error: 'At least one trial is required. Please record attempt values before saving.' };
+        }
+
+        const newMissingContext = new Set<ComparisonDimension>();
+        for (const dim of protocol.comparisonContext.required) {
+            const raw = contextValues[dim];
+            if (raw === undefined || raw.trim() === '') {
+                newMissingContext.add(dim);
+            }
+        }
+
+        const pendingImportReview = activeRows.find(row => row.importReview
             && (!row.importReview.loadKgConfirmed
                 || !row.importReview.successConfirmed
                 || !row.importReview.validityConfirmed));
@@ -312,11 +365,62 @@ export const TrialCaptureTable: React.FC<TrialCaptureTableProps> = ({
                 error: `Attempt ${pendingImportReview.ordinal}: confirm imported ${missing.join(', ')} before saving.`,
             };
         }
-        const incompleteDevice = rows.find(row => hasDeviceWithoutProvider(row.device));
+        const incompleteDevice = activeRows.find(row => hasDeviceWithoutProvider(row.device));
         if (incompleteDevice) return { error: `Trial ${incompleteDevice.ordinal} device override requires a provider.` };
+
+        const newRowErrors: Record<number, { invalidFields: string[]; error?: string }> = {};
+        for (const row of activeRows) {
+            const rowInvalidFields: string[] = [];
+            if (row.validity === 'valid' || row.validity === 'questionable') {
+                for (const field of capture.fields) {
+                    if (field.required) {
+                        const val = row.values[field.id];
+                        if (val === undefined || (field.valueKind === 'number' && !Number.isFinite(val))) {
+                            rowInvalidFields.push(field.id);
+                        }
+                    }
+                    if (field.id in row.values) {
+                        const val = row.values[field.id];
+                        if (field.valueKind === 'number' && typeof val === 'number') {
+                            if (val < field.minimum || val > field.maximum) {
+                                rowInvalidFields.push(field.id);
+                            }
+                        }
+                    }
+                }
+            }
+            if (row.validity === 'invalid' && (!row.invalidReason || row.invalidReason.trim() === '')) {
+                rowInvalidFields.push('invalidReason');
+            }
+            if (rowInvalidFields.length > 0) {
+                newRowErrors[row.ordinal] = {
+                    invalidFields: rowInvalidFields,
+                    error: `${isStrength ? 'Attempt' : 'Trial'} ${row.ordinal} is missing required fields (${rowInvalidFields.map(f => {
+                        if (f === 'invalidReason') return 'Reason';
+                        const fDef = capture.fields.find(cf => cf.id === f);
+                        return fDef ? fDef.label : f;
+                    }).join(', ')}).`,
+                };
+            }
+        }
+
+        setMissingContextKeys(newMissingContext);
+        setRowValidationErrors(newRowErrors);
+
+        if (newMissingContext.size > 0) {
+            setSetupDetailsOpen(true);
+            const dimNames = [...newMissingContext].map(d => getComparisonDimensionDefinition(d).description || d);
+            return { error: `Please complete required attempt setup: ${dimNames.join(', ')}.` };
+        }
+
+        const firstRowError = Object.values(newRowErrors)[0];
+        if (firstRowError) {
+            return { error: firstRowError.error ?? 'Please complete all required attempt fields.' };
+        }
+
         try {
             const context = buildComparisonContextFromStrings(protocol, contextValues);
-            const built = draftRowsToTrials(rows, attempt.id, context, defaultDevice, new Date().toISOString());
+            const built = draftRowsToTrials(activeRows, attempt.id, context, defaultDevice, new Date().toISOString());
             built.forEach(trial => assertValidAssessmentTrial(trial, protocol));
             return { trials: built };
         } catch (err) {
@@ -329,6 +433,7 @@ export const TrialCaptureTable: React.FC<TrialCaptureTableProps> = ({
         const built = buildTrialsForSave();
         if ('error' in built) {
             setClientError(built.error);
+            scrollToFirstError();
             return;
         }
         const { trials } = built;
@@ -349,6 +454,7 @@ export const TrialCaptureTable: React.FC<TrialCaptureTableProps> = ({
                 setMissingConfirmationRequired(true);
             } else {
                 setClientError(msg);
+                scrollToFirstError();
             }
         }
     };
@@ -370,21 +476,23 @@ export const TrialCaptureTable: React.FC<TrialCaptureTableProps> = ({
                 </div>
             )}
 
-            {clientError && (
-                <p className="testing-error" role="alert">
-                    {clientError}
-                </p>
-            )}
-
             {isFixedLoad && <p>Use the same exact load and equipment/camera setup for every benchmark repetition. Imported files lock their actual measurement method. Failed or off-load repetitions must be practice or invalid.</p>}
-            <details className="testing-card attempt-setup-details" open={isFixedLoad ? true : undefined}>
+            <details
+                className="testing-card attempt-setup-details"
+                open={setupDetailsOpen}
+                onToggle={e => setSetupDetailsOpen(e.currentTarget.open)}
+            >
                 <summary>Attempt context & device setup (shared across trials)</summary>
                 <div className="testing-grid">
                     {protocol.comparisonContext.required.map(dimension => {
                         const definition = getComparisonDimensionDefinition(dimension);
+                        const isMissing = missingContextKeys.has(dimension) || (hasAttemptedSave && (!contextValues[dimension] || contextValues[dimension].trim() === ''));
                         return (
                             <label key={dimension}>
-                                {dimension} <small>({definition.description})</small>
+                                <span>
+                                    {dimension} <small>({definition.description})</small>
+                                    <span className="required-indicator" aria-hidden="true">*</span>
+                                </span>
                                 <input
                                     type={definition.valueKind === 'number' ? 'number' : 'text'}
                                     step={definition.valueKind === 'number' ? 'any' : undefined}
@@ -393,13 +501,27 @@ export const TrialCaptureTable: React.FC<TrialCaptureTableProps> = ({
                                         || (dimension === 'measurement_method_id' && importedMethod !== undefined
                                             && contextValues[dimension] === importedMethod))}
                                     disabled={saving}
-                                    onChange={e =>
+                                    className={isMissing ? 'trial-input trial-input-invalid' : 'trial-input'}
+                                    aria-invalid={isMissing ? 'true' : undefined}
+                                    aria-required="true"
+                                    onChange={e => {
+                                        const val = e.target.value;
                                         onContextChange({
                                             ...contextValues,
-                                            [dimension]: e.target.value,
-                                        })
-                                    }
+                                            [dimension]: val,
+                                        });
+                                        if (missingContextKeys.has(dimension) && val.trim()) {
+                                            setMissingContextKeys(prev => {
+                                                const next = new Set(prev);
+                                                next.delete(dimension);
+                                                return next;
+                                            });
+                                        }
+                                    }}
                                 />
+                                {isMissing && (
+                                    <span className="testing-field-error" role="alert">This field is required</span>
+                                )}
                             </label>
                         );
                     })}
@@ -485,6 +607,8 @@ export const TrialCaptureTable: React.FC<TrialCaptureTableProps> = ({
                         canRemove={rows.length > 1 && !storedOrdinals.has(row.ordinal)}
                         locked={storedOrdinals.has(row.ordinal)}
                         isStrength={isStrength}
+                        invalidFields={rowValidationErrors[row.ordinal]?.invalidFields}
+                        rowError={rowValidationErrors[row.ordinal]?.error}
                     />
                 ))}
             </div>
@@ -498,6 +622,12 @@ export const TrialCaptureTable: React.FC<TrialCaptureTableProps> = ({
                 >
                     + Add {isStrength ? 'attempt' : 'trial'} ({rows.length} of {capture.maxTrials})
                 </button>
+            )}
+
+            {clientError && (
+                <div className="testing-error testing-error-bottom" role="alert" tabIndex={-1} ref={bottomErrorRef}>
+                    <strong>Validation error:</strong> {clientError}
+                </div>
             )}
 
             {abandonConfirmationRequired ? (
@@ -552,26 +682,28 @@ export const TrialCaptureTable: React.FC<TrialCaptureTableProps> = ({
                     </div>
                 </div>
             ) : (
-                <div className="testing-actions">
-                    {onAbandon && (
+                <>
+                    <div className="testing-actions">
+                        {onAbandon && (
+                            <button
+                                type="button"
+                                className="testing-secondary testing-danger-btn"
+                                onClick={() => setAbandonConfirmationRequired(true)}
+                                disabled={saving}
+                            >
+                                Abandon attempt
+                            </button>
+                        )}
                         <button
                             type="button"
-                            className="testing-secondary testing-danger-btn"
-                            onClick={() => setAbandonConfirmationRequired(true)}
+                            className="testing-primary"
+                            onClick={() => handleSave(false)}
                             disabled={saving}
                         >
-                            Abandon attempt
+                            {saving ? 'Saving…' : 'Save assessment trials'}
                         </button>
-                    )}
-                    <button
-                        type="button"
-                        className="testing-primary"
-                        onClick={() => handleSave(false)}
-                        disabled={saving}
-                    >
-                        {saving ? 'Saving…' : 'Save assessment trials'}
-                    </button>
-                </div>
+                    </div>
+                </>
             )}
         </section>
     );

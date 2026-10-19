@@ -539,6 +539,10 @@ has no unit and ascent completeness cannot establish technical validity by itsel
 saved until the athlete explicitly confirms kilograms, success/miss when suggested, and technical validity.
 The import itself writes nothing; duplicate content digests are rejected even within one selected batch.
 Imported rows remain in the existing UID-scoped local draft across reload when browser storage is available.
+Unused planned rows are omitted from preview and save, including jump rows containing only
+carried-forward standing reach after draft recovery. Measured values, notes, validity changes and import provenance
+keep a row in validation. Equipment setup identities must be declared by the athlete rather
+than supplied by generic catalog defaults, so different testing stations remain separate series.
 The final immutable assessment save uses transaction-backed services and therefore requires connectivity;
 an offline final-save failure leaves the local draft intact for retry instead of claiming a commit.
 The sibling `OpenBarImportPanel` accepts local analysis JSON on the same screen. Its preview starts with

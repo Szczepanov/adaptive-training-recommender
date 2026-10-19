@@ -7,7 +7,10 @@ import {
 import { CanonicalResultPreview } from './CanonicalResultPreview';
 import { TrialCaptureTable } from './TrialCaptureTable';
 import { TrialCorrectionPanel } from './TrialCorrectionPanel';
+import { TrialRow } from './TrialRow';
+import { isRowUntouched } from '../../utils/assessmentDraftTrials';
 import {
+    BACK_SQUAT_1RM_PROTOCOL_V2,
     BENCH_PRESS_1RM_PROTOCOL,
     STANDING_BROAD_JUMP_PROTOCOL,
     WALL_TOUCH_CMJ_PROTOCOL,
@@ -283,6 +286,90 @@ describe('TrialCaptureTable', () => {
 
         expect(html).toContain('Abandon attempt');
         expect(html).toContain('Save assessment trials');
+    });
+
+    it('renders required indicators and aria-required on comparison context fields', () => {
+        const squatAttempt: AssessmentAttempt = {
+            id: 'att-squat',
+            protocolRef: { id: BACK_SQUAT_1RM_PROTOCOL_V2.id, revision: 2 },
+            scheduledDate: '2026-10-20',
+            state: 'in_progress',
+            purpose: 'baseline',
+        };
+
+        const html = renderToStaticMarkup(
+            <TrialCaptureTable
+                userId="user-1"
+                protocol={BACK_SQUAT_1RM_PROTOCOL_V2}
+                attempt={squatAttempt}
+                contextValues={{}}
+                onContextChange={vi.fn()}
+                defaultDevice={{ provider: 'manual' }}
+                onDefaultDeviceChange={vi.fn()}
+                onSave={vi.fn()}
+                saving={false}
+            />,
+        );
+
+        expect(html).toContain('equipment_setup_id');
+        expect(html).toContain('required-indicator');
+        expect(html).toContain('aria-required="true"');
+    });
+});
+
+describe('isRowUntouched', () => {
+    it('identifies completely empty placeholder rows as untouched', () => {
+        expect(isRowUntouched({ ordinal: 5, values: {}, validity: 'valid' })).toBe(true);
+    });
+
+    it('identifies rows with values as touched', () => {
+        expect(isRowUntouched({ ordinal: 1, values: { load_kg: 100 }, validity: 'valid' })).toBe(false);
+    });
+
+    it('identifies rows with non-valid validity as touched', () => {
+        expect(isRowUntouched({ ordinal: 1, values: {}, validity: 'practice' })).toBe(false);
+        expect(isRowUntouched({ ordinal: 1, values: {}, validity: 'invalid', invalidReason: 'Miss' })).toBe(false);
+    });
+
+    it('identifies rows with notes or device overrides as touched', () => {
+        expect(isRowUntouched({ ordinal: 1, values: {}, validity: 'valid', notes: 'Felt light' })).toBe(false);
+        expect(isRowUntouched({ ordinal: 1, values: {}, validity: 'valid', device: { provider: 'Garmin' } })).toBe(false);
+    });
+});
+
+describe('TrialRow validation rendering', () => {
+    const fields = BACK_SQUAT_1RM_PROTOCOL_V2.capture!.fields;
+    const row = {
+        ordinal: 1,
+        values: {},
+        validity: 'valid' as const,
+    };
+
+    it('renders required indicators for required fields', () => {
+        const html = renderToStaticMarkup(
+            <TrialRow row={row} fields={fields} onChange={vi.fn()} isStrength />
+        );
+        expect(html).toContain('required-indicator');
+        expect(html).toContain('aria-required="true"');
+    });
+
+    it('renders invalid styling and field error when invalidFields includes a field', () => {
+        const html = renderToStaticMarkup(
+            <TrialRow
+                row={row}
+                fields={fields}
+                onChange={vi.fn()}
+                isStrength
+                invalidFields={['load_kg', 'successful']}
+                rowError="Attempt 1 is missing required fields (Load, Lift successful)."
+            />
+        );
+        expect(html).toContain('trial-row-card trial-row-card-invalid');
+        expect(html).toContain('trial-input trial-input-invalid');
+        expect(html).toContain('trial-select trial-input-invalid');
+        expect(html).toContain('aria-invalid="true"');
+        expect(html).toContain('trial-row-error');
+        expect(html).toContain('Attempt 1 is missing required fields');
     });
 });
 

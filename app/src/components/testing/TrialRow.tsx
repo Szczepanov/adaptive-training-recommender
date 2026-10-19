@@ -17,6 +17,8 @@ interface TrialRowProps {
     isStrength?: boolean;
     /** Already persisted: immutable, shown read-only (correct it after completion instead). */
     locked?: boolean;
+    invalidFields?: readonly string[];
+    rowError?: string;
 }
 
 const VALIDITIES: readonly ObservationValidity[] = ['valid', 'invalid', 'practice', 'questionable'];
@@ -29,6 +31,8 @@ export const TrialRow: React.FC<TrialRowProps> = ({
     canRemove,
     isStrength,
     locked = false,
+    invalidFields,
+    rowError,
 }) => {
     const [showDeviceOverride, setShowDeviceOverride] = useState(Boolean(row.device?.provider));
 
@@ -108,7 +112,7 @@ export const TrialRow: React.FC<TrialRowProps> = ({
     const rowLabel = isStrength ? `Attempt ${row.ordinal}` : `Trial ${row.ordinal}`;
 
     return (
-        <fieldset className="trial-row-card" disabled={locked}>
+        <fieldset className={rowError ? 'trial-row-card trial-row-card-invalid' : 'trial-row-card'} disabled={locked}>
             <legend className="trial-row-legend">
                 <span className="trial-row-title">{rowLabel}{locked && ' · saved'}</span>
                 {canRemove && onRemove && (
@@ -123,24 +127,38 @@ export const TrialRow: React.FC<TrialRowProps> = ({
                 )}
             </legend>
 
+            {rowError && (
+                <div className="trial-row-error" role="alert">
+                    <span>{rowError}</span>
+                </div>
+            )}
+
             <div className="trial-fields-grid">
                 {fields.map(field => {
                     const value = row.values[field.id];
+                    const isFieldInvalid = invalidFields?.includes(field.id);
 
                     if (field.valueKind === 'boolean') {
                         return (
                             <label key={field.id} className="trial-field-label">
-                                {field.label}
-                                {field.required && <span className="required-indicator" aria-hidden="true">*</span>}
+                                <span>
+                                    {field.label}
+                                    {field.required && <span className="required-indicator" aria-hidden="true">*</span>}
+                                </span>
                                 <select
                                     value={value === undefined ? '' : String(value)}
                                     onChange={e => handleFieldValueChange(field, e.target.value)}
-                                    className="trial-select"
+                                    className={`trial-select ${isFieldInvalid ? 'trial-input-invalid' : ''}`}
+                                    aria-invalid={isFieldInvalid ? 'true' : undefined}
+                                    aria-required={field.required ? 'true' : undefined}
                                 >
                                     <option value="">Select result…</option>
                                     <option value="true">Successful lift</option>
                                     <option value="false">Miss / Failed</option>
                                 </select>
+                                {isFieldInvalid && (
+                                    <span className="testing-field-error" role="alert">Required</span>
+                                )}
                             </label>
                         );
                     }
@@ -160,8 +178,15 @@ export const TrialRow: React.FC<TrialRowProps> = ({
                                 placeholder={field.minimum !== undefined && field.maximum !== undefined ? `${field.minimum}–${field.maximum}` : undefined}
                                 value={value === undefined ? '' : String(value)}
                                 onChange={e => handleFieldValueChange(field, e.target.value)}
-                                className="trial-input"
+                                className={`trial-input ${isFieldInvalid ? 'trial-input-invalid' : ''}`}
+                                aria-invalid={isFieldInvalid ? 'true' : undefined}
+                                aria-required={field.required ? 'true' : undefined}
                             />
+                            {isFieldInvalid && (
+                                <span className="testing-field-error" role="alert">
+                                    {field.required && value === undefined ? 'Required' : `Must be ${field.minimum}–${field.maximum} ${field.unit}`}
+                                </span>
+                            )}
                         </label>
                     );
                 })}
@@ -236,9 +261,13 @@ export const TrialRow: React.FC<TrialRowProps> = ({
                         placeholder="e.g. Lost balance / stepped off line / spotter touched bar"
                         value={row.invalidReason ?? ''}
                         onChange={e => onChange({ ...row, invalidReason: e.target.value })}
-                        className="trial-input"
+                        className={`trial-input ${invalidFields?.includes('invalidReason') ? 'trial-input-invalid' : ''}`}
+                        aria-invalid={invalidFields?.includes('invalidReason') ? 'true' : undefined}
                         required
                     />
+                    {invalidFields?.includes('invalidReason') && (
+                        <span className="testing-field-error" role="alert">Reason is required</span>
+                    )}
                 </label>
             )}
 

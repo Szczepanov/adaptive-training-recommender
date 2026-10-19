@@ -12,6 +12,7 @@ import { getMetricDefinition } from '../../observations/registry';
 import { getComparisonDimensionDefinition } from '../../observations/protocols';
 import {
     getPerformanceTestDefinition,
+    PERFORMANCE_TEST_DEFINITIONS,
 } from '../../observations/performanceTestingCatalog';
 import {
     buildComparisonContextFromStrings,
@@ -672,7 +673,21 @@ export const TestingWorkflow: React.FC<TestingWorkflowProps> = ({ userId, onClos
                             {protocol.comparisonContext.required.map(dimension => {
                                 const definition = getComparisonDimensionDefinition(dimension);
                                 const seriesDefining = protocol.comparisonContext.seriesDefining.includes(dimension);
-                                return <label key={dimension}>{dimension} <small>{seriesDefining ? 'series-defining' : 'context-only'} · {definition.description}</small><input type={definition.valueKind === 'number' ? 'number' : 'text'} step={definition.valueKind === 'number' ? 'any' : undefined} value={contextValues[dimension] ?? ''} onChange={event => setContextValues(current => ({ ...current, [dimension]: event.target.value }))} /></label>;
+                                return (
+                                    <label key={dimension}>
+                                        <span>
+                                            {dimension} <small>{seriesDefining ? 'series-defining' : 'context-only'} · {definition.description}</small>
+                                            <span className="required-indicator" aria-hidden="true">*</span>
+                                        </span>
+                                        <input
+                                            type={definition.valueKind === 'number' ? 'number' : 'text'}
+                                            step={definition.valueKind === 'number' ? 'any' : undefined}
+                                            value={contextValues[dimension] ?? ''}
+                                            aria-required="true"
+                                            onChange={event => setContextValues(current => ({ ...current, [dimension]: event.target.value }))}
+                                        />
+                                    </label>
+                                );
                             })}
                         </div>
                         <label>Attempt purpose<select value={purpose} onChange={event => setPurpose(event.target.value as AssessmentAttemptPurpose)}>{PURPOSES.map(item => <option key={item} value={item}>{item}</option>)}</select></label>
@@ -704,7 +719,9 @@ export const TestingWorkflow: React.FC<TestingWorkflowProps> = ({ userId, onClos
                         }}
                         onSave={handleSaveTrialAssessment}
                         saving={busy}
-                        presentationHints={catalogDefinitionId ? getPerformanceTestDefinition(catalogDefinitionId)?.presentationHints : undefined}
+                        presentationHints={PERFORMANCE_TEST_DEFINITIONS.find(definition =>
+                            definition.protocol.id === protocol.id && definition.protocol.revision === protocol.revision
+                        )?.presentationHints}
                         initialTrials={trials}
                         onAbandon={handleAbandonCaptureAttempt}
                     />

@@ -56,3 +56,14 @@ export function draftRowsToTrials(
 export function hasDeviceWithoutProvider(device: MetricObservationDevice | undefined): boolean {
     return !!device && !device.provider?.trim() && !!(device.model?.trim() || device.deviceId?.trim());
 }
+
+export function isRowUntouched(row: DraftTrialRow, carryForwardFieldIds: readonly string[] = []): boolean {
+    return Object.keys(row.values).every(fieldId => carryForwardFieldIds.includes(fieldId))
+        && !row.sourceRef
+        && !row.notes
+        && !row.invalidReason
+        && !row.device
+        && Object.keys(row.context ?? {}).length === 0
+        && row.validity === 'valid'
+        && !row.importReview;
+}
