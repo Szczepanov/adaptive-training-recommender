@@ -694,11 +694,11 @@ export const TestingWorkflow: React.FC<TestingWorkflowProps> = ({ userId, onClos
                                 const definition = getComparisonDimensionDefinition(dimension);
                                 const seriesDefining = protocol.comparisonContext.seriesDefining.includes(dimension);
                                 return (
-                                    <label key={dimension} className="dimension-field-group">
-                                        <span>
+                                    <div key={dimension} className="dimension-field-group">
+                                        <label htmlFor={`setup-context-${dimension}`}>
                                             <strong>{definition.displayName}</strong> <span className="dimension-technical-id">({dimension})</span> <small>{seriesDefining ? 'series-defining' : 'context-only'}</small>
                                             <span className="required-indicator" aria-hidden="true">*</span>
-                                        </span>
+                                        </label>
                                         {definition.athleteGuidance && (
                                             <span className="dimension-guidance">{definition.athleteGuidance}</span>
                                         )}
@@ -708,6 +708,7 @@ export const TestingWorkflow: React.FC<TestingWorkflowProps> = ({ userId, onClos
                                                     <button
                                                         key={preset.id}
                                                         type="button"
+                                                        aria-pressed={contextValues[dimension] === preset.id}
                                                         className={`preset-chip ${contextValues[dimension] === preset.id ? 'active' : ''}`}
                                                         onClick={() => setContextValues(current => ({ ...current, [dimension]: preset.id }))}
                                                     >
@@ -717,6 +718,7 @@ export const TestingWorkflow: React.FC<TestingWorkflowProps> = ({ userId, onClos
                                             </div>
                                         )}
                                         <input
+                                            id={`setup-context-${dimension}`}
                                             type={definition.valueKind === 'number' ? 'number' : 'text'}
                                             step={definition.valueKind === 'number' ? 'any' : undefined}
                                             value={contextValues[dimension] ?? ''}
@@ -724,7 +726,7 @@ export const TestingWorkflow: React.FC<TestingWorkflowProps> = ({ userId, onClos
                                             placeholder={definition.athleteGuidance ?? `Enter ${definition.displayName}`}
                                             onChange={event => setContextValues(current => ({ ...current, [dimension]: event.target.value }))}
                                         />
-                                    </label>
+                                    </div>
                                 );
                             })}
                         </div>

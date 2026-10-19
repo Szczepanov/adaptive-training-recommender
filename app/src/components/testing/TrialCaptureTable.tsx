@@ -490,22 +490,26 @@ export const TrialCaptureTable: React.FC<TrialCaptureTableProps> = ({
                 <div className="testing-grid">
                     {protocol.comparisonContext.required.map(dimension => {
                         const definition = getComparisonDimensionDefinition(dimension);
+                        const readOnly = isFixedLoad && (storedOrdinals.size > 0
+                            || (dimension === 'measurement_method_id' && importedMethod !== undefined
+                                && contextValues[dimension] === importedMethod));
                         const isMissing = missingContextKeys.has(dimension) || (hasAttemptedSave && (!contextValues[dimension] || contextValues[dimension].trim() === ''));
                         return (
-                            <label key={dimension} className="dimension-field-group">
-                                <span>
+                            <div key={dimension} className="dimension-field-group">
+                                <label htmlFor={`capture-context-${dimension}`}>
                                     <strong>{definition.displayName}</strong> <span className="dimension-technical-id">({dimension})</span>
                                     <span className="required-indicator" aria-hidden="true">*</span>
-                                </span>
+                                </label>
                                 {definition.athleteGuidance && (
                                     <span className="dimension-guidance">{definition.athleteGuidance}</span>
                                 )}
-                                {definition.presets && definition.presets.length > 0 && !(isFixedLoad && storedOrdinals.size > 0) && (
+                                {definition.presets && definition.presets.length > 0 && !readOnly && (
                                     <div className="dimension-presets" role="group" aria-label={`Suggested options for ${definition.displayName}`}>
                                         {definition.presets.map(preset => (
                                             <button
                                                 key={preset.id}
                                                 type="button"
+                                                aria-pressed={contextValues[dimension] === preset.id}
                                                 className={`preset-chip ${contextValues[dimension] === preset.id ? 'active' : ''}`}
                                                 disabled={saving}
                                                 onClick={() => {
@@ -528,12 +532,11 @@ export const TrialCaptureTable: React.FC<TrialCaptureTableProps> = ({
                                     </div>
                                 )}
                                 <input
+                                    id={`capture-context-${dimension}`}
                                     type={definition.valueKind === 'number' ? 'number' : 'text'}
                                     step={definition.valueKind === 'number' ? 'any' : undefined}
                                     value={contextValues[dimension] ?? ''}
-                                    readOnly={isFixedLoad && (storedOrdinals.size > 0
-                                        || (dimension === 'measurement_method_id' && importedMethod !== undefined
-                                            && contextValues[dimension] === importedMethod))}
+                                    readOnly={readOnly}
                                     disabled={saving}
                                     placeholder={definition.athleteGuidance ?? `Enter ${definition.displayName}`}
                                     className={isMissing ? 'trial-input trial-input-invalid' : 'trial-input'}
@@ -557,7 +560,7 @@ export const TrialCaptureTable: React.FC<TrialCaptureTableProps> = ({
                                 {isMissing && (
                                     <span className="testing-field-error" role="alert">This field is required</span>
                                 )}
-                            </label>
+                            </div>
                         );
                     })}
                 </div>

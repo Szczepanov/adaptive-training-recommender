@@ -127,11 +127,6 @@ const DIMENSIONS: readonly ComparisonDimensionDefinition[] = [
         displayName: 'Measurement Method',
         description: 'Measurement method identity when it materially changes the result (e.g. wall-touch vs contact-mat jump height, bar-velocity app/camera method).',
         athleteGuidance: 'How performance was measured (different methods cannot be compared directly).',
-        presets: [
-            { id: 'wall-touch-tape-v1', label: 'Wall-Touch Measuring Tape' },
-            { id: 'manual', label: 'Manual Tape / Direct Entry' },
-            { id: 'contact-mat', label: 'Contact Mat / Timing System' },
-        ],
     },
     {
         id: 'equipment_setup_id',
