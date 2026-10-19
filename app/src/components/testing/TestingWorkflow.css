@@ -155,6 +155,54 @@
   padding: 10px 12px;
 }
 
+.trial-input-invalid,
+.testing-input-invalid {
+  border-color: #dc2626 !important;
+  box-shadow: 0 0 0 1px #dc2626;
+  background-color: rgba(220, 38, 38, 0.04);
+}
+
+.trial-row-card-invalid {
+  border-color: #dc2626;
+}
+
+.trial-row-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: rgba(220, 38, 38, 0.08);
+  border-left: 4px solid #dc2626;
+  color: #dc2626;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.testing-field-error {
+  color: #dc2626;
+  font-size: 0.8rem;
+  font-weight: 500;
+  margin-top: 2px;
+}
+
+.required-indicator {
+  color: #dc2626;
+  margin-left: 2px;
+  font-weight: bold;
+}
+
+.testing-error-bottom {
+  margin-top: 8px;
+  margin-bottom: 8px;
+  background: rgba(220, 38, 38, 0.08);
+  border-left: 4px solid #dc2626;
+  color: #dc2626;
+  border-radius: 4px;
+}
+
 /* #496: collapsed lock card shown above the shared runner during assessment execution. */
 .testing-lock-summary {
   border-color: #b45309;

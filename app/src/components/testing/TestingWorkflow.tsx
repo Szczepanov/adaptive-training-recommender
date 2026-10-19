@@ -672,7 +672,21 @@ export const TestingWorkflow: React.FC<TestingWorkflowProps> = ({ userId, onClos
                             {protocol.comparisonContext.required.map(dimension => {
                                 const definition = getComparisonDimensionDefinition(dimension);
                                 const seriesDefining = protocol.comparisonContext.seriesDefining.includes(dimension);
-                                return <label key={dimension}>{dimension} <small>{seriesDefining ? 'series-defining' : 'context-only'} · {definition.description}</small><input type={definition.valueKind === 'number' ? 'number' : 'text'} step={definition.valueKind === 'number' ? 'any' : undefined} value={contextValues[dimension] ?? ''} onChange={event => setContextValues(current => ({ ...current, [dimension]: event.target.value }))} /></label>;
+                                return (
+                                    <label key={dimension}>
+                                        <span>
+                                            {dimension} <small>{seriesDefining ? 'series-defining' : 'context-only'} · {definition.description}</small>
+                                            <span className="required-indicator" aria-hidden="true">*</span>
+                                        </span>
+                                        <input
+                                            type={definition.valueKind === 'number' ? 'number' : 'text'}
+                                            step={definition.valueKind === 'number' ? 'any' : undefined}
+                                            value={contextValues[dimension] ?? ''}
+                                            aria-required="true"
+                                            onChange={event => setContextValues(current => ({ ...current, [dimension]: event.target.value }))}
+                                        />
+                                    </label>
+                                );
                             })}
                         </div>
                         <label>Attempt purpose<select value={purpose} onChange={event => setPurpose(event.target.value as AssessmentAttemptPurpose)}>{PURPOSES.map(item => <option key={item} value={item}>{item}</option>)}</select></label>
