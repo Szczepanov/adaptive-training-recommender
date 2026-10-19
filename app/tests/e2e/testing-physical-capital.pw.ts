@@ -131,7 +131,7 @@ test('raw result capture: abandonment requires confirmation and return preserves
   await capture.getByRole('button', { name: 'Confirm & abandon attempt' }).click();
   await expect(page.getByRole('heading', { name: 'Assessment abandoned — no benchmark recorded' })).toBeVisible();
   await page.getByRole('button', { name: 'Start a fresh attempt' }).click();
-  await expect(page.getByRole('heading', { name: 'Lock comparison context' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Test Setup & Station' })).toBeVisible();
   await page.getByRole('button', { name: 'Confirm lock and start' }).click();
   await expect(page.locator('.testing-lock-summary')).not.toContainText(attemptId);
   await page.getByRole('button', { name: /Finish Session \(/ }).click();
@@ -293,7 +293,7 @@ test('physical capital assessment: standing broad jump trial capture, checkpoint
   await page.getByRole('button', { name: 'Standing broad jump · rev 2' }).click();
 
   // Stage 2: Ready screen shows protocol lock, instructions & comparison context
-  await expect(page.getByRole('heading', { name: 'Lock comparison context' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Test Setup & Station' })).toBeVisible();
   await expect(page.getByText('Protocol instructions & safety:')).toBeVisible();
   await page.getByLabel(/equipment_setup_id/).fill('gym-floor-a · tape-line-a · same shoes');
 
@@ -367,7 +367,7 @@ test('physical capital assessment: standing broad jump trial capture, checkpoint
   // Switch back to Protocols tab to start second attempt (checkpoint attempt, SAME setup)
   await page.getByRole('tab', { name: 'Protocols' }).click();
   await page.getByRole('button', { name: 'Standing broad jump · rev 2' }).click();
-  await expect(page.getByRole('heading', { name: 'Lock comparison context' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Test Setup & Station' })).toBeVisible();
 
   // Use the exact same series-defining setup, then change purpose to checkpoint.
   await page.getByLabel(/equipment_setup_id/).fill('gym-floor-a · tape-line-a · same shoes');
@@ -409,7 +409,7 @@ test('physical capital assessment: standing broad jump trial capture, checkpoint
   // Switch back to Protocols tab to start third attempt (different setup -> comparability split)
   await page.getByRole('tab', { name: 'Protocols' }).click();
   await page.getByRole('button', { name: 'Standing broad jump · rev 2' }).click();
-  await expect(page.getByRole('heading', { name: 'Lock comparison context' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Test Setup & Station' })).toBeVisible();
 
   // Different setup: grass field
   await page.getByLabel(/equipment_setup_id/).fill('grass-field-b · tape-line-b · trail shoes');
@@ -513,7 +513,7 @@ test('physical capital assessment: back-squat WL Analysis CSV import fills trial
   await page.getByRole('tab', { name: 'Protocols' }).click();
 
   await page.getByRole('button', { name: 'Back squat 1RM · rev 2' }).click();
-  await expect(page.getByRole('heading', { name: 'Lock comparison context' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Test Setup & Station' })).toBeVisible();
   await page.getByLabel(/equipment_setup_id/).fill('rack-a · same shoes · same belt');
   await page.getByRole('button', { name: 'Confirm lock and start' }).click();
 

@@ -54,7 +54,13 @@ interface TestingWorkflowProps {
     onSessionStateChange?: (execution: SessionExecution | null) => void;
 }
 
-const PURPOSES: readonly AssessmentAttemptPurpose[] = ['familiarization', 'baseline', 'checkpoint', 'post_block'];
+const PURPOSES: readonly AssessmentAttemptPurpose[] = ['baseline', 'checkpoint', 'post_block', 'familiarization'];
+const PURPOSE_LABELS: Record<AssessmentAttemptPurpose, string> = {
+    baseline: 'Baseline (initial benchmark)',
+    checkpoint: 'Checkpoint (mid-block progress check)',
+    post_block: 'Post-Block (evaluate block adaptations)',
+    familiarization: 'Familiarization (practice run / unrated)',
+};
 const VALIDITIES: readonly ObservationValidity[] = ['valid', 'invalid', 'practice', 'questionable'];
 
 function occurrenceIdFromAttempt(attempt: AssessmentAttempt): string | null {
@@ -666,35 +672,77 @@ export const TestingWorkflow: React.FC<TestingWorkflowProps> = ({ userId, onClos
                         {protocol.invalidationRules.length > 0 && <div><strong>Invalidate if:</strong><ul>{protocol.invalidationRules.map(rule => <li key={rule}>{rule}</li>)}</ul></div>}
                     </section>
 
-                    <section className="testing-card">
-                        <h3>Lock comparison context</h3>
-                        <p>Series-defining values create comparison identity. Context-only values are retained but do not split the series.</p>
+                    <div className="assessment-workflow-steps" role="status">
+                        <div className="workflow-step-pill active">
+                            <span className="step-number">1</span>
+                            <span>Guided Session (Warm-up &amp; Attempts)</span>
+                        </div>
+                        <div className="workflow-step-divider">→</div>
+                        <div className="workflow-step-pill">
+                            <span className="step-number">2</span>
+                            <span>Log Measurements (Benchmark)</span>
+                        </div>
+                    </div>
+
+                    <section className="testing-card testing-setup-card">
+                        <h3>Test Setup &amp; Station</h3>
+                        <p className="testing-setup-intro">
+                            Tests performed with the same station and environment are tracked together in your history. Keep standard setups consistent across attempts.
+                        </p>
                         <div className="testing-grid">
                             {protocol.comparisonContext.required.map(dimension => {
                                 const definition = getComparisonDimensionDefinition(dimension);
                                 const seriesDefining = protocol.comparisonContext.seriesDefining.includes(dimension);
                                 return (
-                                    <label key={dimension}>
-                                        <span>
-                                            {dimension} <small>{seriesDefining ? 'series-defining' : 'context-only'} · {definition.description}</small>
+                                    <div key={dimension} className="dimension-field-group">
+                                        <label htmlFor={`setup-context-${dimension}`}>
+                                            <strong>{definition.displayName}</strong> <span className="dimension-technical-id">({dimension})</span> <small>{seriesDefining ? 'series-defining' : 'context-only'}</small>
                                             <span className="required-indicator" aria-hidden="true">*</span>
-                                        </span>
+                                        </label>
+                                        {definition.athleteGuidance && (
+                                            <span className="dimension-guidance">{definition.athleteGuidance}</span>
+                                        )}
+                                        {definition.presets && definition.presets.length > 0 && (
+                                            <div className="dimension-presets" role="group" aria-label={`Suggested options for ${definition.displayName}`}>
+                                                {definition.presets.map(preset => (
+                                                    <button
+                                                        key={preset.id}
+                                                        type="button"
+                                                        aria-pressed={contextValues[dimension] === preset.id}
+                                                        className={`preset-chip ${contextValues[dimension] === preset.id ? 'active' : ''}`}
+                                                        onClick={() => setContextValues(current => ({ ...current, [dimension]: preset.id }))}
+                                                    >
+                                                        {preset.label}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        )}
                                         <input
+                                            id={`setup-context-${dimension}`}
                                             type={definition.valueKind === 'number' ? 'number' : 'text'}
                                             step={definition.valueKind === 'number' ? 'any' : undefined}
                                             value={contextValues[dimension] ?? ''}
                                             aria-required="true"
+                                            placeholder={definition.athleteGuidance ?? `Enter ${definition.displayName}`}
                                             onChange={event => setContextValues(current => ({ ...current, [dimension]: event.target.value }))}
                                         />
-                                    </label>
+                                    </div>
                                 );
                             })}
                         </div>
-                        <label>Attempt purpose<select value={purpose} onChange={event => setPurpose(event.target.value as AssessmentAttemptPurpose)}>{PURPOSES.map(item => <option key={item} value={item}>{item}</option>)}</select></label>
+                        <label className="attempt-purpose-label">
+                            <span>Attempt purpose <small>How this test is categorized in your benchmark history</small></span>
+                            <select value={purpose} onChange={event => setPurpose(event.target.value as AssessmentAttemptPurpose)}>
+                                {PURPOSES.map(item => (
+                                    <option key={item} value={item}>{PURPOSE_LABELS[item]}</option>
+                                ))}
+                            </select>
+                        </label>
                         <div className="testing-actions">
                             <button type="button" className="testing-secondary" onClick={() => { setProtocol(null); setCatalogDefinitionId(null); setStage('lookup'); }}>Choose another protocol</button>
                             <button type="button" className="testing-primary" disabled={busy} onClick={startTest}>{busy ? 'Preparing…' : 'Confirm lock and start'}</button>
                         </div>
+                        <p className="start-test-hint">Launches the guided workout session with rest timers. You will record your measurements when finished.</p>
                     </section>
                 </>
             )}

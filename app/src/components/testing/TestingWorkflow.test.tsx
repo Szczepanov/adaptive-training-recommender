@@ -8,9 +8,12 @@ import { CanonicalResultPreview } from './CanonicalResultPreview';
 import { TrialCaptureTable } from './TrialCaptureTable';
 import { TrialCorrectionPanel } from './TrialCorrectionPanel';
 import { TrialRow } from './TrialRow';
+import * as protocolMetadata from '../../observations/protocols';
+import * as draftStorage from '../../utils/assessmentDraftStorage';
 import { isRowUntouched } from '../../utils/assessmentDraftTrials';
 import {
     BACK_SQUAT_1RM_PROTOCOL_V2,
+    BENCH_PRESS_FIXED_LOAD_VELOCITY_PROTOCOL,
     BENCH_PRESS_1RM_PROTOCOL,
     STANDING_BROAD_JUMP_PROTOCOL,
     WALL_TOUCH_CMJ_PROTOCOL,
@@ -217,6 +220,7 @@ describe('TrialCaptureTable', () => {
             />,
         );
 
+        expect(html).not.toContain('Contact Mat / Timing System');
         expect(html).toContain('Standing reach (cm)');
         expect(html).toContain('Touch height (cm)');
     });
@@ -314,6 +318,66 @@ describe('TrialCaptureTable', () => {
         expect(html).toContain('equipment_setup_id');
         expect(html).toContain('required-indicator');
         expect(html).toContain('aria-required="true"');
+    });
+
+    it('keeps imported velocity method presets locked before trials are persisted', () => {
+        const protocol = BENCH_PRESS_FIXED_LOAD_VELOCITY_PROTOCOL;
+        const getDimension = protocolMetadata.getComparisonDimensionDefinition;
+        const metadata = vi.spyOn(protocolMetadata, 'getComparisonDimensionDefinition').mockImplementation(dimension => ({
+            ...getDimension(dimension),
+            ...(dimension === 'measurement_method_id' ? { presets: [{ id: 'manual', label: 'Manual entry' }] } : {}),
+        }));
+        const draft = vi.spyOn(draftStorage, 'loadAssessmentDraft').mockReturnValueOnce([{
+            ordinal: 1, validity: 'valid', values: { mean_concentric_velocity_mps: 0.8, load_kg: 60 },
+            device: { provider: 'WL Analysis' }, context: { wl_parser_version: 'wl-analysis-csv-v2' },
+        }]);
+        try {
+            const html = renderToStaticMarkup(<TrialCaptureTable
+                userId="user-1" protocol={protocol}
+                attempt={{ id: 'att-imported', protocolRef: { id: protocol.id, revision: protocol.revision },
+                    scheduledDate: '2026-10-20', state: 'in_progress', purpose: 'baseline' }}
+                contextValues={{ measurement_method_id: 'wl-analysis-csv-v2', test_load_kg: '60', equipment_setup_id: 'bench-a' }}
+                onContextChange={vi.fn()} defaultDevice={{ provider: 'WL Analysis' }}
+                onDefaultDeviceChange={vi.fn()} onSave={vi.fn()} saving={false}
+            />);
+            expect(html).toMatch(/<input(?=[^>]*value="wl-analysis-csv-v2")(?=[^>]*readOnly="")[^>]*>/);
+            expect(html).not.toContain('Suggested options for Measurement Method');
+        } finally {
+            draft.mockRestore();
+            metadata.mockRestore();
+        }
+    });
+
+    it('renders step 2 badge, subtitle, and preset chips in TrialCaptureTable', () => {
+        const jumpAttempt: AssessmentAttempt = {
+            id: 'att-jump',
+            protocolRef: { id: STANDING_BROAD_JUMP_PROTOCOL.id, revision: 1 },
+            scheduledDate: '2026-10-20',
+            state: 'in_progress',
+            purpose: 'baseline',
+        };
+
+        const html = renderToStaticMarkup(
+            <TrialCaptureTable
+                userId="user-1"
+                protocol={STANDING_BROAD_JUMP_PROTOCOL}
+                attempt={jumpAttempt}
+                contextValues={{ test_environment: 'indoor-gym-floor' }}
+                onContextChange={vi.fn()}
+                defaultDevice={{ provider: '' }}
+                onDefaultDeviceChange={vi.fn()}
+                onSave={vi.fn()}
+                saving={false}
+            />,
+        );
+
+        expect(html).toContain('Step 2 of 2 · Log Measurements');
+        expect(html).toContain('Enter the measurements from the attempts you just completed in the workout session.');
+        expect(html).toContain('Test Environment');
+        expect(html).toContain('for="capture-context-test_environment"');
+        expect(html).toContain('id="capture-context-test_environment"');
+        expect(html).toContain('aria-pressed="true"');
+        expect(html).toContain('Indoor Gym Floor');
     });
 });
 

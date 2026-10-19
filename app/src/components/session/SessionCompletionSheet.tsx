@@ -335,6 +335,12 @@ export const SessionCompletionSheet: React.FC<SessionCompletionSheetProps> = ({
                             />
                         </div>
 
+                        {recordKind === 'AssessmentAttempt' && (
+                            <div className="assessment-completion-guidance" role="status">
+                                <span>🏁 <strong>Physical session complete!</strong> Next, enter the measurements from your attempts to calculate your new benchmark.</span>
+                            </div>
+                        )}
+
                         <div className="sheet-actions main-actions">
                             <button
                                 type="button"

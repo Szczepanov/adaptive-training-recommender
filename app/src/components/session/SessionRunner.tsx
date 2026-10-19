@@ -1070,6 +1070,11 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                             {activeStep.tempo && <span>Tempo: {formatTempoBreakdown(activeStep.tempo)}</span>}
                         </div>
                     </div>
+                    {mode === 'assessment' && activeBlock?.role === 'test' && (
+                        <div className="assessment-runner-hint" role="note">
+                            <span>📏 <strong>Testing attempt:</strong> Perform attempt and note your measurement. You will log the exact numbers at the end of the session.</span>
+                        </div>
+                    )}
                     {activeStep.stopConditions && activeStep.stopConditions.length > 0 && (
                         <ul className="step-stop-conditions">
                             {activeStep.stopConditions.map(condition => <li key={condition}>Stop: {condition}</li>)}
