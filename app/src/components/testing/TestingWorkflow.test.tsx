@@ -436,4 +436,33 @@ describe('TrialCorrectionPanel', () => {
         expect(html).toContain('Verified tape was held at 0 mark');
         expect(html).toContain('238 cm');
     });
+
+    it('renders step 2 badge, subtitle, and preset chips in TrialCaptureTable', () => {
+        const jumpAttempt: AssessmentAttempt = {
+            id: 'att-jump',
+            protocolRef: { id: STANDING_BROAD_JUMP_PROTOCOL.id, revision: 1 },
+            scheduledDate: '2026-10-20',
+            state: 'in_progress',
+            purpose: 'baseline',
+        };
+
+        const html = renderToStaticMarkup(
+            <TrialCaptureTable
+                userId="user-1"
+                protocol={STANDING_BROAD_JUMP_PROTOCOL}
+                attempt={jumpAttempt}
+                contextValues={{ test_environment: 'indoor-gym-floor' }}
+                onContextChange={vi.fn()}
+                defaultDevice={{ provider: '' }}
+                onDefaultDeviceChange={vi.fn()}
+                onSave={vi.fn()}
+                saving={false}
+            />,
+        );
+
+        expect(html).toContain('Step 2 of 2 · Log Measurements');
+        expect(html).toContain('Enter the measurements from the attempts you just completed in the workout session.');
+        expect(html).toContain('Test Environment');
+        expect(html).toContain('Indoor Gym Floor');
+    });
 });
