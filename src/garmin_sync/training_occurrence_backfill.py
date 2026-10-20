@@ -12,6 +12,7 @@ import logging
 import time
 import urllib.parse
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from typing import Any
@@ -53,15 +54,30 @@ def _batch_get_docs(db: Any, doc_refs: list[Any]) -> dict[str, Any]:
 
     snapshots_by_id: dict[str, Any] = {}
     chunk_size = 400
-    for i in range(0, len(doc_refs), chunk_size):
-        chunk = doc_refs[i : i + chunk_size]
-        get_all_fn = getattr(db, "get_all", None)
+    chunks = [doc_refs[i : i + chunk_size] for i in range(0, len(doc_refs), chunk_size)]
+
+    if not chunks:
+        return snapshots_by_id
+
+    get_all_fn = getattr(db, "get_all", None)
+
+    def _fetch_chunk(chunk: list[Any]) -> dict[str, Any]:
+        chunk_snapshots = {}
         if callable(get_all_fn):
             for snap in get_all_fn(chunk):
-                snapshots_by_id[snap.id] = snap
+                chunk_snapshots[snap.id] = snap
         else:
             for ref in chunk:
-                snapshots_by_id[ref.id] = ref.get()
+                chunk_snapshots[ref.id] = ref.get()
+        return chunk_snapshots
+
+    if len(chunks) == 1:
+        return _fetch_chunk(chunks[0])
+
+    max_workers = min(10, len(chunks))
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        for result in executor.map(_fetch_chunk, chunks):
+            snapshots_by_id.update(result)
 
     return snapshots_by_id
 
