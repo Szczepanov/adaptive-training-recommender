@@ -1,4 +1,7 @@
+import { authoredComposition } from './compositionStamping';
+import type { MovementCompositionPattern } from './movementCompositionContract';
 import type { SessionBlock, SessionChoice, SessionChoiceAction, SessionOption, SessionStep, StepAlternative } from './models';
+import { EXERCISES_BY_ID } from '../workouts/exercises';
 
 /**
  * Sets `summary` to the trimmed authored value, or removes the key entirely when the field
@@ -87,12 +90,58 @@ export function createDraftOption(createId: (prefix: 'option') => string): Sessi
     return { id: createId('option'), label: 'New option', actions: [] };
 }
 
-export function createDraftAlternative(exerciseId: string | undefined, title: string, createId: (prefix: 'alt') => string): StepAlternative {
+export function createDraftAlternative(
+    exerciseId: string | undefined,
+    title: string,
+    createId: (prefix: 'alt') => string,
+    componentPatterns: readonly MovementCompositionPattern[] = [],
+): StepAlternative {
+    const exerciseRef: StepAlternative['exerciseRef'] = exerciseId ? { kind: 'catalog', exerciseId } : { kind: 'unresolved_free_text', name: title };
+    const { compositionPatterns, degradedComposition } = authoredComposition(exerciseRef, componentPatterns);
     return {
         id: createId('alt'),
         title,
-        exerciseRef: exerciseId ? { kind: 'catalog', exerciseId } : { kind: 'unresolved_free_text', name: title },
+        exerciseRef,
+        ...(compositionPatterns ? { compositionPatterns } : {}),
+        ...(degradedComposition ? { degradedComposition } : {}),
     };
+}
+
+/**
+ * The step after the author picks its movement: a catalog exercise brings its name and
+ * composition tags; "custom" keeps the title, stays untagged and says why. A stale stamp from
+ * the previous movement never survives (#813).
+ */
+export function withStepMovement(step: SessionStep, exerciseId: string | undefined): SessionStep {
+    const exercise = exerciseId ? EXERCISES_BY_ID.get(exerciseId) : undefined;
+    const exerciseRef: SessionStep['exerciseRef'] = exercise
+        ? { kind: 'catalog', exerciseId: exercise.id }
+        : { kind: 'unresolved_free_text', name: step.title ?? 'Custom movement' };
+    return {
+        ...step,
+        ...(exercise ? { title: exercise.name } : {}),
+        exerciseRef,
+        resolutionNote: exercise ? undefined : 'Custom movement: executable and loggable, but it has no catalog-derived safety, cost, stimulus, PR or 1RM semantics.',
+        ...authoredComposition(exerciseRef),
+    };
+}
+
+/**
+ * The alternative after the author renames it or picks its movement. A rename keeps the
+ * exercise, so it keeps any source-provided (e.g. JSON-imported) stamp; a new movement is
+ * re-stamped from the catalog and re-checked against the parent step's components.
+ */
+export function withAlternativeExercise(
+    alt: StepAlternative,
+    exerciseId: string | undefined,
+    title: string,
+    componentPatterns: readonly MovementCompositionPattern[] = [],
+): StepAlternative {
+    const exerciseRef: StepAlternative['exerciseRef'] = exerciseId ? { kind: 'catalog', exerciseId } : { kind: 'unresolved_free_text', name: title };
+    const sameExercise = exerciseId
+        ? alt.exerciseRef.kind === 'catalog' && alt.exerciseRef.exerciseId === exerciseId
+        : alt.exerciseRef.kind === 'unresolved_free_text';
+    return { ...alt, title, exerciseRef, ...(sameExercise ? {} : authoredComposition(exerciseRef, componentPatterns)) };
 }
 
 /** A blank default action for a newly added action row, given the block/step it lives on --
