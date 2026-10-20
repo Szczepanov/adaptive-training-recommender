@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { entryCompositionStamp, swappedStepComposition } from '../sessions/compositionStamping';
+import { entryCompositionStamp, relaxUnevidencedRequirements, swappedStepComposition } from '../sessions/compositionStamping';
 import type {
     SessionDefinition,
     SessionExecution,
@@ -113,14 +113,9 @@ export function createCustomTemplateDefinition(
     title: string,
     summary?: string,
 ): SessionDefinition {
-    const movementComposition = source.movementComposition?.map(requirement => {
-        const hasStructuredEvidence = requirement.stepIds.some(stepId => source.blocks
-            .flatMap(block => block.steps)
-            .some(step => step.id === stepId && step.compositionPatterns?.includes(requirement.pattern)));
-        return !hasStructuredEvidence && requirement.status === 'required'
-            ? { ...requirement, status: 'relaxed' as const, reason: 'Saved template no longer has structured evidence for this movement component.' }
-            : requirement;
-    });
+    const movementComposition = source.movementComposition
+        ? relaxUnevidencedRequirements(source.movementComposition, source.blocks)
+        : undefined;
     return {
         ...source,
         id: templateId,

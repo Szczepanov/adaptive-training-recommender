@@ -11,6 +11,7 @@ import type {
     SessionOption,
     SessionStep,
 } from '../../sessions/models';
+import { componentPatternsForStep, relaxUnevidencedRequirements } from '../../sessions/compositionStamping';
 import { validateSessionDefinition } from '../../sessions/validation';
 import { EXERCISES, EXERCISES_BY_ID } from '../../workouts/exercises';
 import {
@@ -21,7 +22,9 @@ import {
     duplicateDraftBlock,
     duplicateDraftStep,
     moveDraftItem,
+    withAlternativeExercise,
     withResolvedSummary,
+    withStepMovement,
 } from '../../sessions/sessionDraft';
 import { SessionDefinitionPreview } from './SessionDefinitionPreview';
 import { type PreparedSessionLaunch, SessionDestinationSheet } from './SessionDestinationSheet';
@@ -157,6 +160,9 @@ export const ManualSessionBuilder: React.FC<ManualSessionBuilderProps> = ({ user
         dominantModality: modality,
         duration: { min: durationMin, max: Math.max(durationMin, baseDefinition?.duration?.max ?? durationMin) },
         blocks,
+        ...(baseDefinition?.movementComposition
+            ? { movementComposition: relaxUnevidencedRequirements(baseDefinition.movementComposition, blocks) }
+            : {}),
     }, summary), [baseDefinition, blocks, definitionId, durationMin, modality, revision, summary, title]);
 
     // ⚡ Bolt: Precompute static exercise options to prevent full 176-item catalog array mapping on every keystroke
@@ -229,7 +235,10 @@ export const ManualSessionBuilder: React.FC<ManualSessionBuilderProps> = ({ user
         ...block,
         steps: block.steps.map((step, stepAt) => stepAt !== stepIndex ? step : {
             ...step,
-            alternatives: [...(step.alternatives ?? []), createDraftAlternative(undefined, 'Alternative movement', newId)],
+            alternatives: [
+                ...(step.alternatives ?? []),
+                createDraftAlternative(undefined, 'Alternative movement', newId, componentPatternsForStep(baseDefinition?.movementComposition, step.id)),
+            ],
         }),
     }));
 
@@ -260,9 +269,8 @@ export const ManualSessionBuilder: React.FC<ManualSessionBuilderProps> = ({ user
         ...block,
         steps: block.steps.map((step, stepAt) => stepAt !== stepIndex ? step : {
             ...step,
-            alternatives: (step.alternatives ?? []).map(alt => alt.id !== altId ? alt : {
-                ...alt, title, exerciseRef: exerciseId ? { kind: 'catalog', exerciseId } : { kind: 'unresolved_free_text', name: title },
-            }),
+            alternatives: (step.alternatives ?? []).map(alt => alt.id !== altId ? alt
+                : withAlternativeExercise(alt, exerciseId, title, componentPatternsForStep(baseDefinition?.movementComposition, step.id))),
         }),
     }));
 
@@ -399,10 +407,7 @@ export const ManualSessionBuilder: React.FC<ManualSessionBuilderProps> = ({ user
                                         </div>
                                         <div className="builder-step-fields">
                                             <label>Movement<select value={selectedExercise} onChange={event => {
-                                                const exercise = EXERCISES_BY_ID.get(event.target.value);
-                                                updateStep(blockIndex, stepIndex, exercise
-                                                    ? { title: exercise.name, exerciseRef: { kind: 'catalog', exerciseId: exercise.id }, resolutionNote: undefined }
-                                                    : { exerciseRef: { kind: 'unresolved_free_text', name: step.title ?? 'Custom movement' }, resolutionNote: 'Custom movement: executable and loggable, but it has no catalog-derived safety, cost, stimulus, PR or 1RM semantics.' });
+                                                updateStep(blockIndex, stepIndex, withStepMovement(step, event.target.value));
                                             }}><option value="__custom__">Custom / free text</option>{exerciseOptions}</select></label>
                                             <label>Dose<select value={dose?.kind ?? 'repetition'} onChange={event => changeDose(blockIndex, stepIndex, event.target.value as SessionDose['kind'])}><option value="repetition">Repetitions</option><option value="duration">Timed hold</option><option value="distance">Distance</option><option value="checkoff">Check-off</option></select></label>
                                             {dose?.kind === 'repetition' && <><label>Sets<input type="number" min={1} value={dose.sets} onChange={event => updateStep(blockIndex, stepIndex, { dose: { ...dose, sets: Math.max(1, Number(event.target.value) || 1) } })} /></label><label>Reps<input type="number" min={1} value={typeof dose.reps === 'number' ? dose.reps : dose.reps.min} onChange={event => updateStep(blockIndex, stepIndex, { dose: { ...dose, reps: Math.max(1, Number(event.target.value) || 1) } })} /></label></>}
