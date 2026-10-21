@@ -1,5 +1,6 @@
 import { EXERCISES_BY_ID } from '../workouts/exercises';
-import type { SessionDefinition, SessionEntry, SessionStep } from './models';
+import type { SessionBlock, SessionDefinition, SessionEntry, SessionStep } from './models';
+import type { MovementCompositionPattern } from './movementCompositionContract';
 
 /**
  * The composition evidence a logged entry carries: copied from the active step at log time.
@@ -37,4 +38,65 @@ export function swappedStepComposition(
             ? { degradedComposition: { pattern: lostRequiredPattern, reason: 'Athlete selected a catalog exercise that does not preserve this movement component.' } }
             : {}),
     };
+}
+
+/**
+ * Composition for a manually authored step or alternative after its exercise is chosen
+ * (`ManualSessionBuilder`, `sessionDraft.ts`). Patterns come from the catalog exercise only;
+ * a free-text movement stays unknown. `componentPatterns` are the movement components the
+ * definition requires of the parent step (alternatives only): a choice that does not preserve
+ * one declares an explicit degradation, as validation demands. Any earlier stamp or degradation
+ * is replaced, because it described the previous exercise. Keys are explicit `undefined` so the
+ * result works as a patch.
+ */
+export function authoredComposition(
+    exerciseRef: SessionStep['exerciseRef'],
+    componentPatterns: readonly MovementCompositionPattern[] = [],
+): Pick<SessionStep, 'compositionPatterns' | 'degradedComposition'> {
+    const catalogPatterns = exerciseRef?.kind === 'catalog'
+        ? EXERCISES_BY_ID.get(exerciseRef.exerciseId)?.compositionPatterns
+        : undefined;
+    const compositionPatterns = catalogPatterns?.length ? [...catalogPatterns] : undefined;
+    const lostPattern = componentPatterns.find(pattern => !compositionPatterns?.includes(pattern));
+    return {
+        compositionPatterns,
+        degradedComposition: lostPattern
+            ? {
+                pattern: lostPattern,
+                reason: exerciseRef?.kind === 'catalog'
+                    ? 'Authored catalog alternative does not preserve this movement component.'
+                    : 'Authored custom alternative has no structured evidence for this movement component.',
+            }
+            : undefined,
+    };
+}
+
+/** Movement components the definition names for a step, relaxed or not -- validation checks its alternatives against all of them. */
+export function componentPatternsForStep(
+    movementComposition: SessionDefinition['movementComposition'],
+    stepId: string,
+): MovementCompositionPattern[] {
+    return [...new Set((movementComposition ?? [])
+        .filter(requirement => requirement.stepIds.includes(stepId))
+        .map(requirement => requirement.pattern))];
+}
+
+/**
+ * Relaxes each required movement component that no listed step still evidences (the step was
+ * removed, or its movement changed to one without the pattern). Used when a session is saved
+ * as a template and while a template is edited, so an edit fails closed to `relaxed` instead
+ * of leaving an unsatisfiable requirement.
+ */
+export function relaxUnevidencedRequirements(
+    movementComposition: NonNullable<SessionDefinition['movementComposition']>,
+    blocks: readonly SessionBlock[],
+): NonNullable<SessionDefinition['movementComposition']> {
+    const steps = blocks.flatMap(block => block.steps);
+    return movementComposition.map(requirement => {
+        const hasStructuredEvidence = requirement.stepIds.some(stepId => steps
+            .some(step => step.id === stepId && step.compositionPatterns?.includes(requirement.pattern)));
+        return !hasStructuredEvidence && requirement.status === 'required'
+            ? { ...requirement, status: 'relaxed' as const, reason: 'Saved template no longer has structured evidence for this movement component.' }
+            : requirement;
+    });
 }
