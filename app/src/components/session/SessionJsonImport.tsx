@@ -1,5 +1,6 @@
 import React, { useCallback, useState } from 'react';
 import type { SessionDefinition } from '../../sessions/models';
+import { stampImportedSessionComposition } from '../../sessions/compositionStamping';
 import { validateSessionDefinition } from '../../sessions/validation';
 import { SessionDefinitionPreview } from './SessionDefinitionPreview';
 import { type PreparedSessionLaunch, SessionDestinationSheet } from './SessionDestinationSheet';
@@ -46,7 +47,11 @@ export const SessionJsonImport: React.FC<SessionJsonImportProps> = ({ userId, on
                 return;
             }
 
-            const result = validateSessionDefinition(unwrapped.target);
+            const target = unwrapped.target && typeof unwrapped.target === 'object'
+                ? stampImportedSessionComposition(unwrapped.target as SessionDefinition)
+                : unwrapped.target;
+
+            const result = validateSessionDefinition(target);
             if (!result.ok) {
                 setDefinition(null);
                 setImportedSourceFormat(null);

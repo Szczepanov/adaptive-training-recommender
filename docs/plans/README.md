@@ -27,8 +27,9 @@ docs/architecture/  living reference     "how it works now"      updated with th
 Reconciled against `origin/main` `cf43c3bb`: #1120, #1121, #1123 and #1124
 are merged. #725/#726's Session/History tabs, completed-session "Last time" comparison,
 720 px runner and refreshed visual review shipped in #1123. #803's catalog tags and
-runner-stamp coverage shipped in #1124; custom-session and historical-stamp limitations
-remain in the [#813 plan](./2026-10-issue-813-exposure-ledgers.md). The
+runner-stamp coverage shipped in #1124; manual authoring stamping shipped in #1132 and
+JSON-imported custom session stamping in #813; historical-stamp and distance-dosed
+limitations remain in the [#813 plan](./2026-10-issue-813-exposure-ledgers.md). The
 [actual-device checklist](../ops/actual-device-backlog-acceptance.md) gives exact UI actions,
 expected outcomes and a result template for the manual gates below.
 

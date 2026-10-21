@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { componentPatternsForStep, relaxUnevidencedRequirements } from './compositionStamping';
+import { componentPatternsForStep, relaxUnevidencedRequirements, stampImportedSessionComposition } from './compositionStamping';
 import type { SessionBlock, SessionDefinition, SessionStep, StepAlternative } from './models';
 import { validateSessionDefinition } from './validation';
 import {
@@ -169,5 +169,20 @@ describe('manual movement edits keep catalog composition (#813)', () => {
         const changed = asEdited([withStepMovement(required, 'goblet_squat')]);
         expect(changed.movementComposition?.[0].status).toBe('relaxed');
         expect(issues(changed)).toEqual([]);
+    });
+
+    it('works seamlessly with steps stamped by stampImportedSessionComposition (#813)', () => {
+        const importedDef = stampImportedSessionComposition({
+            schemaVersion: 1, id: 'imported', revision: 1, title: 'Imported', intent: 'training', dominantModality: 'strength', duration: { min: 30, max: 30 },
+            blocks: [{ id: 'b1', title: 'Main', role: 'main', executionMode: 'sequential', steps: [{
+                id: 's1', kind: 'exercise', title: 'Split Squat', exerciseRef: { kind: 'catalog', exerciseId: 'split_squat' }, dose: { kind: 'repetition', sets: 3, reps: 8 },
+            }]}],
+        });
+        const step = importedDef.blocks[0].steps[0];
+        expect(step.compositionPatterns).toEqual(['unilateral_lower_body']);
+
+        // Changing the movement via withStepMovement updates the stamp accordingly
+        const switched = withStepMovement(step, 'goblet_squat');
+        expect(switched.compositionPatterns).toEqual(['knee_dominant_bilateral']);
     });
 });
