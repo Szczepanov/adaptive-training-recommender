@@ -100,13 +100,14 @@ export function buildPlanDefinition(
 ): DataState<PlanDefinition> {
   const issues: DataIssue[] = [];
 
-  // ⚡ Bolt: Pre-compute Map for O(1) block lookups instead of repeatedly calling .find()
+  // First block wins on a duplicate id, matching the previous Array.find lookup.
   const blocksById = new Map<string, PlanBlock>();
   for (const block of blockSchedule) {
     if (blocksById.has(block.id)) {
       issues.push({ code: 'DUPLICATE_BLOCK_ID', field: `blocks.${block.id}`, documentPath: `plan/${id}` });
+    } else {
+      blocksById.set(block.id, block);
     }
-    blocksById.set(block.id, block);
     if (block.startDate > block.endDate) {
       issues.push({ code: 'INVALID_BLOCK_DATE_RANGE', field: `blocks.${block.id}`, documentPath: `plan/${id}` });
     }
@@ -131,7 +132,6 @@ export function buildPlanDefinition(
       coverageByKey.set(item.key, item);
   }
   for (const obj of objectives) {
-    // ⚡ Bolt: O(1) lookup using pre-computed Map
     const block = blocksById.get(obj.blockId);
     if (!block) {
       issues.push({
@@ -164,7 +164,6 @@ export function buildPlanDefinition(
   }
 
   for (const requirement of coverageRequirements) {
-    // ⚡ Bolt: O(1) lookup using pre-computed Map
     const block = blocksById.get(requirement.blockId);
     if (!block) {
       issues.push({
