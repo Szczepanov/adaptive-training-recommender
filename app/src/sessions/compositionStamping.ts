@@ -90,16 +90,19 @@ export function componentPatternsForStep(
 export function relaxUnevidencedRequirements(
     movementComposition: NonNullable<SessionDefinition['movementComposition']>,
     blocks: readonly SessionBlock[],
+    reason = 'Saved template no longer has structured evidence for this movement component.',
 ): NonNullable<SessionDefinition['movementComposition']> {
     const steps = blocks.flatMap(block => block.steps);
     return movementComposition.map(requirement => {
         const hasStructuredEvidence = requirement.stepIds.some(stepId => steps
             .some(step => step.id === stepId && step.compositionPatterns?.includes(requirement.pattern)));
         return !hasStructuredEvidence && requirement.status === 'required'
-            ? { ...requirement, status: 'relaxed' as const, reason: 'Saved template no longer has structured evidence for this movement component.' }
+            ? { ...requirement, status: 'relaxed' as const, reason }
             : requirement;
     });
 }
+
+const IMPORTED_UNEVIDENCED_REASON = 'Imported session has no structured evidence for this movement component.';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -113,10 +116,20 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * Tags the JSON carries itself are kept, and free-text movements stay untagged.
  * Alternatives that do not preserve a step's component declare an explicit `degradedComposition`,
  * and `relaxUnevidencedRequirements` relaxes any required components that no step still evidences.
+ * It runs before validation on untrusted JSON, so a shape it cannot read is returned unchanged
+ * and `validateSessionDefinition` reports the precise issue instead of a thrown TypeError.
  */
 export function stampImportedSessionComposition(
     definition: SessionDefinition,
 ): SessionDefinition {
+    try {
+        return stampWellFormedImport(definition);
+    } catch {
+        return definition;
+    }
+}
+
+function stampWellFormedImport(definition: SessionDefinition): SessionDefinition {
     if (!isRecord(definition) || !Array.isArray(definition.blocks)) {
         return definition;
     }
@@ -188,7 +201,7 @@ export function stampImportedSessionComposition(
     });
 
     const relaxedMovementComposition = movementComposition
-        ? relaxUnevidencedRequirements(movementComposition, blocks)
+        ? relaxUnevidencedRequirements(movementComposition, blocks, IMPORTED_UNEVIDENCED_REASON)
         : definition.movementComposition;
 
     return {

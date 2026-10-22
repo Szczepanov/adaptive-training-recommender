@@ -360,7 +360,7 @@ describe('stampImportedSessionComposition (#813 JSON session import)', () => {
         ];
         const stamped = stampImportedSessionComposition(makeImportedSession([step], req));
         expect(stamped.movementComposition![0].status).toBe('relaxed');
-        expect(stamped.movementComposition![0].reason).toContain('Saved template no longer has structured evidence');
+        expect(stamped.movementComposition![0].reason).toBe('Imported session has no structured evidence for this movement component.');
         expect(validateSessionDefinition(stamped).ok).toBe(true);
     });
 
@@ -368,5 +368,18 @@ describe('stampImportedSessionComposition (#813 JSON session import)', () => {
         expect(stampImportedSessionComposition(null as unknown as SessionDefinition)).toBeNull();
         expect(stampImportedSessionComposition({} as SessionDefinition)).toEqual({});
         expect(stampImportedSessionComposition({ blocks: 'not-array' } as unknown as SessionDefinition)).toEqual({ blocks: 'not-array' });
+    });
+
+    it('returns malformed composition unchanged so validation reports the issue instead of a TypeError', () => {
+        const step: SessionStep = {
+            id: 's1',
+            kind: 'exercise',
+            title: 'Split Squat',
+            exerciseRef: { kind: 'catalog', exerciseId: 'split_squat' },
+            dose: { kind: 'repetition', sets: 3, reps: 8 },
+        };
+        const malformed = makeImportedSession([step], [null] as unknown as SessionDefinition['movementComposition']);
+        expect(stampImportedSessionComposition(malformed)).toBe(malformed);
+        expect(validateSessionDefinition(malformed).ok).toBe(false);
     });
 });
