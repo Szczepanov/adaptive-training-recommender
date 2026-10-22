@@ -3,7 +3,7 @@ import { HISTORICAL_POLICY_VERSIONS, POLICY_VERSION, isHistoricalPolicyVersion }
 
 describe('isHistoricalPolicyVersion', () => {
     it('records the current transition and the previous live policies exactly once', () => {
-        expect(POLICY_VERSION).toBe('2026-10-season-outcome-revalidation-v1');
+        expect(POLICY_VERSION).toBe('2026-10-season-outcome-revalidation-v2');
         expect(HISTORICAL_POLICY_VERSIONS[0]).toBe('2026-10-season-supporting-events-v1');
         expect(HISTORICAL_POLICY_VERSIONS.filter(version => version === '2026-10-season-supporting-events-v1')).toHaveLength(1);
         expect(HISTORICAL_POLICY_VERSIONS[1]).toBe('2026-10-season-roadmap-v1');
