@@ -1,5 +1,5 @@
 import { EXERCISES_BY_ID } from '../workouts/exercises';
-import type { SessionBlock, SessionDefinition, SessionEntry, SessionStep } from './models';
+import type { SessionBlock, SessionDefinition, SessionEntry, SessionStep, StepAlternative } from './models';
 import type { MovementCompositionPattern } from './movementCompositionContract';
 
 /**
@@ -90,13 +90,123 @@ export function componentPatternsForStep(
 export function relaxUnevidencedRequirements(
     movementComposition: NonNullable<SessionDefinition['movementComposition']>,
     blocks: readonly SessionBlock[],
+    reason = 'Saved template no longer has structured evidence for this movement component.',
 ): NonNullable<SessionDefinition['movementComposition']> {
     const steps = blocks.flatMap(block => block.steps);
     return movementComposition.map(requirement => {
         const hasStructuredEvidence = requirement.stepIds.some(stepId => steps
             .some(step => step.id === stepId && step.compositionPatterns?.includes(requirement.pattern)));
         return !hasStructuredEvidence && requirement.status === 'required'
-            ? { ...requirement, status: 'relaxed' as const, reason: 'Saved template no longer has structured evidence for this movement component.' }
+            ? { ...requirement, status: 'relaxed' as const, reason }
             : requirement;
     });
+}
+
+const IMPORTED_UNEVIDENCED_REASON = 'Imported session has no structured evidence for this movement component.';
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Stamps catalog composition tags onto a JSON-imported session definition's steps and alternatives
+ * when they name a catalog exercise id (`EXERCISES_BY_ID`) but carry no `compositionPatterns`,
+ * using `authoredComposition`.
+ *
+ * Tags the JSON carries itself are kept, and free-text movements stay untagged.
+ * Alternatives that do not preserve a step's component declare an explicit `degradedComposition`,
+ * and `relaxUnevidencedRequirements` relaxes any required components that no step still evidences.
+ * It runs before validation on untrusted JSON, so a shape it cannot read is returned unchanged
+ * and `validateSessionDefinition` reports the precise issue instead of a thrown TypeError.
+ */
+export function stampImportedSessionComposition(
+    definition: SessionDefinition,
+): SessionDefinition {
+    try {
+        return stampWellFormedImport(definition);
+    } catch {
+        return definition;
+    }
+}
+
+function stampWellFormedImport(definition: SessionDefinition): SessionDefinition {
+    if (!isRecord(definition) || !Array.isArray(definition.blocks)) {
+        return definition;
+    }
+
+    const movementComposition = Array.isArray(definition.movementComposition)
+        ? definition.movementComposition
+        : undefined;
+
+    const blocks = definition.blocks.map(block => {
+        if (!isRecord(block) || !Array.isArray(block.steps)) {
+            return block;
+        }
+
+        const steps = block.steps.map(step => {
+            if (!isRecord(step)) {
+                return step;
+            }
+
+            const stepComposition = step.compositionPatterns !== undefined
+                ? { ...(step.compositionPatterns ? { compositionPatterns: step.compositionPatterns as SessionStep['compositionPatterns'] } : {}) }
+                : authoredComposition(step.exerciseRef as SessionStep['exerciseRef']);
+
+            const componentPatterns = componentPatternsForStep(movementComposition, typeof step.id === 'string' ? step.id : '');
+
+            const alternatives = Array.isArray(step.alternatives)
+                ? step.alternatives.map(alt => {
+                    if (!isRecord(alt)) {
+                        return alt;
+                    }
+                    if (alt.compositionPatterns === undefined) {
+                        const authored = authoredComposition(alt.exerciseRef as SessionStep['exerciseRef'], componentPatterns);
+                        return {
+                            ...alt,
+                            ...(authored.compositionPatterns ? { compositionPatterns: authored.compositionPatterns } : {}),
+                            ...(alt.degradedComposition
+                                ? { degradedComposition: alt.degradedComposition as StepAlternative['degradedComposition'] }
+                                : authored.degradedComposition
+                                    ? { degradedComposition: authored.degradedComposition }
+                                    : {}),
+                        };
+                    }
+                    const lostPattern = componentPatterns.find(pattern => !(alt.compositionPatterns as string[])?.includes(pattern));
+                    const degradedComposition = alt.degradedComposition ?? (lostPattern
+                        ? {
+                            pattern: lostPattern,
+                            reason: (alt.exerciseRef as SessionStep['exerciseRef'])?.kind === 'catalog'
+                                ? 'Authored catalog alternative does not preserve this movement component.'
+                                : 'Authored custom alternative has no structured evidence for this movement component.',
+                        }
+                        : undefined);
+                    return {
+                        ...alt,
+                        ...(degradedComposition ? { degradedComposition } : {}),
+                    };
+                })
+                : step.alternatives;
+
+            return {
+                ...step,
+                ...(stepComposition.compositionPatterns ? { compositionPatterns: stepComposition.compositionPatterns } : {}),
+                ...(alternatives !== undefined ? { alternatives } : {}),
+            };
+        });
+
+        return {
+            ...block,
+            steps,
+        };
+    });
+
+    const relaxedMovementComposition = movementComposition
+        ? relaxUnevidencedRequirements(movementComposition, blocks, IMPORTED_UNEVIDENCED_REASON)
+        : definition.movementComposition;
+
+    return {
+        ...definition,
+        blocks,
+        ...(relaxedMovementComposition !== undefined ? { movementComposition: relaxedMovementComposition } : {}),
+    };
 }

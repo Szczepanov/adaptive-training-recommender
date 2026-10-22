@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-    authoredComposition, componentPatternsForStep, entryCompositionStamp, relaxUnevidencedRequirements, swappedStepComposition,
+    authoredComposition, componentPatternsForStep, entryCompositionStamp, relaxUnevidencedRequirements,
+    stampImportedSessionComposition, swappedStepComposition,
 } from './compositionStamping';
 import { deliveredPatternWork } from './deliveredComposition';
 import type { SessionDefinition, SessionEntry, SessionStep } from './models';
@@ -164,5 +165,221 @@ describe('relaxUnevidencedRequirements (#813 template edits)', () => {
                 ...requiredUnilateral![0], status: 'relaxed', reason: 'Saved template no longer has structured evidence for this movement component.',
             }]);
         }
+    });
+});
+
+describe('stampImportedSessionComposition (#813 JSON session import)', () => {
+    const makeImportedSession = (steps: SessionStep[], movementComposition?: SessionDefinition['movementComposition']): SessionDefinition => ({
+        schemaVersion: 1,
+        id: 'imported_workout',
+        revision: 1,
+        title: 'Imported Workout',
+        intent: 'training',
+        dominantModality: 'strength',
+        duration: { min: 30, max: 45 },
+        blocks: [{
+            id: 'b1',
+            title: 'Main',
+            role: 'main',
+            executionMode: 'sequential',
+            steps,
+        }],
+        ...(movementComposition ? { movementComposition } : {}),
+    });
+
+    it('stamps catalog exercise composition patterns onto untagged steps', () => {
+        const untaggedStep: SessionStep = {
+            id: 's1',
+            kind: 'exercise',
+            title: 'Split Squat',
+            exerciseRef: { kind: 'catalog', exerciseId: 'split_squat' },
+            dose: { kind: 'repetition', sets: 3, reps: 8 },
+        };
+        const stamped = stampImportedSessionComposition(makeImportedSession([untaggedStep]));
+        const step = stamped.blocks[0].steps[0];
+        expect(step.compositionPatterns).toEqual(['unilateral_lower_body']);
+
+        // Logged set on the imported step confirms unilateral lower body work in the ledger (#803/#813)
+        const entry = loggedOn(step);
+        expect(entry.compositionPatterns).toEqual(['unilateral_lower_body']);
+        expect(deliveredPatternWork([entry], 'unilateral_lower_body')).toEqual({ workingSets: 1, stepIds: ['s1'] });
+
+        expect(validateSessionDefinition(stamped).ok).toBe(true);
+    });
+
+    it('keeps tags that the JSON carries itself', () => {
+        const taggedStep: SessionStep = {
+            id: 's1',
+            kind: 'exercise',
+            title: 'Custom Tagged Split Squat',
+            exerciseRef: { kind: 'catalog', exerciseId: 'split_squat' },
+            dose: { kind: 'repetition', sets: 3, reps: 8 },
+            compositionPatterns: ['unilateral_lower_body', 'knee_dominant_bilateral'],
+        };
+        const stamped = stampImportedSessionComposition(makeImportedSession([taggedStep]));
+        expect(stamped.blocks[0].steps[0].compositionPatterns).toEqual(['unilateral_lower_body', 'knee_dominant_bilateral']);
+    });
+
+    it('leaves free-text movements untagged, even when title matches a catalog exercise', () => {
+        const freeTextStep: SessionStep = {
+            id: 's1',
+            kind: 'exercise',
+            title: 'Split Squat',
+            exerciseRef: { kind: 'unresolved_free_text', name: 'Split Squat' },
+            dose: { kind: 'repetition', sets: 3, reps: 8 },
+        };
+        const stamped = stampImportedSessionComposition(makeImportedSession([freeTextStep]));
+        expect(stamped.blocks[0].steps[0].compositionPatterns).toBeUndefined();
+    });
+
+    it('leaves unknown catalog exercise ids untagged', () => {
+        const unknownCatalogStep: SessionStep = {
+            id: 's1',
+            kind: 'exercise',
+            title: 'Unknown',
+            exerciseRef: { kind: 'catalog', exerciseId: 'non_existent_exercise' },
+            dose: { kind: 'repetition', sets: 3, reps: 8 },
+        };
+        const stamped = stampImportedSessionComposition(makeImportedSession([unknownCatalogStep]));
+        expect(stamped.blocks[0].steps[0].compositionPatterns).toBeUndefined();
+    });
+
+    it('stamps catalog tags onto alternatives and declares degradedComposition when parent step component is not preserved', () => {
+        const stepWithAlt: SessionStep = {
+            id: 's1',
+            kind: 'exercise',
+            title: 'Split Squat',
+            exerciseRef: { kind: 'catalog', exerciseId: 'split_squat' },
+            dose: { kind: 'repetition', sets: 3, reps: 8 },
+            alternatives: [{
+                id: 'alt1',
+                title: 'Goblet Squat',
+                exerciseRef: { kind: 'catalog', exerciseId: 'goblet_squat' },
+            }],
+        };
+        const req: SessionDefinition['movementComposition'] = [
+            { id: 'req1', pattern: 'unilateral_lower_body', status: 'required', stepIds: ['s1'] },
+        ];
+        const stamped = stampImportedSessionComposition(makeImportedSession([stepWithAlt], req));
+        const alt = stamped.blocks[0].steps[0].alternatives![0];
+        expect(alt.compositionPatterns).toEqual(['knee_dominant_bilateral']);
+        expect(alt.degradedComposition).toEqual({
+            pattern: 'unilateral_lower_body',
+            reason: 'Authored catalog alternative does not preserve this movement component.',
+        });
+        expect(validateSessionDefinition(stamped).ok).toBe(true);
+    });
+
+    it('stamps catalog tags onto alternatives without degradation when parent step component is preserved', () => {
+        const stepWithAlt: SessionStep = {
+            id: 's1',
+            kind: 'exercise',
+            title: 'Split Squat',
+            exerciseRef: { kind: 'catalog', exerciseId: 'split_squat' },
+            dose: { kind: 'repetition', sets: 3, reps: 8 },
+            alternatives: [{
+                id: 'alt1',
+                title: 'Reverse Lunge',
+                exerciseRef: { kind: 'catalog', exerciseId: 'reverse_lunge' },
+            }],
+        };
+        const req: SessionDefinition['movementComposition'] = [
+            { id: 'req1', pattern: 'unilateral_lower_body', status: 'required', stepIds: ['s1'] },
+        ];
+        const stamped = stampImportedSessionComposition(makeImportedSession([stepWithAlt], req));
+        const alt = stamped.blocks[0].steps[0].alternatives![0];
+        expect(alt.compositionPatterns).toEqual(['unilateral_lower_body']);
+        expect(alt.degradedComposition).toBeUndefined();
+        expect(validateSessionDefinition(stamped).ok).toBe(true);
+    });
+
+    it('leaves free-text alternatives untagged and declares degradedComposition when parent step component is not preserved', () => {
+        const stepWithAlt: SessionStep = {
+            id: 's1',
+            kind: 'exercise',
+            title: 'Split Squat',
+            exerciseRef: { kind: 'catalog', exerciseId: 'split_squat' },
+            dose: { kind: 'repetition', sets: 3, reps: 8 },
+            alternatives: [{
+                id: 'alt1',
+                title: 'Hotel Lunges',
+                exerciseRef: { kind: 'unresolved_free_text', name: 'Hotel Lunges' },
+            }],
+        };
+        const req: SessionDefinition['movementComposition'] = [
+            { id: 'req1', pattern: 'unilateral_lower_body', status: 'required', stepIds: ['s1'] },
+        ];
+        const stamped = stampImportedSessionComposition(makeImportedSession([stepWithAlt], req));
+        const alt = stamped.blocks[0].steps[0].alternatives![0];
+        expect(alt.compositionPatterns).toBeUndefined();
+        expect(alt.degradedComposition).toEqual({
+            pattern: 'unilateral_lower_body',
+            reason: 'Authored custom alternative has no structured evidence for this movement component.',
+        });
+        expect(validateSessionDefinition(stamped).ok).toBe(true);
+    });
+
+    it('keeps existing alternative tags and attaches degradedComposition if not preserved', () => {
+        const stepWithAlt: SessionStep = {
+            id: 's1',
+            kind: 'exercise',
+            title: 'Split Squat',
+            exerciseRef: { kind: 'catalog', exerciseId: 'split_squat' },
+            dose: { kind: 'repetition', sets: 3, reps: 8 },
+            alternatives: [{
+                id: 'alt1',
+                title: 'Front Squat',
+                exerciseRef: { kind: 'catalog', exerciseId: 'front_squat' },
+                compositionPatterns: ['knee_dominant_bilateral'],
+            }],
+        };
+        const req: SessionDefinition['movementComposition'] = [
+            { id: 'req1', pattern: 'unilateral_lower_body', status: 'required', stepIds: ['s1'] },
+        ];
+        const stamped = stampImportedSessionComposition(makeImportedSession([stepWithAlt], req));
+        const alt = stamped.blocks[0].steps[0].alternatives![0];
+        expect(alt.compositionPatterns).toEqual(['knee_dominant_bilateral']);
+        expect(alt.degradedComposition).toEqual({
+            pattern: 'unilateral_lower_body',
+            reason: 'Authored catalog alternative does not preserve this movement component.',
+        });
+        expect(validateSessionDefinition(stamped).ok).toBe(true);
+    });
+
+    it('relaxes unevidenced required components via relaxUnevidencedRequirements', () => {
+        const step: SessionStep = {
+            id: 's1',
+            kind: 'exercise',
+            title: 'Bench Press',
+            exerciseRef: { kind: 'catalog', exerciseId: 'bench_press' },
+            dose: { kind: 'repetition', sets: 3, reps: 8 },
+        };
+        // Requirement for unilateral_lower_body, but the session has no unilateral exercise
+        const req: SessionDefinition['movementComposition'] = [
+            { id: 'req1', pattern: 'unilateral_lower_body', status: 'required', stepIds: ['s1'] },
+        ];
+        const stamped = stampImportedSessionComposition(makeImportedSession([step], req));
+        expect(stamped.movementComposition![0].status).toBe('relaxed');
+        expect(stamped.movementComposition![0].reason).toBe('Imported session has no structured evidence for this movement component.');
+        expect(validateSessionDefinition(stamped).ok).toBe(true);
+    });
+
+    it('safely handles malformed non-object inputs or missing blocks without throwing', () => {
+        expect(stampImportedSessionComposition(null as unknown as SessionDefinition)).toBeNull();
+        expect(stampImportedSessionComposition({} as SessionDefinition)).toEqual({});
+        expect(stampImportedSessionComposition({ blocks: 'not-array' } as unknown as SessionDefinition)).toEqual({ blocks: 'not-array' });
+    });
+
+    it('returns malformed composition unchanged so validation reports the issue instead of a TypeError', () => {
+        const step: SessionStep = {
+            id: 's1',
+            kind: 'exercise',
+            title: 'Split Squat',
+            exerciseRef: { kind: 'catalog', exerciseId: 'split_squat' },
+            dose: { kind: 'repetition', sets: 3, reps: 8 },
+        };
+        const malformed = makeImportedSession([step], [null] as unknown as SessionDefinition['movementComposition']);
+        expect(stampImportedSessionComposition(malformed)).toBe(malformed);
+        expect(validateSessionDefinition(malformed).ok).toBe(false);
     });
 });
