@@ -139,10 +139,7 @@ export async function getPerformedTrainingFactsInRange(
         activityOverrides: overrides,
     });
     const activeOccurrences = sourceHydration.rows.map(row => row.occurrence);
-    const activitiesById = new Map<string, typeof sourceHydration.activities[0]>();
-    for (const activity of sourceHydration.activities) {
-        activitiesById.set(activity.activityId, activity);
-    }
+    const activitiesById = new Map(sourceHydration.activities.map(activity => [activity.activityId, activity]));
 
     // Only structured executions need the recommendation lookup. An unavailable read
     // degrades to no readiness marker rather than failing the whole facts snapshot.
