@@ -111,3 +111,7 @@
 ## 2026-10-28 - Parallelize Scenario Execution in runAllScenarios
 **Learning:** Sequential `await runScenario` calls in `runAllScenarios` blocked execution of independent athlete simulation scenarios in serial order, accumulating wall-clock latency across all scenario runs.
 **Action:** Parallelize independent async scenario evaluations using `Promise.all` in batch simulation functions.
+
+## 2026-10-31 - Use pre-computed Maps for O(1) PlanBlock lookups
+**Learning:** In `buildPlanDefinition`, iterating over `objectives` and `coverageRequirements` while performing a `.find()` on the `blockSchedule` array (which has size M) for every element (N elements) causes an O(N * M) performance bottleneck.
+**Action:** When performing repeated `.find()` lookups on the same static array inside loops, always pre-compute a `Map` keyed by the target identifier (e.g., `block.id`) outside the loop to reduce the lookup time complexity to O(1) inside the loop, resulting in O(N + M) total time complexity.
