@@ -308,10 +308,7 @@ export async function assembleOfflineHistoricalContext(
             provenNotApplicable.set(date, 'minimum_safety_checkin_incomplete');
         }
     }
-    const aliases = new Map<string, string>();
-    for (let index = 0; index < dates.length; index++) {
-        aliases.set(dates[index], `D${String(index + 1).padStart(3, '0')}`);
-    }
+    const aliases = new Map(dates.map((date, index) => [date, `D${String(index + 1).padStart(3, '0')}`]));
     const reasonsByDate = new Map<string, string[]>();
     const notReplayableByReason: Record<string, number> = {};
     for (const date of dates) {

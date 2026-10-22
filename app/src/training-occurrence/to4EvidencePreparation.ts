@@ -373,31 +373,14 @@ function pair(
         }
     }
 
-    const activitiesById = new Map<string, typeof parsed.activities[0]>();
-    for (const activity of parsed.activities) {
-        activitiesById.set(activity.activityId, activity);
-    }
-    const executionsById = new Map<string, typeof parsed.executions[0]>();
-    for (const execution of parsed.executions) {
-        executionsById.set(execution.executionId, execution);
-    }
-    const prescriptionsByHash = new Map<string, typeof parsed.prescriptions[0]>();
-    for (const prescription of parsed.prescriptions) {
-        prescriptionsByHash.set(prescription.prescriptionHash, prescription);
-    }
-    const recommendationsByDate = new Map<string, typeof parsed.recommendations[0]>();
-    for (const recommendation of parsed.recommendations) {
-        recommendationsByDate.set(recommendation.date, recommendation);
-    }
-
     const sources: CanonicalHistorySources = {
         // Hydration may use the wider exported activity set (an occurrence near the window edge
         // can reference an activity whose provider date is just outside it).
-        activitiesById,
-        executionsById,
+        activitiesById: new Map(parsed.activities.map(activity => [activity.activityId, activity])),
+        executionsById: new Map(parsed.executions.map(execution => [execution.executionId, execution])),
         entriesByExecutionId,
-        prescriptionsByHash,
-        recommendationsByDate,
+        prescriptionsByHash: new Map(parsed.prescriptions.map(prescription => [prescription.prescriptionHash, prescription])),
+        recommendationsByDate: new Map(parsed.recommendations.map(recommendation => [recommendation.date, recommendation])),
         manualDefinitionRevisions,
     };
     const occurrences = occurrencesInWindow(parsed.occurrences, window);
