@@ -27,6 +27,9 @@ import { applyDevelopmentDose, developmentAdaptation, revalidateDevelopmentEvide
 import { EVERGREEN_GENERAL_COVERAGE_SET } from '../workouts/event-plan';
 import { getDayDiff } from '../utils/localDate';
 
+const DEFINITION_BY_KEY = new Map<string, typeof EVERGREEN_GENERAL_COVERAGE_SET.coverage[0]>();
+for (const item of EVERGREEN_GENERAL_COVERAGE_SET.coverage) DEFINITION_BY_KEY.set(item.key, item);
+
 export interface ResolvedEvergreenPlan {
     planDefinition: PlanDefinition;
     microcycle: MicrocycleState;
@@ -320,31 +323,55 @@ export function resolveEvergreenPlan(
         capability?.result.placements ?? [],
     );
     if (result.status !== 'AVAILABLE') return null;
-    const planDefinition = developmentBlock ? {
-        ...result.data, id: `development:${developmentBlock.id}@${developmentBlock.revision}`, eventId: planningContext.focusEvent!.id,
-        developmentBlock,
-        blocks: result.data.blocks.map(block => ({ ...block, id: `development:${developmentBlock.id}@${developmentBlock.revision}`,
-            startDate: developmentBlock.dateRange.startDate, endDate: addDaysToLocalDateString(date, Math.max(0, days - 1)) })),
-        objectives: result.data.objectives.map(objective => {
-            const authored = developmentBlock.objectives.find(item => item.coverageKey === objective.coverageKey);
-            return authored ? { ...objective, blockId: `development:${developmentBlock.id}@${developmentBlock.revision}`, key: authored.adaptationScope, priority: authored.priority,
-                role: authored.intent === 'develop' ? 'primary_developmental' as const : 'secondary_support' as const,
-                ...(authored.intent === 'maintain' ? { reservationTier: 'support' as const } : {}) }
-                : { ...objective, blockId: `development:${developmentBlock.id}@${developmentBlock.revision}` };
-        }),
-        coverageOverrides: developmentBlock.objectives.flatMap(objective => {
-            const role = developmentDose.descriptor.roles.find(item => item.id === objective.coverageKey);
-            const definition = EVERGREEN_GENERAL_COVERAGE_SET.coverage.find(item => item.key === objective.coverageKey);
-            return role && definition ? [{ ...definition, workoutIds: [...role.exactWorkoutIds] }] : [];
-        }),
-        coverageRequirements: result.data.coverageRequirements?.map(requirement => {
-            const authored = developmentBlock.objectives.find(objective => developmentAdaptation(objective)
-                && objective.coverageKey === requirement.coverageKey);
-            return authored ? { ...requirement, blockId: `development:${developmentBlock.id}@${developmentBlock.revision}`, priority: authored.priority,
-                ...(authored.intent === 'maintain' ? { reservationTier: 'support' as const } : {}) }
-                : { ...requirement, blockId: `development:${developmentBlock.id}@${developmentBlock.revision}` };
-        }),
-    } : result.data;
+    const planDefinition = (() => {
+        if (!developmentBlock) return result.data;
+
+        // ⚡ Bolt: Use Map lookup instead of array .find() for O(1) checks.
+        const authoredByCoverageKey = new Map<string, typeof developmentBlock.objectives[0]>();
+        // Using reverse loop for proper `.find(fn)` semantics if multiple items have the same key:
+        // the first matching item should be preserved in the map (by iterating backward, first item overrides).
+        for (let i = developmentBlock.objectives.length - 1; i >= 0; i--) {
+            const item = developmentBlock.objectives[i];
+            authoredByCoverageKey.set(item.coverageKey, item);
+        }
+
+        const devAuthoredByCoverageKey = new Map<string, typeof developmentBlock.objectives[0]>();
+        for (let i = developmentBlock.objectives.length - 1; i >= 0; i--) {
+            const item = developmentBlock.objectives[i];
+            if (developmentAdaptation(item)) devAuthoredByCoverageKey.set(item.coverageKey, item);
+        }
+
+        const roleById = new Map<string, typeof developmentDose.descriptor.roles[0]>();
+        for (let i = developmentDose.descriptor.roles.length - 1; i >= 0; i--) {
+            const item = developmentDose.descriptor.roles[i];
+            roleById.set(item.id, item);
+        }
+
+        return {
+            ...result.data, id: `development:${developmentBlock.id}@${developmentBlock.revision}`, eventId: planningContext.focusEvent!.id,
+            developmentBlock,
+            blocks: result.data.blocks.map(block => ({ ...block, id: `development:${developmentBlock.id}@${developmentBlock.revision}`,
+                startDate: developmentBlock.dateRange.startDate, endDate: addDaysToLocalDateString(date, Math.max(0, days - 1)) })),
+            objectives: result.data.objectives.map(objective => {
+                const authored = authoredByCoverageKey.get(objective.coverageKey);
+                return authored ? { ...objective, blockId: `development:${developmentBlock.id}@${developmentBlock.revision}`, key: authored.adaptationScope, priority: authored.priority,
+                    role: authored.intent === 'develop' ? 'primary_developmental' as const : 'secondary_support' as const,
+                    ...(authored.intent === 'maintain' ? { reservationTier: 'support' as const } : {}) }
+                    : { ...objective, blockId: `development:${developmentBlock.id}@${developmentBlock.revision}` };
+            }),
+            coverageOverrides: developmentBlock.objectives.flatMap(objective => {
+                const role = roleById.get(objective.coverageKey);
+                const definition = DEFINITION_BY_KEY.get(objective.coverageKey);
+                return role && definition ? [{ ...definition, workoutIds: [...role.exactWorkoutIds] }] : [];
+            }),
+            coverageRequirements: result.data.coverageRequirements?.map(requirement => {
+                const authored = devAuthoredByCoverageKey.get(requirement.coverageKey);
+                return authored ? { ...requirement, blockId: `development:${developmentBlock.id}@${developmentBlock.revision}`, priority: authored.priority,
+                    ...(authored.intent === 'maintain' ? { reservationTier: 'support' as const } : {}) }
+                    : { ...requirement, blockId: `development:${developmentBlock.id}@${developmentBlock.revision}` };
+            }),
+        };
+    })();
     const qualityRolePacked = [...budget.requiredRoles, ...budget.targetRoles, ...budget.optionalRoles]
         .some(role => role.coverageRoleId === 'sustained_quality');
     return {
