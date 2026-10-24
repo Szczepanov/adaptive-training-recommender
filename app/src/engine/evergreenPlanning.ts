@@ -27,9 +27,6 @@ import { applyDevelopmentDose, developmentAdaptation, revalidateDevelopmentEvide
 import { EVERGREEN_GENERAL_COVERAGE_SET } from '../workouts/event-plan';
 import { getDayDiff } from '../utils/localDate';
 
-const DEFINITION_BY_KEY = new Map<string, typeof EVERGREEN_GENERAL_COVERAGE_SET.coverage[0]>();
-for (const item of EVERGREEN_GENERAL_COVERAGE_SET.coverage) DEFINITION_BY_KEY.set(item.key, item);
-
 export interface ResolvedEvergreenPlan {
     planDefinition: PlanDefinition;
     microcycle: MicrocycleState;
@@ -327,24 +324,31 @@ export function resolveEvergreenPlan(
         if (!developmentBlock) return result.data;
 
         // ⚡ Bolt: Use Map lookup instead of array .find() for O(1) checks.
+        // `Array.prototype.find()` returns the *first* matching element. To preserve
+        // this behavior, we only set the value if the key doesn't already exist in the Map.
         const authoredByCoverageKey = new Map<string, typeof developmentBlock.objectives[0]>();
-        // Using reverse loop for proper `.find(fn)` semantics if multiple items have the same key:
-        // the first matching item should be preserved in the map (by iterating backward, first item overrides).
-        for (let i = developmentBlock.objectives.length - 1; i >= 0; i--) {
-            const item = developmentBlock.objectives[i];
-            authoredByCoverageKey.set(item.coverageKey, item);
+        const devAuthoredByCoverageKey = new Map<string, typeof developmentBlock.objectives[0]>();
+        for (const item of developmentBlock.objectives) {
+            if (!authoredByCoverageKey.has(item.coverageKey)) {
+                authoredByCoverageKey.set(item.coverageKey, item);
+            }
+            if (developmentAdaptation(item) && !devAuthoredByCoverageKey.has(item.coverageKey)) {
+                devAuthoredByCoverageKey.set(item.coverageKey, item);
+            }
         }
 
-        const devAuthoredByCoverageKey = new Map<string, typeof developmentBlock.objectives[0]>();
-        for (let i = developmentBlock.objectives.length - 1; i >= 0; i--) {
-            const item = developmentBlock.objectives[i];
-            if (developmentAdaptation(item)) devAuthoredByCoverageKey.set(item.coverageKey, item);
+        const definitionByKey = new Map<string, typeof EVERGREEN_GENERAL_COVERAGE_SET.coverage[0]>();
+        for (const item of EVERGREEN_GENERAL_COVERAGE_SET.coverage) {
+            if (!definitionByKey.has(item.key)) {
+                definitionByKey.set(item.key, item);
+            }
         }
 
         const roleById = new Map<string, typeof developmentDose.descriptor.roles[0]>();
-        for (let i = developmentDose.descriptor.roles.length - 1; i >= 0; i--) {
-            const item = developmentDose.descriptor.roles[i];
-            roleById.set(item.id, item);
+        for (const item of developmentDose.descriptor.roles) {
+            if (!roleById.has(item.id)) {
+                roleById.set(item.id, item);
+            }
         }
 
         return {
@@ -361,7 +365,7 @@ export function resolveEvergreenPlan(
             }),
             coverageOverrides: developmentBlock.objectives.flatMap(objective => {
                 const role = roleById.get(objective.coverageKey);
-                const definition = DEFINITION_BY_KEY.get(objective.coverageKey);
+                const definition = definitionByKey.get(objective.coverageKey);
                 return role && definition ? [{ ...definition, workoutIds: [...role.exactWorkoutIds] }] : [];
             }),
             coverageRequirements: result.data.coverageRequirements?.map(requirement => {
