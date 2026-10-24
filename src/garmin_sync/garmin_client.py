@@ -390,7 +390,7 @@ class GarminClientWrapper:
             if profile_number is None:
                 raise RuntimeError("Garmin user profile did not include a profile identifier.")
 
-        raw_gear = self.api.get_gear(cast(Any, profile_number)) or []
+        raw_gear: Any = self.api.get_gear(cast(Any, profile_number)) or []
         if isinstance(raw_gear, list):
             raw_items = raw_gear
         elif isinstance(raw_gear, dict) and isinstance(raw_gear.get("gearList"), list):
