@@ -1,5 +1,6 @@
 import type { MovementCompositionPattern } from '../sessions/movementCompositionContract';
 import type { SessionDefinition, SessionEntry } from '../sessions/models';
+import { deliveredPatternEntries, isWorkingEntry } from '../sessions/deliveredComposition';
 
 export type MovementCompositionEvidenceStatus = 'performed' | 'omitted' | 'degraded' | 'relaxed' | 'unknown';
 
@@ -17,68 +18,53 @@ export interface MovementCompositionRequirementEvidence {
   reason?: string;
 }
 
-/** Uses only structured step metadata and performed entries. No exercise title/text inference. */
+/**
+ * Uses only structured composition evidence. No exercise title/text inference.
+ *
+ * Credit follows the #813/#803 delivered-exposure rule owned by `deliveredPatternWork`: a
+ * requirement is performed only by a non-deleted working set whose entry carries the pattern
+ * stamped at log time. Authored step metadata never credits a set, so an unstamped (pre-#845)
+ * or warm-up-only log stays `unknown` rather than `performed`. A declared `degradedComposition`
+ * still reports `degraded` on any logged set.
+ */
 export function deriveMovementCompositionEvidence(
   definition: SessionDefinition,
   entries: readonly SessionEntry[],
   sessionCompleted: boolean,
 ): { performed: PerformedMovementCompositionEvidence[]; requirements: MovementCompositionRequirementEvidence[] } {
-  const performed: PerformedMovementCompositionEvidence[] = [];
-  const entriesByStep = new Map<string, SessionEntry[]>();
-  for (const entry of entries) {
-    if (entry.stepId && entry.payload.kind !== 'choice') {
-      const prior = entriesByStep.get(entry.stepId) ?? [];
-      prior.push(entry);
-      entriesByStep.set(entry.stepId, prior);
-    }
-  }
-
   const steps = definition.blocks.flatMap(block => block.steps);
-  for (const step of steps) {
-    if (!step.compositionPatterns?.length) continue;
-    const completedEntries = (entriesByStep.get(step.id) ?? []).filter(entry =>
-      entry.payload.kind !== 'checkoff' || entry.payload.completed,
-    );
-    if (completedEntries.length === 0) continue;
-    for (const entry of completedEntries) {
-      const ref = entry.exerciseRef ?? step.exerciseRef;
-      const sameAuthoredExercise = !entry.exerciseRef
-        || (step.exerciseRef?.kind === 'catalog' && entry.exerciseRef.kind === 'catalog'
-          && entry.exerciseRef.exerciseId === step.exerciseRef.exerciseId);
-      const patterns = sameAuthoredExercise ? step.compositionPatterns : entry.compositionPatterns ?? [];
-      if (patterns.length) {
-        performed.push({
-          stepId: step.id,
-          exerciseIds: ref?.kind === 'catalog' ? [ref.exerciseId] : [],
-          patterns: [...patterns],
-        });
-      }
-    }
-  }
+  const stepById = new Map(steps.map(step => [step.id, step]));
+  const catalogExerciseId = (entry: SessionEntry): string | undefined => {
+    const ref = entry.exerciseRef ?? (entry.stepId ? stepById.get(entry.stepId)?.exerciseRef : undefined);
+    return ref?.kind === 'catalog' ? ref.exerciseId : undefined;
+  };
+  const logged = entries.filter(entry =>
+    entry.stepId && !entry.deletedAt && entry.payload.kind !== 'choice'
+    && (entry.payload.kind !== 'checkoff' || entry.payload.completed));
+  const working = logged.filter(isWorkingEntry);
+
+  const performed: PerformedMovementCompositionEvidence[] = working
+    .filter(entry => entry.compositionPatterns?.length)
+    .map(entry => {
+      const exerciseId = catalogExerciseId(entry);
+      return { stepId: entry.stepId!, exerciseIds: exerciseId ? [exerciseId] : [], patterns: [...entry.compositionPatterns!] };
+    });
 
   const requirements = (definition.movementComposition ?? []).map(requirement => {
-    const exerciseIds = [...new Set(performed
-      .filter(row => requirement.stepIds.includes(row.stepId) && row.patterns.includes(requirement.pattern))
-      .flatMap(row => row.exerciseIds))];
-    const hasPerformed = performed.some(row => requirement.stepIds.includes(row.stepId) && row.patterns.includes(requirement.pattern));
-    const degradedEntries = requirement.stepIds.flatMap(stepId => entriesByStep.get(stepId) ?? [])
-      .filter(entry => (entry.payload.kind !== 'checkoff' || entry.payload.completed)
-        && entry.degradedComposition?.pattern === requirement.pattern);
-    const degradationReason = degradedEntries.find(entry => entry.degradedComposition)?.degradedComposition?.reason;
-    const hasUnclassifiedPerformedEntry = !hasPerformed && degradedEntries.length === 0
-      && requirement.stepIds.some(stepId => (entriesByStep.get(stepId) ?? []).some(entry => entry.payload.kind !== 'checkoff' || entry.payload.completed));
-    const requirementExerciseIds = new Set(exerciseIds);
-    if (!hasPerformed && degradedEntries.length) {
-      for (const entry of degradedEntries) {
-        const step = steps.find(candidate => candidate.id === entry.stepId);
-        const ref = entry.exerciseRef ?? step?.exerciseRef;
-        if (ref?.kind === 'catalog') requirementExerciseIds.add(ref.exerciseId);
-      }
-    }
+    const onRequirementSteps = (entry: SessionEntry) => requirement.stepIds.includes(entry.stepId!);
+    const deliveredEntries = deliveredPatternEntries(logged.filter(onRequirementSteps), requirement.pattern);
+    const hasPerformed = deliveredEntries.length > 0;
+    // A declared degradation is classified evidence even on a non-working (e.g. distance) set.
+    const degradedEntries = logged.filter(entry =>
+      onRequirementSteps(entry) && entry.degradedComposition?.pattern === requirement.pattern);
+    const evidenceEntries = hasPerformed ? deliveredEntries : degradedEntries;
+    const exerciseIds = [...new Set(evidenceEntries.map(catalogExerciseId).filter((id): id is string => !!id))];
+    const degradationReason = degradedEntries[0]?.degradedComposition?.reason;
+    const hasUnclassifiedLoggedEntry = logged.some(onRequirementSteps);
     const status: MovementCompositionEvidenceStatus = requirement.status === 'relaxed'
       ? 'relaxed'
-      : hasPerformed ? 'performed' : degradedEntries.length ? 'degraded' : hasUnclassifiedPerformedEntry ? 'unknown' : sessionCompleted ? 'omitted' : 'unknown';
-    return { requirementId: requirement.id, pattern: requirement.pattern, status, exerciseIds: [...requirementExerciseIds], ...(status === 'degraded' && degradationReason ? { reason: degradationReason } : {}) };
+      : hasPerformed ? 'performed' : degradedEntries.length ? 'degraded' : hasUnclassifiedLoggedEntry ? 'unknown' : sessionCompleted ? 'omitted' : 'unknown';
+    return { requirementId: requirement.id, pattern: requirement.pattern, status, exerciseIds, ...(status === 'degraded' && degradationReason ? { reason: degradationReason } : {}) };
   });
 
   return { performed, requirements };

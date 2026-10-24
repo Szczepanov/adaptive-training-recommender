@@ -9,8 +9,9 @@ export interface DeliveredPatternWork {
     stepIds: string[];
 }
 
-/** A performed working set: warm-ups, choice events and unchecked items carry no exposure. */
-function isWorkingEntry(entry: SessionEntry): boolean {
+/** A performed, non-deleted working set: warm-ups, choice events and unchecked items carry no exposure. */
+export function isWorkingEntry(entry: SessionEntry): boolean {
+    if (entry.deletedAt) return false;
     const { payload } = entry;
     switch (payload.kind) {
         case 'repetition': return payload.reps > 0 && payload.isWarmup !== true;
@@ -18,6 +19,14 @@ function isWorkingEntry(entry: SessionEntry): boolean {
         case 'checkoff': return payload.completed;
         default: return false;
     }
+}
+
+/** The entries `deliveredPatternWork` counts: non-deleted working sets stamped with the pattern. */
+export function deliveredPatternEntries(
+    entries: readonly SessionEntry[],
+    pattern: MovementCompositionPattern,
+): SessionEntry[] {
+    return entries.filter(entry => entry.compositionPatterns?.includes(pattern) && isWorkingEntry(entry));
 }
 
 /**
@@ -33,8 +42,7 @@ export function deliveredPatternWork(
     entries: readonly SessionEntry[],
     pattern: MovementCompositionPattern,
 ): DeliveredPatternWork | null {
-    const delivered = entries.filter(entry =>
-        !entry.deletedAt && entry.compositionPatterns?.includes(pattern) && isWorkingEntry(entry));
+    const delivered = deliveredPatternEntries(entries, pattern);
     if (delivered.length === 0) return null;
     const stepIds = [...new Set(delivered.map(entry => entry.stepId).filter((id): id is string => !!id))].sort();
     return { workingSets: delivered.length, stepIds };

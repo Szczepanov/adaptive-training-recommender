@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { SessionDefinition, SessionEntry } from './models';
 import { deriveMovementCompositionEvidence } from '../workouts/movementComposition';
 import { validateSessionDefinition } from './validation';
+import { deliveredPatternWork } from './deliveredComposition';
 
 const definition: SessionDefinition = {
   schemaVersion: 1,
@@ -28,13 +29,21 @@ const definition: SessionDefinition = {
   }],
 };
 
+/** The runner stamps the active step's patterns at log time; a swap to front squat stamps none. */
 function entry(exerciseId = 'rear_foot_elevated_split_squat'): SessionEntry {
   return {
     id: 'entry-1', executionId: 'execution-1', stepId: 'split-squat',
     exerciseRef: { kind: 'catalog', exerciseId },
+    ...(exerciseId === 'rear_foot_elevated_split_squat' ? { compositionPatterns: ['unilateral_lower_body' as const] } : {}),
     completedAt: '2026-09-26T10:00:00Z', createdAt: '2026-09-26T10:00:00Z', updatedAt: '2026-09-26T10:00:00Z',
     payload: { kind: 'repetition', setIndex: 0, reps: 6 },
   };
+}
+
+function unstamped(base: SessionEntry): SessionEntry {
+  const copy = { ...base };
+  delete copy.compositionPatterns;
+  return copy;
 }
 
 describe('session movement-composition evidence', () => {
@@ -59,7 +68,7 @@ describe('session movement-composition evidence', () => {
     delete custom.blocks[0].steps[0].compositionPatterns;
     custom.blocks[0].steps[0].title = 'Rear-foot elevated split squat';
     expect(validateSessionDefinition(custom).ok).toBe(true);
-    expect(deriveMovementCompositionEvidence(custom, [entry()], true)).toEqual({ performed: [], requirements: [] });
+    expect(deriveMovementCompositionEvidence(custom, [unstamped(entry())], true)).toEqual({ performed: [], requirements: [] });
   });
 
   it('does not credit a changed exercise identity unless performed movement evidence is recorded', () => {
@@ -132,5 +141,64 @@ describe('session movement-composition evidence', () => {
     const invalid = structuredClone(definition);
     invalid.blocks[0].steps[0].compositionPatterns = ['knee_dominant_bilateral'];
     expect(validateSessionDefinition(invalid).ok).toBe(false);
+  });
+
+  describe('converges on the deliveredPatternWork rule (#813)', () => {
+    const requirementStatus = (entries: SessionEntry[], completed = true) =>
+      deriveMovementCompositionEvidence(definition, entries, completed).requirements[0].status;
+
+    it('does not credit an unstamped (pre-#845) set from authored step metadata', () => {
+      const legacy = unstamped(entry());
+      expect(deliveredPatternWork([legacy], 'unilateral_lower_body')).toBeNull();
+      expect(requirementStatus([legacy])).toBe('unknown');
+    });
+
+    it('does not credit warm-up, zero-rep or deleted stamped sets', () => {
+      const warmup: SessionEntry = { ...entry(), payload: { kind: 'repetition', setIndex: 0, reps: 6, isWarmup: true } };
+      const zeroReps: SessionEntry = { ...entry(), payload: { kind: 'repetition', setIndex: 0, reps: 0 } };
+      const deleted: SessionEntry = { ...entry(), deletedAt: '2026-09-26T10:05:00Z' };
+      for (const candidate of [warmup, zeroReps, deleted]) {
+        expect(deliveredPatternWork([candidate], 'unilateral_lower_body')).toBeNull();
+        expect(requirementStatus([candidate])).not.toBe('performed');
+      }
+      expect(requirementStatus([deleted])).toBe('omitted');
+      expect(requirementStatus([warmup])).toBe('unknown');
+      expect(requirementStatus([zeroReps])).toBe('unknown');
+    });
+
+    it('credits a stamped set logged on a swapped exercise, as the runner stamped it', () => {
+      const swappedUnilateral: SessionEntry = {
+        ...entry('reverse_lunge'), compositionPatterns: ['unilateral_lower_body'],
+      };
+      expect(deliveredPatternWork([swappedUnilateral], 'unilateral_lower_body')).not.toBeNull();
+      expect(deriveMovementCompositionEvidence(definition, [swappedUnilateral], true).requirements[0]).toMatchObject({
+        status: 'performed', exerciseIds: ['reverse_lunge'],
+      });
+    });
+
+    it('reports a stamped set on an untagged step as a performed row', () => {
+      const untagged = structuredClone(definition);
+      delete untagged.movementComposition;
+      delete untagged.blocks[0].steps[0].compositionPatterns;
+      expect(deriveMovementCompositionEvidence(untagged, [entry()], true).performed).toEqual([{
+        stepId: 'split-squat', exerciseIds: ['rear_foot_elevated_split_squat'], patterns: ['unilateral_lower_body'],
+      }]);
+    });
+
+    it('keeps a declared degradation on a non-working set, but not on a deleted one', () => {
+      const degradation = { pattern: 'unilateral_lower_body' as const, reason: 'Sled push substitute.' };
+      const carry: SessionEntry = {
+        ...entry('sled_push'), payload: { kind: 'distance', meters: 40 }, degradedComposition: degradation,
+      };
+      expect(deriveMovementCompositionEvidence(definition, [carry], true).requirements[0]).toMatchObject({
+        status: 'degraded', reason: 'Sled push substitute.', exerciseIds: ['sled_push'],
+      });
+      expect(requirementStatus([{ ...carry, deletedAt: '2026-09-26T10:05:00Z' }])).toBe('omitted');
+    });
+
+    it('keeps a logged distance set unknown rather than omitted', () => {
+      const distance: SessionEntry = { ...unstamped(entry()), payload: { kind: 'distance', meters: 200 } };
+      expect(requirementStatus([distance])).toBe('unknown');
+    });
   });
 });

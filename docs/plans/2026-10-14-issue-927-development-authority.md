@@ -1,6 +1,6 @@
 # Implementation Plan: #927 Long-horizon event-directed development authority
 
-**Status:** In progress
+**Status:** Implemented (PR #1058, merged 2026-10-14; issue #927 closed)
 **Blocked by:** None; #925 and #928 landed on the starting `origin/main`.
 **Unlocks:** #929 season-roadmap coordination.
 **Execution:** One implementation subagent, followed by independent diff review and repository verification. The user explicitly requested implementation after planning.
@@ -37,41 +37,33 @@ Success covers all issue #927 acceptance criteria: distinguish a 300-day target 
 - Run affected Vitest tests, `npx tsc -b`, lint/knowledge validators while iterating. Final gate: `make verify`, engine simulations/plan judge and policy-drift checks per the repository contract. If `make` is absent, use its documented Python verification entry point with the same scope.
 - Run one diff-first `code-reviewer` after implementation. Parent owns final deterministic verification and classifies failures before repairs.
 
-## Execution checkpoint
+## Delivery record
 
-Implementation is present in the requested worktree; delivery remains **In progress** while
-the parent finishes verification and PR review.
+Delivered by PR #1058 (merged 2026-10-14 with the full CI gate green). Season-roadmap
+coordination (#929) followed in PRs #1059–#1061.
 
-- Added optional event snapshot binding with legacy absent-field hash compatibility and
+- Optional event snapshot binding with legacy absent-field hash compatibility and
   manual-v2 authoring through the existing revisioned service.
-- Added one active reviewed authority, entry/context revalidation, exact supported mappings,
+- One active reviewed authority, entry/context revalidation, exact supported mappings,
   bounded packing, distinct forecast/objective identities and existing embedded capability gates.
-- Added an exact development-only VO2 template alias because the old hard-bike template
-  resolves to over-under work. No new prescription or physiological multipliers were added.
+- An exact development-only VO2 template alias, because the old hard-bike template resolves
+  to over-under work. No new prescription or physiological multipliers were added.
 - Home supplies a bounded current/upcoming block read to same-day, tomorrow and forecasts;
   decision capture pins those inputs. Audit and Context Brief v6 expose persisted authority.
-- Added focused tests and the eight-week `long_horizon_development_blocks` scenario,
-  starting at D-300 and exercising VO2 → volume → strength maintenance before final build.
-- `tsc -b`, targeted ESLint, knowledge/coverage/workout validators and focused Vitest checks
-  passed during implementation. The final affected-test manifest is in the implementer handoff.
+- The eight-week `long_horizon_development_blocks` scenario, starting at D-300 and exercising
+  VO2 → volume → strength maintenance before final build.
 
 Supported dose mappings are intentionally explicit: cycling VO2/threshold quality;
 cycling/cross-training aerobic minutes; strength sessions; and embedded power/mechanical
 session counts through their existing evidence gates. Unsupported units, duplicate adaptation
 maps, protected imported-session identities and authored substitution rules fail closed with
 diagnostics. Comparable physiological gaps, adaptation success and follow-up tolerance are
-not inferred from completion. The independent/full gate and generated simulation baseline
-review are pending, so this checkpoint is not a delivery declaration.
+not inferred from completion.
 
-Independent review identified two authority bugs: quality completion was counted across
-the whole block instead of the rolling week, and authored quality could bypass the existing
-establishment-evidence gate. Both were repaired with failing-first regressions. Eligibility
-now takes the evaluation date explicitly, and the existing athlete-state/evidence gate is
-preserved for authored quality. Positive fixtures use established synthetic history.
-The parent reran seven affected test files (79 tests passed), `tsc -b`, and `git diff --check`.
-The scoped security review found no actionable issues. A fresh canonical gate is running;
-the previous run found four now-repaired unit failures and one browser Home-render timeout
-(53 of 54 E2E cases passed). Final verification evidence belongs in the PR description.
+Independent review found two authority bugs before merge: quality completion counted across
+the whole block instead of the rolling week, and authored quality could bypass the
+establishment-evidence gate. Both were fixed with failing-first regressions; eligibility takes
+the evaluation date explicitly and authored quality keeps the athlete-state/evidence gate.
 
 ## Risks and rollback
 
