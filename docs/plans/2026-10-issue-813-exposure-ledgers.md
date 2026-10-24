@@ -39,7 +39,8 @@
     `deriveMovementCompositionEvidence` (tests only today) now delegates its `performed`
     status to `deliveredPatternWork` and shares its `isWorkingEntry` predicate (2026-10-24):
     authored step metadata no longer credits a set, so pre-#845 unstamped, warm-up-only and
-    distance logs report `unknown`, and deleted sets carry no evidence.
+    distance logs report `unknown`, and deleted sets carry no evidence. A declared
+    `degradedComposition` still reports `degraded` on any logged set.
   - Tests: `deliveredComposition.test.ts`, the #803 cases in
     `contextBriefExposureLedger.test.ts`, `performedTrainingFactsService.deliveredComposition.test.ts`,
     and the refreshed golden service artifacts.

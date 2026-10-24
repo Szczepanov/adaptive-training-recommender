@@ -163,6 +163,7 @@ describe('session movement-composition evidence', () => {
       }
       expect(requirementStatus([deleted])).toBe('omitted');
       expect(requirementStatus([warmup])).toBe('unknown');
+      expect(requirementStatus([zeroReps])).toBe('unknown');
     });
 
     it('credits a stamped set logged on a swapped exercise, as the runner stamped it', () => {
@@ -173,6 +174,26 @@ describe('session movement-composition evidence', () => {
       expect(deriveMovementCompositionEvidence(definition, [swappedUnilateral], true).requirements[0]).toMatchObject({
         status: 'performed', exerciseIds: ['reverse_lunge'],
       });
+    });
+
+    it('reports a stamped set on an untagged step as a performed row', () => {
+      const untagged = structuredClone(definition);
+      delete untagged.movementComposition;
+      delete untagged.blocks[0].steps[0].compositionPatterns;
+      expect(deriveMovementCompositionEvidence(untagged, [entry()], true).performed).toEqual([{
+        stepId: 'split-squat', exerciseIds: ['rear_foot_elevated_split_squat'], patterns: ['unilateral_lower_body'],
+      }]);
+    });
+
+    it('keeps a declared degradation on a non-working set, but not on a deleted one', () => {
+      const degradation = { pattern: 'unilateral_lower_body' as const, reason: 'Sled push substitute.' };
+      const carry: SessionEntry = {
+        ...entry('sled_push'), payload: { kind: 'distance', meters: 40 }, degradedComposition: degradation,
+      };
+      expect(deriveMovementCompositionEvidence(definition, [carry], true).requirements[0]).toMatchObject({
+        status: 'degraded', reason: 'Sled push substitute.', exerciseIds: ['sled_push'],
+      });
+      expect(requirementStatus([{ ...carry, deletedAt: '2026-09-26T10:05:00Z' }])).toBe('omitted');
     });
 
     it('keeps a logged distance set unknown rather than omitted', () => {

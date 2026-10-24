@@ -1,6 +1,6 @@
 import type { MovementCompositionPattern } from '../sessions/movementCompositionContract';
 import type { SessionDefinition, SessionEntry } from '../sessions/models';
-import { deliveredPatternWork, isWorkingEntry } from '../sessions/deliveredComposition';
+import { deliveredPatternEntries, isWorkingEntry } from '../sessions/deliveredComposition';
 
 export type MovementCompositionEvidenceStatus = 'performed' | 'omitted' | 'degraded' | 'relaxed' | 'unknown';
 
@@ -24,7 +24,8 @@ export interface MovementCompositionRequirementEvidence {
  * Credit follows the #813/#803 delivered-exposure rule owned by `deliveredPatternWork`: a
  * requirement is performed only by a non-deleted working set whose entry carries the pattern
  * stamped at log time. Authored step metadata never credits a set, so an unstamped (pre-#845)
- * or warm-up-only log stays `unknown` rather than `performed`.
+ * or warm-up-only log stays `unknown` rather than `performed`. A declared `degradedComposition`
+ * still reports `degraded` on any logged set.
  */
 export function deriveMovementCompositionEvidence(
   definition: SessionDefinition,
@@ -51,12 +52,12 @@ export function deriveMovementCompositionEvidence(
 
   const requirements = (definition.movementComposition ?? []).map(requirement => {
     const onRequirementSteps = (entry: SessionEntry) => requirement.stepIds.includes(entry.stepId!);
-    const hasPerformed = deliveredPatternWork(working.filter(onRequirementSteps), requirement.pattern) !== null;
-    const degradedEntries = working.filter(entry =>
+    const deliveredEntries = deliveredPatternEntries(logged.filter(onRequirementSteps), requirement.pattern);
+    const hasPerformed = deliveredEntries.length > 0;
+    // A declared degradation is classified evidence even on a non-working (e.g. distance) set.
+    const degradedEntries = logged.filter(entry =>
       onRequirementSteps(entry) && entry.degradedComposition?.pattern === requirement.pattern);
-    const evidenceEntries = hasPerformed
-      ? working.filter(entry => onRequirementSteps(entry) && entry.compositionPatterns?.includes(requirement.pattern))
-      : degradedEntries;
+    const evidenceEntries = hasPerformed ? deliveredEntries : degradedEntries;
     const exerciseIds = [...new Set(evidenceEntries.map(catalogExerciseId).filter((id): id is string => !!id))];
     const degradationReason = degradedEntries[0]?.degradedComposition?.reason;
     const hasUnclassifiedLoggedEntry = logged.some(onRequirementSteps);

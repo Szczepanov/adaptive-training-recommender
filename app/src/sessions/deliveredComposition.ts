@@ -21,6 +21,14 @@ export function isWorkingEntry(entry: SessionEntry): boolean {
     }
 }
 
+/** The entries `deliveredPatternWork` counts: non-deleted working sets stamped with the pattern. */
+export function deliveredPatternEntries(
+    entries: readonly SessionEntry[],
+    pattern: MovementCompositionPattern,
+): SessionEntry[] {
+    return entries.filter(entry => entry.compositionPatterns?.includes(pattern) && isWorkingEntry(entry));
+}
+
 /**
  * Issue #813 / #803 delivered-exposure rule (owner decision, 2026-10-17): a structured
  * execution delivers a movement pattern only through logged working sets whose entry carries
@@ -34,8 +42,7 @@ export function deliveredPatternWork(
     entries: readonly SessionEntry[],
     pattern: MovementCompositionPattern,
 ): DeliveredPatternWork | null {
-    const delivered = entries.filter(entry =>
-        entry.compositionPatterns?.includes(pattern) && isWorkingEntry(entry));
+    const delivered = deliveredPatternEntries(entries, pattern);
     if (delivered.length === 0) return null;
     const stepIds = [...new Set(delivered.map(entry => entry.stepId).filter((id): id is string => !!id))].sort();
     return { workingSets: delivered.length, stepIds };
