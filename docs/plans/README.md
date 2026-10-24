@@ -90,12 +90,11 @@ a delivery queue.
 
 ## Current plans
 
-Issue #927 event-bound development authority is **In progress** under
+Issue #927 event-bound development authority: **Implemented** (PR #1058, 2026-10-14) under
 [`2026-10-14-issue-927-development-authority.md`](./2026-10-14-issue-927-development-authority.md).
-The implementation adds explicit optional binding, reviewed date-local block authority,
+It adds explicit optional binding, reviewed date-local block authority,
 existing dose/capacity packing, exact VO2 execution, support-role gates, forecast segments
-and pinned replay/Context Brief v6 readouts. Focused checks passed; independent review,
-full repository verification and generated simulation baseline inspection remain pending.
+and pinned replay/Context Brief v6 readouts.
 
 The implementation plan for Firestore Security Rules modularization, build pipeline, and expression-budget optimization is [`2026-10-08-firestore-rules-modularization-and-budget-refactor.md`](./2026-10-08-firestore-rules-modularization-and-budget-refactor.md) — **In Progress**. Local implementation introduces numbered `app/rules/` modules, deterministic assembly, guarded minified deployment, normalized drift comparison, and redundant-check pruning. Tenant isolation, immutability, state machines, exclusivity, and existing malformed-payload rejection remain enforced. Production compilation latency and deployment acceptance remain pending; the original latency and AST-reduction targets are estimates, not verified results.
 
@@ -104,7 +103,7 @@ ownership segments and the production Evergreen seed, verified by live-parity,
 accounting and terminal-recovery simulation regressions. Projected work may seed forecast
 strategy/dose/capability evidence but never fabricates canonical performed-stimulus recency.
 See [`recommendation-engine.md`](../architecture/recommendation-engine.md) for the contract;
-long-horizon development (#927, delivered), season coordination (#929, in progress: see
+long-horizon development (#927, delivered), season coordination (#929, delivered in #1059–#1061: see
 [ADR-0050](../adr/0050-season-roadmap-event-roles.md)), and
 post-event focus eligibility remain outside this change (policy ownership of phase horizons
 delivered in #928).
