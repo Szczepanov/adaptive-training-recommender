@@ -381,6 +381,11 @@ The command is repository-owned and scope-aware:
   engine simulations, deterministic plan/persona corpus gates, policy-version drift, production
   build, and coding-agent corpus validation.
 
+Local `make verify` always runs the engine simulations on a code diff. CI is narrower: it
+skips them when `scripts/engine_impact.py` positively classifies the change as not
+engine-affecting (ADR-0052 D-CI), so a green CI without the simulation job is expected for
+UI, ingestion and docs changes.
+
 The verification driver deliberately excludes checks whose result depends on external registry
 state or local infrastructure rather than the repository state (for example dependency-security
 registry availability and Docker/BuildKit availability). CI continues to own those environment
