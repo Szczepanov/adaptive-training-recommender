@@ -1,5 +1,5 @@
 {
-  "description": "Files whose change can alter a persisted recommendation. Shared by check-policy-drift.mjs (POLICY_VERSION bump gate, ADR-0010) and scripts/engine_impact.py (engine-simulation trigger, ADR-0052 D-CI) so the two gates cannot drift apart.",
+  "description": "Files whose change can alter a persisted recommendation. Shared by check-policy-drift.mjs (POLICY_VERSION bump gate, ADR-0010) and scripts/engine_impact.py (engine-simulation trigger, ADR-0052 D-CI) so the two gates cannot drift apart. `relocations` ({ from, to, reason }) records behaviour-identical ADR-0052 module moves; check-policy-drift.mjs accepts a declared move without a POLICY_VERSION bump only when it proves the moved file and every changed production source executable-syntax-identical after import-specifier normalisation (ADR-0010 2026-10-25 amendment). Entries whose from no longer exists at the comparison base are stale and may be pruned.",
   "files": [
     { "path": "app/src/engine/rules.ts" },
     { "path": "app/src/engine/optimizer.ts" },
@@ -93,5 +93,6 @@
       "path": "app/src/workouts/catalog/",
       "reason": "Catalog definitions are executable recommendation content: changing one can alter the persisted primarySession/prescription without touching the selection algorithm."
     }
-  ]
+  ],
+  "relocations": []
 }

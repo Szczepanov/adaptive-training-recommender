@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import ts from 'typescript';
+import { executableSyntaxSignature, isBehaviorIdenticalRelocation } from './policy-drift-relocation.mjs';
 
 const baseRef = process.argv[2];
 
@@ -50,22 +50,25 @@ function pullRequestMergeDiff() {
     const parents = git(['rev-list', '--parents', '-n', '1', 'HEAD']).trim().split(/\s+/);
     if (parents.length !== 3) return null;
     const [, currentBaseParent] = parents;
-    return git(['diff', '--name-only', currentBaseParent, 'HEAD']);
+    return git(['diff', '--name-only', '--no-renames', currentBaseParent, 'HEAD']);
   } catch (err) {
     console.warn(`Could not isolate pull-request merge parents; falling back to base ref: ${err.message}`);
     return null;
   }
 }
 
+// Every diff passes --no-renames. With rename detection a `git mv` lists only the new path,
+// so a moved decision-affecting file whose list entry was not updated would slip past the
+// gate entirely; without it the move is a deletion plus an addition and both paths are seen.
 let diffOutput = pullRequestMergeDiff() ?? '';
 if (!diffOutput) {
   try {
-    diffOutput = git(['diff', '--name-only', `${baseRef}...HEAD`]);
+    diffOutput = git(['diff', '--name-only', '--no-renames', `${baseRef}...HEAD`]);
   } catch (err) {
     // If shallow checkout without base commit, attempt a single fetch for the base SHA.
     try {
       git(['fetch', '--depth=1', 'origin', baseRef]);
-      diffOutput = git(['diff', '--name-only', `${baseRef}...HEAD`]);
+      diffOutput = git(['diff', '--name-only', '--no-renames', `${baseRef}...HEAD`]);
     } catch (fetchErr) {
       console.warn(`Could not diff against base ref ${baseRef}: ${fetchErr.message}`);
       process.exit(0);
@@ -75,14 +78,50 @@ if (!diffOutput) {
 
 const changedFiles = diffOutput.trim().split('\n').filter(Boolean);
 
+/** Return the exact base commit whose tree should be compared with HEAD for this run. */
+function executableComparisonBaseRef() {
+  const eventName = process.env.GITHUB_EVENT_NAME;
+  if (eventName !== 'pull_request' && eventName !== 'pull_request_target') return baseRef;
+  try {
+    const parents = git(['rev-list', '--parents', '-n', '1', 'HEAD']).trim().split(/\s+/);
+    if (parents.length === 3) return parents[1];
+  } catch (err) {
+    console.warn(`Could not isolate pull-request base parent for syntax comparison: ${err.message}`);
+  }
+  return baseRef;
+}
+
 // The decision-affecting list lives in decision-affecting-files.json, with a reason per
 // entry. scripts/engine_impact.py reads the same file for the ADR-0052 engine-simulation
 // trigger, so the POLICY_VERSION gate and the simulation gate cannot drift apart.
-const decisionAffectingConfig = JSON.parse(
-  readFileSync(join(repoRoot, 'app/scripts/decision-affecting-files.json'), 'utf8'),
-);
-const decisionAffectingFiles = decisionAffectingConfig.files.map((entry) => entry.path);
-const decisionAffectingPrefixes = decisionAffectingConfig.prefixes.map((entry) => entry.path);
+const decisionListFile = 'app/scripts/decision-affecting-files.json';
+
+function decisionListFrom(config) {
+  return {
+    files: config.files.map((entry) => entry.path),
+    prefixes: config.prefixes.map((entry) => entry.path),
+  };
+}
+
+/** True when a path is on a decision list, either exactly or under a listed prefix. */
+function isOnDecisionList(file, list) {
+  return list.files.includes(file) || list.prefixes.some((prefix) => file.startsWith(prefix));
+}
+
+/** Read the comparison base's list; null (with a warning) when the base has none. */
+function readBaseDecisionList() {
+  const ref = executableComparisonBaseRef();
+  try {
+    return decisionListFrom(JSON.parse(git(['show', `${ref}:${decisionListFile}`])));
+  } catch (err) {
+    console.warn(`Could not read ${decisionListFile} at ${ref}; using the head list only: ${err.message}`);
+    return null;
+  }
+}
+
+const headDecisionConfig = JSON.parse(readFileSync(join(repoRoot, decisionListFile), 'utf8'));
+const headDecisionList = decisionListFrom(headDecisionConfig);
+const baseDecisionList = readBaseDecisionList();
 
 const policyFile = 'app/src/engine/policy.ts';
 const rulesFile = 'app/src/engine/rules.ts';
@@ -101,41 +140,15 @@ const sleepRecoveryPhase3Doc = 'docs/analysis/2026-08-29-sleep-decision-authorit
 
 // Prefixes (the workout catalog) cover executable recommendation content: changing one
 // definition can alter the persisted primarySession/prescription without touching selection.
+// A file counts when it is on the base list OR the head list, so deleting (or moving) a listed
+// file and delisting it in the same change still requires a POLICY_VERSION bump.
 const changedDecisionFiles = changedFiles.filter((f) =>
-  decisionAffectingFiles.includes(f) || decisionAffectingPrefixes.some((prefix) => f.startsWith(prefix)),
+  isOnDecisionList(f, headDecisionList) || (baseDecisionList !== null && isOnDecisionList(f, baseDecisionList)),
 );
-
-/** Return the exact base commit whose tree should be compared with HEAD for this run. */
-function executableComparisonBaseRef() {
-  const eventName = process.env.GITHUB_EVENT_NAME;
-  if (eventName !== 'pull_request' && eventName !== 'pull_request_target') return baseRef;
-  try {
-    const parents = git(['rev-list', '--parents', '-n', '1', 'HEAD']).trim().split(/\s+/);
-    if (parents.length === 3) return parents[1];
-  } catch (err) {
-    console.warn(`Could not isolate pull-request base parent for syntax comparison: ${err.message}`);
-  }
-  return baseRef;
-}
 
 /** True only when a path exists in the selected comparison-base tree. */
 function pathExistsAtRef(ref, path) {
   return git(['ls-tree', '--name-only', ref, '--', path]).trim() === path;
-}
-
-/**
- * Normalize TypeScript syntax while removing comments. The printer preserves identifiers,
- * literals, operators, types and statement structure, so a genuine source change cannot be
- * hidden as a comment-only edit; whitespace and comments are intentionally erased.
- */
-function executableSyntaxSignature(source, fileName) {
-  const sourceFile = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
-  const diagnostics = sourceFile.parseDiagnostics ?? [];
-  if (diagnostics.length > 0) {
-    throw new Error(`TypeScript parse diagnostics: ${diagnostics.map(d => d.code).join(', ')}`);
-  }
-  const printer = ts.createPrinter({ removeComments: true, newLine: ts.NewLineKind.LineFeed });
-  return printer.printFile(sourceFile);
 }
 
 /** Return true only when every changed decision file is syntax-identical without comments. */
@@ -423,6 +436,25 @@ if (changedDecisionFiles.length > 0 && !policyVersionChanged) {
     console.log(
       'POLICY DRIFT CHECK PASSED: decision-affecting files changed only in comments/whitespace; '
       + `normalized executable TypeScript syntax is identical and POLICY_VERSION correctly remains ${currentPolicyVersion}.`
+    );
+    process.exit(0);
+  }
+  // policy-drift-relocation.mjs; ADR-0010 2026-10-25 amendment.
+  if (isBehaviorIdenticalRelocation({
+    git,
+    repoRoot,
+    comparisonBase: executableComparisonBaseRef(),
+    changedFiles,
+    changedDecisionFiles,
+    headDecisionConfig,
+    headDecisionList,
+    baseDecisionList,
+    isOnDecisionList,
+  })) {
+    console.log(
+      'POLICY DRIFT CHECK PASSED: decision-affecting files were only relocated; executable TypeScript syntax '
+      + 'is identical after import-specifier normalisation (ADR-0010 2026-10-25 amendment) and '
+      + `POLICY_VERSION correctly remains ${currentPolicyVersion}.`
     );
     process.exit(0);
   }

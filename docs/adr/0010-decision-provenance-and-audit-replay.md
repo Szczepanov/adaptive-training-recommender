@@ -60,6 +60,51 @@ This supersedes the narrower statement below that Rules validate the audit's “
 every enum. The persisted audit remains fully validated by the application boundary; Rules keep
 the integrity properties that a direct client write must not be able to forge.
 
+## 2026-10-25 amendment — behaviour-identical relocations (ADR-0052)
+
+[ADR-0052](./0052-user-ledger-and-external-ai-planning-authority.md) Phase 1 moves modules out
+of `app/src/engine/` (for example into `app/src/derived/`) with `git mv`, without changing
+what they compute. Some of them are on the decision-affecting list that the `POLICY_VERSION`
+gate (`app/scripts/check-policy-drift.mjs`) reads, and a refactor-only version bump would
+mint a new policy identity for recommendations that cannot differ.
+
+A behaviour-identical relocation does **not** bump `POLICY_VERSION`. A relocation is
+behaviour-identical when it is recorded in the `relocations` block of
+`app/scripts/decision-affecting-files.json` (`{ from, to, reason }`) and the drift check's
+`isBehaviorIdenticalRelocation` (`app/scripts/policy-drift-relocation.mjs`) proves, against the
+comparison-base tree:
+
+- each `from` exists at the base and is gone at head, each `to` is new at head, and no two
+  entries share an endpoint;
+- the moved file's executable TypeScript syntax (comments and whitespace removed, as for the
+  comment-only exception) is identical once every module specifier — static and dynamic
+  imports, re-exports, `import type`, `declare module` names, `require` — is rewritten to the
+  repository path it resolves to in its own tree, with base paths mapped through the
+  relocations;
+- every other changed decision file and every other changed non-test `app/src/` source exists
+  on both sides and has the same normalised signature, so a changed importer must still resolve
+  to the same module (or to that module's new path);
+- no other spelling of either endpoint exists (another extension, a directory index or any folder
+  at the same stem that Vite could resolve, checked for `from` at head and for `to` at the base), so an unchanged importer
+  cannot silently switch to a different module and keeps its target;
+- a `from` on the base decision list has its `to` on the head list, and the base decision list
+  is readable.
+
+Anything else rejects and falls back to the normal bump rule: any literal or logic change, an
+import repointed at a different module (even one that exists), an unresolvable relative
+specifier, any added or deleted production file that is not a declared relocation endpoint, a
+changed non-TypeScript production file, or a move that delists a decision-affecting file. A
+compared file with a construct the normalisation cannot see through also rejects: triple-slash
+directives, a non-literal `import()`/`require()`, or a file-relative construct: any
+`import.meta` use other than a direct `import.meta.env` access, `new URL(...)` or
+`require.resolve`. Entries whose `from` no longer exists
+at the comparison base are stale and ignored; they may be pruned.
+
+The gate also diffs with rename detection disabled (`--no-renames`) and treats a file as
+decision-affecting when it is on the base **or** the head list. A moved listed file is therefore
+always seen as a deletion plus an addition, and deleting or moving a listed file while delisting
+it in the same change still requires a bump.
+
 ---
 ## Decision Outcome
 
