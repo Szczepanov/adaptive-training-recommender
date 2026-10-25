@@ -1,6 +1,7 @@
 # ADR-0052: User Ledger with External-AI Planning Authority
 
-* **Status:** Proposed
+* **Status:** Accepted (2026-10-25; amended on acceptance: D-EVAL timing and definitions, the
+  Phase 2 export gate, export missingness, and the simulation detector's base/head rule)
 * **Date:** 2026-10-25
 * **Deciders:** Repository owner
 * **Related:** ADR-0003, ADR-0007, ADR-0010, ADR-0012, ADR-0013, ADR-0017, ADR-0019, ADR-0023,
@@ -125,7 +126,7 @@ Rules:
 |---|---|---|---|
 | **0 — Freeze** | ADR accepted | No new engine features. Engine-authority issues are parked with a reason (#962). Bug fixes only. | Unchanged |
 | **1 — Extract** | Phase 0 done | Move derivations with no decision authority into a derived-metrics module outside `engine/`: biometric baselines (ADR-0024), the D−1 step normalization and activity-step deduction now in `fatigue.ts` (ADR-0003, I3), performed-training facts (`performedTrainingFacts.ts`), exposure/coverage ledgers (#813), assessment reducers, and the flag evaluators. Each move is behaviour-preserving and tested against the old output. | Unchanged |
-| **2 — Switch off** | Phase 1 done, and D-EXPORT v1 shipped | Home, Plan and the week-ahead strip render today's imported session, flags and facts instead of `rules.ts` / `planner.ts` / `trainingIntent.ts` output. The generated planner and adjudication stay in the tree behind a default-off profile setting, as a rollback. `daily_recommendations` writes stop while the setting is off. | No engine recommendation shown by default |
+| **2 — Switch off** | Phase 1 done; D-EXPORT v1 **shipped and contract-tested** (a designed schema is not enough); the D-EVAL criteria document merged | Home, Plan and the week-ahead strip render today's imported session, flags and facts instead of `rules.ts` / `planner.ts` / `trainingIntent.ts` output. The generated planner and adjudication stay in the tree behind a default-off profile setting, as a rollback. `daily_recommendations` writes stop while the setting is off. | No engine recommendation shown by default |
 | **3 — Retire** | A D-EVAL result document records an explicit **go** | Delete selection and adjudication modules, their knowledge claims, coverage items and alignment tests, the simulation harness, and `POLICY_VERSION`. Tag the last commit that contains them (`engine-final`) before deleting. | None |
 
 Historical records stay readable: persisted `daily_recommendations`, recommendation audits
@@ -161,9 +162,23 @@ them out. A file is engine-affecting when any of these is true:
 3. it is under `app/src/engine/`, `app/src/knowledge/`, the simulation scripts or fixtures,
    or the simulation baseline.
 
-**Fail-safe:** if the change detector cannot compute the import graph, or a changed file
-under `app/src/` cannot be classified, the simulations run. A PR may skip them only on a
-positive "not engine-affecting" result, never on a lookup failure.
+The import graph is evaluated at **both base and head**. A file that was engine-affecting at
+base, and is deleted, moved or no longer imported at head, still counts. Otherwise removing
+a dependency would hide the very change that alters behaviour.
+
+**Fail-safe:** the simulations run whenever classification is uncertain. That includes:
+- the detector cannot compute either graph;
+- an import cannot be resolved;
+- a changed file under `app/src/` cannot be classified;
+- the change touches configuration that affects module resolution or the build (`tsconfig*`,
+  `package.json`, the lockfile, Vite/Vitest config, path aliases).
+
+A PR may skip the simulations only on a positive "not engine-affecting" result, never on a
+lookup failure. The detector ships with regression cases for:
+- an extracted module outside `engine/`;
+- a shared workout input such as `workouts/event-plan.ts`;
+- a deleted engine dependency;
+- an unresolved import.
 
 Invariant changes: **I1, I2, I3 and I6 are unchanged.** For I3, the deduction moves with
 the extraction, and its semantics are unchanged. **I4** narrows at Phase 2 to flags and
@@ -188,6 +203,13 @@ periodization phase, capability-maintenance and development-authority verdicts) 
 default export at Phase 2. Until Phase 3 they may appear only in a separate, labelled
 `legacy_engine` layer, because they would otherwise anchor the external AI on a decider
 the owner has stopped trusting.
+
+D-EXPORT v1 may fill the D-USER and D-COACHLOG layers from records that already exist
+(injury constraints, goals, events, travel blocks, plan revisions, performed occurrences).
+Any field the export promises but has no backing record for must carry an explicit
+missingness state (for example `not_recorded` or `not_yet_supported`), never an empty value
+that reads as "none". An empty field does not deliver coaching continuity, so it must not
+look like it does.
 
 The existing information bounds, determinism (identical inputs → identical semantic
 output), ADR-0003 dates and contract-version discipline carry over unchanged.
@@ -233,14 +255,36 @@ Phase 3 is irreversible in practice, so it is gated on a **go/no-go assessment a
 criteria fixed before the evaluation block starts**. Collecting evidence is not enough to
 pass.
 
-**Before the block.** A criteria document,
-`docs/analysis/<date>-adr-0052-d-eval-criteria.md`, is merged before the block's first
-date (its merge commit is the proof). It fixes the thresholds below. A threshold may be
-changed for a later block, never during or after the one it judges.
+**When the block runs.** The qualifying block starts **after Phase 2 ships**, with engine
+adjudication disabled (the rollback setting off) for its whole duration. A block that runs
+while the engine still adjudicates imported sessions does not test "as authored" execution,
+so it cannot qualify. The earliest Phase 3 start is four weeks after the later of Phase 2
+and criteria approval, followed by the result assessment. No calendar date is committed.
+
+**Before Phase 2.** A criteria document,
+`docs/analysis/<date>-adr-0052-d-eval-criteria.md`, is merged alongside the D-EXPORT design
+and before Phase 2 ships. Its merge commit is the proof that it came first. It fixes the
+thresholds below, and it defines, before any reporting for them is implemented:
+
+* **adherence:** what counts as a planned and a performed session, and how partial,
+  moved and unplanned sessions are counted;
+* **reduced-session choices:** an athlete's explicit choice of an authored
+  `scaling.reducedDefinition` is counted separately, neither as full adherence nor as a miss;
+* **flag-related skips:** a session skipped while a flag was active, counted separately
+  from ordinary misses;
+* **missing evidence:** which gaps make each criterion inconclusive.
+
+**Baselines are candidates until confirmed.** The criteria document must confirm that the
+previous 4-week block has comparable planned and performed records. If it does not, the
+document sets an absolute adherence threshold before the block starts. It also sets a
+recency limit for the pre-block assessments. If the October 2026 baseline is older than
+that limit when the block starts, it would also measure the intervening training, so a
+fresh baseline runs first. A threshold may be changed for a later block, never during or
+after the one it judges.
 
 | Criterion | Measured from | Default threshold (confirm in the criteria document) |
 |---|---|---|
-| Plan adherence | Planned vs performed occurrences (ADR-0034). Sessions skipped because a flag was active count separately, not as misses | Not worse than the owner's previous recorded 4-week block |
+| Plan adherence | Planned vs performed occurrences (ADR-0034), using the definitions above | Not worse than the previous 4-week block if it is confirmed comparable; otherwise the absolute threshold the criteria document sets |
 | Goal benchmarks | Assessments bound to the block's goals (#897), read against each protocol's stated measurement noise | No goal benchmark declines by more than its measurement noise |
 | Flagged-day outcomes | Days with an active D-FLAGS signal on which a hard session was performed, plus any illness or injury onset within 72 hours | Any adverse outcome is **no-go** until this ADR is amended |
 | Rollback | Use of the default-off engine setting, with its reason | Any use for a safety reason is **no-go** until this ADR is amended |

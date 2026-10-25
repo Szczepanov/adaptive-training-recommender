@@ -116,7 +116,7 @@ Architectural choices, system invariants, and technical trade-offs are documente
 * [**ADR-0049: Explicit Event-Bound Development Authority**](./adr/0049-event-bound-development-authority.md) — *Accepted.* Optional event-bound snapshots for intent blocks separating event-directed development from an unrelated imported block.
 * [**ADR-0050: Season Roadmap — Event Roles**](./adr/0050-season-roadmap-event-roles.md) — *Accepted.* A pure roadmap classifying A/B/C event roles and date conflicts that grants no execution authority.
 * [**ADR-0051: Cross-Source Workout-Step Identity**](./adr/0051-cross-source-workout-step-identity.md) — *Accepted; implementation gated on real-data feasibility.* An export-time step manifest bound to the semantic FIT fingerprint as the only admissible segment-to-step reference.
-* [**ADR-0052: User Ledger with External-AI Planning Authority**](./adr/0052-user-ledger-and-external-ai-planning-authority.md) — *Proposed.* The app becomes a provenance-preserving user ledger (tracking, user context, export); planning moves to an external AI, adjudication is replaced by advisory flags, and the engine and its CI gates are frozen, extracted and retired in gated phases.
+* [**ADR-0052: User Ledger with External-AI Planning Authority**](./adr/0052-user-ledger-and-external-ai-planning-authority.md) — *Accepted; Phase 0 (freeze) in effect.* The app becomes a provenance-preserving user ledger (tracking, user context, export); planning moves to an external AI, adjudication is replaced by advisory flags, and the engine and its CI gates are frozen, extracted and retired in gated phases.
 
 ---
 

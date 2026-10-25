@@ -34,6 +34,12 @@ and say so instead of working around it.
 
 ## 2. Before you change a number in the engine
 
+**The engine is frozen** ([ADR-0052](./docs/adr/0052-user-ledger-and-external-ai-planning-authority.md)).
+Planning authority is moving to an external AI, and the app becomes a user ledger. Do not
+add engine features, new decision-authority rules, or work whose only purpose is extending
+engine authority. Bug fixes and ADR-0052's own phase work (extraction, switch-off) are
+allowed. I1–I6 still apply until a phase PR changes them.
+
 The knowledge registry is invisible exactly when it matters most: you are reading a bare
 `0.40` in `optimizer.ts`, and nothing at the call site says an alignment-tested claim owns
 it. So check first, every time:
