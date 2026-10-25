@@ -25,8 +25,9 @@ APP = ROOT / "app"
 LOG_DIR = APP / "artifacts" / "verify"
 FAILURE_TAIL_LINES = 80
 SPAWN_FAILED = 127
-# Same split as CI's rules job matrix.
+# Same splits as CI's emulator job matrices.
 RULES_SHARDS = 2
+E2E_SHARDS = 2
 VerificationMode = Literal["docs", "code"]
 
 
@@ -112,7 +113,7 @@ def build_plan(mode: VerificationMode, base_sha: str) -> list[VerificationPhase]
     Phases run in order. Within a phase, lanes run concurrently and each lane runs its steps
     in order, so a lane holds exactly the steps that must not overlap, e.g. ``simulate:diff``
     reads the report that ``simulate:scenarios`` writes. Emulator suites can share a phase
-    because each rules shard and browser E2E acquires its own dynamically leased ports via the
+    because each rules and browser E2E shard acquires its own dynamically leased ports via the
     test harness launcher. Wall-clock latency gates get a phase of their own so no
     sibling competes for the CPU while samples are taken.
     """
@@ -149,6 +150,10 @@ def build_plan(mode: VerificationMode, base_sha: str) -> list[VerificationPhase]
     if mode == "docs":
         return [hygiene]
 
+    # Fail registry/security checks before launching suites that must finish to clean up.
+    preflight = VerificationPhase(
+        "preflight", ((VerificationStep("frontend dependency audit", _npm("audit")),),)
+    )
     gates = VerificationPhase(
         "gates",
         (
@@ -161,7 +166,20 @@ def build_plan(mode: VerificationMode, base_sha: str) -> list[VerificationPhase]
                 )
                 for index in range(1, RULES_SHARDS + 1)
             ),
-            (VerificationStep("browser E2E", _npm("test:e2e")),),
+            *(
+                (
+                    VerificationStep(
+                        f"browser E2E {index}/{E2E_SHARDS}",
+                        (
+                            *_npm("emulators:exec:e2e"),
+                            "--",
+                            "npm run test:e2e:emulator -- "
+                            f"--shard={index}/{E2E_SHARDS} --workers=1",
+                        ),
+                    ),
+                )
+                for index in range(1, E2E_SHARDS + 1)
+            ),
             (
                 VerificationStep("ruff lint", ("uv", "run", "ruff", "check", ".")),
                 VerificationStep("ruff format", ("uv", "run", "ruff", "format", "--check", ".")),
@@ -169,7 +187,6 @@ def build_plan(mode: VerificationMode, base_sha: str) -> list[VerificationPhase]
                 VerificationStep("pytest", ("uv", "run", "pytest")),
             ),
             (
-                VerificationStep("frontend dependency audit", _npm("audit")),
                 VerificationStep("Firestore rules source sync", _npm("rules:check-sync")),
                 VerificationStep("frontend typecheck", _npm("typecheck")),
                 VerificationStep("frontend lint", _npm("lint")),
@@ -207,7 +224,7 @@ def build_plan(mode: VerificationMode, base_sha: str) -> list[VerificationPhase]
         "latency",
         ((VerificationStep("frontend latency gates", _npm("test:perf")),),),
     )
-    return [hygiene, gates, latency]
+    return [hygiene, preflight, gates, latency]
 
 
 def plan_steps(phases: list[VerificationPhase]) -> list[VerificationStep]:

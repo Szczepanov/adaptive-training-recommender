@@ -24,6 +24,8 @@ const buildTime = process.env.VITE_BUILD_TIME?.trim() || new Date().toISOString(
 const localProxyEnv = loadEnv('development', process.cwd(), 'VITE_');
 
 export default defineConfig({
+  // Concurrent E2E servers must not overwrite each other's optimized dependencies.
+  cacheDir: process.env.E2E_APP_PORT ? `node_modules/.vite-e2e-${process.env.E2E_APP_PORT}` : undefined,
   define: {
     'import.meta.env.VITE_GIT_SHA': JSON.stringify(gitSha),
     'import.meta.env.VITE_GIT_DIRTY': JSON.stringify(String(gitDirty)),
