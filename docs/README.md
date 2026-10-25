@@ -123,6 +123,7 @@ Architectural choices, system invariants, and technical trade-offs are documente
 ### 🔍 Reviews & Analysis
 Point-in-time assessments of the system as built, including gaps between documented decisions and implemented behaviour:
 
+* [**2026-10-25 ADR-0052 D-EVAL criteria (draft)**](./analysis/2026-10-25-adr-0052-d-eval-criteria.md) — Pre-registered go/no-go criteria for retiring the engine: definitions, baselines, thresholds pending owner decisions, result template.
 * [**2026-10-18 Issue #896 completion missingness acceptance audit**](./analysis/2026-10-18-issue-896-completion-missingness-acceptance.md) — Issue #896 completion missingness acceptance audit.
 * [**2026-10-12 Issue #897 — Post-merge acceptance audit**](./analysis/2026-10-12-issue-897-postmerge-acceptance.md) — Acceptance and status reconciliation following WP8.2 and WP6.6 delivery.
 * [**2026-10-08 Lane A: issue #897 implementation handoff**](./analysis/2026-10-08-lane-a-implementation-handoff.md) — Point-in-time analysis and handoff for issue #897.
