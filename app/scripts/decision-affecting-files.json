@@ -1,0 +1,97 @@
+{
+  "description": "Files whose change can alter a persisted recommendation. Shared by check-policy-drift.mjs (POLICY_VERSION bump gate, ADR-0010) and scripts/engine_impact.py (engine-simulation trigger, ADR-0052 D-CI) so the two gates cannot drift apart.",
+  "files": [
+    { "path": "app/src/engine/rules.ts" },
+    { "path": "app/src/engine/optimizer.ts" },
+    { "path": "app/src/engine/microcycle.ts" },
+    { "path": "app/src/engine/periodization.ts" },
+    { "path": "app/src/engine/eventHorizonPolicy.ts" },
+    { "path": "app/src/engine/seasonRoadmap.ts" },
+    { "path": "app/src/engine/fatigue.ts" },
+    {
+      "path": "app/src/engine/occupationalLoad.ts",
+      "reason": "Occupational-load magnitudes and baseline discounts affect the live fatigue input."
+    },
+    {
+      "path": "app/src/engine/knowledgeLineage.ts",
+      "reason": "Claim selection changes the persisted recommendation audit's provenance contract."
+    },
+    { "path": "app/src/engine/planner.ts" },
+    {
+      "path": "app/src/engine/weeklyAllocation.ts",
+      "reason": "Weekly allocation reservations and exact-candidate ordering can change which sessions enter a persisted recommendation, even when planner.ts is unchanged."
+    },
+    { "path": "app/src/engine/rollingLoadBudget.ts" },
+    { "path": "app/src/engine/dose.ts" },
+    {
+      "path": "app/src/engine/completedTraining.ts",
+      "reason": "Completed evidence changes future objective state and fatigue replay. A selectable estimator here is policy even though it sits upstream of the ranking modules."
+    },
+    { "path": "app/src/engine/garminTelemetryEvidence.ts" },
+    {
+      "path": "app/src/engine/adapters.ts",
+      "reason": "Maps the persisted check-in/goals/settings into SubjectiveInput and UserContext (painFlag, restrictedModalities, clinicalFlagActive) before rules.ts runs, so a change can alter a persisted decision exactly as a change to rules.ts does."
+    },
+    {
+      "path": "app/src/engine/injuryPolicy.ts",
+      "reason": "Structured injury composition creates hard modality/category/guardrail restrictions before rules.ts evaluates the shared safety envelope; guarded beside the adapter so an injury mapping change cannot silently keep an old persisted policy identity."
+    },
+    {
+      "path": "app/src/engine/externalSession.ts",
+      "reason": "ADR-0019: adjudication decides what an externally-planned athlete is told to do."
+    },
+    {
+      "path": "app/src/engine/externalSessionProfiles.ts",
+      "reason": "ADR-0019: the derived cost feeds the adjudication ceilings."
+    },
+    {
+      "path": "app/src/engine/subjectiveBaseline.ts",
+      "reason": "ADR-0020: once subjective drift is enabled, the baseline estimator is part of the deciding function even though it lives outside rules.ts."
+    },
+    {
+      "path": "app/src/engine/authoredSessionGates.ts",
+      "reason": "ADR-0023: authored session replacement and addition gates directly alter live recommendations."
+    },
+    {
+      "path": "app/src/engine/evergreenStrategy.ts",
+      "reason": "PR #292/#295: the evergreen requirement/packing/coverage pipeline decides which adaptations are required vs droppable and which concrete workouts satisfy them."
+    },
+    { "path": "app/src/engine/weeklyAerobicDose.ts" },
+    { "path": "app/src/engine/weeklyDosePacking.ts" },
+    { "path": "app/src/engine/coverage.ts" },
+    {
+      "path": "app/src/engine/aerobicVolumeFloor.ts",
+      "reason": "#757: the athlete-relative aerobic_volume floor decides which sessions earn exact weekly coverage, the first ranking key."
+    },
+    { "path": "app/src/engine/evergreenPlanning.ts" },
+    { "path": "app/src/engine/planSchedule.ts" },
+    {
+      "path": "app/src/engine/trainingIntent.ts",
+      "reason": "Decides which history window feeds athlete-state inference and fatigue/objective bookkeeping; the established-history fix changed live recommendations here without touching rules.ts."
+    },
+    { "path": "app/src/engine/trainingHistorySnapshot.ts" },
+    {
+      "path": "app/src/engine/templates.ts",
+      "reason": "The legacy template catalog and the coverage-role-to-workout mapping decide which concrete sessions can satisfy a required adaptation at all."
+    },
+    { "path": "app/src/workouts/event-plan.ts" },
+    { "path": "app/src/workouts/prescription.ts" },
+    { "path": "app/src/workouts/models.ts" },
+    { "path": "app/src/sessions/catalogSessionAdapter.ts" },
+    {
+      "path": "app/src/engine/mechanicalProgression.ts",
+      "reason": "#804: progressive mechanical and impact exposure capability and progression rules."
+    },
+    { "path": "app/src/workouts/mechanicalExposure.ts" },
+    {
+      "path": "app/src/engine/confirmedProgressionOverrides.ts",
+      "reason": "Confirmed progression overrides alter the active dose of the selected catalog workout, including authored event/taper roles outside evergreen packing."
+    }
+  ],
+  "prefixes": [
+    {
+      "path": "app/src/workouts/catalog/",
+      "reason": "Catalog definitions are executable recommendation content: changing one can alter the persisted primarySession/prescription without touching the selection algorithm."
+    }
+  ]
+}

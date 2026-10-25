@@ -381,6 +381,11 @@ The command is repository-owned and scope-aware:
   engine simulations, deterministic plan/persona corpus gates, policy-version drift, production
   build, and coding-agent corpus validation.
 
+Local `make verify` always runs the engine simulations on a code diff. CI is narrower: it
+skips them when `scripts/engine_impact.py` positively classifies the change as not
+engine-affecting (ADR-0052 D-CI), so a green CI without the simulation job is expected for
+UI, ingestion and docs changes.
+
 The frontend dependency audit remains required, matching `npm run check`. It runs in a
 preflight phase after hygiene, before expensive suites start, so registry failures and security
 findings fail promptly. Python dependency-security registry checks and Docker/BuildKit checks
