@@ -59,8 +59,12 @@ src/garmin_sync/
   _hr_fidelity_timing.py    # Timer-window, sampling and coverage primitives for hr_fidelity (HRF3)
   cli.py               # Argument parsing and entry points
 
+app/src/ledger/            # ADR-0052 Phase 1: ledger record types; must never import engine/
+  models.ts            # Recovery snapshots, check-ins, injuries, activities, strength logs, settings/preferences, Modality/GuardrailKey vocabulary
+  models.architecture.test.ts # Fails if anything under ledger/ reaches engine/, directly or transitively
+
 app/src/engine/
-  models.ts            # Domain models, event schemas, microcycle & strain telemetry
+  models.ts            # Engine decision models, event schemas, microcycle & strain telemetry; re-exports ledger/models.ts
   rules.ts             # Adaptive rules engine (acute/drift strain, mode hierarchy & rationale)
   templates.ts         # Session template catalog & systemic load caps with dual profiles
   validation.ts        # Input schema validators & sanitizers
