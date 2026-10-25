@@ -210,10 +210,9 @@ def test_unreadable_base_fails_safe(repo: Path) -> None:
             [],
         ),
         ("service.import('./not-a-module');", []),
+        ("// invalid input must fail import\n// rather than throw\nconst value = 1;", []),
         # A UTF-8 BOM must not hide the first import.
         ("\N{ZERO WIDTH NO-BREAK SPACE}import { a } from './a';\n", ["./a"]),
-        # Prose about import(...) in a comment is not an opaque import.
-        ("// lazily import(provider) on first use\nexport const x = 1;\n", []),
         # A regex literal that looks like a block comment must not swallow later imports.
         ("const r = /\\/*x/;\nimport { b } from './b';\n", ["./b"]),
     ],
@@ -240,10 +239,44 @@ def test_extract_specifiers(source: str, expected: list[str]) -> None:
         # A ternary alternative that is an object literal looks like a method body (re-review).
         "const m = flag ? import(p) : { run() {} };",
         "const m = flag ? import(p) : {};",
+        # Regex literals must not hide opaque imports from the comment-stripped scan.
+        r"const r = /\/*x/; const load = (p) => import(p);",
+        r"const r = /[/*]/; const load = (p) => import(p); /* trailing comment */",
+        r"const r = /\/*x/; const load = (p) => import /* comment */ (p);",
+        r"const r = /\/*x/; const load = (p) => require /* comment */ (p);",
+        r"const r = /\/*x/; import /* comment */ './side-effect';",
+        "const r = /\\/*x/; import /* don't */ value from './extra';",
+        "const r = /\\/*x/; import /* don't */ type Value from './extra';",
+        # An import expression followed by a block is not a method named import.
+        "function f(p) { import(p)\n{ console.log(1); } }",
+        "function f(p) { async\nimport(p)\n{ console.log(1); } }",
+        "function f(p) { get /* comment\n */ import(p)\n{ console.log(1); } }",
+        # Raw-source scanning conservatively includes commented opaque imports too.
+        "// lazily import(provider) on first use\nexport const x = 1;\n",
     ],
 )
 def test_extract_specifiers_flags_opaque_imports(source: str) -> None:
     assert extract_specifiers(source)[1] >= 1
+
+
+def test_regex_before_dynamic_import_cannot_hide_changed_dependency(repo: Path) -> None:
+    _commit(
+        repo,
+        {
+            "app/src/derived/flags.ts": (
+                r"const r = /\/*x/; const path = '../plugins/extra';"
+                "export const load = () => import(path);\n"
+            ),
+            "app/src/plugins/extra.ts": "export const value = 1;\n",
+        },
+    )
+
+    affected, reasons = _assess_change(
+        repo, {"app/src/plugins/extra.ts": "export const value = 2;\n"}
+    )
+
+    assert affected, reasons
+    assert "non-literal dynamic import" in reasons
 
 
 @pytest.mark.parametrize(

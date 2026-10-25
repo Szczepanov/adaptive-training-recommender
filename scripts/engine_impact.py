@@ -104,14 +104,20 @@ _CALL_IMPORT = re.compile(r"""(?<![.\w$])(?:import|require)\s*\(\s*['"]([^'"\n]+
 # loads modules no static walk can name, so it makes the graph uncertain. Any position
 # counts, statement starts included. The one exemption is a method *named* import
 # (`async import(userId: string): Promise<T> {`), and only when it is provably in method
-# position: a signature ending in `{` AND preceded only by modifiers after `{`, `}` or `;`.
-# A ternary such as `flag ? import(p) : {}` fails the second test and is flagged.
+# position: a signature ending in `{` AND preceded by explicit modifiers after `{`, `}`
+# or `;`. Bare import(p) followed by a block is a valid expression, so stays uncertain.
 _DYNAMIC_CALL = re.compile(r"""(?<![.\w$])(?:import|require)\s*\((?!\s*['"][^'"\n]+['"]\s*\))""")
 _METHOD_SIGNATURE = re.compile(r"""[^()]*\)\s*(?::[^{};=]*)?\{""")
 _METHOD_PREFIX = re.compile(
-    r"""(?:^|[{};])\s*(?:(?:async|static|public|private|protected|override|get|set)\s+)*\Z"""
+    r"""(?:^|[{};])\s*(?:(?:async|static|public|private|protected|override|get|set)[ \t]+)+\Z"""
 )
 _GLOB_IMPORT = re.compile(r"""\bimport\.meta\.glob""")
+# A comment separator can hide the call from the raw scan if regexes confuse stripping.
+_COMMENTED_IMPORT = re.compile(
+    r"""(?<![.\w$])(?:import|require)\s*"""
+    r"""(?:(?:/\*[\s\S]*?\*/|//[^\r\n]*[\r\n])\s*)+"""
+    r"""(?=[('"{*.]|type\s+[*{]|(?:type\s+)?[\w$]+\s*(?:from\b|,))"""
+)
 
 
 class GraphError(RuntimeError):
@@ -150,8 +156,10 @@ def strip_comments(source: str) -> str:
             i = length if newline == -1 else newline
         elif char == "/" and nxt == "*":
             close = source.find("*/", i + 2)
-            i = length if close == -1 else close + 2
-            out.append(" ")
+            end = length if close == -1 else close + 2
+            # Line breaks in comments still trigger JavaScript's automatic semicolons.
+            out.append("\n" if re.search(r"[\r\n\u2028\u2029]", source[i:end]) else " ")
+            i = end
         else:
             out.append(char)
             i += 1
@@ -179,10 +187,10 @@ def _scan_specifiers(code: str) -> set[str]:
 
 
 def _count_opaque(code: str) -> int:
-    opaque = len(_GLOB_IMPORT.findall(code))
+    opaque = len(_GLOB_IMPORT.findall(code)) + len(_COMMENTED_IMPORT.findall(code))
     for match in _DYNAMIC_CALL.finditer(code):
         is_method = _METHOD_SIGNATURE.match(code, match.end()) and _METHOD_PREFIX.search(
-            code[: match.start()]
+            strip_comments(code[: match.start()])
         )
         opaque += 0 if is_method else 1
     return opaque
@@ -196,13 +204,13 @@ def extract_specifiers(source: str) -> tuple[list[str], int]:
     survives a regex literal such as `/\\/*/` that the stripper mistakes for a comment.
     Commented-out imports therefore count as edges too: a commented-out import of a deleted
     relative path in a reachable file makes every PR fail safe until it is removed, and the
-    reason names the file. Opaque imports are counted on the stripped source only, so prose
-    such as "lazily import(...)" in a comment does not make the graph uncertain.
+    reason names the file. Opaque imports also use both scans: regex literals must not hide
+    them. Commented opaque imports may therefore conservatively make the graph uncertain.
     """
     source = source.removeprefix("\N{ZERO WIDTH NO-BREAK SPACE}")
     stripped = strip_comments(source)
     specifiers = _scan_specifiers(source) | _scan_specifiers(stripped)
-    return sorted(specifiers), _count_opaque(stripped)
+    return sorted(specifiers), max(_count_opaque(source), _count_opaque(stripped))
 
 
 def resolve_specifier(importer: str, specifier: str, files: set[str]) -> list[str] | None:
