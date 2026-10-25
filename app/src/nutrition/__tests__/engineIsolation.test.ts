@@ -25,8 +25,8 @@ function listProductionEngineFiles(dir: string = ENGINE_DIR): string[] {
 
 describe('engine isolation from nutrition (ADR-0042)', () => {
     it('keeps nutritionAdherenceYesterday out of engine decision logic', () => {
+        // The field's type now lives in ledger/models.ts (ADR-0052 #1144), outside this scan.
         const allowedBoundaryFiles = new Set([
-            'engine/models.ts',
             'engine/validationCore.ts',
         ]);
         const violations: string[] = [];

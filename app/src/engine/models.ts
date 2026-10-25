@@ -811,6 +811,7 @@ export interface FatigueState {
     combinedFatigue: DimensionalFatigue;
     rawExternalLoadFatigue?: DimensionalFatigue;
 }
+
 export type SessionRole = 'anchor' | 'supporting' | 'recovery';
 export type IntensityClass = 'hard' | 'moderate' | 'easy' | 'recovery';
 
@@ -1240,6 +1241,7 @@ export interface UserGoal {
     createdAt: string;
     updatedAt: string;
 }
+
 export type EquipmentKey = LegacyEquipmentKey | SportAccessKey;
 
 // --- Engine Layer Models (Not stored in Firestore) ---

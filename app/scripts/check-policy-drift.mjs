@@ -253,6 +253,8 @@ const subjectiveDriftEvidenceFiles = new Set([
   rulesFile,
   subjectiveBaselineFile,
   'app/src/engine/models.ts',
+  // ADR-0052 #1144: the record types this exception covers now live in ledger/models.ts.
+  'app/src/ledger/models.ts',
   'app/src/engine/provenance.ts',
   'app/src/engine/subjectiveDriftAudit.ts',
   'app/src/engine/replay.ts',
@@ -356,6 +358,8 @@ function isAcceptedDormantSleepRecoveryEvidenceChange() {
   const allowedProductionSources = new Set([
     adaptersFile,
     'app/src/engine/models.ts',
+    // ADR-0052 #1144: the record types these exceptions cover now live in ledger/models.ts.
+    'app/src/ledger/models.ts',
     sleepRecoveryEvidenceFile,
   ]);
   const changedProductionSources = changedFiles.filter((file) =>
@@ -386,6 +390,8 @@ function isAcceptedDormantSleepRecoveryEvidenceChange() {
     adaptersFile,
     'app/src/engine/adapters.test.ts',
     'app/src/engine/models.ts',
+    // ADR-0052 #1144: the record types these exceptions cover now live in ledger/models.ts.
+    'app/src/ledger/models.ts',
     sleepRecoveryEvidenceFile,
     sleepRecoveryEvidenceTestFile,
   ]);
@@ -437,6 +443,8 @@ function isAcceptedBehaviorIdenticalInjuryLineageChange() {
     adaptersFile,
     injuryPolicyFile,
     'app/src/engine/models.ts',
+    // ADR-0052 #1144: the record types these exceptions cover now live in ledger/models.ts.
+    'app/src/ledger/models.ts',
     'app/src/engine/knowledgeLineage.ts',
     'app/src/knowledge/injuryPainKnowledge.ts',
     'app/src/knowledge/sportsKnowledgeRegistry.ts',
@@ -459,6 +467,8 @@ function isAcceptedBehaviorIdenticalInjuryLineageChange() {
     'app/src/engine/injuryPolicy.test.ts',
     injuryLineageEquivalenceTestFile,
     'app/src/engine/models.ts',
+    // ADR-0052 #1144: the record types these exceptions cover now live in ledger/models.ts.
+    'app/src/ledger/models.ts',
     'app/src/engine/knowledgeLineage.ts',
     'app/src/engine/knowledgeLineage.test.ts',
   ]);
