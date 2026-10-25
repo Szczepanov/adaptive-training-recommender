@@ -1,6 +1,6 @@
 # Issue #1145: D-EXPORT v1, the structured ledger export
 
-- **Status:** Draft. Design for owner review; the owner decisions are listed below.
+- **Status:** Approved (owner decisions OD1–OD5 recorded 2026-10-25, all as proposed). Part B implementation is blocked only by #1148.
 - **Blocked by:** #1144 PR0 (#1148, `app/src/ledger/models.ts`) for implementation; nothing blocks this design.
 - **Unlocks:** ADR-0052 Phase 2 (switch-off), which requires D-EXPORT v1 *shipped and contract-tested*.
 - **Companion:** [`../analysis/2026-10-25-adr-0052-d-eval-criteria.md`](../analysis/2026-10-25-adr-0052-d-eval-criteria.md). ADR-0052 requires it to merge together with this design.
@@ -17,7 +17,7 @@ default export.
 
 - #1148 merged, so the exporter and its types live outside `engine/` and import only from
   `ledger/` (enforced by `ledger/models.architecture.test.ts`).
-- Owner decisions OD1–OD4 answered; OD5 can wait until work item 4.
+- Owner decisions OD1–OD5: answered 2026-10-25.
 
 ## Design
 
@@ -221,21 +221,21 @@ change ships in Phase 2.
 ## Acceptance criteria
 
 - [ ] This design and the D-EVAL criteria document merge in the same PR.
-- [ ] OD1–OD4 are answered in this document before Part B starts.
+- [x] OD1–OD5 are answered in this document (2026-10-25).
 - [ ] Part B: every field in the five tables is present in the export with a `state`.
 - [ ] Part B: the contract tests above run in CI (`frontend-unit-tests`).
 - [ ] Part B: the export imports nothing from `app/src/engine/`.
 
-## Owner decisions
+## Owner decisions (recorded 2026-10-25, all approved as proposed)
 
-- **OD1. Window and bounds per purpose.** Proposed: keep today's purposes and caps (morning
-  today + D−1, planning 14 days, diagnostic caller-selected).
-- **OD2. Provider activity detail in `planning`.** Proposed: the bounded detail rows only
+- **OD1. Window and bounds per purpose.** **Decided:** keep today's purposes and caps
+  (morning today + D−1, planning 14 days, diagnostic caller-selected).
+- **OD2. Provider activity detail in `planning`.** **Decided:** the bounded detail rows only
   (newest 12, ≤ 20 segments each, as today). Full detail is diagnostic only.
-- **OD3. Override reasons.** Proposed: v1 exports `dropped`/`moved` without a reason
+- **OD3. Override reasons.** **Decided:** v1 exports `dropped`/`moved` without a reason
   (`not_yet_supported`). Adding an optional reason when the athlete skips is follow-up work.
-- **OD4. Legacy layer default.** Proposed: off. The owner opts in per export until Phase 3.
-- **OD5. Markdown brief during the transition.** Proposed: keep both exports until Phase 2;
+- **OD4. Legacy layer default.** **Decided:** off. The owner opts in per export until Phase 3.
+- **OD5. Markdown brief during the transition.** **Decided:** keep both exports until Phase 2;
   Phase 2 switches the Markdown to render from `LedgerExport`.
 
 ## Risks and rollback

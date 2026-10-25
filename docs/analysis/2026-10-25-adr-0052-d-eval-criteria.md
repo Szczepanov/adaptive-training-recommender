@@ -1,8 +1,9 @@
 # ADR-0052 D-EVAL criteria: does the ledger + external-AI loop justify retiring the engine?
 
-- **Status:** **Draft, not yet in force.** Every threshold marked **[OD]** is a proposed default
-  the owner must confirm or change before this document takes effect. Once confirmed, it is
-  frozen for the block it judges (ADR-0052 D-EVAL).
+- **Status:** **Owner-approved 2026-10-25; in force from its merge commit.** OD1–OD5, OD7 and
+  OD8 were approved as proposed. OD6 was replaced by per-protocol schedules (§3). C2 can be
+  evaluated only once the §3 protocol schedule table is filled in, which must happen before the
+  block starts. The thresholds are frozen for the block they judge (ADR-0052 D-EVAL).
 - **Decision source:** [ADR-0052](../adr/0052-user-ledger-and-external-ai-planning-authority.md), sections D-EVAL and D-ENGINE.
 - **Companion:** [`../plans/2026-10-25-issue-1145-ledger-export-v1.md`](../plans/2026-10-25-issue-1145-ledger-export-v1.md). ADR-0052 requires both to merge together, before Phase 2.
 - **Result document (written after the block):** `docs/analysis/<date>-adr-0052-d-eval-result.md`, using the template at the end of this document.
@@ -89,27 +90,53 @@ That earlier block ran with engine adjudication on, so the comparison is *loop v
 controlled experiment. The result document must say so. If the earlier block fails either test,
 the adherence criterion uses the absolute threshold **≥ 75% [OD5]**.
 
-**Benchmark baseline.** For each goal-bound assessment protocol, it is the most recent completed
-attempt (`assessment_attempts`, ADR-0046/0047) dated **no more than 28 days [OD6]** before the
-block start. The October 2026 baseline window (19–25 Oct) is a *candidate*: if Phase 2 ships more
-than 28 days after 25 Oct, a fresh baseline must run before the block. Otherwise the comparison
-would also measure the intervening training. The "after" value is the first comparable attempt
-within **7 days [OD6]** after the block ends, using the same protocol, the same series identity
-(ADR-0047 for velocity series) and the comparability rules the protocol declares.
+**Benchmark baseline: each protocol on its own schedule [OD6, owner decision 2026-10-25].**
+Goal-bound tests keep their usual retest schedule; some are roughly quarterly, others yearly. No
+extra testing is required for the block. The code records no retest interval, so the owner
+declares one per goal-bound protocol in the table below, before the block starts:
+
+| Protocol (`physicalCapitalProtocols.ts` id) | Goal-bound? | Retest interval |
+|---|---|---|
+| `strength-back-squat-1rm` | *owner* | *owner, e.g. quarterly* |
+| `strength-bench-press-1rm` | *owner* | *owner* |
+| `strength-back-squat-fixed-load-velocity` | *owner* | *owner* |
+| `strength-bench-press-fixed-load-velocity` | *owner* | *owner* |
+| `field-standing-broad-jump` | *owner* | *owner* |
+| `field-wall-touch-cmj` | *owner* | *owner* |
+| `field-seated-medball-chest-throw-3kg` | *owner* | *owner* |
+| `cycling-6s-seated-sprint` | *owner* | *owner* |
+
+For each goal-bound protocol:
+- **Before:** the most recent comparable completed attempt (`assessment_attempts`,
+  ADR-0046/0047) dated within one retest interval before the block start. If none exists, run
+  one before the block.
+- **After:** the next scheduled comparable attempt after the block ends, no later than one
+  retest interval after the block end. It must use the same protocol, the same series identity
+  (ADR-0047 for velocity series), and the comparability rules the protocol declares.
+- **Between the block end and the after-attempt,** training must stay in the qualifying regime
+  (Phase 2 active, rollback off). A rollback in that interval makes the protocol's C2 result
+  inconclusive, because the after-attempt would then also measure the engine-adjudicated
+  period.
+
+Consequence, accepted by the owner: **C2, and therefore the overall go/no-go, may resolve
+months after the block ends** when a goal-bound test is yearly. Until then the result
+document records C2 as `pending` with each protocol's due date, and Phase 3 cannot start.
+The October 2026 assessment window (19–25 Oct) can serve as "before" for any protocol whose
+interval reaches the block start.
 
 ## 4. Criteria
 
 | # | Criterion | Pass | Fail | Inconclusive |
 |---|---|---|---|---|
 | C1 | Adherence | ≥ baseline − **5 percentage points [OD7]** when §3 confirms a comparable baseline; otherwise ≥ the §3 absolute threshold | Below the applicable threshold | Fewer than 8 eligible sessions, zero denominator, or `unknown` > 10% of planned |
-| C2 | Goal benchmarks | No goal benchmark declines by more than its protocol's stated measurement noise | Any goal benchmark declines by more than its noise | Missing before or after attempt, failed comparability, or a protocol with no stated noise |
+| C2 | Goal benchmarks | No goal benchmark declines by more than its protocol's stated measurement noise | Any goal benchmark declines by more than its noise | Missing before attempt, after-attempt missed beyond its interval, a rollback before the after-attempt, failed comparability, a protocol with no stated noise, or no goal-bound protocol declared. **Pending** (not inconclusive) while an after-attempt is not yet due |
 | C3 | Flagged-day outcomes | Zero adverse flagged-day outcomes with complete follow-up windows | Any adverse flagged-day outcome: **no-go until ADR-0052 is amended** | A flag-input source missing, `unavailable` or `invalid` on 3 or more block dates **[OD8]**, or incomplete outcome follow-up for any flagged hard session |
 | C4 | Rollback | The rollback setting was not used | It was used for a safety reason: **no-go until ADR-0052 is amended** | It was used for a non-safety reason: the block restarts (§1) |
 
 An observed failure takes precedence over missing evidence; otherwise apply the inconclusive
 conditions before the pass conditions.
-**Overall go** means every criterion passes and none is inconclusive. Anything else is a no-go
-or an extension. An inconclusive criterion extends or repeats the block; it never counts as a
+**Overall go** means every criterion passes and none is inconclusive or pending. A pending C2
+holds the result open; it is neither a go nor a no-go. Anything else is a no-go or an extension. An inconclusive criterion extends or repeats the block; it never counts as a
 pass.
 
 ## 5. What the ledger must record for this to be measurable
@@ -131,18 +158,18 @@ These are inputs for #1145 Part B and for Phase 2. Without them the criteria can
   is why D-USER's injury history is `not_yet_supported`. Until it exists, C3 detects new
   injuries through check-ins only, and the result document must say so.
 
-## 6. Owner decisions
+## 6. Owner decisions (recorded 2026-10-25)
 
-| ID | Decision | Proposed default | Why |
+| ID | Decision | Owner decision | Why |
 |---|---|---|---|
-| OD1 | Block length | 28 days | ADR-0052 minimum; matches the adherence baseline window |
-| OD2 | Weight of a `partial` session | 0.5 | Counts effort without equating it to completion |
-| OD3 | Adverse-outcome window | 72 h | ADR-0052 wording; covers delayed illness onset after a hard day |
-| OD4 | Baseline comparability | ≥ 8 eligible, ≥ 90% of planned determinable | Below this, a few sessions swing the percentage |
-| OD5 | Absolute adherence floor | 75% | Conventional "mostly followed" bar; owner to set |
-| OD6 | Benchmark recency and after-window | ≤ 28 days before; ≤ 7 days after | Keeps the comparison to the block |
-| OD7 | Adherence tolerance | 5 percentage points | About 1 session in 20; sampling noise at this volume |
-| OD8 | Flag-source availability for C3 | Inconclusive if missing, unavailable or invalid on ≥ 3 dates | Too many blind dates make "zero adverse outcomes" meaningless |
+| OD1 | Block length | **28 days** (approved) | ADR-0052 minimum; matches the adherence baseline window |
+| OD2 | Weight of a `partial` session | **0.5** (approved) | Counts effort without equating it to completion |
+| OD3 | Adverse-outcome window | **72 h** (approved) | ADR-0052 wording; covers delayed illness onset after a hard day |
+| OD4 | Baseline comparability | **≥ 8 eligible, ≥ 90% of planned determinable** (approved) | Below this, a few sessions swing the percentage |
+| OD5 | Absolute adherence floor | **75%** (approved) | Conventional "mostly followed" bar |
+| OD6 | Benchmark recency and after-window | **Each protocol on its own retest schedule** (replaces the proposed ≤ 28 d before / ≤ 7 d after); the interval table in §3 is to be filled in before the block | Some tests are quarterly, some yearly; no extra testing for the block. The owner accepted that C2 may resolve late |
+| OD7 | Adherence tolerance | **5 percentage points** (approved) | About 1 session in 20; sampling noise at this volume |
+| OD8 | Flag-source availability for C3 | **Inconclusive if missing, unavailable or invalid on ≥ 3 dates** (approved) | Too many blind dates make "zero adverse outcomes" meaningless |
 
 ## 7. Result template (for the result document)
 
@@ -152,9 +179,9 @@ These are inputs for #1145 Part B and for Phase 2. Without them the criteria can
 - Phase 2 commit / rollback setting state during block: <…>
 | # | Result (pass / fail / inconclusive) | Evidence (counts, values, sources) |
 | C1 | | planned=…, completed=…, moved=…, partial=…, reduced=…, flag_skip=…, missed=…, unknown=…; baseline=… |
-| C2 | | per protocol: before / after / noise / comparability |
+| C2 | | per protocol: retest interval / before (date, value) / after (due date, date, value) / noise / comparability; `pending` until each after-attempt is done |
 | C3 | | flagged hard days=…, adverse outcomes=… (with dates and sources); blind flag-input dates=…; final follow-up window closed at=…; incomplete follow-ups=… |
 | C4 | | rollback used? why? |
 - Known limits: <e.g. loop-vs-loop baseline, injury onset via check-ins only>
-- **Overall: GO / NO-GO / EXTEND**
+- **Overall: GO / NO-GO / EXTEND / PENDING (C2 after-attempts due …)**
 ```
