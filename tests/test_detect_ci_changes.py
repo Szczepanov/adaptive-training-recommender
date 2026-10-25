@@ -112,3 +112,52 @@ def test_main_pull_request_fail_safe_empty(monkeypatch: pytest.MonkeyPatch, tmp_
     content = out_file.read_text(encoding="utf-8")
     assert "code_changed=true" in content
     assert "docs_only=false" in content
+    assert "engine_affected=true" in content
+
+
+def test_main_non_pull_request_runs_simulations(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import detect_ci_changes
+
+    out_file = tmp_path / "output.txt"
+    monkeypatch.setenv("GITHUB_OUTPUT", str(out_file))
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "push")
+
+    assert detect_ci_changes.main() == 0
+    assert "engine_affected=true" in out_file.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("affected", [True, False])
+def test_main_pull_request_writes_engine_impact(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, affected: bool
+) -> None:
+    import detect_ci_changes
+    from engine_impact import EngineImpact
+
+    out_file = tmp_path / "output.txt"
+    monkeypatch.setenv("GITHUB_OUTPUT", str(out_file))
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "pull_request")
+    monkeypatch.setattr(
+        detect_ci_changes, "get_changed_files", lambda base_ref: ["app/src/App.tsx"]
+    )
+    monkeypatch.setattr(
+        detect_ci_changes,
+        "assess_engine_impact",
+        lambda base_ref: EngineImpact(affected, ("stubbed",)),
+    )
+
+    assert detect_ci_changes.main() == 0
+    content = out_file.read_text(encoding="utf-8")
+    assert "code_changed=true" in content
+    assert f"engine_affected={'true' if affected else 'false'}" in content
+
+
+def test_assess_engine_impact_fails_safe_without_base(monkeypatch: pytest.MonkeyPatch) -> None:
+    import detect_ci_changes
+
+    monkeypatch.setattr(detect_ci_changes, "resolve_diff_refs", lambda base_ref: None)
+
+    impact = detect_ci_changes.assess_engine_impact("origin/main")
+    assert impact.affected
+    assert impact.reasons == ("uncertain: cannot resolve the diff base",)

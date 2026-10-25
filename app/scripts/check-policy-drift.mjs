@@ -75,82 +75,14 @@ if (!diffOutput) {
 
 const changedFiles = diffOutput.trim().split('\n').filter(Boolean);
 
-const decisionAffectingFiles = [
-  'app/src/engine/rules.ts',
-  'app/src/engine/optimizer.ts',
-  'app/src/engine/microcycle.ts',
-  'app/src/engine/periodization.ts',
-  'app/src/engine/eventHorizonPolicy.ts',
-  'app/src/engine/seasonRoadmap.ts',
-  'app/src/engine/fatigue.ts',
-  // Occupational-load magnitudes and baseline discounts affect the live fatigue input.
-  'app/src/engine/occupationalLoad.ts',
-  // Claim selection changes the persisted recommendation audit's provenance contract.
-  'app/src/engine/knowledgeLineage.ts',
-  'app/src/engine/planner.ts',
-  // Weekly allocation reservations and exact-candidate ordering can change which
-  // sessions enter a persisted recommendation, even when planner.ts is unchanged.
-  'app/src/engine/weeklyAllocation.ts',
-  'app/src/engine/rollingLoadBudget.ts',
-  'app/src/engine/dose.ts',
-  // Completed evidence changes future objective state and fatigue replay. A selectable
-  // estimator here is policy even though it sits upstream of the ranking modules.
-  'app/src/engine/completedTraining.ts',
-  'app/src/engine/garminTelemetryEvidence.ts',
-  // adapters.ts maps the persisted check-in/goals/settings into the engine's SubjectiveInput
-  // and UserContext -- painFlag, restrictedModalities and clinicalFlagActive all derive from
-  // it before rules.ts ever runs, so a change here can alter a persisted decision exactly as
-  // a change to rules.ts does, even though it sits upstream of the ranking modules.
-  'app/src/engine/adapters.ts',
-  // Structured injury composition creates hard modality/category/guardrail restrictions before
-  // `rules.ts` evaluates the shared safety envelope. Guard it beside the adapter so an injury
-  // mapping change cannot silently retain an old persisted policy identity.
-  'app/src/engine/injuryPolicy.ts',
-  // ADR-0019: adjudication decides what an externally-planned athlete is told to do, so a
-  // change here alters a persisted decision exactly as a change to rules.ts does. The
-  // profile derivation is included because the cost it produces feeds the ceilings.
-  'app/src/engine/externalSession.ts',
-  'app/src/engine/externalSessionProfiles.ts',
-  // ADR-0020: once subjective drift is enabled, the baseline estimator is part of the
-  // deciding function even though it lives outside rules.ts. Keep it guarded now so a
-  // later estimator change cannot silently retain an old live policy identity.
-  'app/src/engine/subjectiveBaseline.ts',
-  // ADR-0023: authored session replacement and addition gates directly alter live recommendations.
-  'app/src/engine/authoredSessionGates.ts',
-  // PR #292/#295: the evergreen requirement/packing/coverage pipeline decides which
-  // adaptations are required vs droppable and which concrete workouts satisfy them --
-  // that is exactly a persisted-decision policy, even though it sits outside rules.ts.
-  // Findings 4 and 8 both changed live recommendations by editing only these files, and
-  // the drift gate did not previously notice because none of them were listed here.
-  'app/src/engine/evergreenStrategy.ts',
-  'app/src/engine/weeklyAerobicDose.ts',
-  'app/src/engine/weeklyDosePacking.ts',
-  'app/src/engine/coverage.ts',
-  // #757: the athlete-relative aerobic_volume floor decides which sessions earn exact
-  // weekly coverage, the first ranking key.
-  'app/src/engine/aerobicVolumeFloor.ts',
-  'app/src/engine/evergreenPlanning.ts',
-  'app/src/engine/planSchedule.ts',
-  // trainingIntent.ts/trainingHistorySnapshot.ts decide which history window feeds
-  // athlete-state inference and fatigue/objective bookkeeping -- the established-history
-  // fix changed live recommendations here without ever touching rules.ts.
-  'app/src/engine/trainingIntent.ts',
-  'app/src/engine/trainingHistorySnapshot.ts',
-  // The legacy template catalog and the coverage-role-to-workout mapping decide which
-  // concrete sessions can satisfy a required adaptation at all (the Walking and Running
-  // coverage-floor fixes both lived here).
-  'app/src/engine/templates.ts',
-  'app/src/workouts/event-plan.ts',
-  'app/src/workouts/prescription.ts',
-  'app/src/workouts/models.ts',
-  'app/src/sessions/catalogSessionAdapter.ts',
-  // #804: progressive mechanical and impact exposure capability and progression rules.
-  'app/src/engine/mechanicalProgression.ts',
-  'app/src/workouts/mechanicalExposure.ts',
-  // Confirmed progression overrides alter the active dose of the selected catalog
-  // workout, including authored event/taper roles that are outside evergreen packing.
-  'app/src/engine/confirmedProgressionOverrides.ts',
-];
+// The decision-affecting list lives in decision-affecting-files.json, with a reason per
+// entry. scripts/engine_impact.py reads the same file for the ADR-0052 engine-simulation
+// trigger, so the POLICY_VERSION gate and the simulation gate cannot drift apart.
+const decisionAffectingConfig = JSON.parse(
+  readFileSync(join(repoRoot, 'app/scripts/decision-affecting-files.json'), 'utf8'),
+);
+const decisionAffectingFiles = decisionAffectingConfig.files.map((entry) => entry.path);
+const decisionAffectingPrefixes = decisionAffectingConfig.prefixes.map((entry) => entry.path);
 
 const policyFile = 'app/src/engine/policy.ts';
 const rulesFile = 'app/src/engine/rules.ts';
@@ -167,10 +99,10 @@ const sleepRecoveryEvidenceFile = 'app/src/engine/sleepRecoveryEvidence.ts';
 const sleepRecoveryEvidenceTestFile = 'app/src/engine/sleepRecoveryEvidence.test.ts';
 const sleepRecoveryPhase3Doc = 'docs/analysis/2026-08-29-sleep-decision-authority-phase-3-implementation.md';
 
-// Catalog definitions are executable recommendation content: changing one can alter the
-// persisted primarySession/prescription without touching the selection algorithm.
+// Prefixes (the workout catalog) cover executable recommendation content: changing one
+// definition can alter the persisted primarySession/prescription without touching selection.
 const changedDecisionFiles = changedFiles.filter((f) =>
-  decisionAffectingFiles.includes(f) || f.startsWith('app/src/workouts/catalog/'),
+  decisionAffectingFiles.includes(f) || decisionAffectingPrefixes.some((prefix) => f.startsWith(prefix)),
 );
 
 /** Return the exact base commit whose tree should be compared with HEAD for this run. */
