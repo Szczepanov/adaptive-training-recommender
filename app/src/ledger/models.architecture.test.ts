@@ -1,6 +1,7 @@
+import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import * as ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
@@ -81,6 +82,18 @@ function exportedNames(relativePath: string): Set<string> {
 }
 
 describe('ledger module boundary (ADR-0052)', () => {
+    it('preserves runtime re-exports for native Node consumers', () => {
+        const engineUrl = pathToFileURL(join(SRC_DIR, 'engine/models.ts')).href;
+        const ledgerUrl = pathToFileURL(join(LEDGER_DIR, 'models.ts')).href;
+        const result = spawnSync(process.execPath, ['--experimental-strip-types', '--input-type=module', '--eval', `
+            import assert from 'node:assert/strict';
+            const engine = await import(${JSON.stringify(engineUrl)});
+            const ledger = await import(${JSON.stringify(ledgerUrl)});
+            for (const name of Object.keys(ledger)) assert.strictEqual(engine[name], ledger[name]);
+        `], { encoding: 'utf8' });
+        expect(result.status, result.stderr).toBe(0);
+    });
+
     it('has at least one ledger module to check', () => {
         expect(sourceFilesUnder(LEDGER_DIR).length).toBeGreaterThan(0);
     });

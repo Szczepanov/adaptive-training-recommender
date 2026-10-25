@@ -27,7 +27,7 @@ import type {
 
 // ADR-0052 Phase 1 (#1144): ledger record types moved to ledger/models.ts; re-exported so
 // existing importers of engine/models keep working unchanged.
-export * from '../ledger/models';
+export * from '../ledger/models.ts';
 
 export type { GoalPerformanceTarget, PerformanceSubjectRef, PerformanceGoalFamily } from './performanceTargetPolicy';
 export type { PerformanceGoalDemand, PerformanceGoalCoverageMissReason } from './performanceGoalDemand';
