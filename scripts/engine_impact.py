@@ -102,15 +102,16 @@ _SIDE_EFFECT_IMPORT = re.compile(r"""(?:^|[\s;{}()])import\s*['"]([^'"\n]+)['"]"
 _CALL_IMPORT = re.compile(r"""(?<![.\w$])(?:import|require)\s*\(\s*['"]([^'"\n]+)['"]\s*\)""")
 # A dynamic import whose argument is not a plain string literal, or a Vite glob import,
 # loads modules no static walk can name, so it makes the graph uncertain. Any position
-# counts, statement starts included; the one exemption is a method *named* import
-# (`async import(userId: string): Promise<T> {`). An exemption the lookahead cannot prove,
-# such as nested parentheses in the parameters, is flagged, which fails safe.
-_OPAQUE_IMPORT = re.compile(
-    r"""(?<![.\w$])(?:import|require)\s*\("""
-    r"""(?!\s*['"][^'"\n]+['"]\s*\))"""
-    r"""(?![^()]*\)\s*(?::[^{};=]*)?\{)"""
-    r"""|\bimport\.meta\.glob"""
+# counts, statement starts included. The one exemption is a method *named* import
+# (`async import(userId: string): Promise<T> {`), and only when it is provably in method
+# position: a signature ending in `{` AND preceded only by modifiers after `{`, `}` or `;`.
+# A ternary such as `flag ? import(p) : {}` fails the second test and is flagged.
+_DYNAMIC_CALL = re.compile(r"""(?<![.\w$])(?:import|require)\s*\((?!\s*['"][^'"\n]+['"]\s*\))""")
+_METHOD_SIGNATURE = re.compile(r"""[^()]*\)\s*(?::[^{};=]*)?\{""")
+_METHOD_PREFIX = re.compile(
+    r"""(?:^|[{};])\s*(?:(?:async|static|public|private|protected|override|get|set)\s+)*\Z"""
 )
+_GLOB_IMPORT = re.compile(r"""\bimport\.meta\.glob""")
 
 
 class GraphError(RuntimeError):
@@ -170,31 +171,45 @@ def _string_end(source: str, start: int) -> int:
     return len(source)
 
 
-def _scan(code: str) -> tuple[set[str], int]:
+def _scan_specifiers(code: str) -> set[str]:
     found: set[str] = set()
     for pattern in (_STATIC_IMPORT, _SIDE_EFFECT_IMPORT, _CALL_IMPORT):
         found.update(match.group(1) for match in pattern.finditer(code))
-    return found, len(_OPAQUE_IMPORT.findall(code))
+    return found
+
+
+def _count_opaque(code: str) -> int:
+    opaque = len(_GLOB_IMPORT.findall(code))
+    for match in _DYNAMIC_CALL.finditer(code):
+        is_method = _METHOD_SIGNATURE.match(code, match.end()) and _METHOD_PREFIX.search(
+            code[: match.start()]
+        )
+        opaque += 0 if is_method else 1
+    return opaque
 
 
 def extract_specifiers(source: str) -> tuple[list[str], int]:
     """Return the specifiers a TS/JS source imports, plus its count of opaque imports.
 
-    The scan runs on the raw source and on the comment-stripped source, and keeps the union.
-    The stripped scan survives comments inside an import clause (`// don't`); the raw scan
+    Specifiers come from the raw source and the comment-stripped source, as a union. The
+    stripped scan survives comments inside an import clause (`// don't`); the raw scan
     survives a regex literal such as `/\\/*/` that the stripper mistakes for a comment.
-    Commented-out imports therefore count as edges too, which can only add work.
+    Commented-out imports therefore count as edges too: a commented-out import of a deleted
+    relative path in a reachable file makes every PR fail safe until it is removed, and the
+    reason names the file. Opaque imports are counted on the stripped source only, so prose
+    such as "lazily import(...)" in a comment does not make the graph uncertain.
     """
-    source = source.removeprefix("﻿")
-    raw, raw_opaque = _scan(source)
-    stripped, stripped_opaque = _scan(strip_comments(source))
-    return sorted(raw | stripped), max(raw_opaque, stripped_opaque)
+    source = source.removeprefix("\N{ZERO WIDTH NO-BREAK SPACE}")
+    stripped = strip_comments(source)
+    specifiers = _scan_specifiers(source) | _scan_specifiers(stripped)
+    return sorted(specifiers), _count_opaque(stripped)
 
 
 def resolve_specifier(importer: str, specifier: str, files: set[str]) -> list[str] | None:
     """Resolve a specifier to every existing candidate path, [] for a package, None if none."""
     spec = specifier.split("?", 1)[0]
-    if spec.startswith("/src/"):
+    if spec.startswith("/"):
+        # Vite resolves a root-relative specifier against its root, app/.
         base = "app" + spec
     elif spec.startswith("."):
         base = posixpath.normpath(posixpath.join(posixpath.dirname(importer), spec))

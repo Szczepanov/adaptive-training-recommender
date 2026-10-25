@@ -197,7 +197,9 @@ def test_unreadable_base_fails_safe(repo: Path) -> None:
         ),
         ("service.import('./not-a-module');", []),
         # A UTF-8 BOM must not hide the first import.
-        ("﻿import { a } from './a';\n", ["./a"]),
+        ("\N{ZERO WIDTH NO-BREAK SPACE}import { a } from './a';\n", ["./a"]),
+        # Prose about import(...) in a comment is not an opaque import.
+        ("// lazily import(provider) on first use\nexport const x = 1;\n", []),
         # A regex literal that looks like a block comment must not swallow later imports.
         ("const r = /\\/*x/;\nimport { b } from './b';\n", ["./b"]),
     ],
@@ -221,6 +223,9 @@ def test_extract_specifiers(source: str, expected: list[str]) -> None:
         "x();import(p)",
         "if (a) { import(p) }",
         "void import(p)",
+        # A ternary alternative that is an object literal looks like a method body (re-review).
+        "const m = flag ? import(p) : { run() {} };",
+        "const m = flag ? import(p) : {};",
     ],
 )
 def test_extract_specifiers_flags_opaque_imports(source: str) -> None:
@@ -234,6 +239,8 @@ def test_extract_specifiers_flags_opaque_imports(source: str) -> None:
         ("./flags.js", ["app/src/derived/flags.ts"]),
         ("../workouts", ["app/src/workouts/index.ts"]),
         ("/src/derived/flags.ts", ["app/src/derived/flags.ts"]),
+        # Any root-relative specifier resolves against Vite's root (app/), not as a package.
+        ("/scripts/helper.mjs", None),
         ("./data.json?raw", ["app/src/derived/data.json"]),
         # Same stem: Vite picks .js first, TypeScript .ts; both join the graph.
         ("./models", ["app/src/derived/models.js", "app/src/derived/models.ts"]),
