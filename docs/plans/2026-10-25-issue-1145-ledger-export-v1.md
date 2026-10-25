@@ -50,7 +50,7 @@ Every leaf fact is a `LedgerValue`:
 
 ```ts
 interface LedgerValue<T> {
-  value: T | null;            // null only when state is not "measured"
+  value: T | null;            // measured requires a value; stale may retain its dated value
   unit?: string;              // SI or the provider's documented unit, never implied
   source: string;             // provider/transport, e.g. "garmin", "eight_sleep_direct", "athlete"
   state: LedgerState;
@@ -63,7 +63,7 @@ type LedgerState =
   | 'invalid'                 // present but failed validation
   | 'not_collected'           // the source does not collect this metric
   | 'not_applicable'
-  | 'stale'                   // present but older than the expected date
+  | 'stale'                   // present but older than the expected date; retain observedOn
   | 'not_recorded'            // athlete-stated field the athlete has never filled
   | 'not_yet_supported';      // the export promises the field; no backing record exists yet (ADR-0052 D-EXPORT)
 ```
@@ -108,6 +108,10 @@ never exported from inside `engine/`.
 ```ts
 interface LedgerFlag {
   id: 'illness_anomaly' | 'illness_risk_symptom' | 'injury_constraint_touches_session' | 'recovery_beyond_baseline';
+  observedOn: string;              // Warsaw date evaluated
+  evaluatedAt: string;             // persisted instant, not export time
+  definitionVersion: string;       // identifies the evaluator and thresholds used
+  sessionRef?: string;             // required for session-dependent flags; export-local identity
   active: boolean | null;          // null = could not evaluate; see state
   state: LedgerState;
   inputs: { name: string; value: LedgerValue<unknown> }[];
@@ -119,10 +123,16 @@ interface LedgerFlag {
 A flag never blocks, modifies or re-doses a session. The anomaly flag's release is gated by
 the HA7 report (#641).
 
+**New backing required before D-EVAL:** persist these evaluations, including null/unevaluable
+states and their inputs. Export the recorded evaluations for the window; recomputing today's
+flags cannot stand in for historical evidence. The session reference distinguishes, for
+example, an injury touching one of two sessions on the same date.
+
 ### Layer 4: `userContext` (ADR-0052 D-USER)
 
-Each item carries `since` (when the current value took effect) and, where the record keeps
-history, `revisions[]`.
+Each item carries a state-bearing `since` (when the current value took effect) and
+`revisions[]`. Mark either `not_yet_supported` where its backing record has no effective-date
+or revision history. A record-level `updatedAt` does not establish when each field changed.
 
 | Key | Backing record | v1 |
 |---|---|---|
@@ -142,9 +152,14 @@ history, `revisions[]`.
 |---|---|---|
 | `planRevisions[]` | `external_plans/{planId}/revisions/{revision}` (immutable, content-hashed): `planId`, `revision`, `contentHash`, `importedAt`, `schemaVersion` | backed |
 | `planRevisions[].authorRationale` | plan-level `notes` in the imported plan | backed when present, otherwise `not_recorded` |
-| `placements[]` | `.../placement/current` `assignments[]` (`planned`/`completed`/`moved`/`dropped`/`superseded`) | backed |
+| `placements[]` | `.../placement/current` `assignments[]` (`planned`/`completed`/`moved`/`dropped`/`superseded`) | current state backed; status/date history `not_yet_supported` |
 | `overrides[]` (skip/swap/modify with reason) | partial: `dropped`/`moved` statuses; no reason field | `not_yet_supported` for reasons |
 | `plannedToPerformed[]` | occurrence ↔ placement links (ADR-0034 round trip, today's "External-plan execution round trip" section) | backed |
+
+The immutable plan revision does not make its placement overlay immutable.
+`externalPlanService.savePlacement` overwrites the current overlay. D-EVAL therefore needs
+dated placement/status history and explicit successor links added before its block begins;
+v1 must report this gap rather than claim that historic assignments are already available.
 
 ### Legacy layer
 
@@ -194,6 +209,10 @@ change ships in Phase 2.
   - validates against a JSON Schema checked into `app/src/ledger/export/`;
   - every fact carries `source` and `state`;
   - no key from the engine-opinion list appears outside `legacyEngine`.
+  - stale values preserve their semantic dates; unsupported effective dates and placement
+    histories are explicit rather than inferred from the latest update;
+  - persisted flag dates, session references, definition versions and unevaluable states
+    survive export without being recomputed.
 - `ledgerExportRender.test.ts`: the Markdown rendered from a fixture export matches a golden
   file; the travel and venue facts render in the planning purpose.
 - E2E (Phase 2, ADR-0052 D-CI): export → import `external-plan@6` with `reducedDefinition` →
