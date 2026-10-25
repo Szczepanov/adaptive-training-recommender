@@ -26,8 +26,9 @@ from pathlib import Path
 
 DECISION_LIST_PATH = "app/scripts/decision-affecting-files.json"
 
-# Engine orchestration entry points (ADR-0052 D-CI) plus every module the simulation and
-# judge scripts load directly through Vite's ssrLoadModule.
+# Engine orchestration entry points (ADR-0052 D-CI), every module the simulation and judge
+# scripts load directly through Vite's ssrLoadModule, and the CI-run scripts themselves so
+# their own static helpers are walked too.
 ENTRY_POINTS = (
     "app/src/engine/rules.ts",
     "app/src/engine/planner.ts",
@@ -36,18 +37,27 @@ ENTRY_POINTS = (
     "app/src/engine/simulation/analyze.ts",
     "app/src/engine/simulation/scenarios.ts",
     "app/src/engine/simulation/deliveredDoseScenarios.ts",
+    "app/src/engine/simulation/simulationDiff.ts",
     "app/src/engine/templates.ts",
     "app/src/engine/eventPresets.ts",
+    "app/scripts/simulate-scenarios.mjs",
+    "app/scripts/simulate-diff.mjs",
+    "app/scripts/build-plan-judge-corpus.mjs",
+    "app/scripts/check-plan-judge-invariants.mjs",
+    "app/scripts/run-persona-ai-judge.mjs",
 )
 
-# Changes here alter module resolution, the build, the shared list or this gate itself, so
-# no import graph can prove they are harmless.
+# Changes here alter module resolution, the build, the job's environment, the shared list or
+# this gate itself, so no import graph can prove they are harmless.
 UNCERTAIN_CONFIG_PATTERNS = (
     "app/tsconfig*.json",
     "app/package.json",
     "app/package-lock.json",
+    "app/.npmrc",
+    "app/.env*",
     "app/vite.config.*",
     "app/vitest*",
+    ".gitattributes",
     DECISION_LIST_PATH,
     "scripts/detect_ci_changes.py",
     "scripts/engine_impact.py",
@@ -66,18 +76,23 @@ ENGINE_PATH_PATTERNS = (
     "docs/analysis/*judge*.json",
 )
 
-CODE_EXTENSIONS = (".ts", ".tsx", ".mts", ".cts", ".js", ".mjs", ".cjs")
+CODE_EXTENSIONS = (".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs")
+# Every candidate Vite or TypeScript could pick. All existing ones join the graph, so a new
+# same-stem file (say `models.js` beside `models.ts`) cannot take over an import unseen.
 RESOLUTION_SUFFIXES = (
     "",
-    ".ts",
-    ".tsx",
-    ".mts",
-    ".js",
     ".mjs",
+    ".js",
+    ".mts",
+    ".ts",
+    ".jsx",
+    ".tsx",
     ".json",
-    "/index.ts",
-    "/index.tsx",
+    "/index.mjs",
     "/index.js",
+    "/index.ts",
+    "/index.jsx",
+    "/index.tsx",
 )
 
 _STATIC_IMPORT = re.compile(
@@ -86,10 +101,14 @@ _STATIC_IMPORT = re.compile(
 _SIDE_EFFECT_IMPORT = re.compile(r"""(?:^|[\s;{}()])import\s*['"]([^'"\n]+)['"]""")
 _CALL_IMPORT = re.compile(r"""(?<![.\w$])(?:import|require)\s*\(\s*['"]([^'"\n]+)['"]\s*\)""")
 # A dynamic import whose argument is not a plain string literal, or a Vite glob import,
-# loads modules no static walk can name, so it makes the graph uncertain. Only expression
-# positions count, so a method *named* import (`async import(userId) {`) is not one.
+# loads modules no static walk can name, so it makes the graph uncertain. Any position
+# counts, statement starts included; the one exemption is a method *named* import
+# (`async import(userId: string): Promise<T> {`). An exemption the lookahead cannot prove,
+# such as nested parentheses in the parameters, is flagged, which fails safe.
 _OPAQUE_IMPORT = re.compile(
-    r"""(?:\bawait|\breturn|[=(,:?&|!>\[])\s*(?:import|require)\s*\((?!\s*['"][^'"\n]+['"]\s*\))"""
+    r"""(?<![.\w$])(?:import|require)\s*\("""
+    r"""(?!\s*['"][^'"\n]+['"]\s*\))"""
+    r"""(?![^()]*\)\s*(?::[^{};=]*)?\{)"""
     r"""|\bimport\.meta\.glob"""
 )
 
@@ -151,28 +170,42 @@ def _string_end(source: str, start: int) -> int:
     return len(source)
 
 
-def extract_specifiers(source: str) -> tuple[list[str], int]:
-    """Return the specifiers a TS/JS source imports, plus its count of opaque imports."""
-    code = strip_comments(source)
-    found: list[str] = []
+def _scan(code: str) -> tuple[set[str], int]:
+    found: set[str] = set()
     for pattern in (_STATIC_IMPORT, _SIDE_EFFECT_IMPORT, _CALL_IMPORT):
-        found.extend(match.group(1) for match in pattern.finditer(code))
+        found.update(match.group(1) for match in pattern.finditer(code))
     return found, len(_OPAQUE_IMPORT.findall(code))
 
 
-def resolve_specifier(importer: str, specifier: str, files: set[str]) -> str | None:
-    """Resolve a specifier to a repository path, "" for a package, or None if unresolved."""
+def extract_specifiers(source: str) -> tuple[list[str], int]:
+    """Return the specifiers a TS/JS source imports, plus its count of opaque imports.
+
+    The scan runs on the raw source and on the comment-stripped source, and keeps the union.
+    The stripped scan survives comments inside an import clause (`// don't`); the raw scan
+    survives a regex literal such as `/\\/*/` that the stripper mistakes for a comment.
+    Commented-out imports therefore count as edges too, which can only add work.
+    """
+    source = source.removeprefix("﻿")
+    raw, raw_opaque = _scan(source)
+    stripped, stripped_opaque = _scan(strip_comments(source))
+    return sorted(raw | stripped), max(raw_opaque, stripped_opaque)
+
+
+def resolve_specifier(importer: str, specifier: str, files: set[str]) -> list[str] | None:
+    """Resolve a specifier to every existing candidate path, [] for a package, None if none."""
     spec = specifier.split("?", 1)[0]
     if spec.startswith("/src/"):
         base = "app" + spec
     elif spec.startswith("."):
         base = posixpath.normpath(posixpath.join(posixpath.dirname(importer), spec))
     else:
-        return ""
+        return []
     candidates = [base + suffix for suffix in RESOLUTION_SUFFIXES]
-    if base.endswith(".js"):
-        candidates.insert(0, base[:-3] + ".ts")
-    return next((candidate for candidate in candidates if candidate in files), None)
+    if base.endswith((".js", ".mjs", ".jsx")):
+        stem = base.rsplit(".", 1)[0]
+        candidates += [stem + ".ts", stem + ".tsx", stem + ".mts"]
+    found = [candidate for candidate in candidates if candidate in files]
+    return found or None
 
 
 class GitTree:
@@ -230,11 +263,11 @@ def build_graph(tree: GitTree, entry_points: Iterable[str] = ENTRY_POINTS) -> Im
         if opaque:
             graph.unresolved.append(f"{path} -> {opaque} non-literal dynamic import(s)")
         for specifier in specifiers:
-            target = resolve_specifier(path, specifier, tree.files)
-            if target is None:
+            targets = resolve_specifier(path, specifier, tree.files)
+            if targets is None:
                 graph.unresolved.append(f"{path} -> {specifier}")
-            elif target and target not in graph.reachable:
-                queue.append(target)
+                continue
+            queue.extend(target for target in targets if target not in graph.reachable)
     return graph
 
 

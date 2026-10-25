@@ -183,10 +183,23 @@ def test_unreadable_base_fails_safe(repo: Path) -> None:
         ("export * from './barrel';\nexport { x } from \"./named\";", ["./barrel", "./named"]),
         ("import './side-effect.css';", ["./side-effect.css"]),
         ("const m = await import('./lazy');", ["./lazy"]),
-        ("// import { no } from './commented';\n/* import './block'; */", []),
+        # Commented-out imports still count (the raw scan keeps them): extra work, never less.
+        (
+            "// import { no } from './commented';\n/* import './block'; */",
+            ["./block", "./commented"],
+        ),
         ("const url = 'https://example.invalid/x'; import { y } from './after';", ["./after"]),
         ("class S { async import(userId: string) { return userId; } }", []),
+        (
+            "class S {\n  async import(userId: string, raw: unknown, o: string | null = null): "
+            "Promise<DataState<R>> {\n    return x;\n  }\n}",
+            [],
+        ),
         ("service.import('./not-a-module');", []),
+        # A UTF-8 BOM must not hide the first import.
+        ("﻿import { a } from './a';\n", ["./a"]),
+        # A regex literal that looks like a block comment must not swallow later imports.
+        ("const r = /\\/*x/;\nimport { b } from './b';\n", ["./b"]),
     ],
 )
 def test_extract_specifiers(source: str, expected: list[str]) -> None:
@@ -203,6 +216,11 @@ def test_extract_specifiers(source: str, expected: list[str]) -> None:
         "const load = (n) => import(n);",
         "const mods = [import(a)];",
         "import.meta.glob('./*.ts');",
+        # Statement-position dynamic imports (review finding).
+        "function f(p){\n  import(p).then(m => m.run())\n}",
+        "x();import(p)",
+        "if (a) { import(p) }",
+        "void import(p)",
     ],
 )
 def test_extract_specifiers_flags_opaque_imports(source: str) -> None:
@@ -212,22 +230,34 @@ def test_extract_specifiers_flags_opaque_imports(source: str) -> None:
 @pytest.mark.parametrize(
     ("specifier", "expected"),
     [
-        ("./flags", "app/src/derived/flags.ts"),
-        ("./flags.js", "app/src/derived/flags.ts"),
-        ("../workouts", "app/src/workouts/index.ts"),
-        ("/src/derived/flags.ts", "app/src/derived/flags.ts"),
-        ("./data.json?raw", "app/src/derived/data.json"),
-        ("react", ""),
+        ("./flags", ["app/src/derived/flags.ts"]),
+        ("./flags.js", ["app/src/derived/flags.ts"]),
+        ("../workouts", ["app/src/workouts/index.ts"]),
+        ("/src/derived/flags.ts", ["app/src/derived/flags.ts"]),
+        ("./data.json?raw", ["app/src/derived/data.json"]),
+        # Same stem: Vite picks .js first, TypeScript .ts; both join the graph.
+        ("./models", ["app/src/derived/models.js", "app/src/derived/models.ts"]),
+        ("react", []),
         ("./missing", None),
     ],
 )
-def test_resolve_specifier(specifier: str, expected: str | None) -> None:
+def test_resolve_specifier(specifier: str, expected: list[str] | None) -> None:
     files = {
         "app/src/derived/flags.ts",
         "app/src/derived/data.json",
+        "app/src/derived/models.js",
+        "app/src/derived/models.ts",
         "app/src/workouts/index.ts",
     }
     assert resolve_specifier("app/src/derived/x.ts", specifier, files) == expected
+
+
+def test_new_same_stem_file_is_affected(repo: Path) -> None:
+    affected, reasons = _assess_change(
+        repo, {"app/src/derived/flags.js": "export const flag = 'shadow';\n"}
+    )
+    assert affected
+    assert "app/src/derived/flags.js: in the engine import graph" in reasons
 
 
 def test_shared_decision_list_paths_exist() -> None:
