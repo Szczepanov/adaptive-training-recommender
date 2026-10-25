@@ -386,23 +386,25 @@ skips them when `scripts/engine_impact.py` positively classifies the change as n
 engine-affecting (ADR-0052 D-CI), so a green CI without the simulation job is expected for
 UI, ingestion and docs changes.
 
-The verification driver deliberately excludes checks whose result depends on external registry
-state or local infrastructure rather than the repository state (for example dependency-security
-registry availability and Docker/BuildKit availability). CI continues to own those environment
-gates.
+The frontend dependency audit remains required, matching `npm run check`. It runs in a
+preflight phase after hygiene, before expensive suites start, so registry failures and security
+findings fail promptly. Python dependency-security registry checks and Docker/BuildKit checks
+remain CI-owned environment gates.
 
 The contract is implemented by `scripts/verify_repo.py`; `make verify` is the stable public
 entry point. Do not duplicate the command matrix in agent prompts or skills.
 
 Independent gates run concurrently: repository hygiene first (pre-commit may rewrite files),
-then every static, unit, emulator, simulation and build gate in parallel lanes, then the
-wall-clock latency gates alone so nothing competes for the CPU while they sample. Each
+then dependency-audit preflight, then static, unit, emulator, simulation and build gates in
+parallel lanes, then wall-clock latency gates alone so nothing competes for the CPU while they
+sample. Each
 concurrent step writes its output to `app/artifacts/verify/<step>.log`; a failure prints the
 tail of its log, and no lane starts another step after a required step fails. The Firestore
-rules suite runs as two shards on dynamically leased emulator ports next to browser E2E, which
-also leases its own dynamic emulator and web server ports. No automated harness suite binds
-`firebase.json`'s default ports. For
-sequential, streamed output while debugging, run
+rules and browser E2E suites each run as two shards, matching CI. Each shard leases its own
+dynamic emulator ports; each E2E shard also gets its own web server, a Vite dependency cache
+keyed by its leased app port, and one worker to avoid contention within a shared server/emulator
+pair. No automated harness suite binds `firebase.json`'s default ports. For sequential, streamed
+output while debugging, run
 `uv run python scripts/verify_repo.py --serial` (or `VERIFY_SERIAL=1 make verify`).
 
 ### Harness port isolation and process lifecycle

@@ -57,7 +57,8 @@ def test_code_contract_contains_ci_critical_local_gates() -> None:
         assert name in names
     assert "Firestore security rules 1/2" in names
     assert "Firestore security rules 2/2" in names
-    assert "browser E2E" in names
+    assert "browser E2E 1/2" in names
+    assert "browser E2E 2/2" in names
     assert "engine simulations" in names
     assert "deterministic plan-judge corpus" in names
     assert "deterministic persona corpus" in names
@@ -96,10 +97,18 @@ def test_code_contract_lanes_isolate_emulators_and_order_simulations() -> None:
         step.argv[:5] == ("npm", "--prefix", "app", "run", "test:rules:shard")
         for step in rules_steps
     )
-    lanes = {_lane_of(phases, step.name) for step in rules_steps} | {
-        _lane_of(phases, "browser E2E")
-    }
-    assert len(lanes) == 3
+    e2e_steps = [step for step in plan_steps(phases) if step.name.startswith("browser E2E")]
+    assert [step.argv[-1] for step in e2e_steps] == [
+        "npm run test:e2e:emulator -- --shard=1/2 --workers=1",
+        "npm run test:e2e:emulator -- --shard=2/2 --workers=1",
+    ]
+    assert all(
+        step.argv[:6] == ("npm", "--prefix", "app", "run", "emulators:exec:e2e", "--")
+        for step in e2e_steps
+    )
+    lanes = {_lane_of(phases, step.name) for step in (*rules_steps, *e2e_steps)}
+    assert len(lanes) == 4
+    assert all(len(lane) == 1 for _, lane in lanes)
 
     # simulate:diff reads the report simulate:scenarios writes.
     _, sim_lane = _lane_of(phases, "engine simulations")
@@ -126,11 +135,42 @@ def test_serialize_plan_preserves_every_step_in_order() -> None:
     assert plan_steps(serial) == plan_steps(phases)
 
 
-def test_code_contract_avoids_external_registry_and_docker_gates() -> None:
+def test_code_contract_audits_dependencies_before_expensive_gates() -> None:
+    phases = build_plan("code", "a" * 40)
+    audit_phase, audit_lane = _lane_of(phases, "frontend dependency audit")
+
+    assert phases[1].name == audit_phase
+    assert [step.name for step in plan_steps([phases[1]])] == ["frontend dependency audit"]
+    assert audit_lane[0].argv == ("npm", "--prefix", "app", "run", "audit")
+    assert audit_lane[0].required
+    assert phases[2].name == "gates"
+
+
+def test_failed_dependency_audit_never_launches_expensive_gates(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    started: list[str] = []
+
+    def spawn(step: VerificationStep, log_path: Path | None) -> int:
+        started.append(step.name)
+        if log_path is not None:
+            log_path.write_text("", encoding="utf-8")
+        return 3 if step.name == "frontend dependency audit" else 0
+
+    monkeypatch.setattr("verify_repo._spawn", spawn)
+
+    assert run_plan(build_plan("code", "a" * 40), tmp_path) == 3
+    assert set(started) == {
+        "repository hygiene",
+        "coding-agent eval corpus",
+        "frontend dependency audit",
+    }
+
+
+def test_code_contract_leaves_python_registry_and_docker_gates_to_ci() -> None:
     plan = plan_steps(build_plan("code", "c" * 40))
     commands = [" ".join(step.argv) for step in plan]
 
-    assert all("npm audit" not in command for command in commands)
     assert all("pip-audit" not in command for command in commands)
     assert all("docker" not in command for command in commands)
 
