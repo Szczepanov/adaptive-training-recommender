@@ -23,7 +23,7 @@ import {
     type LegacyEngineLayer,
     type SourceState,
 } from './schema.ts';
-import { collectIdentityValues, redactIdentity, stripIdentity } from './stripIdentity.ts';
+import { collectIdentityValues, redactFreeText, stripIdentity } from './stripIdentity.ts';
 import { assertLocalDate, PURPOSE_BOUNDS, resolveWindow } from './window.ts';
 
 const RECORD_KEY_BY_SOURCE: Record<SourceKey, keyof LedgerExportRecords> = {
@@ -31,8 +31,9 @@ const RECORD_KEY_BY_SOURCE: Record<SourceKey, keyof LedgerExportRecords> = {
     daily_subjective_checkins: 'checkins',
     performed_training_occurrences: 'performedOccurrences',
     session_responses: 'sessionResponses',
-    assessments: 'assessments',
-    body_composition: 'bodyComposition',
+    assessment_attempts: 'assessmentAttempts',
+    metric_observations: 'metricObservations',
+    anthropometry_entries: 'anthropometry',
     nutrition_days: 'nutritionDays',
     activities: 'activities',
     competition_outcomes: 'competitionOutcomes',
@@ -78,9 +79,8 @@ function buildDerived(): DerivedMetric[] {
     }));
 }
 
-/** Layer 3: the closed set of four, unevaluated until evaluations are persisted (D-FLAGS). */
-function buildFlags(asOfDate: string): LedgerFlag[] {
-    return LEDGER_FLAG_IDS.map(id => ({
+function unevaluatedFlag(id: LedgerFlag['id'], asOfDate: string): LedgerFlag {
+    return {
         id,
         observedOn: asOfDate,
         evaluatedAt: null,
@@ -89,7 +89,18 @@ function buildFlags(asOfDate: string): LedgerFlag[] {
         state: 'not_yet_supported',
         inputs: [],
         threshold: null,
-    }));
+    };
+}
+
+/**
+ * Layer 3: the closed set of four (D-FLAGS). Persisted evaluations pass through unchanged
+ * (never recomputed); an id with none stays `not_yet_supported`.
+ */
+function buildFlags(asOfDate: string, evaluations: readonly LedgerFlag[] = []): LedgerFlag[] {
+    return LEDGER_FLAG_IDS.flatMap(id => {
+        const supplied = evaluations.filter(flag => flag.id === id);
+        return supplied.length > 0 ? supplied.map(flag => structuredClone(flag)) : [unevaluatedFlag(id, asOfDate)];
+    });
 }
 
 function assertInput(input: BuildLedgerExportInput): void {
@@ -117,11 +128,11 @@ export function buildLedgerExport(input: BuildLedgerExportInput): LedgerExport {
         sources: buildSources(input),
         facts: buildFacts(input.records, context),
         derived: buildDerived(),
-        flags: buildFlags(input.asOfDate),
+        flags: buildFlags(input.asOfDate, input.flagEvaluations),
         userContext: buildUserContext(input.records, context),
         coachingHistory: buildCoachingHistory(input.records, context),
         legacyEngine: input.legacyEngine ? (stripIdentity(input.legacyEngine) as LegacyEngineLayer) : null,
     };
-    // Second line of defence: athlete free text may quote an e-mail or the owner's own ids.
-    return redactIdentity(assembled, collectIdentityValues([input.records, input.legacyEngine]));
+    // Second line of defence: free-text leaves may quote an e-mail or the owner's own ids.
+    return redactFreeText(assembled, collectIdentityValues([input.records, input.legacyEngine]));
 }

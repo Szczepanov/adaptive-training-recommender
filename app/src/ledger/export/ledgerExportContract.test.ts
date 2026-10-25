@@ -3,13 +3,30 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { buildLedgerExport } from './buildLedgerExport.ts';
-import { fullInput, fullRecords } from './ledgerExportFixtures.testSupport.ts';
+import { SOURCE_KEYS } from './inputs.ts';
+import { fullInput } from './ledgerExportFixtures.testSupport.ts';
 import { validateAgainstSchema } from './miniJsonSchema.testSupport.ts';
-import { ENGINE_OPINION_KEYS, LEDGER_FLAG_IDS, LEDGER_PURPOSES, LEDGER_STATES } from './schema.ts';
+import {
+    DERIVED_METRIC_IDS,
+    ENGINE_OPINION_KEYS,
+    LEDGER_FLAG_IDS,
+    LEDGER_PURPOSES,
+    LEDGER_RECORD_FIELD_KEYS,
+    LEDGER_STATES,
+    type LedgerFlag,
+} from './schema.ts';
+
+interface JsonSchema {
+    properties: Record<string, unknown>;
+    $defs: Record<string, Record<string, unknown>>;
+}
 
 const SCHEMA = JSON.parse(
     readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'ledgerExport.schema.json'), 'utf8'),
-) as { $defs: { state: { enum: string[] }; flag: { properties: { id: { enum: string[] } } } } };
+) as JsonSchema;
+
+const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+const nameOf = (path: string): string => path.replaceAll('.', '_');
 
 /** Every LedgerValue-shaped object (has value, source and state) anywhere under `node`. */
 function ledgerValues(node: unknown, path = '$'): { path: string; value: Record<string, unknown> }[] {
@@ -31,29 +48,84 @@ function keysOutsideLegacy(node: unknown, found = new Set<string>()): Set<string
     return found;
 }
 
+describe('JSON Schema stays in sync with the TypeScript contract (M10)', () => {
+    it('shares the state, purpose, flag, derived and source vocabularies', () => {
+        const defs = SCHEMA.$defs;
+        expect(defs.state.enum).toEqual([...LEDGER_STATES]);
+        expect(SCHEMA.properties.purpose).toEqual({ enum: [...LEDGER_PURPOSES] });
+        expect((defs.flag.properties as Record<string, unknown>).id).toEqual({ enum: [...LEDGER_FLAG_IDS] });
+        expect((defs.derivedMetric.properties as Record<string, unknown>).id).toEqual({ enum: [...DERIVED_METRIC_IDS] });
+        expect((defs.sourceState.properties as Record<string, unknown>).source).toEqual({ enum: [...SOURCE_KEYS] });
+        expect(SCHEMA.properties.sources).toMatchObject({ minItems: SOURCE_KEYS.length, maxItems: SOURCE_KEYS.length });
+    });
+
+    it.each(Object.entries(LEDGER_RECORD_FIELD_KEYS))('requires exactly the %s field list', (path, keys) => {
+        const fields = SCHEMA.$defs[`${nameOf(path)}_fields`];
+        expect(fields.required).toEqual([...keys]);
+        expect(Object.keys(fields.properties as object)).toEqual([...keys]);
+        expect(fields.additionalProperties).toBe(false);
+    });
+
+    it('makes every record-bearing layer entry reference its own definition', () => {
+        for (const path of Object.keys(LEDGER_RECORD_FIELD_KEYS)) {
+            const [layer, name] = path.split('.');
+            const entry = (SCHEMA.properties[layer] as { properties: Record<string, unknown> }).properties[name];
+            expect(entry, path).toEqual({ $ref: `#/$defs/${nameOf(path)}` });
+        }
+    });
+
+    it('rejects an export that drops one promised field', () => {
+        for (const path of Object.keys(LEDGER_RECORD_FIELD_KEYS)) {
+            const broken = clone(buildLedgerExport(fullInput())) as unknown as Record<string, Record<string, unknown>>;
+            const [layer, name] = path.split('.');
+            const target = broken[layer][name] as { items?: { fields: Record<string, unknown> }[]; fields?: Record<string, unknown> };
+            const fields = target.items ? target.items[0].fields : target.fields!;
+            delete fields[Object.keys(fields)[0]];
+            expect(validateAgainstSchema(SCHEMA, broken).join('\n'), path).toContain('missing required');
+        }
+    });
+
+    it('rejects a measured value that is null and a missing source key', () => {
+        const output = clone(buildLedgerExport(fullInput()));
+        output.facts.recovery.items[0].fields.sleepScore = { value: null, source: 'garmin', state: 'measured' };
+        expect(validateAgainstSchema(SCHEMA, output).join('\n')).toContain('matches a forbidden schema');
+        const fewer = clone(buildLedgerExport(fullInput()));
+        fewer.sources.pop();
+        expect(validateAgainstSchema(SCHEMA, fewer).join('\n')).toContain('fewer than');
+    });
+
+    it('requires activity truncation accounting and droppedUndated', () => {
+        const output = clone(buildLedgerExport(fullInput())) as unknown as Record<string, Record<string, Record<string, unknown>>>;
+        delete output.facts.activities.truncated;
+        delete output.facts.recovery.droppedUndated;
+        const errors = validateAgainstSchema(SCHEMA, output).join('\n');
+        expect(errors).toContain('missing required "truncated"');
+        expect(errors).toContain('missing required "droppedUndated"');
+    });
+});
+
 describe('ledger export contract', () => {
     const output = buildLedgerExport(fullInput());
 
-    it('keeps the checked-in schema vocabularies equal to the TypeScript ones', () => {
-        expect(SCHEMA.$defs.state.enum).toEqual([...LEDGER_STATES]);
-        expect(SCHEMA.$defs.flag.properties.id.enum).toEqual([...LEDGER_FLAG_IDS]);
-    });
-
     it.each(LEDGER_PURPOSES.map(purpose => [purpose]))('validates against the JSON Schema (%s)', purpose => {
         const result = buildLedgerExport(fullInput({ purpose }));
-        expect(validateAgainstSchema(SCHEMA, JSON.parse(JSON.stringify(result)))).toEqual([]);
+        expect(validateAgainstSchema(SCHEMA, clone(result))).toEqual([]);
     });
 
     it('validates an export built from no records and one with the legacy layer', () => {
         for (const input of [fullInput({ records: {} }), fullInput({ legacyEngine: { policyVersion: '9' } })]) {
-            expect(validateAgainstSchema(SCHEMA, JSON.parse(JSON.stringify(buildLedgerExport(input))))).toEqual([]);
+            expect(validateAgainstSchema(SCHEMA, clone(buildLedgerExport(input)))).toEqual([]);
         }
     });
 
+    it('reports exactly the declared source keys, once each', () => {
+        expect(output.sources.map(source => source.source)).toEqual([...SOURCE_KEYS]);
+    });
+
     it('rejects documents that break the contract (the validator is not vacuous)', () => {
-        const broken = JSON.parse(JSON.stringify(output));
-        broken.facts.recovery.items[0].fields.sleepScore.state = 'fine';
-        delete broken.userContext.travel;
+        const broken = clone(output) as unknown as Record<string, unknown>;
+        (broken.facts as { recovery: { items: { fields: { sleepScore: { state: string } } }[] } }).recovery.items[0].fields.sleepScore.state = 'fine';
+        delete (broken.userContext as Record<string, unknown>).travel;
         broken.userId = 'x';
         const errors = validateAgainstSchema(SCHEMA, broken).join('\n');
         expect(errors).toContain('not in enum');
@@ -69,7 +141,7 @@ describe('ledger export contract', () => {
             expect((value.source as string).length, path).toBeGreaterThan(0);
             expect(LEDGER_STATES, path).toContain(value.state);
             if (value.state === 'measured') expect(value.value, path).not.toBeNull();
-            if (value.state === 'not_yet_supported') expect(value.value, path).toBeNull();
+            if (value.state === 'not_yet_supported' || value.state === 'invalid') expect(value.value, path).toBeNull();
         }
     });
 
@@ -95,24 +167,20 @@ describe('ledger export contract', () => {
         expect(JSON.stringify(output.userContext)).not.toContain('2026-11-10T00:00:00Z');
     });
 
-    it('lists the four closed-set flags exactly once each, unevaluated, with their evaluation date', () => {
-        expect(output.flags.map(flag => flag.id)).toEqual([...LEDGER_FLAG_IDS]);
-        for (const flag of output.flags) {
-            expect(flag).toMatchObject({
-                observedOn: '2026-11-20',
-                evaluatedAt: null,
-                definitionVersion: null,
-                active: null,
-                state: 'not_yet_supported',
-                inputs: [],
-            });
-        }
-    });
-
-    it('keeps the planning export bounded to the information it promises', () => {
-        const records = fullRecords();
-        const result = buildLedgerExport(fullInput({ records }));
-        expect(result.window.days).toBe(14);
-        expect(result.facts.activities.items.length).toBeLessThanOrEqual(12);
+    it('lets persisted flag dates, session refs, versions and unevaluable states survive unchanged', () => {
+        const flag: LedgerFlag = {
+            id: 'illness_risk_symptom',
+            observedOn: '2026-11-17',
+            evaluatedAt: '2026-11-17T04:30:00Z',
+            definitionVersion: 'symptom-screen@2',
+            sessionRef: 'session-3',
+            active: null,
+            state: 'unavailable',
+            inputs: [],
+            threshold: 'any red-flag symptom',
+        };
+        const result = buildLedgerExport(fullInput({ flagEvaluations: [flag] }));
+        expect(validateAgainstSchema(SCHEMA, clone(result))).toEqual([]);
+        expect(result.flags.find(candidate => candidate.id === flag.id)).toEqual(flag);
     });
 });

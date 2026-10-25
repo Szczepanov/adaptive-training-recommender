@@ -52,6 +52,15 @@ export interface LedgerCollection<T> {
     state: LedgerState;
     source: string;
     items: T[];
+    /** Rows dropped because they carry no usable calendar date; never silently omitted. */
+    droppedUndated: number;
+}
+
+/** Provider activity detail is capped per purpose, so omission is counted, not hidden. */
+export interface ActivityCollection<T> extends LedgerCollection<T> {
+    truncated: boolean;
+    /** Activities inside the window before the detail cap was applied. */
+    totalInWindow: number;
 }
 
 /** One recorded row: a stable export-local id and state-bearing leaf facts. */
@@ -112,16 +121,22 @@ export const RECOVERY_FIELDS = [
 export const CHECKIN_FIELDS = [
     'readiness', 'sleepQuality', 'fatigue', 'soreness', 'mentalStress', 'motivation',
     'painOrInjury', 'illnessSymptoms', 'unusuallyLimitedTime', 'alreadyTrainedToday', 'notes',
+    'tissueResponses', 'redFlags', 'timeAvailableMin', 'indoorOnly', 'preferredModalityToday',
 ] as const;
 export const PERFORMED_TRAINING_FIELDS = [
     'status', 'modality', 'startedAt', 'endedAt', 'durationMin', 'structuredEntries',
 ] as const;
 export const SESSION_RESPONSE_FIELDS = [
-    'window', 'sessionRpe', 'completedFraction', 'unexpectedFatigue', 'techniqueNote', 'note',
+    'window', 'sourceSession', 'occurrenceId', 'sessionRpe', 'completedFraction', 'unexpectedFatigue',
+    'techniqueNote', 'note',
 ] as const;
-export const ASSESSMENT_FIELDS = ['kind', 'metric', 'value'] as const;
-export const BODY_COMPOSITION_FIELDS = ['weightKg', 'bodyFatPct'] as const;
-export const NUTRITION_FIELDS = ['energyKcal', 'proteinG', 'carbsG', 'fatG', 'adherence'] as const;
+export const ASSESSMENT_FIELDS = [
+    'metricId', 'value', 'validity', 'invalidReason', 'assessmentAttemptId', 'attemptState', 'attemptPurpose',
+] as const;
+export const BODY_COMPOSITION_FIELDS = ['weightKg'] as const;
+export const NUTRITION_FIELDS = [
+    'energyIntakeKcal', 'proteinGrams', 'carbsGrams', 'fatGrams', 'hasIntakeData', 'adherence',
+] as const;
 export const ACTIVITY_FIELDS = [
     'type', 'durationMin', 'averageHr', 'maxHr', 'activityTrainingLoad', 'intensityTag',
     'sessionCost', 'segmentCountTotal', 'segmentsTruncated', 'segments',
@@ -141,24 +156,25 @@ export const GUARDRAIL_FIELDS = [
 export const TRAVEL_FIELDS = ['startDate', 'endDate', 'volumeScale', 'intensityScale'] as const;
 export const VENUE_RESTRICTION_FIELDS = ['date', 'title', 'environment', 'equipment'] as const;
 export const AVAILABILITY_FIELDS = [
-    'date', 'kind', 'startLocal', 'endLocal', 'durationMin', 'title', 'fixed',
+    'date', 'kind', 'startLocal', 'endLocal', 'durationMin', 'title', 'fixed', 'availabilityContextOverride',
 ] as const;
 export const PREFERENCE_FIELDS = [
     'preferredRecoveryStyle', 'defaultWeekdayTimeMin', 'defaultWeekendTimeMin', 'preferredTimeOfDay',
     'preferredModalities', 'deprioritizedModalities', 'avoidedModalities', 'unavailableModalities',
 ] as const;
 export const GOAL_FIELDS = [
-    'title', 'domain', 'status', 'priority', 'targetDate', 'targetOutcome', 'eventCategory', 'eventLifecycle',
+    'title', 'description', 'domain', 'status', 'priority', 'performanceTarget', 'targetMetric', 'targetValue',
+    'targetUnit', 'targetDate', 'targetOutcome', 'eventCategory', 'eventLifecycle', 'timing',
 ] as const;
-export const USER_EVENT_FIELDS = ['title', 'startDate', 'endDate'] as const;
+export const USER_EVENT_FIELDS = ['title', 'startDate', 'endDate', 'lifecycle'] as const;
 export const CONSTRAINT_FIELDS = ['label', 'value', 'severity', 'isActive', 'category', 'description'] as const;
 
 export const PLAN_REVISION_FIELDS = [
-    'planId', 'revision', 'contentHash', 'importedAt', 'schemaVersion', 'authorRationale',
+    'planId', 'revision', 'contentHash', 'importedAt', 'schema', 'authorRationale',
 ] as const;
-export const PLACEMENT_FIELDS = ['planId', 'status', 'date', 'statusHistory'] as const;
-export const OVERRIDE_FIELDS = ['planId', 'kind', 'date', 'reason'] as const;
-export const PLANNED_TO_PERFORMED_FIELDS = ['planId', 'placementRef', 'performedOccurrenceRef'] as const;
+export const PLACEMENT_FIELDS = ['planId', 'revision', 'sessionId', 'status', 'date', 'statusHistory'] as const;
+export const OVERRIDE_FIELDS = ['planId', 'sessionId', 'kind', 'date', 'reason'] as const;
+export const PLANNED_TO_PERFORMED_FIELDS = ['planId', 'sessionId', 'date', 'performedOccurrenceRef'] as const;
 
 type Rec<F extends readonly string[]> = LedgerRecord<F[number]>;
 type Ctx<F extends readonly string[]> = ContextRecord<F[number]>;
@@ -171,7 +187,7 @@ export interface LedgerFacts {
     assessments: LedgerCollection<Rec<typeof ASSESSMENT_FIELDS>>;
     bodyComposition: LedgerCollection<Rec<typeof BODY_COMPOSITION_FIELDS>>;
     nutrition: LedgerCollection<Rec<typeof NUTRITION_FIELDS>>;
-    activities: LedgerCollection<Rec<typeof ACTIVITY_FIELDS>>;
+    activities: ActivityCollection<Rec<typeof ACTIVITY_FIELDS>>;
     events: LedgerCollection<Rec<typeof OUTCOME_FIELDS>>;
 }
 
@@ -267,3 +283,31 @@ export const LEDGER_EXPORT_FIELDS: readonly string[] = [
     ...collectionPaths('coachingHistory.overrides', OVERRIDE_FIELDS),
     ...collectionPaths('coachingHistory.plannedToPerformed', PLANNED_TO_PERFORMED_FIELDS),
 ];
+
+/** Field keys per record-bearing path; the JSON Schema `required` lists must equal these. */
+export const LEDGER_RECORD_FIELD_KEYS: Readonly<Record<string, readonly string[]>> = {
+    'facts.recovery': RECOVERY_FIELDS,
+    'facts.checkins': CHECKIN_FIELDS,
+    'facts.performedTraining': PERFORMED_TRAINING_FIELDS,
+    'facts.sessionResponses': SESSION_RESPONSE_FIELDS,
+    'facts.assessments': ASSESSMENT_FIELDS,
+    'facts.bodyComposition': BODY_COMPOSITION_FIELDS,
+    'facts.nutrition': NUTRITION_FIELDS,
+    'facts.activities': ACTIVITY_FIELDS,
+    'facts.events': OUTCOME_FIELDS,
+    'userContext.injuries': INJURY_FIELDS,
+    'userContext.equipment': EQUIPMENT_FIELDS,
+    'userContext.environment': ENVIRONMENT_FIELDS,
+    'userContext.guardrails': GUARDRAIL_FIELDS,
+    'userContext.travel': TRAVEL_FIELDS,
+    'userContext.venueRestrictions': VENUE_RESTRICTION_FIELDS,
+    'userContext.availability': AVAILABILITY_FIELDS,
+    'userContext.preferences': PREFERENCE_FIELDS,
+    'userContext.goals': GOAL_FIELDS,
+    'userContext.events': USER_EVENT_FIELDS,
+    'userContext.constraints': CONSTRAINT_FIELDS,
+    'coachingHistory.planRevisions': PLAN_REVISION_FIELDS,
+    'coachingHistory.placements': PLACEMENT_FIELDS,
+    'coachingHistory.overrides': OVERRIDE_FIELDS,
+    'coachingHistory.plannedToPerformed': PLANNED_TO_PERFORMED_FIELDS,
+};

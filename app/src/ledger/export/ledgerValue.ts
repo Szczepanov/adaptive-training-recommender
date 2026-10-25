@@ -29,6 +29,49 @@ export function fact<T>(value: T | null | undefined, options: FactOptions): Ledg
     };
 }
 
+/** Inclusive physiological/scale range; `minExclusive` makes the lower bound strict (HR > 0). */
+export interface ValueRange {
+    min?: number;
+    max?: number;
+    minExclusive?: boolean;
+}
+
+function inRange(value: number, range: ValueRange): boolean {
+    if (!Number.isFinite(value)) return false;
+    if (range.min !== undefined && (range.minExclusive ? value <= range.min : value < range.min)) return false;
+    return range.max === undefined || value <= range.max;
+}
+
+/** Like `fact`, but a present value outside its range is `invalid` with no value retained. */
+export function rangedFact(
+    value: number | null | undefined,
+    range: ValueRange,
+    options: FactOptions,
+): LedgerValue<number> {
+    if (value === null || value === undefined || inRange(value, range)) return fact(value, options);
+    return fact<number>(null, { ...options, absent: 'invalid' });
+}
+
+/** Least to most severe. A combined collection reports the worst state of its sources. */
+export const STATE_SEVERITY: readonly LedgerState[] = [
+    'measured',
+    'not_applicable',
+    'not_collected',
+    'stale',
+    'not_recorded',
+    'missing',
+    'not_yet_supported',
+    'invalid',
+    'unavailable',
+];
+
+export function worstState(states: readonly LedgerState[]): LedgerState {
+    return states.reduce<LedgerState>(
+        (worst, state) => (STATE_SEVERITY.indexOf(state) > STATE_SEVERITY.indexOf(worst) ? state : worst),
+        'measured',
+    );
+}
+
 /** The export promises the field, no backing record exists yet (ADR-0052 D-EXPORT). */
 export function notYetSupported<T>(source = 'ledger'): LedgerValue<T> {
     return { value: null, source, state: 'not_yet_supported' };
@@ -61,6 +104,17 @@ export function collection<T>(
     source: string,
     state: LedgerState,
     items: T[],
+    droppedUndated = 0,
 ): LedgerCollection<T> {
-    return { state, source, items };
+    return { state, source, items, droppedUndated };
+}
+
+/**
+ * Applies a source-level read state to a value: `measured` leaves it alone, `stale` keeps the
+ * dated value, any other state means the value cannot be trusted and is withheld.
+ */
+export function withSourceState<T>(value: LedgerValue<T>, state: LedgerState): LedgerValue<T> {
+    if (state === 'measured' || value.state === 'not_yet_supported') return value;
+    if (state === 'stale') return value.value === null ? value : { ...value, state: 'stale' };
+    return { ...value, value: null, state };
 }

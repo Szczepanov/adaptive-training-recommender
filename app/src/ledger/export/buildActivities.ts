@@ -1,10 +1,14 @@
-/** Provider activity detail, bounded per purpose (OD1/OD2: newest 12, <= 20 segments each). */
+/**
+ * Provider activity detail, bounded per purpose (`PURPOSE_BOUNDS`). Omission is counted:
+ * `totalInWindow` and `truncated` say how much detail the cap withheld.
+ */
+import { addDaysToLocalDateString } from '../../utils/localDate.ts';
 import type { ActivitySegmentSummary, NormalizedGarminActivity } from '../models.ts';
-import { collect, type BuildContext } from './buildContext.ts';
+import { sourceState, type BuildContext } from './buildContext.ts';
 import type { LedgerExportRecords } from './inputs.ts';
 import { fact, fieldMap, record } from './ledgerValue.ts';
-import { ACTIVITY_FIELDS, type LedgerFacts, type LedgerValue } from './schema.ts';
-import { inWindow } from './window.ts';
+import { ACTIVITY_FIELDS, type ActivityCollection, type LedgerFacts, type LedgerValue } from './schema.ts';
+import { windowBounds, windowRows } from './window.ts';
 
 type ActivityField = typeof ACTIVITY_FIELDS[number];
 
@@ -30,18 +34,21 @@ function exportSegment(segment: ActivitySegmentSummary): ExportedSegment {
     };
 }
 
-/** Newest first: instant when known, otherwise the calendar date; id breaks ties. */
+/** Newest first: semantic date, then start instant (only compared when both exist), then id. */
 function newestFirst(a: NormalizedGarminActivity, b: NormalizedGarminActivity): number {
-    const left = a.startedAt ?? a.date;
-    const right = b.startedAt ?? b.date;
-    return right.localeCompare(left) || a.activityId.localeCompare(b.activityId);
+    if (a.date !== b.date) return a.date > b.date ? -1 : 1;
+    if (a.startedAt && b.startedAt && a.startedAt !== b.startedAt) return a.startedAt > b.startedAt ? -1 : 1;
+    return a.activityId < b.activityId ? -1 : a.activityId > b.activityId ? 1 : 0;
 }
+
+type SegmentFacts = Pick<Record<ActivityField, LedgerValue<unknown>>, 'segmentCountTotal' | 'segmentsTruncated' | 'segments'>;
 
 function segmentFacts(
     activity: NormalizedGarminActivity,
-    segmentCap: number | null,
+    segmentCap: number,
     base: { source: string; observedOn: string },
-): Pick<Record<ActivityField, LedgerValue<unknown>>, 'segmentCountTotal' | 'segmentsTruncated' | 'segments'> {
+    detailAllowed: boolean,
+): SegmentFacts {
     const telemetry = activity.activityResponse;
     if (!telemetry) {
         return {
@@ -50,18 +57,22 @@ function segmentFacts(
             segments: fact(undefined, base),
         };
     }
-    const kept = segmentCap === null ? telemetry.segments : telemetry.segments.slice(0, segmentCap);
+    // Outside the purpose's detail scope the count stays visible; the rows are withheld.
+    const kept = detailAllowed ? telemetry.segments.slice(0, segmentCap) : [];
     return {
         segmentCountTotal: fact(telemetry.segmentCountTotal, base),
-        segmentsTruncated: fact(telemetry.segmentsTruncated || kept.length < telemetry.segments.length, base),
-        segments: fact(kept.map(exportSegment), base),
+        segmentsTruncated: fact(telemetry.segmentsTruncated || (detailAllowed && kept.length < telemetry.segments.length), base),
+        segments: detailAllowed ? fact(kept.map(exportSegment), base) : fact<ExportedSegment[]>(null, { ...base, absent: 'not_applicable' }),
     };
 }
 
-function activityFields(activity: NormalizedGarminActivity, segmentCap: number | null) {
+function activityFields(activity: NormalizedGarminActivity, context: BuildContext) {
+    const bounds = context.bounds;
+    const detailAllowed = !bounds.segmentDetailOnlyDMinus1
+        || activity.date === addDaysToLocalDateString(context.asOfDate, -1);
     const base = { source: 'garmin', observedOn: activity.date };
-    const segments = segmentFacts(activity, segmentCap, base);
-    const scalar: Record<Exclude<ActivityField, keyof typeof segments>, LedgerValue<unknown>> = {
+    const segments = segmentFacts(activity, bounds.segmentCap, base, detailAllowed);
+    const scalar: Record<Exclude<ActivityField, keyof SegmentFacts>, LedgerValue<unknown>> = {
         type: fact(activity.type, base),
         durationMin: fact(activity.durationMin, { ...base, unit: 'min' }),
         averageHr: fact(activity.averageHr, { ...base, unit: 'bpm' }),
@@ -71,15 +82,23 @@ function activityFields(activity: NormalizedGarminActivity, segmentCap: number |
         sessionCost: fact(activity.sessionCost, base),
     };
     return fieldMap(ACTIVITY_FIELDS, key => (key in segments
-        ? segments[key as keyof typeof segments]
+        ? segments[key as keyof SegmentFacts]
         : scalar[key as keyof typeof scalar]));
 }
 
 export function buildActivities(records: LedgerExportRecords, context: BuildContext): LedgerFacts['activities'] {
-    return collect(context, 'activities', records.activities, rows => {
-        const inRange = rows.filter(row => inWindow(row.date, context.window)).sort(newestFirst);
-        const cap = context.bounds.activityCap;
-        const kept = cap === null ? inRange : inRange.slice(0, cap);
-        return kept.map(row => record(row.activityId, row.date, activityFields(row, context.bounds.segmentCap)));
-    });
+    const { rows, droppedUndated } = windowRows(records.activities ?? [], row => row.date, windowBounds(context.window));
+    const ordered = [...rows].sort(newestFirst);
+    const kept = ordered.slice(0, context.bounds.activityCap);
+    const items = kept.map(row => record(row.activityId, row.date, activityFields(row, context)));
+    const collection: ActivityCollection<LedgerFacts['activities']['items'][number]> = {
+        state: sourceState(context, 'activities', records.activities !== undefined),
+        source: 'activities',
+        // Newest first is the contract for activity detail, so no date re-sort here.
+        items,
+        droppedUndated,
+        truncated: ordered.length > kept.length,
+        totalInWindow: ordered.length,
+    };
+    return collection;
 }

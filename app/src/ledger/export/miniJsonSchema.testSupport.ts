@@ -2,7 +2,7 @@
  * Minimal JSON Schema subset validator for the contract tests (no validator dependency is
  * installed). Supports exactly the keywords `ledgerExport.schema.json` uses: $ref into
  * `#/$defs`, type (single or list), const, enum, required, properties, additionalProperties
- * (boolean or schema), items, pattern, minimum. An unknown keyword fails loudly so the schema
+ * (boolean or schema), items, minItems, maxItems, pattern, minimum, not and if/then. An unknown keyword fails loudly so the schema
  * cannot silently outgrow this checker.
  */
 type Json = unknown;
@@ -11,7 +11,7 @@ type Schema = { [key: string]: Json };
 const ANNOTATIONS = new Set(['$schema', '$id', 'title', 'description', '$defs']);
 const SUPPORTED = new Set([
     '$ref', 'type', 'const', 'enum', 'required', 'properties', 'additionalProperties', 'items',
-    'pattern', 'minimum',
+    'pattern', 'minimum', 'minItems', 'maxItems', 'not', 'if', 'then',
 ]);
 
 function typeOf(value: Json): string {
@@ -57,8 +57,25 @@ function checkScalarKeywords(schema: Schema, value: Json, path: string): string[
     if (typeof schema.pattern === 'string' && typeof value === 'string' && !new RegExp(schema.pattern).test(value)) {
         errors.push(`${path}: does not match ${schema.pattern}`);
     }
+    if (Array.isArray(value) && typeof schema.minItems === 'number' && value.length < schema.minItems) {
+        errors.push(`${path}: fewer than ${schema.minItems} items`);
+    }
+    if (Array.isArray(value) && typeof schema.maxItems === 'number' && value.length > schema.maxItems) {
+        errors.push(`${path}: more than ${schema.maxItems} items`);
+    }
     if (typeof schema.minimum === 'number' && typeof value === 'number' && value < schema.minimum) {
         errors.push(`${path}: below minimum ${schema.minimum}`);
+    }
+    return errors;
+}
+
+function checkConditionals(root: Schema, schema: Schema, value: Json, path: string): string[] {
+    const errors: string[] = [];
+    if (schema.not && check(root, schema.not as Schema, value, path).length === 0) {
+        errors.push(`${path}: matches a forbidden schema`);
+    }
+    if (schema.if && schema.then && check(root, schema.if as Schema, value, path).length === 0) {
+        errors.push(...check(root, schema.then as Schema, value, path));
     }
     return errors;
 }
@@ -75,7 +92,7 @@ function check(root: Schema, schema: Schema, value: Json, path: string): string[
             return [`${path}: expected ${expected.join('|')}, got ${actual}`];
         }
     }
-    const errors = checkScalarKeywords(schema, value, path);
+    const errors = [...checkScalarKeywords(schema, value, path), ...checkConditionals(root, schema, value, path)];
     if (Array.isArray(value) && schema.items) {
         value.forEach((item, index) => errors.push(...check(root, schema.items as Schema, item, `${path}[${index}]`)));
     }

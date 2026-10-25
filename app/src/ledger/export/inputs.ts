@@ -1,83 +1,49 @@
 /**
  * Inputs to the pure ledger-export builder: already-read records, never IO handles.
  *
- * Records typed in modules that import the engine (`training-occurrence/`, `responses/`,
- * `observations/`, `engine/models.ts`) are described here by narrow structural types so the
- * ledger boundary (ADR-0052, `models.architecture.test.ts`) holds. Any wider record is
- * assignable to these; fields the export does not promise are simply never read, so user
- * ids, e-mails and provider account ids in the inputs cannot reach the output.
+ * Records whose modules import nothing from `engine/` (`ledger/models.ts`, `responses/`,
+ * `observations/`, `nutrition/`, `anthropometry/`) are used by their real types, so a model
+ * change cannot drift silently. Records typed in modules that reach the engine
+ * (`training-occurrence/`, and the goal, fixed-activity, schedule-window, intent-block and
+ * external-plan records in `engine/`) are described by narrow structural types here, because
+ * the ledger boundary (ADR-0052, `models.architecture.test.ts`) forbids the import. Any wider
+ * record is assignable to a structural type. Fields the export does not promise are never
+ * read, so user ids, e-mails and provider account ids in the inputs cannot reach the output.
+ * Every field the builder maps is required in its structural type.
  */
+import type { AnthropometryEntry } from '../../anthropometry/models.ts';
+import type { NutritionDay } from '../../nutrition/models.ts';
+import type {
+    AssessmentAttempt,
+    CompetitionOutcome,
+    MetricObservationRevision,
+} from '../../observations/models.ts';
+import type { SessionResponse } from '../../responses/models.ts';
 import type {
     AuthoredPlanBlock,
     DailyRecoverySnapshot,
     DailySubjectiveCheckin,
     NormalizedGarminActivity,
+    TrainingEnvironment,
     TrainingSettings,
     UserConstraint,
     UserPreferences,
 } from '../models.ts';
-import type { LedgerPurpose, LedgerState, LegacyEngineLayer } from './schema.ts';
+import type { LedgerFlag, LedgerPurpose, LedgerState, LegacyEngineLayer } from './schema.ts';
 
+/** Structural copy of `PerformedTrainingOccurrence` (`training-occurrence/models.ts` reaches the engine). */
 export interface OccurrenceInput {
     performedOccurrenceId: string;
-    status: string;
+    status: 'active' | 'merged';
     startedAt?: string;
     endedAt?: string;
     localDate?: string;
     modality?: string;
-    /** Summarised from `session_executions`; absent means the summary is not available. */
+    /** Summarised from `session_executions`; absent means no summary is wired yet. */
     structuredEntries?: { exerciseCount: number; setCount: number };
 }
 
-export interface SessionResponseInput {
-    responseId: string;
-    date: string;
-    window: string;
-    sessionRpe?: number;
-    completedFraction?: number;
-    unexpectedFatigue?: boolean;
-    techniqueNote?: string;
-    note?: string;
-}
-
-export interface AssessmentInput {
-    id: string;
-    date: string;
-    kind: string;
-    metric: string;
-    value: number | null;
-    unit?: string;
-}
-
-export interface BodyCompositionInput {
-    date: string;
-    weightKg?: number | null;
-    bodyFatPct?: number | null;
-}
-
-export interface NutritionDayInput {
-    date: string;
-    energyKcal?: number | null;
-    proteinG?: number | null;
-    carbsG?: number | null;
-    fatG?: number | null;
-    adherence?: string | null;
-}
-
-export interface CompetitionOutcomeInput {
-    id: string;
-    occurredAt: string;
-    sport: string;
-    result: {
-        completed: boolean;
-        placing?: number;
-        fieldSize?: number;
-        elapsedSeconds?: number;
-        distanceM?: number;
-        summary?: string;
-    };
-}
-
+/** Structural subset of `FixedActivity` (`engine/models.ts`). */
 export interface FixedActivityInput {
     id: string;
     title: string;
@@ -85,9 +51,10 @@ export interface FixedActivityInput {
     startTime?: string;
     durationMin: number;
     fixed: boolean;
-    availabilityContextOverride?: { environment?: string; equipment?: string[] };
+    availabilityContextOverride?: { environment?: TrainingEnvironment; equipment?: string[] };
 }
 
+/** Structural subset of `ScheduleWindow` (`engine/models.ts`). */
 export interface ScheduleWindowInput {
     id: string;
     date: string;
@@ -96,42 +63,66 @@ export interface ScheduleWindowInput {
     label?: string;
 }
 
+/** Structural subset of `UserGoal & { id }` (`engine/models.ts`; `goalService` adds the doc id). */
 export interface GoalInput {
     id: string;
     title: string;
+    description?: string | null;
     domain: string;
-    status: string;
+    status: 'active' | 'paused' | 'completed' | 'archived';
     priority: number;
+    performanceTarget?: unknown;
+    targetMetric?: string | null;
+    targetValue?: number | null;
+    targetUnit?: string | null;
     targetDate?: string | null;
     targetOutcome?: string | null;
     eventCategory?: string | null;
-    eventLifecycle?: string | null;
+    eventLifecycle?: 'scheduled' | 'completed' | 'DNS' | 'DNF' | 'cancelled';
+    timing?: {
+        earliestDate: string;
+        latestDate: string;
+        planningDate: string;
+        confirmedDate?: string;
+    } | null;
 }
 
+/** Structural subset of `IntentBlock` (`engine/blockIntent.ts`). */
 export interface IntentBlockInput {
     id: string;
     title?: string;
     dateRange: { startDate: string; endDate: string };
 }
 
+/** One immutable external-plan revision header plus the stored plan's `schema` and `notes`. */
 export interface PlanRevisionInput {
     planId: string;
     revision: number;
     contentHash: string;
     importedAt: string;
-    schemaVersion: string | number;
+    /** e.g. `adaptive-training-recommender/external-plan@6`. */
+    schema: string;
     /** Plan-level `notes` of the imported plan. */
-    notes?: string | null;
+    notes?: string;
 }
 
+/** Structural `ExternalPlanPlacement` (`engine/models.ts`): the mutable overlay, current state only. */
 export interface PlacementInput {
     planId: string;
-    assignments: { assignmentId: string; status: string; date?: string }[];
+    revision: number;
+    assignments: {
+        sessionId: string;
+        date: string;
+        status: 'planned' | 'completed' | 'moved' | 'dropped' | 'superseded';
+    }[];
 }
 
+/** An occurrence-to-placement link (ADR-0034 round trip). */
 export interface PlannedToPerformedInput {
     planId: string;
-    placementRef: string;
+    sessionId: string;
+    /** The planned session's date. */
+    date: string;
     performedOccurrenceId: string;
 }
 
@@ -147,8 +138,9 @@ export const SOURCE_KEYS = [
     'daily_subjective_checkins',
     'performed_training_occurrences',
     'session_responses',
-    'assessments',
-    'body_composition',
+    'assessment_attempts',
+    'metric_observations',
+    'anthropometry_entries',
     'nutrition_days',
     'activities',
     'competition_outcomes',
@@ -170,12 +162,14 @@ export interface LedgerExportRecords {
     recovery?: readonly DailyRecoverySnapshot[];
     checkins?: readonly DailySubjectiveCheckin[];
     performedOccurrences?: readonly OccurrenceInput[];
-    sessionResponses?: readonly SessionResponseInput[];
-    assessments?: readonly AssessmentInput[];
-    bodyComposition?: readonly BodyCompositionInput[];
-    nutritionDays?: readonly NutritionDayInput[];
+    sessionResponses?: readonly SessionResponse[];
+    assessmentAttempts?: readonly AssessmentAttempt[];
+    /** Current heads of `metric_observations` (ADR-0046/0047). */
+    metricObservations?: readonly MetricObservationRevision[];
+    anthropometry?: readonly AnthropometryEntry[];
+    nutritionDays?: readonly NutritionDay[];
     activities?: readonly NormalizedGarminActivity[];
-    competitionOutcomes?: readonly CompetitionOutcomeInput[];
+    competitionOutcomes?: readonly CompetitionOutcome[];
     /** `null` = read, none stored. */
     trainingSettings?: TrainingSettings | null;
     planBlocks?: readonly AuthoredPlanBlock[];
@@ -200,6 +194,12 @@ export interface BuildLedgerExportInput {
     purpose: LedgerPurpose;
     /** Injected; the builder never reads the clock. */
     exportedAt: string;
+    /**
+     * Persisted flag evaluations (D-FLAGS), passed through unchanged: dates, session refs,
+     * definition versions and unevaluable states are never recomputed. A flag id with no
+     * supplied evaluation stays `not_yet_supported`.
+     */
+    flagEvaluations?: readonly LedgerFlag[];
     /** OD4: omitted or `undefined` keeps `legacyEngine` null. Opaque, never inspected. */
     legacyEngine?: LegacyEngineLayer;
 }
