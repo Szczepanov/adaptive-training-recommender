@@ -7,7 +7,7 @@
  */
 import type { TrainingSettings, UserPreferences } from '../models.ts';
 import { byDateThenId, collect, sourceState, type BuildContext } from './buildContext.ts';
-import type { GoalInput, LedgerExportRecords } from './inputs.ts';
+import type { GoalInput, GoalPerformanceTargetInput, LedgerExportRecords } from './inputs.ts';
 import {
     contextRecord,
     fact,
@@ -225,18 +225,23 @@ function buildAvailability(records: LedgerExportRecords, context: BuildContext):
 }
 
 /** Explicit allow-list of the ADR-0041 target; unknown extra fields never pass through. */
-function performanceTargetOf(row: GoalInput): unknown {
+function performanceTargetFact(row: GoalInput): LedgerValue<unknown> {
+    const options = { source: SOURCE, absent: 'not_recorded' as const };
     const target = row.performanceTarget;
-    if (!target) return null;
-    const subject = target.subjectRef;
-    return {
+    if (!target) return fact(null, options);
+    // A stored target missing its subject is malformed data: report it, never throw.
+    const subject = target.subjectRef as GoalPerformanceTargetInput['subjectRef'] | undefined;
+    if (subject?.kind !== 'exercise' && subject?.kind !== 'performance_test') {
+        return fact(null, { ...options, absent: 'invalid' });
+    }
+    return fact({
         kind: target.kind,
         metricId: target.metricId,
         subjectRef: subject.kind === 'exercise'
             ? { kind: subject.kind, exerciseId: subject.exerciseId }
             : { kind: subject.kind, performanceTestId: subject.performanceTestId },
         targetValue: target.targetValue,
-    };
+    }, options);
 }
 
 function goalValues(row: GoalInput): Record<typeof GOAL_FIELDS[number], LedgerValue<unknown>> {
@@ -248,7 +253,7 @@ function goalValues(row: GoalInput): Record<typeof GOAL_FIELDS[number], LedgerVa
         domain: fact(row.domain, base),
         status: fact(row.status, base),
         priority: rangedFact(row.priority, { min: 1, max: 5 }, base),
-        performanceTarget: fact(performanceTargetOf(row), optional),
+        performanceTarget: performanceTargetFact(row),
         targetMetric: fact(row.targetMetric, optional),
         targetValue: fact(row.targetValue, optional),
         targetUnit: fact(row.targetUnit, optional),

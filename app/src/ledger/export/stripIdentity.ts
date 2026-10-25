@@ -6,7 +6,8 @@
  * redacted, whole tokens only). Structural fields keep their enum/date/id values.
  */
 const IDENTITY_KEY = /(user|owner|account|profile|athlete|subject)_?(id|uid|pk)$|^uid$|e-?mail/i;
-const EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+/g;
+// An alphabetic top-level domain is required, so versions like `plan@6.1` are not e-mails.
+const EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}\b/g;
 const REDACTED = '[redacted]';
 const MIN_IDENTITY_LENGTH = 4;
 

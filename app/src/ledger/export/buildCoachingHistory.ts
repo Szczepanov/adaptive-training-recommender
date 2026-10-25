@@ -93,7 +93,7 @@ function buildPlannedToPerformed(records: LedgerExportRecords, context: BuildCon
                 date: fact(row.date, base),
                 performedOccurrenceRef: fact(row.performedOccurrenceId, base),
             };
-            return record(`${row.planId}@${row.revision}:${row.sessionId}`, row.date, values);
+            return record(`${row.planId}@${row.revision}:${row.sessionId}:${row.performedOccurrenceId}`, row.date, values);
         },
     });
 }

@@ -24,7 +24,7 @@ interface JsonSchema {
 
 const SCHEMA_PATH = join(dirname(fileURLToPath(import.meta.url)), 'ledgerExport.schema.json');
 const readSchema = (): JsonSchema => JSON.parse(readFileSync(SCHEMA_PATH, 'utf8')) as JsonSchema;
-if (process.env.UPDATE_LEDGER_SCHEMA) {
+if (process.env.UPDATE_LEDGER_SCHEMA === '1') {
     writeFileSync(SCHEMA_PATH, `${JSON.stringify(applyGeneratedSchema(readSchema() as never), null, 2)}
 `);
 }

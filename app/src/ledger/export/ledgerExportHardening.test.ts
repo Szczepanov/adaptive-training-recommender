@@ -126,7 +126,7 @@ describe('planned-to-performed ids (N5)', () => {
             },
         }));
         const items = result.coachingHistory.plannedToPerformed.items;
-        expect(items.map(item => item.id)).toEqual(['plan-1@1:s1', 'plan-1@2:s1']);
+        expect(items.map(item => item.id)).toEqual(['plan-1@1:s1:occ-1', 'plan-1@2:s1:occ-2']);
         expect(items.map(item => item.fields.revision.value)).toEqual([1, 2]);
     });
 });
@@ -179,5 +179,60 @@ describe('availability row remainder (M8)', () => {
         expect(window.fields.environment.value).toBe('indoor');
         expect(window.fields.equipment.value).toEqual(['indoor_bike']);
         expect(window.fields.availabilityOverrideMin.state).toBe('not_applicable');
+    });
+});
+
+describe('final review fixes', () => {
+    it('keeps dotted versions that look like user@host intact (P1)', () => {
+        const result = buildLedgerExport(fullInput({
+            flagEvaluations: [{
+                id: 'illness_anomaly',
+                observedOn: AS_OF,
+                evaluatedAt: `${AS_OF}T05:00:00Z`,
+                definitionVersion: 'healthAnomaly@2.1.0',
+                active: false,
+                state: 'measured',
+                inputs: [],
+                threshold: 'band',
+            }],
+            records: {
+                planRevisions: [{
+                    planId: 'plan-9',
+                    revision: 1,
+                    contentHash: 'h',
+                    importedAt: '2026-11-10T08:00:00Z',
+                    schema: 'adaptive-training-recommender/external-plan@6.1',
+                }],
+            },
+        }));
+        expect(result.flags.find(flag => flag.id === 'illness_anomaly')!.definitionVersion).toBe('healthAnomaly@2.1.0');
+        expect(result.coachingHistory.planRevisions.items[0].fields.schema.value)
+            .toBe('adaptive-training-recommender/external-plan@6.1');
+    });
+
+    it('still redacts real e-mail addresses (P1)', () => {
+        const result = buildLedgerExport(fullInput({ legacyEngine: { a: 'a.b@example.com', b: 'x@mail.co.uk.' } }));
+        expect(result.legacyEngine).toEqual({ a: '[redacted]', b: '[redacted].' });
+    });
+
+    it('reports a performance target without a subject as invalid instead of throwing (P2)', () => {
+        const base = fullRecords().goals![0];
+        const malformed = { kind: 'performance_metric', metricId: 'ftp', targetValue: 300 } as unknown as NonNullable<typeof base.performanceTarget>;
+        const result = buildLedgerExport(fullInput({ records: { goals: [{ ...base, performanceTarget: malformed }] } }));
+        expect(result.userContext.goals.items[0].fields.performanceTarget).toMatchObject({ value: null, state: 'invalid' });
+    });
+
+    it('keeps two occurrences answering the same session distinct (N5 residual)', () => {
+        const link = { planId: 'plan-1', revision: 2, sessionId: 's1', date: D_MINUS_1 };
+        const result = buildLedgerExport(fullInput({
+            records: {
+                plannedToPerformed: [
+                    { ...link, performedOccurrenceId: 'occ-1' },
+                    { ...link, performedOccurrenceId: 'occ-2' },
+                ],
+            },
+        }));
+        expect(result.coachingHistory.plannedToPerformed.items.map(item => item.id))
+            .toEqual(['plan-1@2:s1:occ-1', 'plan-1@2:s1:occ-2']);
     });
 });
