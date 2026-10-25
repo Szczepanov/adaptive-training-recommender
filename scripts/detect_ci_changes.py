@@ -2,7 +2,8 @@
 """Classify changed files for CI job selection.
 
 Determines whether a pull request touches code, configuration, or baselines
-that require the full CI suite, or is strictly documentation-only.
+that require the full CI suite, or is strictly documentation-only, and whether
+it can affect the engine simulations (ADR-0052 D-CI, see ``engine_impact``).
 """
 
 from __future__ import annotations
@@ -11,6 +12,8 @@ import os
 import subprocess
 import sys
 from pathlib import PurePosixPath
+
+from engine_impact import EngineImpact, assess
 
 CODE_PATTERNS = [
     "src/**",
@@ -132,13 +135,46 @@ def get_worktree_changed_files(
     return sorted(paths)
 
 
-def write_github_output(code_changed: bool, docs_only: bool) -> None:
+def resolve_diff_refs(base_ref: str | None = None) -> tuple[str, str] | None:
+    """Return the (base, head) commits this run classifies, or None if unresolvable.
+
+    Mirrors :func:`get_changed_files`: on a GitHub PR merge commit the base is its first
+    parent; otherwise it is the merge base with ``base_ref`` (default ``origin/main``).
+    """
+    try:
+        parents = subprocess.check_output(
+            ["git", "rev-list", "--parents", "-n", "1", "HEAD"],
+            stderr=subprocess.DEVNULL,
+            text=True,
+        ).split()
+        if len(parents) == 3:
+            return parents[1], "HEAD"
+        merge_base = subprocess.check_output(
+            ["git", "merge-base", base_ref or "origin/main", "HEAD"],
+            stderr=subprocess.DEVNULL,
+            text=True,
+        ).strip()
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    return (merge_base, "HEAD") if merge_base else None
+
+
+def assess_engine_impact(base_ref: str | None = None) -> EngineImpact:
+    """Classify the PR's engine impact, failing safe when the base cannot be resolved."""
+    refs = resolve_diff_refs(base_ref)
+    if refs is None:
+        return EngineImpact(True, ("uncertain: cannot resolve the diff base",))
+    return assess(*refs)
+
+
+def write_github_output(code_changed: bool, docs_only: bool, engine_affected: bool) -> None:
     """Write outputs to GITHUB_OUTPUT file for GitHub Actions."""
     github_output = os.getenv("GITHUB_OUTPUT")
     if github_output:
         with open(github_output, "a", encoding="utf-8") as f:
             f.write(f"code_changed={'true' if code_changed else 'false'}\n")
             f.write(f"docs_only={'true' if docs_only else 'false'}\n")
+            f.write(f"engine_affected={'true' if engine_affected else 'false'}\n")
 
 
 def main() -> int:
@@ -148,14 +184,14 @@ def main() -> int:
     # On main push, workflow_call (release), or manual dispatch, run everything
     if event_name and event_name != "pull_request":
         print(f"Event '{event_name}' is not pull_request; running all CI jobs.")
-        write_github_output(code_changed=True, docs_only=False)
+        write_github_output(code_changed=True, docs_only=False, engine_affected=True)
         return 0
 
     changed_files = get_changed_files(base_ref)
     if not changed_files:
         # Fail safe: if no changed files detected or error, run all checks
         print("No changed files detected or git diff unavailable; running all CI jobs (fail-safe).")
-        write_github_output(code_changed=True, docs_only=False)
+        write_github_output(code_changed=True, docs_only=False, engine_affected=True)
         return 0
 
     code_files = [f for f in changed_files if is_code_file(f)]
@@ -172,7 +208,14 @@ def main() -> int:
         for cf in code_files[:5]:
             print(f"  - {cf}")
 
-    write_github_output(code_changed=code_changed, docs_only=docs_only)
+    impact = assess_engine_impact(base_ref)
+    print(f"Engine-affecting (simulations run): {'yes' if impact.affected else 'no'}")
+    for reason in impact.reasons[:10]:
+        print(f"  - {reason}")
+
+    write_github_output(
+        code_changed=code_changed, docs_only=docs_only, engine_affected=impact.affected
+    )
     return 0
 
 

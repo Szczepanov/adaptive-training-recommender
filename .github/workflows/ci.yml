@@ -36,6 +36,9 @@ jobs:
     outputs:
       code_changed: ${{ steps.detect.outputs.code_changed }}
       docs_only: ${{ steps.detect.outputs.docs_only }}
+      # ADR-0052 D-CI: true when the change is engine-affecting or classification is
+      # uncertain (scripts/engine_impact.py). Always true on non-PR events.
+      engine_affected: ${{ steps.detect.outputs.engine_affected }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -423,7 +426,8 @@ jobs:
 
   engine-simulations:
     name: Engine Simulations & AI Gates
-    if: needs.detect-changes.outputs.code_changed == 'true'
+    # Runs only for engine-affecting changes (ADR-0052 D-CI); ci-gate accepts "skipped".
+    if: needs.detect-changes.outputs.engine_affected == 'true'
     needs: detect-changes
     runs-on: ubuntu-26.04
     defaults:
