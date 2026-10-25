@@ -1,0 +1,2438 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://adaptive-training-recommender.local/schemas/ledger-export-v1.schema.json",
+  "title": "LedgerExport (ledger-export-v1)",
+  "description": "D-EXPORT v1 (#1145, ADR-0052). Mirrors app/src/ledger/export/schema.ts. No user id, e-mail or provider account id appears anywhere.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "exportedAt",
+    "asOfDate",
+    "window",
+    "purpose",
+    "sources",
+    "facts",
+    "derived",
+    "flags",
+    "userContext",
+    "coachingHistory",
+    "legacyEngine"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "ledger-export-v1"
+    },
+    "exportedAt": {
+      "type": "string"
+    },
+    "asOfDate": {
+      "$ref": "#/$defs/date"
+    },
+    "window": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "startDate",
+        "endDate",
+        "days"
+      ],
+      "properties": {
+        "startDate": {
+          "$ref": "#/$defs/date"
+        },
+        "endDate": {
+          "$ref": "#/$defs/date"
+        },
+        "days": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "purpose": {
+      "enum": [
+        "morning",
+        "planning",
+        "diagnostic"
+      ]
+    },
+    "sources": {
+      "type": "array",
+      "minItems": 21,
+      "maxItems": 21,
+      "items": {
+        "$ref": "#/$defs/sourceState"
+      }
+    },
+    "facts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "recovery",
+        "checkins",
+        "performedTraining",
+        "sessionResponses",
+        "assessments",
+        "bodyComposition",
+        "nutrition",
+        "activities",
+        "events"
+      ],
+      "properties": {
+        "recovery": {
+          "$ref": "#/$defs/facts_recovery"
+        },
+        "checkins": {
+          "$ref": "#/$defs/facts_checkins"
+        },
+        "performedTraining": {
+          "$ref": "#/$defs/facts_performedTraining"
+        },
+        "sessionResponses": {
+          "$ref": "#/$defs/facts_sessionResponses"
+        },
+        "assessments": {
+          "$ref": "#/$defs/facts_assessments"
+        },
+        "bodyComposition": {
+          "$ref": "#/$defs/facts_bodyComposition"
+        },
+        "nutrition": {
+          "$ref": "#/$defs/facts_nutrition"
+        },
+        "activities": {
+          "$ref": "#/$defs/facts_activities"
+        },
+        "events": {
+          "$ref": "#/$defs/facts_events"
+        }
+      }
+    },
+    "derived": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/derivedMetric"
+      },
+      "minItems": 3
+    },
+    "flags": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/flag"
+      },
+      "minItems": 4
+    },
+    "userContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "injuries",
+        "equipment",
+        "environment",
+        "guardrails",
+        "travel",
+        "venueRestrictions",
+        "availability",
+        "preferences",
+        "goals",
+        "events",
+        "constraints",
+        "trainingDislikes"
+      ],
+      "properties": {
+        "injuries": {
+          "$ref": "#/$defs/userContext_injuries"
+        },
+        "equipment": {
+          "$ref": "#/$defs/userContext_equipment"
+        },
+        "environment": {
+          "$ref": "#/$defs/userContext_environment"
+        },
+        "guardrails": {
+          "$ref": "#/$defs/userContext_guardrails"
+        },
+        "travel": {
+          "$ref": "#/$defs/userContext_travel"
+        },
+        "venueRestrictions": {
+          "$ref": "#/$defs/userContext_venueRestrictions"
+        },
+        "availability": {
+          "$ref": "#/$defs/userContext_availability"
+        },
+        "preferences": {
+          "$ref": "#/$defs/userContext_preferences"
+        },
+        "goals": {
+          "$ref": "#/$defs/userContext_goals"
+        },
+        "events": {
+          "$ref": "#/$defs/userContext_events"
+        },
+        "constraints": {
+          "$ref": "#/$defs/userContext_constraints"
+        },
+        "trainingDislikes": {
+          "$ref": "#/$defs/ledgerValue"
+        }
+      }
+    },
+    "coachingHistory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "planRevisions",
+        "placements",
+        "overrides",
+        "plannedToPerformed"
+      ],
+      "properties": {
+        "planRevisions": {
+          "$ref": "#/$defs/coachingHistory_planRevisions"
+        },
+        "placements": {
+          "$ref": "#/$defs/coachingHistory_placements"
+        },
+        "overrides": {
+          "$ref": "#/$defs/coachingHistory_overrides"
+        },
+        "plannedToPerformed": {
+          "$ref": "#/$defs/coachingHistory_plannedToPerformed"
+        }
+      }
+    },
+    "legacyEngine": {
+      "type": [
+        "object",
+        "null"
+      ]
+    }
+  },
+  "$defs": {
+    "date": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    },
+    "state": {
+      "enum": [
+        "measured",
+        "missing",
+        "unavailable",
+        "invalid",
+        "not_collected",
+        "not_applicable",
+        "stale",
+        "not_recorded",
+        "not_yet_supported"
+      ]
+    },
+    "ledgerValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "source",
+        "state"
+      ],
+      "properties": {
+        "value": {},
+        "unit": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/state"
+        },
+        "observedOn": {
+          "$ref": "#/$defs/date"
+        }
+      },
+      "if": {
+        "required": [
+          "state"
+        ],
+        "properties": {
+          "state": {
+            "const": "measured"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "value": {
+            "not": {
+              "type": "null"
+            }
+          }
+        }
+      }
+    },
+    "sourceState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "state",
+        "readAt",
+        "newestObservedOn"
+      ],
+      "properties": {
+        "source": {
+          "enum": [
+            "daily_recovery_snapshots",
+            "daily_subjective_checkins",
+            "performed_training_occurrences",
+            "session_responses",
+            "assessment_attempts",
+            "metric_observations",
+            "anthropometry_entries",
+            "nutrition_days",
+            "activities",
+            "competition_outcomes",
+            "training_settings",
+            "plan_blocks",
+            "fixed_activities",
+            "schedule_windows",
+            "preferences",
+            "goals",
+            "intent_blocks",
+            "constraints",
+            "external_plan_revisions",
+            "external_plan_placements",
+            "planned_to_performed"
+          ]
+        },
+        "state": {
+          "$ref": "#/$defs/state"
+        },
+        "readAt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "newestObservedOn": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "derivedMetric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "definition",
+        "window",
+        "value",
+        "inputs"
+      ],
+      "properties": {
+        "id": {
+          "enum": [
+            "biometric_baselines",
+            "d_minus_1_step_normalization",
+            "rolling_performed_training_load"
+          ]
+        },
+        "definition": {
+          "type": "string"
+        },
+        "window": {
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "inputs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "flag": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "observedOn",
+        "evaluatedAt",
+        "definitionVersion",
+        "active",
+        "state",
+        "inputs",
+        "threshold"
+      ],
+      "properties": {
+        "id": {
+          "enum": [
+            "illness_anomaly",
+            "illness_risk_symptom",
+            "injury_constraint_touches_session",
+            "recovery_beyond_baseline"
+          ]
+        },
+        "observedOn": {
+          "$ref": "#/$defs/date"
+        },
+        "evaluatedAt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "definitionVersion": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sessionRef": {
+          "type": "string"
+        },
+        "active": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "state": {
+          "$ref": "#/$defs/state"
+        },
+        "inputs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "value"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "value": {
+                "$ref": "#/$defs/ledgerValue"
+              }
+            }
+          }
+        },
+        "threshold": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "baselineWindow": {
+          "type": "string"
+        }
+      }
+    },
+    "facts_recovery_fields": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sleepScore",
+        "sleepDurationSec",
+        "restingHr",
+        "hrvOvernightAvg",
+        "hrvStatus",
+        "respirationAvg",
+        "bodyBatteryWake",
+        "totalSteps",
+        "stressAvg",
+        "weightKg",
+        "bodyFatPct"
+      ],
+      "properties": {
+        "sleepScore": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "sleepDurationSec": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "restingHr": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "hrvOvernightAvg": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "hrvStatus": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "respirationAvg": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "bodyBatteryWake": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "totalSteps": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "stressAvg": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "weightKg": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "bodyFatPct": {
+          "$ref": "#/$defs/ledgerValue"
+        }
+      }
+    },
+    "facts_recovery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "source",
+        "items",
+        "droppedUndated"
+      ],
+      "properties": {
+        "state": {
+          "$ref": "#/$defs/state"
+        },
+        "source": {
+          "type": "string"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "observedOn",
+              "fields"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "observedOn": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "fields": {
+                "$ref": "#/$defs/facts_recovery_fields"
+              }
+            }
+          }
+        },
+        "droppedUndated": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "facts_checkins_fields": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "readiness",
+        "sleepQuality",
+        "fatigue",
+        "soreness",
+        "mentalStress",
+        "motivation",
+        "painOrInjury",
+        "illnessSymptoms",
+        "unusuallyLimitedTime",
+        "alreadyTrainedToday",
+        "notes",
+        "tissueResponses",
+        "redFlags",
+        "timeAvailableMin",
+        "indoorOnly",
+        "preferredModalityToday"
+      ],
+      "properties": {
+        "readiness": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "sleepQuality": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "fatigue": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "soreness": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "mentalStress": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "motivation": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "painOrInjury": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "illnessSymptoms": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "unusuallyLimitedTime": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "alreadyTrainedToday": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "notes": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "tissueResponses": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "redFlags": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "timeAvailableMin": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "indoorOnly": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "preferredModalityToday": {
+          "$ref": "#/$defs/ledgerValue"
+        }
+      }
+    },
+    "facts_checkins": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "source",
+        "items",
+        "droppedUndated"
+      ],
+      "properties": {
+        "state": {
+          "$ref": "#/$defs/state"
+        },
+        "source": {
+          "type": "string"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "observedOn",
+              "fields"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "observedOn": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "fields": {
+                "$ref": "#/$defs/facts_checkins_fields"
+              }
+            }
+          }
+        },
+        "droppedUndated": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "facts_performedTraining_fields": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "modality",
+        "startedAt",
+        "endedAt",
+        "durationMin",
+        "structuredEntries"
+      ],
+      "properties": {
+        "status": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "modality": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "startedAt": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "endedAt": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "durationMin": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "structuredEntries": {
+          "$ref": "#/$defs/ledgerValue"
+        }
+      }
+    },
+    "facts_performedTraining": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "source",
+        "items",
+        "droppedUndated"
+      ],
+      "properties": {
+        "state": {
+          "$ref": "#/$defs/state"
+        },
+        "source": {
+          "type": "string"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "observedOn",
+              "fields"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "observedOn": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "fields": {
+                "$ref": "#/$defs/facts_performedTraining_fields"
+              }
+            }
+          }
+        },
+        "droppedUndated": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "facts_sessionResponses_fields": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "window",
+        "sourceSession",
+        "occurrenceId",
+        "sessionRpe",
+        "completedFraction",
+        "unexpectedFatigue",
+        "techniqueNote",
+        "note"
+      ],
+      "properties": {
+        "window": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "sourceSession": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "occurrenceId": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "sessionRpe": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "completedFraction": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "unexpectedFatigue": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "techniqueNote": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "note": {
+          "$ref": "#/$defs/ledgerValue"
+        }
+      }
+    },
+    "facts_sessionResponses": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "source",
+        "items",
+        "droppedUndated"
+      ],
+      "properties": {
+        "state": {
+          "$ref": "#/$defs/state"
+        },
+        "source": {
+          "type": "string"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "observedOn",
+              "fields"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "observedOn": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "fields": {
+                "$ref": "#/$defs/facts_sessionResponses_fields"
+              }
+            }
+          }
+        },
+        "droppedUndated": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "facts_assessments_fields": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "metricId",
+        "value",
+        "validity",
+        "invalidReason",
+        "assessmentAttemptId",
+        "attemptState",
+        "attemptPurpose"
+      ],
+      "properties": {
+        "metricId": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "value": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "validity": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "invalidReason": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "assessmentAttemptId": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "attemptState": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "attemptPurpose": {
+          "$ref": "#/$defs/ledgerValue"
+        }
+      }
+    },
+    "facts_assessments": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "source",
+        "items",
+        "droppedUndated"
+      ],
+      "properties": {
+        "state": {
+          "$ref": "#/$defs/state"
+        },
+        "source": {
+          "type": "string"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "observedOn",
+              "fields"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "observedOn": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "fields": {
+                "$ref": "#/$defs/facts_assessments_fields"
+              }
+            }
+          }
+        },
+        "droppedUndated": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "facts_bodyComposition_fields": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "weightKg"
+      ],
+      "properties": {
+        "weightKg": {
+          "$ref": "#/$defs/ledgerValue"
+        }
+      }
+    },
+    "facts_bodyComposition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "source",
+        "items",
+        "droppedUndated"
+      ],
+      "properties": {
+        "state": {
+          "$ref": "#/$defs/state"
+        },
+        "source": {
+          "type": "string"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "observedOn",
+              "fields"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "observedOn": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "fields": {
+                "$ref": "#/$defs/facts_bodyComposition_fields"
+              }
+            }
+          }
+        },
+        "droppedUndated": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "facts_nutrition_fields": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "energyIntakeKcal",
+        "proteinGrams",
+        "carbsGrams",
+        "fatGrams",
+        "hasIntakeData",
+        "adherence"
+      ],
+      "properties": {
+        "energyIntakeKcal": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "proteinGrams": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "carbsGrams": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "fatGrams": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "hasIntakeData": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "adherence": {
+          "$ref": "#/$defs/ledgerValue"
+        }
+      }
+    },
+    "facts_nutrition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "source",
+        "items",
+        "droppedUndated"
+      ],
+      "properties": {
+        "state": {
+          "$ref": "#/$defs/state"
+        },
+        "source": {
+          "type": "string"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "observedOn",
+              "fields"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "observedOn": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "fields": {
+                "$ref": "#/$defs/facts_nutrition_fields"
+              }
+            }
+          }
+        },
+        "droppedUndated": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "facts_activities_fields": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "durationMin",
+        "averageHr",
+        "maxHr",
+        "activityTrainingLoad",
+        "intensityTag",
+        "sessionCost",
+        "segmentCountTotal",
+        "segmentsTruncated",
+        "segments"
+      ],
+      "properties": {
+        "type": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "durationMin": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "averageHr": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "maxHr": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "activityTrainingLoad": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "intensityTag": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "sessionCost": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "segmentCountTotal": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "segmentsTruncated": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "segments": {
+          "$ref": "#/$defs/ledgerValue"
+        }
+      }
+    },
+    "facts_activities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "source",
+        "items",
+        "droppedUndated",
+        "truncated",
+        "totalInWindow"
+      ],
+      "properties": {
+        "state": {
+          "$ref": "#/$defs/state"
+        },
+        "source": {
+          "type": "string"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "observedOn",
+              "fields"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "observedOn": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "fields": {
+                "$ref": "#/$defs/facts_activities_fields"
+              }
+            }
+          }
+        },
+        "droppedUndated": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "totalInWindow": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "facts_events_fields": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sport",
+        "completed",
+        "placing",
+        "fieldSize",
+        "elapsedSeconds",
+        "distanceM",
+        "summary"
+      ],
+      "properties": {
+        "sport": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "completed": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "placing": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "fieldSize": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "elapsedSeconds": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "distanceM": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "summary": {
+          "$ref": "#/$defs/ledgerValue"
+        }
+      }
+    },
+    "facts_events": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "source",
+        "items",
+        "droppedUndated"
+      ],
+      "properties": {
+        "state": {
+          "$ref": "#/$defs/state"
+        },
+        "source": {
+          "type": "string"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "observedOn",
+              "fields"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "observedOn": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "fields": {
+                "$ref": "#/$defs/facts_events_fields"
+              }
+            }
+          }
+        },
+        "droppedUndated": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "userContext_injuries_fields": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "region",
+        "severity",
+        "reviewBy",
+        "note",
+        "restrictedModalities"
+      ],
+      "properties": {
+        "region": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "severity": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "reviewBy": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "note": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "restrictedModalities": {
+          "$ref": "#/$defs/ledgerValue"
+        }
+      }
+    },
+    "userContext_injuries": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "source",
+        "items",
+        "droppedUndated"
+      ],
+      "properties": {
+        "state": {
+          "$ref": "#/$defs/state"
+        },
+        "source": {
+          "type": "string"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "observedOn",
+              "fields",
+              "since",
+              "revisions"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "observedOn": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "fields": {
+                "$ref": "#/$defs/userContext_injuries_fields"
+              },
+              "since": {
+                "$ref": "#/$defs/ledgerValue"
+              },
+              "revisions": {
+                "$ref": "#/$defs/ledgerValue"
+              }
+            }
+          }
+        },
+        "droppedUndated": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "userContext_equipment_fields": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "free_weights",
+        "cable_machine",
+        "treadmill",
+        "indoor_bike",
+        "pullup_bar",
+        "outdoor_bike",
+        "swim_access"
+      ],
+      "properties": {
+        "free_weights": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "cable_machine": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "treadmill": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "indoor_bike": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "pullup_bar": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "outdoor_bike": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "swim_access": {
+          "$ref": "#/$defs/ledgerValue"
+        }
+      }
+    },
+    "userContext_equipment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "observedOn",
+        "fields",
+        "since",
+        "revisions"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "observedOn": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "fields": {
+          "$ref": "#/$defs/userContext_equipment_fields"
+        },
+        "since": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "revisions": {
+          "$ref": "#/$defs/ledgerValue"
+        }
+      }
+    },
+    "userContext_environment_fields": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "defaultEnvironment",
+        "weekdayMaxMinutes",
+        "weekendMaxMinutes"
+      ],
+      "properties": {
+        "defaultEnvironment": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "weekdayMaxMinutes": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "weekendMaxMinutes": {
+          "$ref": "#/$defs/ledgerValue"
+        }
+      }
+    },
+    "userContext_environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "observedOn",
+        "fields",
+        "since",
+        "revisions"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "observedOn": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "fields": {
+          "$ref": "#/$defs/userContext_environment_fields"
+        },
+        "since": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "revisions": {
+          "$ref": "#/$defs/ledgerValue"
+        }
+      }
+    },
+    "userContext_guardrails_fields": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "avoid_high_impact",
+        "avoid_heavy_lower_body",
+        "avoid_overhead_pressing",
+        "avoid_heavy_spinal_loading"
+      ],
+      "properties": {
+        "avoid_high_impact": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "avoid_heavy_lower_body": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "avoid_overhead_pressing": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "avoid_heavy_spinal_loading": {
+          "$ref": "#/$defs/ledgerValue"
+        }
+      }
+    },
+    "userContext_guardrails": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "observedOn",
+        "fields",
+        "since",
+        "revisions"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "observedOn": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "fields": {
+          "$ref": "#/$defs/userContext_guardrails_fields"
+        },
+        "since": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "revisions": {
+          "$ref": "#/$defs/ledgerValue"
+        }
+      }
+    },
+    "userContext_travel_fields": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "startDate",
+        "endDate",
+        "volumeScale",
+        "intensityScale"
+      ],
+      "properties": {
+        "startDate": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "endDate": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "volumeScale": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "intensityScale": {
+          "$ref": "#/$defs/ledgerValue"
+        }
+      }
+    },
+    "userContext_travel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "source",
+        "items",
+        "droppedUndated"
+      ],
+      "properties": {
+        "state": {
+          "$ref": "#/$defs/state"
+        },
+        "source": {
+          "type": "string"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "observedOn",
+              "fields",
+              "since",
+              "revisions"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "observedOn": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "fields": {
+                "$ref": "#/$defs/userContext_travel_fields"
+              },
+              "since": {
+                "$ref": "#/$defs/ledgerValue"
+              },
+              "revisions": {
+                "$ref": "#/$defs/ledgerValue"
+              }
+            }
+          }
+        },
+        "droppedUndated": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "userContext_venueRestrictions_fields": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "date",
+        "title",
+        "environment",
+        "equipment"
+      ],
+      "properties": {
+        "date": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "title": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "environment": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "equipment": {
+          "$ref": "#/$defs/ledgerValue"
+        }
+      }
+    },
+    "userContext_venueRestrictions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "source",
+        "items",
+        "droppedUndated"
+      ],
+      "properties": {
+        "state": {
+          "$ref": "#/$defs/state"
+        },
+        "source": {
+          "type": "string"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "observedOn",
+              "fields",
+              "since",
+              "revisions"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "observedOn": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "fields": {
+                "$ref": "#/$defs/userContext_venueRestrictions_fields"
+              },
+              "since": {
+                "$ref": "#/$defs/ledgerValue"
+              },
+              "revisions": {
+                "$ref": "#/$defs/ledgerValue"
+              }
+            }
+          }
+        },
+        "droppedUndated": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "userContext_availability_fields": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "date",
+        "kind",
+        "startLocal",
+        "endLocal",
+        "durationMin",
+        "title",
+        "fixed",
+        "availabilityContextOverride",
+        "availabilityOverrideMin",
+        "environment",
+        "equipment"
+      ],
+      "properties": {
+        "date": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "kind": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "startLocal": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "endLocal": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "durationMin": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "title": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "fixed": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "availabilityContextOverride": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "availabilityOverrideMin": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "environment": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "equipment": {
+          "$ref": "#/$defs/ledgerValue"
+        }
+      }
+    },
+    "userContext_availability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "source",
+        "items",
+        "droppedUndated"
+      ],
+      "properties": {
+        "state": {
+          "$ref": "#/$defs/state"
+        },
+        "source": {
+          "type": "string"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "observedOn",
+              "fields",
+              "since",
+              "revisions"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "observedOn": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "fields": {
+                "$ref": "#/$defs/userContext_availability_fields"
+              },
+              "since": {
+                "$ref": "#/$defs/ledgerValue"
+              },
+              "revisions": {
+                "$ref": "#/$defs/ledgerValue"
+              }
+            }
+          }
+        },
+        "droppedUndated": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "userContext_preferences_fields": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "preferredRecoveryStyle",
+        "defaultWeekdayTimeMin",
+        "defaultWeekendTimeMin",
+        "preferredTimeOfDay",
+        "preferredModalities",
+        "deprioritizedModalities",
+        "avoidedModalities",
+        "unavailableModalities"
+      ],
+      "properties": {
+        "preferredRecoveryStyle": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "defaultWeekdayTimeMin": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "defaultWeekendTimeMin": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "preferredTimeOfDay": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "preferredModalities": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "deprioritizedModalities": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "avoidedModalities": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "unavailableModalities": {
+          "$ref": "#/$defs/ledgerValue"
+        }
+      }
+    },
+    "userContext_preferences": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "observedOn",
+        "fields",
+        "since",
+        "revisions"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "observedOn": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "fields": {
+          "$ref": "#/$defs/userContext_preferences_fields"
+        },
+        "since": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "revisions": {
+          "$ref": "#/$defs/ledgerValue"
+        }
+      }
+    },
+    "userContext_goals_fields": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "title",
+        "description",
+        "domain",
+        "status",
+        "priority",
+        "performanceTarget",
+        "targetMetric",
+        "targetValue",
+        "targetUnit",
+        "targetDate",
+        "targetOutcome",
+        "eventCategory",
+        "eventLifecycle",
+        "timing"
+      ],
+      "properties": {
+        "title": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "description": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "domain": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "status": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "priority": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "performanceTarget": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "targetMetric": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "targetValue": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "targetUnit": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "targetDate": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "targetOutcome": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "eventCategory": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "eventLifecycle": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "timing": {
+          "$ref": "#/$defs/ledgerValue"
+        }
+      }
+    },
+    "userContext_goals": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "source",
+        "items",
+        "droppedUndated"
+      ],
+      "properties": {
+        "state": {
+          "$ref": "#/$defs/state"
+        },
+        "source": {
+          "type": "string"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "observedOn",
+              "fields",
+              "since",
+              "revisions"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "observedOn": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "fields": {
+                "$ref": "#/$defs/userContext_goals_fields"
+              },
+              "since": {
+                "$ref": "#/$defs/ledgerValue"
+              },
+              "revisions": {
+                "$ref": "#/$defs/ledgerValue"
+              }
+            }
+          }
+        },
+        "droppedUndated": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "userContext_events_fields": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "title",
+        "startDate",
+        "endDate",
+        "lifecycle"
+      ],
+      "properties": {
+        "title": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "startDate": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "endDate": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "lifecycle": {
+          "$ref": "#/$defs/ledgerValue"
+        }
+      }
+    },
+    "userContext_events": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "source",
+        "items",
+        "droppedUndated"
+      ],
+      "properties": {
+        "state": {
+          "$ref": "#/$defs/state"
+        },
+        "source": {
+          "type": "string"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "observedOn",
+              "fields",
+              "since",
+              "revisions"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "observedOn": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "fields": {
+                "$ref": "#/$defs/userContext_events_fields"
+              },
+              "since": {
+                "$ref": "#/$defs/ledgerValue"
+              },
+              "revisions": {
+                "$ref": "#/$defs/ledgerValue"
+              }
+            }
+          }
+        },
+        "droppedUndated": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "userContext_constraints_fields": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "label",
+        "value",
+        "severity",
+        "isActive",
+        "category",
+        "description"
+      ],
+      "properties": {
+        "label": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "value": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "severity": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "isActive": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "category": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "description": {
+          "$ref": "#/$defs/ledgerValue"
+        }
+      }
+    },
+    "userContext_constraints": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "source",
+        "items",
+        "droppedUndated"
+      ],
+      "properties": {
+        "state": {
+          "$ref": "#/$defs/state"
+        },
+        "source": {
+          "type": "string"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "observedOn",
+              "fields",
+              "since",
+              "revisions"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "observedOn": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "fields": {
+                "$ref": "#/$defs/userContext_constraints_fields"
+              },
+              "since": {
+                "$ref": "#/$defs/ledgerValue"
+              },
+              "revisions": {
+                "$ref": "#/$defs/ledgerValue"
+              }
+            }
+          }
+        },
+        "droppedUndated": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "coachingHistory_planRevisions_fields": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "planId",
+        "revision",
+        "contentHash",
+        "importedAt",
+        "schema",
+        "authorRationale"
+      ],
+      "properties": {
+        "planId": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "revision": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "contentHash": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "importedAt": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "schema": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "authorRationale": {
+          "$ref": "#/$defs/ledgerValue"
+        }
+      }
+    },
+    "coachingHistory_planRevisions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "source",
+        "items",
+        "droppedUndated"
+      ],
+      "properties": {
+        "state": {
+          "$ref": "#/$defs/state"
+        },
+        "source": {
+          "type": "string"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "observedOn",
+              "fields"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "observedOn": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "fields": {
+                "$ref": "#/$defs/coachingHistory_planRevisions_fields"
+              }
+            }
+          }
+        },
+        "droppedUndated": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "coachingHistory_placements_fields": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "planId",
+        "revision",
+        "sessionId",
+        "status",
+        "date",
+        "statusHistory"
+      ],
+      "properties": {
+        "planId": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "revision": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "sessionId": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "status": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "date": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "statusHistory": {
+          "$ref": "#/$defs/ledgerValue"
+        }
+      }
+    },
+    "coachingHistory_placements": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "source",
+        "items",
+        "droppedUndated"
+      ],
+      "properties": {
+        "state": {
+          "$ref": "#/$defs/state"
+        },
+        "source": {
+          "type": "string"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "observedOn",
+              "fields"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "observedOn": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "fields": {
+                "$ref": "#/$defs/coachingHistory_placements_fields"
+              }
+            }
+          }
+        },
+        "droppedUndated": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "coachingHistory_overrides_fields": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "planId",
+        "sessionId",
+        "kind",
+        "date",
+        "reason"
+      ],
+      "properties": {
+        "planId": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "sessionId": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "kind": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "date": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "reason": {
+          "$ref": "#/$defs/ledgerValue"
+        }
+      }
+    },
+    "coachingHistory_overrides": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "source",
+        "items",
+        "droppedUndated"
+      ],
+      "properties": {
+        "state": {
+          "$ref": "#/$defs/state"
+        },
+        "source": {
+          "type": "string"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "observedOn",
+              "fields"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "observedOn": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "fields": {
+                "$ref": "#/$defs/coachingHistory_overrides_fields"
+              }
+            }
+          }
+        },
+        "droppedUndated": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "coachingHistory_plannedToPerformed_fields": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "planId",
+        "revision",
+        "sessionId",
+        "date",
+        "performedOccurrenceRef"
+      ],
+      "properties": {
+        "planId": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "revision": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "sessionId": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "date": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "performedOccurrenceRef": {
+          "$ref": "#/$defs/ledgerValue"
+        }
+      }
+    },
+    "coachingHistory_plannedToPerformed": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "source",
+        "items",
+        "droppedUndated"
+      ],
+      "properties": {
+        "state": {
+          "$ref": "#/$defs/state"
+        },
+        "source": {
+          "type": "string"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "observedOn",
+              "fields"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "observedOn": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "fields": {
+                "$ref": "#/$defs/coachingHistory_plannedToPerformed_fields"
+              }
+            }
+          }
+        },
+        "droppedUndated": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    }
+  }
+}
