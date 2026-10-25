@@ -1,0 +1,211 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://adaptive-training-recommender.local/schemas/ledger-export-v1.schema.json",
+  "title": "LedgerExport (ledger-export-v1)",
+  "description": "D-EXPORT v1 (#1145, ADR-0052). Mirrors app/src/ledger/export/schema.ts. No user id, e-mail or provider account id appears anywhere.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "exportedAt", "asOfDate", "window", "purpose", "sources", "facts",
+    "derived", "flags", "userContext", "coachingHistory", "legacyEngine"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "ledger-export-v1" },
+    "exportedAt": { "type": "string" },
+    "asOfDate": { "$ref": "#/$defs/date" },
+    "window": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["startDate", "endDate", "days"],
+      "properties": {
+        "startDate": { "$ref": "#/$defs/date" },
+        "endDate": { "$ref": "#/$defs/date" },
+        "days": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "purpose": { "enum": ["morning", "planning", "diagnostic"] },
+    "sources": { "type": "array", "items": { "$ref": "#/$defs/sourceState" } },
+    "facts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "recovery", "checkins", "performedTraining", "sessionResponses", "assessments",
+        "bodyComposition", "nutrition", "activities", "events"
+      ],
+      "properties": {
+        "recovery": { "$ref": "#/$defs/recordCollection" },
+        "checkins": { "$ref": "#/$defs/recordCollection" },
+        "performedTraining": { "$ref": "#/$defs/recordCollection" },
+        "sessionResponses": { "$ref": "#/$defs/recordCollection" },
+        "assessments": { "$ref": "#/$defs/recordCollection" },
+        "bodyComposition": { "$ref": "#/$defs/recordCollection" },
+        "nutrition": { "$ref": "#/$defs/recordCollection" },
+        "activities": { "$ref": "#/$defs/recordCollection" },
+        "events": { "$ref": "#/$defs/recordCollection" }
+      }
+    },
+    "derived": { "type": "array", "items": { "$ref": "#/$defs/derivedMetric" } },
+    "flags": { "type": "array", "items": { "$ref": "#/$defs/flag" } },
+    "userContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "injuries", "equipment", "environment", "guardrails", "travel", "venueRestrictions",
+        "availability", "preferences", "goals", "events", "constraints", "trainingDislikes"
+      ],
+      "properties": {
+        "injuries": { "$ref": "#/$defs/contextCollection" },
+        "equipment": { "$ref": "#/$defs/contextRecord" },
+        "environment": { "$ref": "#/$defs/contextRecord" },
+        "guardrails": { "$ref": "#/$defs/contextRecord" },
+        "travel": { "$ref": "#/$defs/contextCollection" },
+        "venueRestrictions": { "$ref": "#/$defs/contextCollection" },
+        "availability": { "$ref": "#/$defs/contextCollection" },
+        "preferences": { "$ref": "#/$defs/contextRecord" },
+        "goals": { "$ref": "#/$defs/contextCollection" },
+        "events": { "$ref": "#/$defs/contextCollection" },
+        "constraints": { "$ref": "#/$defs/contextCollection" },
+        "trainingDislikes": { "$ref": "#/$defs/ledgerValue" }
+      }
+    },
+    "coachingHistory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["planRevisions", "placements", "overrides", "plannedToPerformed"],
+      "properties": {
+        "planRevisions": { "$ref": "#/$defs/recordCollection" },
+        "placements": { "$ref": "#/$defs/recordCollection" },
+        "overrides": { "$ref": "#/$defs/recordCollection" },
+        "plannedToPerformed": { "$ref": "#/$defs/recordCollection" }
+      }
+    },
+    "legacyEngine": { "type": ["object", "null"] }
+  },
+  "$defs": {
+    "date": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+    "state": {
+      "enum": [
+        "measured", "missing", "unavailable", "invalid", "not_collected", "not_applicable",
+        "stale", "not_recorded", "not_yet_supported"
+      ]
+    },
+    "ledgerValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "source", "state"],
+      "properties": {
+        "value": {},
+        "unit": { "type": "string" },
+        "source": { "type": "string" },
+        "state": { "$ref": "#/$defs/state" },
+        "observedOn": { "$ref": "#/$defs/date" }
+      }
+    },
+    "sourceState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "state", "readAt", "newestObservedOn"],
+      "properties": {
+        "source": { "type": "string" },
+        "state": { "$ref": "#/$defs/state" },
+        "readAt": { "type": ["string", "null"] },
+        "newestObservedOn": { "type": ["string", "null"] }
+      }
+    },
+    "fields": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/ledgerValue" }
+    },
+    "record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "observedOn", "fields"],
+      "properties": {
+        "id": { "type": "string" },
+        "observedOn": { "type": ["string", "null"] },
+        "fields": { "$ref": "#/$defs/fields" }
+      }
+    },
+    "contextRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "observedOn", "fields", "since", "revisions"],
+      "properties": {
+        "id": { "type": "string" },
+        "observedOn": { "type": ["string", "null"] },
+        "fields": { "$ref": "#/$defs/fields" },
+        "since": { "$ref": "#/$defs/ledgerValue" },
+        "revisions": { "$ref": "#/$defs/ledgerValue" }
+      }
+    },
+    "recordCollection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "source", "items"],
+      "properties": {
+        "state": { "$ref": "#/$defs/state" },
+        "source": { "type": "string" },
+        "items": { "type": "array", "items": { "$ref": "#/$defs/record" } }
+      }
+    },
+    "contextCollection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "source", "items"],
+      "properties": {
+        "state": { "$ref": "#/$defs/state" },
+        "source": { "type": "string" },
+        "items": { "type": "array", "items": { "$ref": "#/$defs/contextRecord" } }
+      }
+    },
+    "derivedMetric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "definition", "window", "value", "inputs"],
+      "properties": {
+        "id": {
+          "enum": ["biometric_baselines", "d_minus_1_step_normalization", "rolling_performed_training_load"]
+        },
+        "definition": { "type": "string" },
+        "window": { "type": "string" },
+        "value": { "$ref": "#/$defs/ledgerValue" },
+        "inputs": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "flag": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "observedOn", "evaluatedAt", "definitionVersion", "active", "state", "inputs", "threshold"
+      ],
+      "properties": {
+        "id": {
+          "enum": [
+            "illness_anomaly", "illness_risk_symptom", "injury_constraint_touches_session",
+            "recovery_beyond_baseline"
+          ]
+        },
+        "observedOn": { "$ref": "#/$defs/date" },
+        "evaluatedAt": { "type": ["string", "null"] },
+        "definitionVersion": { "type": ["string", "null"] },
+        "sessionRef": { "type": "string" },
+        "active": { "type": ["boolean", "null"] },
+        "state": { "$ref": "#/$defs/state" },
+        "inputs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "value"],
+            "properties": {
+              "name": { "type": "string" },
+              "value": { "$ref": "#/$defs/ledgerValue" }
+            }
+          }
+        },
+        "threshold": { "type": ["string", "null"] },
+        "baselineWindow": { "type": "string" }
+      }
+    }
+  }
+}
