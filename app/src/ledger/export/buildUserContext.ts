@@ -190,6 +190,9 @@ function buildAvailability(records: LedgerExportRecords, context: BuildContext):
                 title: fact(row.title, base),
                 fixed: fact(row.fixed, base),
                 availabilityContextOverride: fact(row.availabilityContextOverride, { ...base, absent: 'not_applicable' }),
+                availabilityOverrideMin: fact(row.availabilityOverride, { ...base, unit: 'min', absent: 'not_applicable' }),
+                environment: fact(undefined, { ...base, absent: 'not_applicable' }),
+                equipment: fact(undefined, { ...base, absent: 'not_applicable' }),
             };
             return contextRecord(record(`fixed-${row.id}`, row.date, values));
         },
@@ -211,11 +214,29 @@ function buildAvailability(records: LedgerExportRecords, context: BuildContext):
                 title: fact(row.label, { ...base, absent: 'not_recorded' }),
                 fixed: fact(undefined, na),
                 availabilityContextOverride: fact(undefined, na),
+                availabilityOverrideMin: fact(undefined, na),
+                environment: fact(row.environment, na),
+                equipment: fact(row.equipment, na),
             };
             return contextRecord(record(`window-${row.id}`, row.date, values));
         },
     });
     return combine('fixed_activities+schedule_windows', [fixed, windows]);
+}
+
+/** Explicit allow-list of the ADR-0041 target; unknown extra fields never pass through. */
+function performanceTargetOf(row: GoalInput): unknown {
+    const target = row.performanceTarget;
+    if (!target) return null;
+    const subject = target.subjectRef;
+    return {
+        kind: target.kind,
+        metricId: target.metricId,
+        subjectRef: subject.kind === 'exercise'
+            ? { kind: subject.kind, exerciseId: subject.exerciseId }
+            : { kind: subject.kind, performanceTestId: subject.performanceTestId },
+        targetValue: target.targetValue,
+    };
 }
 
 function goalValues(row: GoalInput): Record<typeof GOAL_FIELDS[number], LedgerValue<unknown>> {
@@ -227,7 +248,7 @@ function goalValues(row: GoalInput): Record<typeof GOAL_FIELDS[number], LedgerVa
         domain: fact(row.domain, base),
         status: fact(row.status, base),
         priority: rangedFact(row.priority, { min: 1, max: 5 }, base),
-        performanceTarget: fact(row.performanceTarget, optional),
+        performanceTarget: fact(performanceTargetOf(row), optional),
         targetMetric: fact(row.targetMetric, optional),
         targetValue: fact(row.targetValue, optional),
         targetUnit: fact(row.targetUnit, optional),

@@ -50,6 +50,8 @@ export interface FixedActivityInput {
     date: string;
     startTime?: string;
     durationMin: number;
+    /** The day's total training-minute budget (distinct from `availabilityContextOverride`). */
+    availabilityOverride?: number;
     fixed: boolean;
     availabilityContextOverride?: { environment?: TrainingEnvironment; equipment?: string[] };
 }
@@ -61,6 +63,16 @@ export interface ScheduleWindowInput {
     startLocal: string;
     endLocal: string;
     label?: string;
+    environment?: TrainingEnvironment;
+    equipment?: string[];
+}
+
+/** Structural `GoalPerformanceTarget` (`engine/performanceTargetPolicy.ts`, ADR-0041). */
+export interface GoalPerformanceTargetInput {
+    kind: 'performance_metric';
+    metricId: string;
+    subjectRef: { kind: 'exercise'; exerciseId: string } | { kind: 'performance_test'; performanceTestId: string };
+    targetValue: number;
 }
 
 /** Structural subset of `UserGoal & { id }` (`engine/models.ts`; `goalService` adds the doc id). */
@@ -71,7 +83,7 @@ export interface GoalInput {
     domain: string;
     status: 'active' | 'paused' | 'completed' | 'archived';
     priority: number;
-    performanceTarget?: unknown;
+    performanceTarget?: GoalPerformanceTargetInput | null;
     targetMetric?: string | null;
     targetValue?: number | null;
     targetUnit?: string | null;
@@ -118,8 +130,10 @@ export interface PlacementInput {
 }
 
 /** An occurrence-to-placement link (ADR-0034 round trip). */
+/** Matches `ExternalPlanOccurrenceRef` (`sessions/models.ts`) minus the content hash. */
 export interface PlannedToPerformedInput {
     planId: string;
+    revision: number;
     sessionId: string;
     /** The planned session's date. */
     date: string;

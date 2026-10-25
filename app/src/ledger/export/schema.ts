@@ -157,6 +157,7 @@ export const TRAVEL_FIELDS = ['startDate', 'endDate', 'volumeScale', 'intensityS
 export const VENUE_RESTRICTION_FIELDS = ['date', 'title', 'environment', 'equipment'] as const;
 export const AVAILABILITY_FIELDS = [
     'date', 'kind', 'startLocal', 'endLocal', 'durationMin', 'title', 'fixed', 'availabilityContextOverride',
+    'availabilityOverrideMin', 'environment', 'equipment',
 ] as const;
 export const PREFERENCE_FIELDS = [
     'preferredRecoveryStyle', 'defaultWeekdayTimeMin', 'defaultWeekendTimeMin', 'preferredTimeOfDay',
@@ -174,7 +175,7 @@ export const PLAN_REVISION_FIELDS = [
 ] as const;
 export const PLACEMENT_FIELDS = ['planId', 'revision', 'sessionId', 'status', 'date', 'statusHistory'] as const;
 export const OVERRIDE_FIELDS = ['planId', 'sessionId', 'kind', 'date', 'reason'] as const;
-export const PLANNED_TO_PERFORMED_FIELDS = ['planId', 'sessionId', 'date', 'performedOccurrenceRef'] as const;
+export const PLANNED_TO_PERFORMED_FIELDS = ['planId', 'revision', 'sessionId', 'date', 'performedOccurrenceRef'] as const;
 
 type Rec<F extends readonly string[]> = LedgerRecord<F[number]>;
 type Ctx<F extends readonly string[]> = ContextRecord<F[number]>;

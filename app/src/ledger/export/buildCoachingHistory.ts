@@ -88,11 +88,12 @@ function buildPlannedToPerformed(records: LedgerExportRecords, context: BuildCon
             const base = { source: SOURCE, observedOn: row.date };
             const values: Record<typeof PLANNED_TO_PERFORMED_FIELDS[number], LedgerValue<unknown>> = {
                 planId: fact(row.planId, base),
+                revision: fact(row.revision, base),
                 sessionId: fact(row.sessionId, base),
                 date: fact(row.date, base),
                 performedOccurrenceRef: fact(row.performedOccurrenceId, base),
             };
-            return record(`${row.planId}:${row.sessionId}`, row.date, values);
+            return record(`${row.planId}@${row.revision}:${row.sessionId}`, row.date, values);
         },
     });
 }

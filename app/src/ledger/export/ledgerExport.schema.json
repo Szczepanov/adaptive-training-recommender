@@ -1666,7 +1666,10 @@
         "durationMin",
         "title",
         "fixed",
-        "availabilityContextOverride"
+        "availabilityContextOverride",
+        "availabilityOverrideMin",
+        "environment",
+        "equipment"
       ],
       "properties": {
         "date": {
@@ -1691,6 +1694,15 @@
           "$ref": "#/$defs/ledgerValue"
         },
         "availabilityContextOverride": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "availabilityOverrideMin": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "environment": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "equipment": {
           "$ref": "#/$defs/ledgerValue"
         }
       }
@@ -2351,12 +2363,16 @@
       "additionalProperties": false,
       "required": [
         "planId",
+        "revision",
         "sessionId",
         "date",
         "performedOccurrenceRef"
       ],
       "properties": {
         "planId": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "revision": {
           "$ref": "#/$defs/ledgerValue"
         },
         "sessionId": {

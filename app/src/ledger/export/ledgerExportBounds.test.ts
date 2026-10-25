@@ -142,8 +142,8 @@ describe('coaching history bounds (M6)', () => {
                     ],
                 }],
                 plannedToPerformed: [
-                    { planId: 'plan-1', sessionId: 'old', date: '2026-09-01', performedOccurrenceId: 'occ-0' },
-                    { planId: 'plan-1', sessionId: 'now', date: '2026-11-19', performedOccurrenceId: 'occ-1' },
+                    { planId: 'plan-1', revision: 2, sessionId: 'old', date: '2026-09-01', performedOccurrenceId: 'occ-0' },
+                    { planId: 'plan-1', revision: 2, sessionId: 'now', date: '2026-11-19', performedOccurrenceId: 'occ-1' },
                 ],
             },
         }));

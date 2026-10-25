@@ -20,11 +20,12 @@ import {
     type DerivedMetricId,
     type LedgerExport,
     type LedgerFlag,
+    type LedgerWindow,
     type LegacyEngineLayer,
     type SourceState,
 } from './schema.ts';
-import { collectIdentityValues, redactFreeText, stripIdentity } from './stripIdentity.ts';
-import { assertLocalDate, PURPOSE_BOUNDS, resolveWindow } from './window.ts';
+import { collectIdentityValues, redactLeaves, stripIdentity } from './stripIdentity.ts';
+import { assertLocalDate, inBounds, PURPOSE_BOUNDS, resolveWindow, windowBounds } from './window.ts';
 
 const RECORD_KEY_BY_SOURCE: Record<SourceKey, keyof LedgerExportRecords> = {
     daily_recovery_snapshots: 'recovery',
@@ -96,9 +97,11 @@ function unevaluatedFlag(id: LedgerFlag['id'], asOfDate: string): LedgerFlag {
  * Layer 3: the closed set of four (D-FLAGS). Persisted evaluations pass through unchanged
  * (never recomputed); an id with none stays `not_yet_supported`.
  */
-function buildFlags(asOfDate: string, evaluations: readonly LedgerFlag[] = []): LedgerFlag[] {
+function buildFlags(asOfDate: string, window: LedgerWindow, evaluations: readonly LedgerFlag[] = []): LedgerFlag[] {
+    const bounds = windowBounds(window);
     return LEDGER_FLAG_IDS.flatMap(id => {
-        const supplied = evaluations.filter(flag => flag.id === id);
+        // Evaluations are windowed by the date they evaluated, like every other dated fact.
+        const supplied = evaluations.filter(flag => flag.id === id && inBounds(flag.observedOn, bounds));
         return supplied.length > 0 ? supplied.map(flag => structuredClone(flag)) : [unevaluatedFlag(id, asOfDate)];
     });
 }
@@ -128,11 +131,11 @@ export function buildLedgerExport(input: BuildLedgerExportInput): LedgerExport {
         sources: buildSources(input),
         facts: buildFacts(input.records, context),
         derived: buildDerived(),
-        flags: buildFlags(input.asOfDate, input.flagEvaluations),
+        flags: buildFlags(input.asOfDate, window, input.flagEvaluations),
         userContext: buildUserContext(input.records, context),
         coachingHistory: buildCoachingHistory(input.records, context),
         legacyEngine: input.legacyEngine ? (stripIdentity(input.legacyEngine) as LegacyEngineLayer) : null,
     };
-    // Second line of defence: free-text leaves may quote an e-mail or the owner's own ids.
-    return redactFreeText(assembled, collectIdentityValues([input.records, input.legacyEngine]));
+    // Second line of defence: string leaves may quote an e-mail or the owner's own ids.
+    return redactLeaves(assembled, collectIdentityValues([input.records, input.legacyEngine]));
 }

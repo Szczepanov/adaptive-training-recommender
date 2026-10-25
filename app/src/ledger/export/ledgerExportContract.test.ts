@@ -1,10 +1,11 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { buildLedgerExport } from './buildLedgerExport.ts';
 import { SOURCE_KEYS } from './inputs.ts';
 import { fullInput } from './ledgerExportFixtures.testSupport.ts';
+import { applyGeneratedSchema, defNameOf } from './ledgerExportSchemaGen.testSupport.ts';
 import { validateAgainstSchema } from './miniJsonSchema.testSupport.ts';
 import {
     DERIVED_METRIC_IDS,
@@ -21,12 +22,16 @@ interface JsonSchema {
     $defs: Record<string, Record<string, unknown>>;
 }
 
-const SCHEMA = JSON.parse(
-    readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'ledgerExport.schema.json'), 'utf8'),
-) as JsonSchema;
+const SCHEMA_PATH = join(dirname(fileURLToPath(import.meta.url)), 'ledgerExport.schema.json');
+const readSchema = (): JsonSchema => JSON.parse(readFileSync(SCHEMA_PATH, 'utf8')) as JsonSchema;
+if (process.env.UPDATE_LEDGER_SCHEMA) {
+    writeFileSync(SCHEMA_PATH, `${JSON.stringify(applyGeneratedSchema(readSchema() as never), null, 2)}
+`);
+}
+const SCHEMA = readSchema();
 
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
-const nameOf = (path: string): string => path.replaceAll('.', '_');
+const nameOf = defNameOf;
 
 /** Every LedgerValue-shaped object (has value, source and state) anywhere under `node`. */
 function ledgerValues(node: unknown, path = '$'): { path: string; value: Record<string, unknown> }[] {
@@ -49,6 +54,10 @@ function keysOutsideLegacy(node: unknown, found = new Set<string>()): Set<string
 }
 
 describe('JSON Schema stays in sync with the TypeScript contract (M10)', () => {
+    it('equals the schema generated from the field lists (regenerate with UPDATE_LEDGER_SCHEMA=1)', () => {
+        expect(SCHEMA).toEqual(applyGeneratedSchema(clone(SCHEMA) as never));
+    });
+
     it('shares the state, purpose, flag, derived and source vocabularies', () => {
         const defs = SCHEMA.$defs;
         expect(defs.state.enum).toEqual([...LEDGER_STATES]);

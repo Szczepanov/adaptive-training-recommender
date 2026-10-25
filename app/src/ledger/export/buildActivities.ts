@@ -86,10 +86,19 @@ function activityFields(activity: NormalizedGarminActivity, context: BuildContex
         : scalar[key as keyof typeof scalar]));
 }
 
+/** Morning gives D-1 rows priority, so same-day rows cannot crowd out the detail the handoff is for. */
+function selectForCap(ordered: NormalizedGarminActivity[], context: BuildContext): NormalizedGarminActivity[] {
+    const cap = context.bounds.activityCap;
+    if (!context.bounds.segmentDetailOnlyDMinus1) return ordered.slice(0, cap);
+    const dMinus1 = addDaysToLocalDateString(context.asOfDate, -1);
+    const prioritised = [...ordered.filter(row => row.date === dMinus1), ...ordered.filter(row => row.date !== dMinus1)];
+    return prioritised.slice(0, cap).sort(newestFirst);
+}
+
 export function buildActivities(records: LedgerExportRecords, context: BuildContext): LedgerFacts['activities'] {
     const { rows, droppedUndated } = windowRows(records.activities ?? [], row => row.date, windowBounds(context.window));
     const ordered = [...rows].sort(newestFirst);
-    const kept = ordered.slice(0, context.bounds.activityCap);
+    const kept = selectForCap(ordered, context);
     const items = kept.map(row => record(row.activityId, row.date, activityFields(row, context)));
     const collection: ActivityCollection<LedgerFacts['activities']['items'][number]> = {
         state: sourceState(context, 'activities', records.activities !== undefined),

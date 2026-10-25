@@ -182,10 +182,18 @@ function assessmentValues(
     };
 }
 
+/** A correction supersedes its earlier revisions: only the highest revision per key is a current fact. */
+function currentRevisions(rows: readonly MetricObservationRevision[] | undefined): MetricObservationRevision[] | undefined {
+    if (!rows) return undefined;
+    const highest = new Map<string, number>();
+    for (const row of rows) highest.set(row.observationKey, Math.max(highest.get(row.observationKey) ?? row.revision, row.revision));
+    return rows.filter(row => highest.get(row.observationKey) === row.revision);
+}
+
 function buildAssessments(records: LedgerExportRecords, context: BuildContext): LedgerFacts['assessments'] {
     return collect(context, {
         key: 'metric_observations',
-        records: records.metricObservations,
+        records: currentRevisions(records.metricObservations),
         dateOf: row => warsawDateOf(row.observedAt),
         toItem: row => {
             const date = warsawDateOf(row.observedAt);
