@@ -14,7 +14,8 @@ The application has two halves, and the owner now values them very differently.
   ADR-0026/0027/0030), structured session execution and the diary (ADR-0023, #895),
   canonical performed-training occurrences (ADR-0034), assessments (ADR-0046/0047, #897),
   anthropometry and nutrition (ADR-0039/0042), goals and events (ADR-0041/0048–0050), and the
-  Context Brief export with the `external-plan@5` import round trip (#893).
+  Context Brief export with the external-plan import round trip (#893; new coach imports emit
+  `external-plan@6`, and v1–v5 stay readable).
 * **The decider.** About 56k non-test lines in `app/src/engine/`: selection (`optimizer.ts`,
   `planner.ts`, weekly allocation, periodization, evergreen planning) and adjudication
   (`rules.ts` `evaluateReadinessAndSafetyEnvelope`, `eligibility.ts`, `injuryPolicy.ts`,
@@ -64,10 +65,35 @@ run **as authored**. Missed or changed sessions are recorded as facts for the ne
 The app does not re-plan.
 
 This supersedes ADR-0019 D-CANDIDATE, D-CRITIQUE and the generated-planner fallback in D-EXT.
-It keeps ADR-0019's import contract: D-RELDATE, D-IMMUT, D-NOTRAVEL, D-NOPARSE, D-EVENT
-(advice only) and D-IRREDUCIBLE (as an authored property the runner displays). ADR-0007,
-ADR-0012 and ADR-0017 stop describing live behaviour once Phase 2 of D-ENGINE ships, and they
-are marked **Superseded by ADR-0052** at that point.
+It keeps ADR-0019's import contract: D-RELDATE, D-IMMUT, D-NOPARSE, D-EVENT (advice only) and
+D-IRREDUCIBLE (as an authored property the runner displays). It changes D-NOTRAVEL as
+described in D-TRAVEL below. An authored `scaling.reducedDefinition` (`external-plan@6`)
+becomes an alternative the athlete can choose at launch. The app never selects it from
+readiness, and the execution record notes which definition ran. ADR-0007, ADR-0012 and
+ADR-0017 stop describing live behaviour once Phase 2 of D-ENGINE ships, and they are marked
+**Superseded by ADR-0052** at that point.
+
+### D-TRAVEL — travel stays the athlete's calendar, and the planner handles it
+
+ADR-0019 D-NOTRAVEL does two things. This ADR keeps the first and replaces the second.
+
+* **Kept: ownership.** Travel stays an athlete-owned `AuthoredPlanBlock`, outside the import
+  schema, so an AI revision cannot overwrite trip dates. The same holds for
+  `FixedActivity.availabilityContextOverride` venue restrictions.
+* **Replaced: automatic adjudication.** Today `applyPlanningOverlays` applies the travel
+  block's `volumeScale` and availability to imported sessions (pinned by the D-NOTRAVEL test
+  in `externallyPlannedMode.test.ts`). The authoring prompt (`ExternalPlanImport.tsx`
+  `AI_PROMPT_TEMPLATE`) correspondingly tells the AI to plan as if every day is available.
+  From Phase 2 the app stops applying travel dose or availability to imported sessions.
+  Travel blocks and venue restrictions are exported as user-context facts (D-USER), and the
+  external planner must plan around them.
+
+The overlay removal, the new prompt text and the export of travel facts ship **in the same
+change**. Shipping any one of them alone would either reduce the dose twice (AI deload plus
+`volumeScale`) or ignore travel entirely. The D-NOTRAVEL test is replaced by one asserting
+that an imported session inside a travel block runs as authored, and that the block appears
+in the export. Until Phase 2, current behaviour is unchanged: the engine applies the
+reduction exactly once.
 
 ### D-FLAGS — deterministic advisory flags replace vetoes
 
@@ -100,7 +126,7 @@ Rules:
 | **0 — Freeze** | ADR accepted | No new engine features. Engine-authority issues are parked with a reason (#962). Bug fixes only. | Unchanged |
 | **1 — Extract** | Phase 0 done | Move derivations with no decision authority into a derived-metrics module outside `engine/`: biometric baselines (ADR-0024), the D−1 step normalization and activity-step deduction now in `fatigue.ts` (ADR-0003, I3), performed-training facts (`performedTrainingFacts.ts`), exposure/coverage ledgers (#813), assessment reducers, and the flag evaluators. Each move is behaviour-preserving and tested against the old output. | Unchanged |
 | **2 — Switch off** | Phase 1 done, and D-EXPORT v1 shipped | Home, Plan and the week-ahead strip render today's imported session, flags and facts instead of `rules.ts` / `planner.ts` / `trainingIntent.ts` output. The generated planner and adjudication stay in the tree behind a default-off profile setting, as a rollback. `daily_recommendations` writes stop while the setting is off. | No engine recommendation shown by default |
-| **3 — Retire** | D-EVAL passed, and no rollback used for one full training block | Delete selection and adjudication modules, their knowledge claims, coverage items and alignment tests, the simulation harness, and `POLICY_VERSION`. Tag the last commit that contains them (`engine-final`) before deleting. | None |
+| **3 — Retire** | A D-EVAL result document records an explicit **go** | Delete selection and adjudication modules, their knowledge claims, coverage items and alignment tests, the simulation harness, and `POLICY_VERSION`. Tag the last commit that contains them (`engine-final`) before deleting. | None |
 
 Historical records stay readable: persisted `daily_recommendations`, recommendation audits
 and their `policyVersion` fields are not migrated or deleted. ADR-0010 replay *verification*
@@ -111,7 +137,7 @@ out `engine-final`. That is an accepted reduction from ADR-0010, not an oversigh
 
 | Gate (CI job / script) | Phase 0–1 | Phase 2 | Phase 3 |
 |---|---|---|---|
-| `engine-simulations`: `simulate:scenarios` + aggregate bounds + baseline diff | Run only when `app/src/engine/`, `app/src/knowledge/` or simulation files change (path rule in `scripts/detect_ci_changes.py`) | Advisory (`continue-on-error`) | Removed |
+| `engine-simulations`: `simulate:scenarios` + aggregate bounds + baseline diff | Run when an **engine-affecting** file changes (see the trigger rule below the table) | Advisory (`continue-on-error`) | Removed |
 | `simulate:plan-judge`, persona-judge corpus build | As above | Advisory | Removed |
 | `simulate:diff` | Advisory (unchanged) | Advisory | Removed |
 | `check-policy-drift.mjs` (I5) | Kept. It fires only on engine edits, which the freeze makes rare | Kept while the rollback setting exists | Removed with `POLICY_VERSION` |
@@ -120,7 +146,24 @@ out `engine-final`. That is an accepted reduction from ADR-0010, not an oversigh
 | `validate:workouts` | Kept: the catalog feeds authoring and the runner | Kept | Kept |
 | Python tests, mypy, ruff, Firestore rules, unit tests, browser E2E, Docker build, docs hygiene | Kept | Kept | Kept |
 | **New: ledger export contract tests** | — | Required. Schema validation; every fact carries source, unit and state; no engine-derived field appears in the facts or derived layers | Required |
-| **New: round-trip E2E** (export → import `external-plan@5` → execute offline → re-export shows the performed occurrence) | — | Required | Required |
+| **New: round-trip E2E** (export → import → execute offline → re-export shows the performed occurrence) | — | Required. The primary fixture is the current coach contract, `external-plan@6`, with a `scaling.reducedDefinition`. It asserts that the authored definition is what launches and runs unless the athlete explicitly picks the reduced one. A v5 fixture stays as compatibility coverage | Required |
+
+**Simulation trigger rule (Phases 0–1).** "Engine-affecting" is defined by dependency, not
+by directory. Engine inputs already live outside `engine/`: for example, `planner.ts`
+imports `coverageSetFor` from `workouts/event-plan.ts`. Phase 1 deliberately moves more of
+them out. A file is engine-affecting when any of these is true:
+
+1. it is in `check-policy-drift.mjs` `decisionAffectingFiles` or under
+   `app/src/workouts/catalog/` (one shared list, so the two gates cannot drift apart);
+2. it is in the transitive import graph of the engine entry points (`rules.ts`,
+   `planner.ts`, `trainingIntent.ts`, `replay.ts`), which automatically includes the
+   Phase 1 extracted modules while the engine consumes them;
+3. it is under `app/src/engine/`, `app/src/knowledge/`, the simulation scripts or fixtures,
+   or the simulation baseline.
+
+**Fail-safe:** if the change detector cannot compute the import graph, or a changed file
+under `app/src/` cannot be classified, the simulations run. A PR may skip them only on a
+positive "not engine-affecting" result, never on a lookup failure.
 
 Invariant changes: **I1, I2, I3 and I6 are unchanged.** For I3, the deduction moves with
 the extraction, and its semantics are unchanged. **I4** narrows at Phase 2 to flags and
@@ -164,7 +207,8 @@ Athlete-stated context gets an explicit, revisioned home and is exported as fact
 * injuries and pain history (reusing ADR-0013 `InjuryConstraint`, now as a record, not a
   gate input);
 * available equipment and locations;
-* schedule constraints and availability;
+* schedule constraints and availability, including travel blocks and venue restrictions
+  (D-TRAVEL);
 * training preferences and dislikes;
 * goals and events (already structured, ADR-0041/0048–0050).
 
@@ -185,17 +229,31 @@ The schema is defined in the Phase 2 export work, not here.
 
 ### D-EVAL — what must be true before Phase 3 deletes anything
 
-Phase 3 is irreversible in practice, so it is gated on recorded evidence, not on how the
-owner feels at the time. Over at least one full training block (planned by the external AI,
-four weeks minimum) the owner records:
+Phase 3 is irreversible in practice, so it is gated on a **go/no-go assessment against
+criteria fixed before the evaluation block starts**. Collecting evidence is not enough to
+pass.
 
-* plan adherence (planned vs performed occurrences, from data the ledger already has);
-* assessment or benchmark direction for the block's stated goals (#897);
-* whether any D-FLAGS signal was active on a day the owner trained hard, and what happened;
-* whether the rollback setting was used, and why.
+**Before the block.** A criteria document,
+`docs/analysis/<date>-adr-0052-d-eval-criteria.md`, is merged before the block's first
+date (its merge commit is the proof). It fixes the thresholds below. A threshold may be
+changed for a later block, never during or after the one it judges.
 
-If the rollback setting was used for a safety reason, Phase 3 does not proceed until this
-ADR is amended.
+| Criterion | Measured from | Default threshold (confirm in the criteria document) |
+|---|---|---|
+| Plan adherence | Planned vs performed occurrences (ADR-0034). Sessions skipped because a flag was active count separately, not as misses | Not worse than the owner's previous recorded 4-week block |
+| Goal benchmarks | Assessments bound to the block's goals (#897), read against each protocol's stated measurement noise | No goal benchmark declines by more than its measurement noise |
+| Flagged-day outcomes | Days with an active D-FLAGS signal on which a hard session was performed, plus any illness or injury onset within 72 hours | Any adverse outcome is **no-go** until this ADR is amended |
+| Rollback | Use of the default-off engine setting, with its reason | Any use for a safety reason is **no-go** until this ADR is amended |
+
+**Missing or inconclusive evidence is not a pass.** If a criterion cannot be evaluated (no
+comparable assessment, too few performed occurrences, a gap in the source data), the
+result is *inconclusive*. The block is extended or repeated, and Phase 3 stays blocked.
+
+**After the block.** The owner writes the assessment,
+`docs/analysis/<date>-adr-0052-d-eval-result.md`, recording each criterion as pass, fail or
+inconclusive, with its evidence. Phase 3 may start only when that document records an
+explicit overall **go**: every criterion passes, and none is inconclusive. The block lasts
+at least four weeks and is planned by the external AI.
 
 ## Consequences
 
@@ -247,12 +305,17 @@ boundary.
 
 ## References
 
-* ADR-0019 decisions superseded: D-CANDIDATE, D-CRITIQUE, D-EXT (fallback planner).
+* ADR-0019 decisions superseded: D-CANDIDATE, D-CRITIQUE, D-EXT (fallback planner); changed:
+  D-NOTRAVEL (by D-TRAVEL).
+* Travel: `applyPlanningOverlays`; `engine/externallyPlannedMode.test.ts` (D-NOTRAVEL test);
+  `components/ExternalPlanImport.tsx` `AI_PROMPT_TEMPLATE`; `docs/external-plan-schema.md`
+  (v6 `scaling.reducedDefinition`).
+* Simulation trigger: `app/scripts/check-policy-drift.mjs` `decisionAffectingFiles`.
 * Context Brief contract: `docs/architecture/context-brief-contract.md`;
   `app/src/services/contextBriefService.ts`; `app/src/utils/contextBriefExport.ts`.
 * Engine consumers to switch in Phase 2: `components/Home.tsx`, `components/PlanView.tsx`,
   `components/WeekAheadStrip.tsx`, `services/activeExternalPlanService.ts`,
   `components/ExternalVerdictBanner.tsx`.
 * CI: `.github/workflows/ci.yml` (`engine-simulations`, `frontend-hygiene`),
-  `scripts/detect_ci_changes.py`, `scripts/check-policy-drift.mjs`.
+  `scripts/detect_ci_changes.py`, `app/scripts/check-policy-drift.mjs`.
 * Backlog mapping (core / re-scope / park): issue #962.
