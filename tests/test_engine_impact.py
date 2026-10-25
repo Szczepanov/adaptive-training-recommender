@@ -6,6 +6,7 @@ Every repository here is a synthetic git repo built in ``tmp_path``.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from collections.abc import Iterator
 from pathlib import Path
@@ -40,6 +41,19 @@ BASE_FILES = {
     "app/package.json": "{}\n",
     "src/garmin_sync/sync.py": "VALUE = 1\n",
 }
+
+
+@pytest.fixture(autouse=True)
+def _isolate_from_outer_git(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Drop inherited GIT_* variables before any git call in these tests.
+
+    Git hooks (the pre-push pytest hook included) export GIT_DIR and friends. Inherited by
+    the fixture's ``git init``/``add``/``commit``, they would act on the *real* repository:
+    ``git init`` with an inherited GIT_DIR sets ``core.bare = true`` on it, which breaks
+    every worktree. Engine-impact calls under test would also read the real repo.
+    """
+    for name in [key for key in os.environ if key.startswith("GIT_")]:
+        monkeypatch.delenv(name)
 
 
 def _git(repo: Path, *args: str) -> str:
