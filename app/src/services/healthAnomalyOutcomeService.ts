@@ -7,8 +7,8 @@ import {
     type HealthAnomalyOutcomeExplanation,
     type HealthAnomalyRespiratoryTestLabel,
     type HealthAnomalySymptomOnsetLabel,
-} from '../engine/healthAnomalyOutcome';
-import type { HealthAnomalyAssessmentRevision } from '../engine/healthAnomalyModels';
+} from '../derived/flags/illnessAnomaly/healthAnomalyOutcome';
+import type { HealthAnomalyAssessmentRevision } from '../derived/flags/illnessAnomaly/healthAnomalyModels';
 import { addDaysToLocalDateString } from '../utils/localDate';
 import { healthAnomalyAssessmentRepository } from './healthAnomalyPersistence';
 

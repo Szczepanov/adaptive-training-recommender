@@ -162,9 +162,9 @@ app/src/
     schedule.ts        # Availability & location context resolution
     templates.ts       # Session template catalog & systemic load caps
     validation.ts      # Input schema validators & sanitizers
-    healthAnomaly.ts   # Physiological anomaly & illness risk evaluator
     simulation/        # Multi-week scenario simulator & analytical metrics
     workouts/          # Structured technical workout catalog & parameter bindings
+  derived/             # Derived metrics & D-FLAGS evaluators moved out of engine/ (ADR-0052), e.g. flags/illnessAnomaly/
   observations/        # Standardized performance testing protocols & observation models
   outcomes/            # Goal targets, series noise filtering, and block outcome reports
   persistence/         # Strict Firestore document parsers and validation gates

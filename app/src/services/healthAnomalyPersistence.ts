@@ -1,12 +1,12 @@
 import { collection, doc, getDocs, runTransaction } from 'firebase/firestore';
 import { getDb } from '../firebase';
-import { isHealthAnomalyThresholdPolicy } from '../engine/healthAnomaly';
+import { isHealthAnomalyThresholdPolicy } from '../derived/flags/illnessAnomaly/healthAnomaly';
 import type {
     HealthAnomalyAssessmentRevision,
     HealthAnomalySourceIdentity,
     HealthAnomalyThresholdPolicy,
     HealthAnomalyPolicy,
-} from '../engine/healthAnomalyModels';
+} from '../derived/flags/illnessAnomaly/healthAnomalyModels';
 
 const ASSESSMENT_STATES = [
     'normal',

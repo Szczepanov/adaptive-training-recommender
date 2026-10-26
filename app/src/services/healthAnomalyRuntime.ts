@@ -1,5 +1,5 @@
-import { resolveHealthAnomalyPolicy } from '../engine/healthAnomaly';
-import type { HealthAnomalyPolicy } from '../engine/healthAnomalyModels';
+import { resolveHealthAnomalyPolicy } from '../derived/flags/illnessAnomaly/healthAnomaly';
+import type { HealthAnomalyPolicy } from '../derived/flags/illnessAnomaly/healthAnomalyModels';
 import { healthAnomalyService } from './healthAnomalyService';
 
 export type HealthAnomalyShadowRuntimePolicy = Extract<HealthAnomalyPolicy, 'off' | 'shadow-v1'>;

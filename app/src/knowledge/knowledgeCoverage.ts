@@ -314,7 +314,7 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         id: 'fatigue.garmin_stimulus_cost_classification', domain: 'fatigue_load', title: 'Garmin stimulus intensity vs session cost classification',
         currentRule: 'Garmin activities are tagged hard only on high-intensity stimulus evidence (race, anaerobic TE, cycling IF/zone-5+ share, HR-zone shares, legacy TE/HR fallback); a separate Training-Effect-banded session cost indexes the completed-training cost row, floored at the stimulus row (dose only raises cost), and high/very_high cost also counts as prior hard training in health-anomaly explanations under its own evidence codes.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'none',
-        codeRefs: ['../../src/garmin_sync/intensity_classification.py:classify_activity', 'engine/completedTraining.ts:costIntensityFromGarmin', 'engine/completedTraining.ts:SESSION_COST_ROW', 'engine/healthAnomaly.ts:hasPriorHardTraining'],
+        codeRefs: ['../../src/garmin_sync/intensity_classification.py:classify_activity', 'engine/completedTraining.ts:costIntensityFromGarmin', 'engine/completedTraining.ts:SESSION_COST_ROW', 'derived/flags/illnessAnomaly/healthAnomaly.ts:hasPriorHardTraining'],
         knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.trainingStressRecoveryBalance, KNOWLEDGE_CLAIM_IDS.garminStimulusCostClassification],
         coverageRationale: 'Issue #809 separated exercise intensity from accumulated dose so a long aerobic session no longer counts as a hard session while still carrying its fatigue cost; the zone/IF/TE cut-points are registered as product calibration, not validated physiological thresholds.',
     },
@@ -801,7 +801,7 @@ export function summarizeKnowledgeCoverage(
 export const REVIEWED_NON_AUTHORITY_SURFACES = [
     { ref: 'engine/sleepRecoveryEvidence.ts', reason: 'Shadow-only sleep evidence classification; explicitly not consumed by live rules/fatigue.' },
     { ref: 'engine/dataConfidence.ts', reason: 'Dashboard-facing observability only; does not change readiness, eligibility, dose or ranking.' },
-    { ref: 'engine/healthAnomaly.ts', reason: 'Candidate health-anomaly thresholds are shadow/replay evidence pending explicit policy activation.' },
+    { ref: 'derived/flags/illnessAnomaly/healthAnomaly.ts', reason: 'Candidate health-anomaly thresholds are shadow/replay evidence pending explicit policy activation.' },
     { ref: 'engine/activityHrFidelity.ts', reason: 'HR use-authority policy is shadow-only until a live consumer is activated.' },
     { ref: 'engine/identityAttribution.ts', reason: 'Automatic physiological identity classifier thresholds are shadow/replay candidates; effective eligibility itself is inventoried separately.' },
     { ref: 'engine/subjectiveBaseline.ts + subjectiveDriftAudit.ts', reason: 'Subjective drift contribution is production-default off and evaluated through simulation/audit before activation.' },

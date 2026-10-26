@@ -229,7 +229,7 @@ describe('engine knowledge coverage inventory', () => {
         const refs = REVIEWED_NON_AUTHORITY_SURFACES.map(surface => surface.ref);
         expect(refs).toContain('engine/sleepRecoveryEvidence.ts');
         expect(refs).toContain('engine/dataConfidence.ts');
-        expect(refs).toContain('engine/healthAnomaly.ts');
+        expect(refs).toContain('derived/flags/illnessAnomaly/healthAnomaly.ts');
         expect(refs).toContain('engine/activityHrFidelity.ts');
         expect(refs).toContain('engine/identityAttribution.ts');
     });

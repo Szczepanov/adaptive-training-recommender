@@ -11,8 +11,8 @@ import type {
     PhysiologicalAnomalyAssessment,
     RespirationElevationEvidence,
 } from './healthAnomalyModels';
-import type { DailyRecoverySnapshot, DailySubjectiveCheckin } from './models';
-import { addDaysToLocalDateString } from '../utils/localDate';
+import type { DailyRecoverySnapshot, DailySubjectiveCheckin } from '../../../ledger/models';
+import { addDaysToLocalDateString } from '../../../utils/localDate';
 
 export interface HealthAnomalyReplayDay {
     date: string;

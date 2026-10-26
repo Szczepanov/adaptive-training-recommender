@@ -9,7 +9,7 @@ import type {
     HealthCoreSignal,
     HealthCoreSignalFeatures,
 } from './healthAnomalyModels';
-import type { DailyRecoverySnapshot, DailySubjectiveCheckin } from './models';
+import type { DailyRecoverySnapshot, DailySubjectiveCheckin } from '../../../ledger/models';
 
 function feature(
     signal: HealthCoreSignal,

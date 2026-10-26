@@ -10,6 +10,13 @@ The health-anomaly evaluator is separate from readiness and recommendation selec
 features, calls the pure evaluator, and persists a revision only for an explicit non-`off`
 policy. No recommendation, fatigue, optimizer or weekly-allocation path consumes the result.
 
+The evaluator family lives in `app/src/derived/flags/illnessAnomaly/` (moved out of `engine/`
+by ADR-0052 Phase 1, #1144 PR1-1), with the check-in health-context types in
+`app/src/ledger/models.ts`. `illnessAnomalyFlag.ts` `evaluateIllnessAnomalyFlag` maps a persisted
+assessment onto the D-FLAGS `illness_anomaly` flag: active only for
+`possible_illness_or_systemic_stress`, and `missing` (never a measured negative) when no
+assessment exists or when every core signal was unavailable.
+
 HA-D adds an intentionally narrower runtime selector than the future-facing policy enum. The
 app evaluates and persists health-anomaly evidence only when:
 

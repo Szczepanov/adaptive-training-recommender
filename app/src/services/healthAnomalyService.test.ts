@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { DataState } from '../engine/dataState';
 import type { DailyRecoverySnapshot, DailySubjectiveCheckin } from '../engine/models';
-import type { HealthAnomalyAssessmentRevision } from '../engine/healthAnomalyModels';
+import type { HealthAnomalyAssessmentRevision } from '../derived/flags/illnessAnomaly/healthAnomalyModels';
 import { HealthAnomalyService } from './healthAnomalyService';
 import { addDaysToLocalDateString } from '../utils/localDate';
 
