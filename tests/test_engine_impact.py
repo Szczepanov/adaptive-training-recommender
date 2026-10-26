@@ -320,3 +320,13 @@ def test_shared_decision_list_paths_exist() -> None:
     missing = [e["path"] for e in data["files"] if not (root / e["path"]).is_file()]
     missing += [e["path"] for e in data["prefixes"] if not (root / e["path"]).is_dir()]
     assert missing == []
+
+    # A recorded relocation (check-policy-drift.mjs, ADR-0010 2026-10-25 amendment) must point
+    # at a file that now exists and away from one that no longer does. Whether `to` must be
+    # listed depends on `from` having been listed at the base, which the drift check enforces.
+    bad_relocations = [
+        entry
+        for entry in data.get("relocations", [])
+        if not (root / entry["to"]).is_file() or (root / entry["from"]).exists()
+    ]
+    assert bad_relocations == []

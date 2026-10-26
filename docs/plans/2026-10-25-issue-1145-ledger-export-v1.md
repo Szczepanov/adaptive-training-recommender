@@ -1,7 +1,7 @@
 # Issue #1145: D-EXPORT v1, the structured ledger export
 
-- **Status:** Approved (owner decisions OD1–OD5 recorded 2026-10-25, all as proposed). Part B implementation is blocked only by #1148.
-- **Blocked by:** #1144 PR0 (#1148, `app/src/ledger/models.ts`) for implementation; nothing blocks this design.
+- **Status:** Approved (design merged in #1149; owner decisions OD1–OD5 recorded 2026-10-25, all as proposed). Part B items 1–2 merged in #1155; items 3–5 are next.
+- **Blocked by:** Nothing for Part B items 3–5. The `derived`/`flags` layers stay `not_yet_supported` until #1144 PR1; the type-split prerequisite #1148 has merged.
 - **Unlocks:** ADR-0052 Phase 2 (switch-off), which requires D-EXPORT v1 *shipped and contract-tested*.
 - **Companion:** [`../analysis/2026-10-25-adr-0052-d-eval-criteria.md`](../analysis/2026-10-25-adr-0052-d-eval-criteria.md). ADR-0052 requires it to merge together with this design.
 - **Decision source:** [ADR-0052](../adr/0052-user-ledger-and-external-ai-planning-authority.md): D-EXPORT, D-USER, D-COACHLOG, D-FLAGS, D-TRAVEL.
@@ -177,15 +177,14 @@ because they are the authoring contract for `external-plan@6`. Under D-TRAVEL th
 instead tell the AI to plan around `userContext.travel` and `venueRestrictions`, and that
 change ships in Phase 2.
 
-## Work items (Part B, after this design merges)
+## Work items (Part B)
 
-1. **Types.** Add `app/src/ledger/export/schema.ts` with `LedgerExport`, `LedgerValue`,
-   `LedgerState`, `SourceState` and the five layer types above. *Done when:* `tsc -b` passes
-   and the ledger boundary test still passes (no `engine/` import).
-2. **Pure builder.** Add `app/src/ledger/export/buildLedgerExport.ts`, which takes
-   already-read records plus `asOfDate`, window and purpose and returns a `LedgerExport`. It
-   does no IO and calls nothing like `Date.now()`; `exportedAt` is injected. *Done when:* the
-   builder tests below pass.
+1. **Types — implemented in #1155.** `app/src/ledger/export/schema.ts` defines `LedgerExport`,
+   `LedgerValue`, `LedgerState`, `SourceState` and the five layer types above. The ledger
+   boundary test enforces no `engine/` import.
+2. **Pure builder — implemented in #1155.** `app/src/ledger/export/buildLedgerExport.ts`
+   takes already-read records plus `asOfDate`, window and purpose and returns a `LedgerExport`.
+   It does no IO; `exportedAt` is injected. Items 3–5 remain next.
 3. **Service.** Add `app/src/services/ledgerExportService.ts`, which reads the collections
    in the tables above with user scoping (I1) and Warsaw dates (I2) and records a
    `SourceState` per read. Reuse the read paths `services/contextBriefService.ts` already
@@ -220,7 +219,7 @@ change ships in Phase 2.
 
 ## Acceptance criteria
 
-- [ ] This design and the D-EVAL criteria document merge in the same PR.
+- [x] This design and the D-EVAL criteria document merged together in #1149.
 - [x] OD1–OD5 are answered in this document (2026-10-25).
 - [ ] Part B: every field in the five tables is present in the export with a `state`.
 - [ ] Part B: the contract tests above run in CI (`frontend-unit-tests`).
