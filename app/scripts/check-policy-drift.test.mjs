@@ -348,6 +348,39 @@ describe('check-policy-drift relocation entry shape', () => {
 
 describe('check-policy-drift relocation specifier normalisation', () => {
   const barrel = 'app/src/engine/barrel.ts';
+  it('passes unchanged TSX consumers checked out with CRLF newlines', () => {
+    const component = 'app/src/Component.tsx';
+    const source = 'export const UI = () => <div>\n  Hello\n</div>;\n';
+    const { repo, base } = baseRepo({ [component]: source });
+    relocate(repo);
+    write(repo, { [component]: source.replaceAll('\n', '\r\n') });
+    const { status, output } = runDrift(repo, base);
+    expect(status).toBe(0);
+    expect(output).toContain('decision-affecting files were only relocated');
+  });
+
+  it('fails when an unchanged importer still points at the deleted source', () => {
+    expectRelocationRejected({
+      extra: { [barrel]: "export * from './subjectiveBaseline';\n" },
+      reason: `unresolvable relative specifier './subjectiveBaseline' in ${barrel}`,
+    });
+  });
+
+  it('fails when an unchanged directory glob can observe the relocation', () => {
+    expectRelocationRejected({
+      extra: { [barrel]: "export const modules = import.meta.glob('./*.ts');\n" },
+      reason: `file-relative import.meta.glob in ${barrel}`,
+    });
+  });
+
+  it.each(['raw', 'url'])('fails a repointed ?%s import whose value can change after relocation', (query) => {
+    expectRelocationRejected({
+      extra: { [barrel]: `import value from './subjectiveBaseline?${query}';\nexport { value };\n` },
+      overrides: { [barrel]: `import value from '../derived/baselines/subjectiveBaseline?${query}';\nexport { value };\n` },
+      reason: 'query-bearing relative specifier',
+    });
+  });
+
   const barrelSource = [
     "import './subjectiveBaseline';",
     "export * from './subjectiveBaseline';",

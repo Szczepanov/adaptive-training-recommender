@@ -94,11 +94,15 @@ Anything else rejects and falls back to the normal bump rule: any literal or log
 import repointed at a different module (even one that exists), an unresolvable relative
 specifier, any added or deleted production file that is not a declared relocation endpoint, a
 changed non-TypeScript production file, or a move that delists a decision-affecting file. A
-compared file with a construct the normalisation cannot see through also rejects: triple-slash
+compared file with a construct the normalisation cannot see through also rejects: query-bearing
+relative imports (such as `?raw` and `?url`), triple-slash
 directives, a non-literal `import()`/`require()`, or a file-relative construct: any
 `import.meta` use other than a direct `import.meta.env` access, `new URL(...)` or
 `require.resolve`. Entries whose `from` no longer exists
 at the comparison base are stale and ignored; they may be pruned.
+
+Unchanged production TypeScript consumers are compared too: a move can break an unchanged
+import or alter a directory glob's results without editing the consumer.
 
 The gate also diffs with rename detection disabled (`--no-renames`) and treats a file as
 decision-affecting when it is on the base **or** the head list. A moved listed file is therefore

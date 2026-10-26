@@ -60,8 +60,7 @@ function isRelativeSpecifier(specifier) {
  * Returns null when nothing in that tree matches.
  */
 function resolveRelativeSpecifier(importer, specifier, tree) {
-  const [pathPart, ...query] = specifier.split('?');
-  const target = posix.normalize(posix.join(posix.dirname(importer), pathPart)).replace(/\/$/, '');
+  const target = posix.normalize(posix.join(posix.dirname(importer), specifier)).replace(/\/$/, '');
   const jsStem = /\.(m?js|jsx)$/.test(target) ? target.replace(/\.(m?js|jsx)$/, '') : null;
   const candidates = [
     target,
@@ -70,7 +69,7 @@ function resolveRelativeSpecifier(importer, specifier, tree) {
   ];
   const resolved = candidates.find((candidate) => tree.has(candidate));
   if (resolved === undefined) return null;
-  return { path: resolved, query: query.length > 0 ? `?${query.join('?')}` : '' };
+  return { path: resolved };
 }
 
 /**
@@ -151,9 +150,11 @@ function moduleSpecifierNodes(sourceFile) {
 /** Bare specifiers stay verbatim; relative ones become the (relocation-mapped) repo path. */
 function canonicalSpecifier(file, specifier, tree, relocationMap) {
   if (!isRelativeSpecifier(specifier)) return specifier;
+  // Asset queries expose raw content or URLs, which syntax equivalence cannot prove unchanged.
+  if (specifier.includes('?')) throw new Error(`query-bearing relative specifier '${specifier}' in ${file}`);
   const resolved = resolveRelativeSpecifier(file, specifier, tree);
   if (resolved === null) throw new Error(`unresolvable relative specifier '${specifier}' in ${file}`);
-  return `${repoPathMarker}${relocationMap.get(resolved.path) ?? resolved.path}${resolved.query}`;
+  return `${repoPathMarker}${relocationMap.get(resolved.path) ?? resolved.path}`;
 }
 
 /**
@@ -165,6 +166,8 @@ function canonicalSpecifier(file, specifier, tree, relocationMap) {
  */
 function relocationSignature(file, source, tree, relocationMap) {
   const scriptKind = scriptKindFor(file);
+  // Git stores LF while Windows checkouts may use CRLF, which the printer retains in JSX text.
+  source = source.replace(/\r\n/g, '\n');
   const sourceFile = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, scriptKind);
   const diagnostics = sourceFile.parseDiagnostics ?? [];
   if (diagnostics.length > 0) {
@@ -225,14 +228,16 @@ function relocationShapeProblem(relocations, trees, lists) {
 
 /**
  * First reason a changed file other than a relocation endpoint is not proved unchanged, or
- * null. Covers every changed decision file and every changed non-test app/src file: each must
- * exist on both sides, be TypeScript, and keep its normalised signature. /simulation/ is
- * deliberately not excluded -- a relocation only ever changes specifiers.
+ * null. Covers changed decision/production files and unchanged TypeScript consumers: each
+ * must exist on both sides and keep its normalised signature. An unchanged importer can
+ * observe a move through resolution or globs. /simulation/ is deliberately not excluded.
  */
 function otherChangedSourceProblem(context, endpoints, trees, signatures) {
   const candidates = [...new Set([
     ...context.changedDecisionFiles,
     ...context.changedFiles.filter((file) => file.startsWith('app/src/') && !isTestSource(file)),
+    ...[...trees.baseTree].filter((file) => file.startsWith('app/src/')
+      && isTypeScriptSource(file) && !isTestSource(file) && trees.headTree.has(file)),
   ])].filter((file) => !endpoints.has(file));
   const problemFor = (file) => {
     if (!trees.baseTree.has(file) || !trees.headTree.has(file)) {
@@ -277,7 +282,9 @@ function relocationProofProblem(context, relocations, trees) {
  * executable syntax once every relative specifier is resolved in its own tree and mapped
  * through the relocations; neither endpoint may sit next to another spelling an unchanged
  * importer could resolve to; a listed file must stay listed at its new path; and every other
- * changed production source must exist on both sides with an unchanged normalised signature.
+ * production TypeScript consumer must keep an unchanged normalised signature, including
+ * unchanged files whose module resolution could observe the move. Changed production sources
+ * must exist on both sides.
  * Any literal or logic edit, a repointed import, or an added/deleted production file rejects.
  *
  * `context`: { git, repoRoot, comparisonBase, changedFiles, changedDecisionFiles,
