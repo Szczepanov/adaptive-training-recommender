@@ -1,3 +1,4 @@
+import type { LedgerExport } from '../ledger/export/schema';
 import type { BriefPurpose, BriefWindowPreset } from '../engine/contextBrief';
 import type { MeasuredBenchmarkExport } from '../observations/contextBriefAssessments';
 
@@ -113,5 +114,14 @@ export function downloadContextBriefFile(
     contextBriefExportFilename(brief, format),
     formatContextBriefExport(brief, format),
     mimeType,
+  );
+}
+
+/** Additive D-EXPORT v1 transport; the existing brief envelope remains unchanged (OD5). */
+export function downloadLedgerExportFile(ledger: LedgerExport): void {
+  triggerTextDownload(
+    `ledger_${ledger.purpose}_${ledger.window.startDate}_to_${ledger.window.endDate}.json`,
+    JSON.stringify(ledger, null, 2),
+    'application/json;charset=utf-8',
   );
 }

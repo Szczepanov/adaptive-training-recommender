@@ -1,5 +1,8 @@
+import type { ReactNode } from 'react';
+
 interface ContextBriefExportActionsProps {
   copied: boolean;
+  children?: ReactNode;
   onCopy: () => void;
   onDownloadMarkdown: () => void;
   onDownloadJson: () => void;
@@ -7,6 +10,7 @@ interface ContextBriefExportActionsProps {
 
 export function ContextBriefExportActions({
   copied,
+  children,
   onCopy,
   onDownloadMarkdown,
   onDownloadJson,
@@ -22,6 +26,7 @@ export function ContextBriefExportActions({
       <button type="button" className="brief-copy" onClick={onDownloadJson}>
         Download JSON
       </button>
+      {children}
     </>
   );
 }

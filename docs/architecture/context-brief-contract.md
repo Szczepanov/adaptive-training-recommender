@@ -1,5 +1,10 @@
 # Context Brief export contract
 
+The additive **Export ledger (JSON)** action uses the separate
+[structured ledger contract](./ledger-export-contract.md) (`ledger-export-v1`, #1145).
+Under approved OD5, the existing Markdown and JSON-envelope actions described here retain
+this contract until Phase 2; the pure ledger renderer does not replace them yet.
+
 The Context Brief is the read-only handoff between the athlete record and an external coach.
 It is treated as a versioned API even though the wire format remains human/LLM-readable
 Markdown.

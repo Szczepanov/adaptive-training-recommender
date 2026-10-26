@@ -139,7 +139,7 @@ export async function checkIn(page: Page): Promise<void> {
 export async function planningBrief(page: Page): Promise<string> {
   await dismissOnboardingIfVisible(page, 200);
   await page.getByRole('button', { name: 'More' }).click();
-  await page.getByRole('button', { name: '📤 Export Context for AI', exact: true }).click();
+  await page.getByRole('button', { name: /^📤 Export Context for AI/ }).click();
   await page.getByRole('button', { name: /Block Planning/ }).click();
   const brief = page.locator('textarea.brief-text');
   await expect.poll(() => brief.inputValue()).toContain('## External-plan execution round trip');

@@ -1,17 +1,16 @@
 # Issue #1145: D-EXPORT v1, the structured ledger export
 
-- **Status:** Approved (design merged in #1149; owner decisions OD1–OD5 recorded 2026-10-25, all as proposed). Part B items 1–2 merged in #1155; items 3–5 are next.
-- **Blocked by:** Nothing for Part B items 3–5. The `derived`/`flags` layers stay `not_yet_supported` until #1144 PR1; the type-split prerequisite #1148 has merged.
+- **Status:** Implemented (Part B items 1–2 in #1155; service, renderer, action and docs completed 2026-10-26). The design merged in #1149; OD1–OD5 were approved 2026-10-25.
+- **Remaining phase gates:** Derived/flag slots stay explicit while extraction (#1144) and historical flag persistence are delivered. Phase 2 and its device acceptance remain separate; this export does not activate them.
 - **Unlocks:** ADR-0052 Phase 2 (switch-off), which requires D-EXPORT v1 *shipped and contract-tested*.
 - **Companion:** [`../analysis/2026-10-25-adr-0052-d-eval-criteria.md`](../analysis/2026-10-25-adr-0052-d-eval-criteria.md). ADR-0052 requires it to merge together with this design.
 - **Decision source:** [ADR-0052](../adr/0052-user-ledger-and-external-ai-planning-authority.md): D-EXPORT, D-USER, D-COACHLOG, D-FLAGS, D-TRAVEL.
 
 ## Goal
 
-Replace "Markdown is canonical, JSON wraps it" (`utils/contextBriefExport.ts`
-`buildContextBriefJsonExport`) with a **canonical structured export** of what the ledger
-records. The Markdown brief is then *rendered from* that structure. Engine opinions leave the
-default export.
+The ledger export records canonical structured facts, with a pure Markdown view over the
+same object. Its default output contains no engine opinions. The existing legacy brief
+and its JSON envelope remain available until Phase 2, as OD5 requires.
 
 ## Preconditions
 
@@ -184,19 +183,18 @@ change ships in Phase 2.
    boundary test enforces no `engine/` import.
 2. **Pure builder — implemented in #1155.** `app/src/ledger/export/buildLedgerExport.ts`
    takes already-read records plus `asOfDate`, window and purpose and returns a `LedgerExport`.
-   It does no IO; `exportedAt` is injected. Items 3–5 remain next.
-3. **Service.** Add `app/src/services/ledgerExportService.ts`, which reads the collections
-   in the tables above with user scoping (I1) and Warsaw dates (I2) and records a
-   `SourceState` per read. Reuse the read paths `services/contextBriefService.ts` already
-   uses; do not duplicate queries.
-4. **Renderer and UI.** Render the Markdown from `LedgerExport`. Add
-   "Export ledger (JSON)" next to the existing actions in
-   `components/ContextBriefExportActions.tsx`. Keep the current Markdown brief path until
-   Phase 2 (OD5).
-5. **Docs.** Add `docs/architecture/ledger-export-contract.md` (the living contract) and point
-   `context-brief-contract.md` at it.
+   It does no IO; `exportedAt` is injected.
+3. **Service — implemented.** `services/ledgerExportService.ts` reads existing user-scoped
+   services and records a source state per read. Settings use the read-only peek; incomplete
+   evidence and unverified authored links are never exported as measured absence.
+4. **Renderer and UI — implemented.** `ledger/export/renderLedgerExport.ts` renders the five
+   structured layers. `LedgerExportButton` exposes the additive JSON download next to the
+   existing actions; the current Markdown brief path remains until Phase 2 (OD5).
+5. **Docs — implemented.** The living contract is
+   [`../architecture/ledger-export-contract.md`](../architecture/ledger-export-contract.md),
+   linked from the Context Brief reference and user flows.
 
-## Tests to add
+## Contract and regression coverage
 
 - `buildLedgerExport.test.ts`:
   - every promised field is present, with `state` set;
@@ -214,16 +212,16 @@ change ships in Phase 2.
     survive export without being recomputed.
 - `ledgerExportRender.test.ts`: the Markdown rendered from a fixture export matches a golden
   file; the travel and venue facts render in the planning purpose.
-- E2E (Phase 2, ADR-0052 D-CI): export → import `external-plan@6` with `reducedDefinition` →
+- Deferred Phase 2 E2E (ADR-0052 D-CI): export → import `external-plan@6` with `reducedDefinition` →
   run offline → re-export shows the performed occurrence linked to its placement.
 
 ## Acceptance criteria
 
 - [x] This design and the D-EVAL criteria document merged together in #1149.
 - [x] OD1–OD5 are answered in this document (2026-10-25).
-- [ ] Part B: every field in the five tables is present in the export with a `state`.
-- [ ] Part B: the contract tests above run in CI (`frontend-unit-tests`).
-- [ ] Part B: the export imports nothing from `app/src/engine/`.
+- [x] Part B: every field in the five tables is present in the export with a `state`.
+- [x] Part B: the contract tests above run in CI (`frontend-unit-tests`).
+- [x] Part B: the export imports nothing from `app/src/engine/`.
 
 ## Owner decisions (recorded 2026-10-25, all approved as proposed)
 
@@ -253,8 +251,37 @@ change ships in Phase 2.
 - Phase 2 switch-off and the D-TRAVEL prompt change.
 - Changing any engine output.
 
-## Docs to update
+## Documentation delivered
 
 - New `docs/architecture/ledger-export-contract.md` (Part B).
 - `docs/architecture/context-brief-contract.md`: point at the ledger contract.
 - `docs/plans/README.md`: board row for this plan.
+
+## Part B items 3–5 execution (2026-10-26)
+
+The existing approved design and OD1–OD5 govern this implementation.
+
+- [x] Read-only `ledgerExportService` assembles existing user-scoped services, tracks each
+  source read, preserves partial failures, uses Warsaw windows and never migrates settings.
+- [x] Pure `renderLedgerExport` renders all five layers, explicit missingness, provenance,
+  travel and venue records; synthetic golden and contract tests prove determinism.
+- [x] Add the user-initiated JSON action to the canonical brief surface, with busy/error
+  states; retain existing brief exports under OD5.
+- [x] Update the living ledger contract, brief reference and status board.
+- [x] Affected tests, typecheck/lint, `VERIFY_SERIAL=1 make verify` and independent review passed. The complete gate passed in 802 seconds; desktop/phone-width captures were inspected.
+
+Review focus: source failures must not become measured emptiness; settings reads must never
+write; canonical occurrences must not double-count provider rows; revision hashes must match
+stored plans; late async downloads must not cross account/date/preset transitions. No policy
+version bump: this is additive export work without recommendation authority.
+
+### Completion evidence
+
+`VERIFY_SERIAL=1 make verify` passed all required steps on 2026-10-26: 9,594 frontend unit
+checks, 511 emulator rule checks, 66 browser journeys, Python checks (1,516 tests), static
+checks, knowledge/workout validators, simulations and baseline cleanliness, judge/persona
+corpora, policy drift, production build and latency gates. Four affected browser journeys
+also passed together before the final gate. No engine policy version changed.
+
+Physical-device acceptance remains pending under ADR-0052; the phone-width browser proof
+does not replace that separate gate. The D-EVAL protocol retest schedule remains owner-owned.
