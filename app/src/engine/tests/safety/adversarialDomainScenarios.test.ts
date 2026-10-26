@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { evaluateReadinessAndSafetyEnvelope, evaluateTraining } from '../../rules';
-import { evaluatePhysiologicalAnomaly, SHADOW_V1_HEALTH_ANOMALY_THRESHOLDS } from '../../healthAnomaly';
+import { evaluatePhysiologicalAnomaly, SHADOW_V1_HEALTH_ANOMALY_THRESHOLDS } from '../../../derived/flags/illnessAnomaly/healthAnomaly';
 import { getMinimumSafetyCheckinStatus, canGenerateNormalRecommendation, createProvisionalSafetyRecommendation } from '../../safetyCheckin';
 import { resolveExecutionDose } from '../../dose';
 import { adjudicateAuthoredSession } from '../../authoredSessionGates';
@@ -17,7 +17,7 @@ import type {
     DailyRecoverySnapshot,
 } from '../../models';
 import type { SessionDefinition } from '../../../sessions/models';
-import type { HealthAnomalyInput } from '../../healthAnomalyModels';
+import type { HealthAnomalyInput } from '../../../derived/flags/illnessAnomaly/healthAnomalyModels';
 
 function createTestSnapshot(date: string, overrides: Partial<DailyRecoverySnapshot['raw']> = {}): DailyRecoverySnapshot {
     return {

@@ -1,4 +1,4 @@
-import type { DailyRecoverySnapshot } from './models';
+import type { DailyRecoverySnapshot } from '../../../ledger/models';
 import type {
     CoreSignalDataQuality,
     HealthAnomalyFeatureSet,

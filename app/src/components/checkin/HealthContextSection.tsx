@@ -1,7 +1,7 @@
 import type {
     HealthContextCheckin,
     HealthSymptomType,
-} from '../../engine/healthAnomalyModels';
+} from '../../derived/flags/illnessAnomaly/healthAnomalyModels';
 import { normalizeHealthContext } from '../../engine/healthContextDefaults';
 import { HEALTH_OTHER_DISRUPTION_MAX_LENGTH } from '../../engine/healthContextValidation';
 import './HealthContextSection.css';

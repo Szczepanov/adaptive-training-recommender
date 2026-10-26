@@ -5,7 +5,7 @@ const Home = lazy(() => import('./components/Home').then(m => ({ default: m.Home
 import type { PreparedSessionLaunch } from './components/session/SessionDestinationSheet';
 import { decisionComposer } from './engine/composer';
 import { hasCompletedSubjectiveCheckinForDecision } from './engine/checkinCompletion';
-import type { HealthAnomalyAssessmentRevision } from './engine/healthAnomalyModels';
+import type { HealthAnomalyAssessmentRevision } from './derived/flags/illnessAnomaly/healthAnomalyModels';
 import type { DailyDecisionInput } from './engine/models';
 import type { CapabilityMaintenanceResult } from './engine/capabilityMaintenance';
 import type { SessionDefinition, SessionExecution, SessionIntent } from './sessions/models';

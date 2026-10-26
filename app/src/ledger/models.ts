@@ -318,6 +318,49 @@ export interface DailyRecoverySnapshot {
     updatedAt?: string;
 }
 
+export interface HealthContextCheckin {
+    /** Unknown when omitted. Explicit zero means the athlete answered none. */
+    alcoholDrinksLast24h?: 0 | 1 | 2 | 3;
+    travelDisruption?:
+        | 'none'
+        | 'local_or_no_timezone'
+        | 'timezone_shift'
+        | 'late_arrival_or_disrupted_sleep';
+    /** Signed offset change in hours. Null/omitted means unknown. */
+    timezoneShiftHours?: number | null;
+    unusualHeatOrSauna?: boolean | null;
+    dehydrationOrFluidLoss?: boolean | null;
+    recentVaccination?: boolean | null;
+    medicationChange?: boolean | null;
+    closeSickContact?: boolean | null;
+    /** Opaque user content. Never use the text itself as evaluator evidence. */
+    otherDisruption?: string | null;
+    symptoms?: HealthSymptomsCheckin;
+}
+
+export interface HealthSymptomsCheckin {
+    present: boolean;
+    onset?: 'today' | 'yesterday' | '2_3_days' | 'earlier' | null;
+    severity?: 'mild' | 'moderate' | 'severe' | null;
+    /** Null is accepted as an explicit clear for migration/update symmetry. */
+    types?: HealthSymptomType[] | null;
+    /** Athlete's own best guess at cause. Unset/'unsure' keeps the conservative default
+     *  treatment; only an explicit 'allergy' can soften engine gating (see adapters.ts). */
+    suspectedCause?: 'infectious' | 'allergy' | 'unsure' | null;
+}
+
+export type HealthSymptomType =
+    | 'sore_throat'
+    | 'congestion'
+    | 'runny_nose'
+    | 'sneezing'
+    | 'cough'
+    | 'fever_or_chills'
+    | 'headache_or_body_aches'
+    | 'gastrointestinal'
+    | 'unusual_fatigue'
+    | 'other';
+
 // --- Firestore Canonical Models (Phase 4) ---
 
 export interface DailySubjectiveCheckin {
@@ -351,6 +394,8 @@ export interface DailySubjectiveCheckin {
     hungerTiming?: 'morning_pre_breakfast' | 'other' | null;
     /** Optional subjective rating of yesterday's (D-1) calorie tracking completeness. Zero recommendation authority (ADR-0042). */
     nutritionAdherenceYesterday?: NutritionTrackingAdherence | null;
+    /** Optional health context: disruptions and symptoms (ADR-0025, ADR-0032). */
+    healthContext?: HealthContextCheckin;
     // Availability block
     availability: {
         timeAvailableMin: number | null;

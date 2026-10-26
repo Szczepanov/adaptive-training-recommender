@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { DailyDecisionInput } from '../engine/models';
-import type { HealthAnomalyAssessmentRevision } from '../engine/healthAnomalyModels';
+import type { HealthAnomalyAssessmentRevision } from '../derived/flags/illnessAnomaly/healthAnomalyModels';
 import { healthAnomalyAssessmentRepository } from '../services/healthAnomalyPersistence';
 import { configuredHealthAnomalyShadowPolicy } from '../services/healthAnomalyRuntime';
 import { HealthAnomalyFollowupCard } from './HealthAnomalyFollowupCard';

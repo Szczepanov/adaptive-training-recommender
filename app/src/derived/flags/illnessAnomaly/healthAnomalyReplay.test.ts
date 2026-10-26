@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import type { DailyRecoverySnapshot, DailySubjectiveCheckin } from './models';
+import type { DailyRecoverySnapshot, DailySubjectiveCheckin } from '../../../ledger/models';
 import { renderHealthAnomalyReplayMarkdown, runHealthAnomalyReplay } from './healthAnomalyReplay';
-import { addDaysToLocalDateString } from '../utils/localDate';
+import { addDaysToLocalDateString } from '../../../utils/localDate';
 
 function snapshot(date: string, rhr = 50, hrv = 60, respiration = 14): DailyRecoverySnapshot {
     return {

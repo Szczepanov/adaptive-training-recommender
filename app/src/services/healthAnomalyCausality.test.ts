@@ -4,7 +4,7 @@ import type {
     CoreSignalEvidence,
     HealthAnomalyAssessmentRevision,
     PhysiologicalAnomalyAssessment,
-} from '../engine/healthAnomalyModels';
+} from '../derived/flags/illnessAnomaly/healthAnomalyModels';
 import type { DailyRecoverySnapshot, DailySubjectiveCheckin } from '../engine/models';
 import { HealthAnomalyService } from './healthAnomalyService';
 
