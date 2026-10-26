@@ -60,7 +60,7 @@ version, targeted regression coverage and policy-drift checks. See §5 and ADR-0
 
 | # | File | Change |
 |---|------|--------|
-| 1 | [`healthAnomalyModels.ts`](../../app/src/ledger/models.ts) | Add `'sneezing'`, `'runny_nose'` to `HealthSymptomType`. |
+| 1 | [`ledger/models.ts`](../../app/src/ledger/models.ts) | Add `'sneezing'`, `'runny_nose'` to `HealthSymptomType`. |
 | 2 | [`healthContextValidation.ts`](../../app/src/engine/healthContextValidation.ts) | Add the same values to `HEALTH_SYMPTOM_TYPES`; `validateSymptoms` derives its type-count bound from that array. |
 | 3 | [`firestore.rules`](../../app/firestore.rules) | Extend `hasValidHealthSymptoms` with the two types, update the hardcoded maximum from 8 to 10, add `suspectedCause`, and extend the health-anomaly outcome explanation allow-list. |
 | 4 | [`healthAnomalyOutcome.ts`](../../app/src/derived/flags/illnessAnomaly/healthAnomalyOutcome.ts) | Add `'allergy_or_hay_fever'` to `HEALTH_ANOMALY_OUTCOME_EXPLANATIONS`. |

@@ -28,16 +28,35 @@ export function evaluateIllnessAnomalyFlag(assessment: PhysiologicalAnomalyAsses
             threshold: null,
         };
     }
+    // The evaluator reports 'normal' when every core signal is unavailable; that is "nothing
+    // measured", not "measured and clear", so it must not read as a negative (D-EXPORT).
+    const availableCoreSignals = assessment.coreSignals.filter(signal => signal.status !== 'unavailable').length;
+    const inputs: FlagEvaluation['inputs'] = [
+        { name: 'anomaly_state', value: { value: assessment.state, source: ASSESSMENT_SOURCE, state: 'measured' } },
+        { name: 'assessment_mode', value: { value: assessment.mode, source: ASSESSMENT_SOURCE, state: 'measured' } },
+        { name: 'available_core_signals', value: { value: availableCoreSignals, source: ASSESSMENT_SOURCE, state: 'measured' } },
+    ];
+    const definitionVersion = `${ILLNESS_ANOMALY_FLAG_DEFINITION_VERSION}+${assessment.thresholdPolicyVersion}`;
+    const threshold = 'Active when the physiological anomaly state is possible_illness_or_systemic_stress '
+        + `(persistent unexplained multi-signal anomaly) under ${assessment.thresholdPolicyVersion}`;
+    if (availableCoreSignals === 0) {
+        return {
+            id: 'illness_anomaly',
+            active: null,
+            state: 'missing',
+            reasonCode: 'no_core_signals',
+            definitionVersion,
+            inputs,
+            threshold,
+        };
+    }
     return {
         id: 'illness_anomaly',
         active: ACTIVE_STATES.has(assessment.state),
         state: 'measured',
         reasonCode: assessment.state,
-        definitionVersion: ILLNESS_ANOMALY_FLAG_DEFINITION_VERSION,
-        inputs: [
-            { name: 'anomaly_state', value: { value: assessment.state, source: ASSESSMENT_SOURCE, state: 'measured' } },
-            { name: 'assessment_mode', value: { value: assessment.mode, source: ASSESSMENT_SOURCE, state: 'measured' } },
-        ],
-        threshold: assessment.thresholdPolicyVersion,
+        definitionVersion,
+        inputs,
+        threshold,
     };
 }

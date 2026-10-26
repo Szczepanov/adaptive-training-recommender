@@ -49,7 +49,7 @@ This plan does not:
 
 ### New pure policy layer
 
-Add a small engine module, tentatively (moved to `derived/` by ADR-0052 #1144 PR1-1):
+Add a small pure module (now in `app/src/derived/flags/illnessAnomaly/`, ADR-0052 #1144 PR1-1):
 
 ```text
 app/src/derived/flags/illnessAnomaly/healthAnomaly.ts
