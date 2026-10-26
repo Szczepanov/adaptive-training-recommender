@@ -443,7 +443,7 @@ Evidence-only work:
 
 ```bash
 node app/scripts/respiration-real-history-replay.mjs
-cd app && npm test -- --run src/engine/healthAnomalyFeatures.test.ts src/engine/healthAnomalyReplay.test.ts
+cd app && npm test -- --run src/derived/flags/illnessAnomaly/healthAnomalyFeatures.test.ts src/derived/flags/illnessAnomaly/healthAnomalyReplay.test.ts
 cd app && npm run typecheck
 cd app && npm run lint
 ```

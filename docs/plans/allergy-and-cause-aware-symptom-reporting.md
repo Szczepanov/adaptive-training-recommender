@@ -13,7 +13,7 @@ You've had 2 days of sneezing + runny/stuffed nose and can't log it. This isn't 
 onset/severity/types). The actual gaps are narrower and land in three places:
 
 1. **Symptom vocabulary is missing exactly your symptoms.**
-   [`HealthSymptomType`](../../app/src/engine/healthAnomalyModels.ts) originally only had:
+   [`HealthSymptomType`](../../app/src/ledger/models.ts) originally only had:
    `sore_throat, congestion, cough, fever_or_chills, headache_or_body_aches, gastrointestinal,
    unusual_fatigue, other`. There was no `sneezing`, and `congestion` only weakly covered a
    stuffy nose — it did not capture a *runny* nose, which is a distinct and common allergy
@@ -28,12 +28,12 @@ onset/severity/types). The actual gaps are narrower and land in three places:
      activates `clinicalFlagActive`, **restricts Running**, and caps `maxAllowableTier`. Two
      days of sneezing therefore got the same modality restriction and tier cap as a torn
      muscle or undifferentiated illness.
-   - [`evaluatePhysiologicalAnomaly`](../../app/src/engine/healthAnomaly.ts) separately records
+   - [`evaluatePhysiologicalAnomaly`](../../app/src/derived/flags/illnessAnomaly/healthAnomaly.ts) separately records
      whether symptoms were reported as part of the physiological-anomaly state. That subsystem
      must retain observed physiology/context independently of whether the real-time training
      gate is softened.
    - The after-the-fact anomaly explanation flow,
-     [`HEALTH_ANOMALY_OUTCOME_EXPLANATIONS`](../../app/src/engine/healthAnomalyOutcome.ts), had
+     [`HEALTH_ANOMALY_OUTCOME_EXPLANATIONS`](../../app/src/derived/flags/illnessAnomaly/healthAnomalyOutcome.ts), had
      `illness_symptoms, hard_training_recovery, poor_sleep, alcohol, travel_jetlag, stress,
      heat_dehydration, vaccination_medication, nothing_obvious, other_not_sure` — no allergy
      option, forcing either a false `illness_symptoms` label or a signal-losing
@@ -60,10 +60,10 @@ version, targeted regression coverage and policy-drift checks. See §5 and ADR-0
 
 | # | File | Change |
 |---|------|--------|
-| 1 | [`healthAnomalyModels.ts`](../../app/src/engine/healthAnomalyModels.ts) | Add `'sneezing'`, `'runny_nose'` to `HealthSymptomType`. |
+| 1 | [`healthAnomalyModels.ts`](../../app/src/ledger/models.ts) | Add `'sneezing'`, `'runny_nose'` to `HealthSymptomType`. |
 | 2 | [`healthContextValidation.ts`](../../app/src/engine/healthContextValidation.ts) | Add the same values to `HEALTH_SYMPTOM_TYPES`; `validateSymptoms` derives its type-count bound from that array. |
 | 3 | [`firestore.rules`](../../app/firestore.rules) | Extend `hasValidHealthSymptoms` with the two types, update the hardcoded maximum from 8 to 10, add `suspectedCause`, and extend the health-anomaly outcome explanation allow-list. |
-| 4 | [`healthAnomalyOutcome.ts`](../../app/src/engine/healthAnomalyOutcome.ts) | Add `'allergy_or_hay_fever'` to `HEALTH_ANOMALY_OUTCOME_EXPLANATIONS`. |
+| 4 | [`healthAnomalyOutcome.ts`](../../app/src/derived/flags/illnessAnomaly/healthAnomalyOutcome.ts) | Add `'allergy_or_hay_fever'` to `HEALTH_ANOMALY_OUTCOME_EXPLANATIONS`. |
 | 5 | [`HealthContextSection.tsx`](../../app/src/components/checkin/HealthContextSection.tsx) | Add `Sneezing` and `Runny nose` to `SYMPTOM_TYPES`. Keep `Congestion` — stuffy, runny and sneezing are useful distinct self-report signals. |
 | 6 | [`HealthAnomalyFollowupCard.tsx`](../../app/src/components/HealthAnomalyFollowupCard.tsx) | Add `allergy_or_hay_fever: 'Seasonal allergy / hay fever'` to `EXPLANATION_LABELS`. Its `Record<HealthAnomalyOutcomeExplanation, string>` type keeps the UI mapping exhaustive. |
 | 7 | [`feedbackModels.ts`](../../app/src/feedback/feedbackModels.ts) + [`feedbackValidation.ts`](../../app/src/feedback/feedbackValidation.ts) | Add `'allergy_symptoms'` to `ModificationReason` + `VALID_REASONS`, so allergy-driven athlete adjustments do not have to be mislabeled as illness. |
@@ -117,7 +117,7 @@ for a day of mild hay-fever-style sneezing got the same Running restriction and 
 systemic illness or injury. The implemented rule is intentionally narrower than merely
 trusting `suspectedCause: 'allergy'`.
 
-1. [`HealthSymptomsCheckin`](../../app/src/engine/healthAnomalyModels.ts) adds
+1. [`HealthSymptomsCheckin`](../../app/src/ledger/models.ts) adds
    `suspectedCause?: 'infectious' | 'allergy' | 'unsure' | null`, threaded through
    [`healthContextValidation.ts`](../../app/src/engine/healthContextValidation.ts),
    [`firestore.rules`](../../app/firestore.rules), persistence, and the check-in UI.

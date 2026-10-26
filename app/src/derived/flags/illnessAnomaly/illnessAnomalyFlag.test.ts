@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import type { PhysiologicalAnomalyAssessment, PhysiologicalAnomalyState } from './healthAnomalyModels';
 import { evaluateIllnessAnomalyFlag, ILLNESS_ANOMALY_FLAG_DEFINITION_VERSION } from './illnessAnomalyFlag';
 
+const THRESHOLD_POLICY = 'health-anomaly-thresholds/shadow-candidate-v1';
+
 function assessmentIn(state: PhysiologicalAnomalyState): PhysiologicalAnomalyAssessment {
-    return { state } as PhysiologicalAnomalyAssessment;
+    return { state, mode: 'shadow-v1', thresholdPolicyVersion: THRESHOLD_POLICY } as PhysiologicalAnomalyAssessment;
 }
 
 describe('evaluateIllnessAnomalyFlag', () => {
@@ -14,6 +16,8 @@ describe('evaluateIllnessAnomalyFlag', () => {
             state: 'missing',
             reasonCode: 'no_assessment',
             definitionVersion: ILLNESS_ANOMALY_FLAG_DEFINITION_VERSION,
+            inputs: [{ name: 'anomaly_state', value: { value: null, source: 'health_anomaly_assessment', state: 'missing' } }],
+            threshold: null,
         });
     });
 
@@ -30,6 +34,11 @@ describe('evaluateIllnessAnomalyFlag', () => {
             state: 'measured',
             reasonCode: state,
             definitionVersion: ILLNESS_ANOMALY_FLAG_DEFINITION_VERSION,
+            inputs: [
+                { name: 'anomaly_state', value: { value: state, source: 'health_anomaly_assessment', state: 'measured' } },
+                { name: 'assessment_mode', value: { value: 'shadow-v1', source: 'health_anomaly_assessment', state: 'measured' } },
+            ],
+            threshold: THRESHOLD_POLICY,
         });
     });
 });
