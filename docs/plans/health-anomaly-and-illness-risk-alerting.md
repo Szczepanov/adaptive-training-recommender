@@ -49,11 +49,11 @@ This plan does not:
 
 ### New pure policy layer
 
-Add a small engine module, tentatively:
+Add a small pure module (now in `app/src/derived/flags/illnessAnomaly/`, ADR-0052 #1144 PR1-1):
 
 ```text
-app/src/engine/healthAnomaly.ts
-app/src/engine/healthAnomaly.test.ts
+app/src/derived/flags/illnessAnomaly/healthAnomaly.ts
+app/src/derived/flags/illnessAnomaly/healthAnomaly.test.ts
 ```
 
 The evaluator is synchronous and pure. History-dependent features (baselines, persistence,

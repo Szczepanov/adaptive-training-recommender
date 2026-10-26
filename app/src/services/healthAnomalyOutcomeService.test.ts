@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { HealthAnomalyAssessmentRevision } from '../engine/healthAnomalyModels';
+import type { HealthAnomalyAssessmentRevision } from '../derived/flags/illnessAnomaly/healthAnomalyModels';
 
 const firestore = vi.hoisted(() => ({
     doc: vi.fn(),

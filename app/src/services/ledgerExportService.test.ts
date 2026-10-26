@@ -142,6 +142,44 @@ describe('LedgerExportService', () => {
         expect(output.userContext.events.state).toBe('invalid');
         expect(output.facts.assessments.state).toBe('unavailable');
     });
+    it('retains older revisions referenced by performed work after placements move out of range', async () => {
+        const older = { schema: 'external-plan@6', sessions: [{ id: 's1' }], notes: 'Original rationale' };
+        const latest = { ...older, notes: 'New rationale' };
+        const oldHash = await computeContentHash(older);
+        const newHash = await computeContentHash(latest);
+        reads.plans.mockResolvedValue(available(['plan-1']));
+        reads.header.mockResolvedValue(available({ revision: 2, contentHash: newHash, importedAt: '2026-11-20T08:00:00Z' }));
+        reads.activations.mockResolvedValue(available([{ revision: 1, contentHash: oldHash, activatedAt: '2026-11-01T08:00:00Z' }]));
+        reads.revision.mockImplementation((_uid, _plan, revision) => Promise.resolve(available(revision === 1 ? older : latest)));
+        reads.placement.mockResolvedValue(available({ planId: 'plan-1', revision: 1, assignments: [{ sessionId: 's1', date: '2026-12-01', status: 'moved' }] }));
+        reads.performed.mockResolvedValue([{ performedOccurrenceId: 'pto-1', status: 'active', localDate: '2026-11-19', modality: 'Strength',
+            sourceRefs: [{ kind: 'structured_execution', executionId: 'exec-1' }] }]);
+        reads.executions.mockResolvedValue({ invalidRecords: 0, executions: [{
+            execution: { executionId: 'exec-1', date: '2026-11-19', sessionSource: { kind: 'external_plan', planId: 'plan-1', revision: 1, sessionId: 's1', contentHash: oldHash } }, entries: [],
+        }] });
+        const result = await new LedgerExportService().build('owner', request);
+        expect(result.coachingHistory.plannedToPerformed.items).toHaveLength(1);
+        expect(result.coachingHistory.planRevisions.items.map(item => item.fields.revision.value)).toEqual([1, 2]);
+    });
+    it.each(['UNAVAILABLE', 'INVALID'] as const)('keeps %s check-ins from claiming unrecorded nutrition adherence', async status => {
+        reads.checkins.mockResolvedValue({ status, issues: [] });
+        reads.nutrition.mockResolvedValue(available(fullRecords().nutritionDays));
+        const result = await new LedgerExportService().build('owner', request);
+        expect(result.facts.nutrition.items.length).toBeGreaterThan(0);
+        expect(result.facts.nutrition.items.every(item => item.fields.adherence.state === status.toLowerCase())).toBe(true);
+    });
+    it.each(['header', 'activations', 'revision'])('preserves invalid %s diagnostics', async key => {
+        const plan = { schema: 'external-plan@6', sessions: [] };
+        const hash = await computeContentHash(plan);
+        reads.plans.mockResolvedValue(available(['plan-1']));
+        reads.header.mockResolvedValue(available({ revision: 1, contentHash: hash, importedAt: '2026-11-10T08:00:00Z' }));
+        reads.activations.mockResolvedValue(available([]));
+        reads.revision.mockResolvedValue(available(plan));
+        reads.placement.mockResolvedValue({ status: 'MISSING' });
+        reads[key].mockResolvedValue({ status: 'INVALID', issues: [] });
+        const result = await new LedgerExportService().build('owner', request);
+        expect(result.coachingHistory.planRevisions.state).toBe('invalid');
+    });
     it('rejects invalid scope/date before any source is read', async () => {
         const service = new LedgerExportService();
         await expect(service.build('', request)).rejects.toThrow();

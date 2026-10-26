@@ -63,6 +63,19 @@ app/src/ledger/            # ADR-0052 Phase 1: ledger record types; must never i
   models.ts            # Recovery snapshots, check-ins, injuries, activities, strength logs, settings/preferences, Modality/GuardrailKey vocabulary
   models.architecture.test.ts # Fails if anything under ledger/ reaches engine/, directly or transitively
 
+app/src/derived/           # ADR-0052 Phase 1: derived metrics and D-FLAGS evaluators; engine may import it, never the reverse
+  derived.architecture.test.ts # Fails if anything under derived/ reaches engine/, directly or transitively
+  flags/
+    flagEvaluation.ts    # FlagEvaluation: one pure D-FLAGS result, in ledger-export state names
+    illnessAnomaly/      # Health-anomaly family (ADR-0025), moved from engine/ in #1144 PR1-1
+      healthAnomaly.ts     # Pure physiological anomaly & possible-illness evaluator
+      healthAnomalyFeatures.ts # Anomaly-grade baseline feature mappings (RHR/HRV/respiration)
+      healthAnomalyModels.ts # HA domain models: anomaly features, thresholds, rationale, respiration elevation
+      healthAnomalyOutcome.ts  # Prospective outcome follow-up label resolver
+      healthAnomalyReplay.ts   # Historical replay runner for health anomaly telemetry
+      respirationElevation.ts # Respiration-elevation status/evidence evaluator feeding healthAnomalyModels
+      illnessAnomalyFlag.ts  # D-FLAGS illness_anomaly: active only on possible_illness_or_systemic_stress
+
 app/src/engine/
   models.ts            # Engine decision models, event schemas, microcycle & strain telemetry; re-exports ledger/models.ts
   rules.ts             # Adaptive rules engine (acute/drift strain, mode hierarchy & rationale)
@@ -101,10 +114,6 @@ app/src/engine/
   safetyCheckin.ts     # Minimum-safety check-in gate & provisional recommendation
   composer.ts          # Decision composer combining readiness, context brief, and intent
   contextBrief.ts      # Recovery context brief; daily (2d, morning) / full (14d, planning) / diagnostic (14d) purposes
-  healthAnomaly.ts     # Pure physiological anomaly & possible-illness evaluator (ADR-0025)
-  healthAnomalyFeatures.ts # Anomaly-grade baseline feature mappings (RHR/HRV/respiration)
-  healthAnomalyOutcome.ts  # Prospective outcome follow-up label resolver
-  healthAnomalyReplay.ts   # Historical replay runner for health anomaly telemetry
   externalSession.ts   # Adjudicates ONE imported session on ONE day (ADR-0019). Pure
   externalSessionProfiles.ts # Imported session -> cost/stimulus/GateableSession shim
   externalPlacement.ts # Imported plan -> dates; missed-session proposals
@@ -155,8 +164,7 @@ app/src/engine/
   knowledgeLineage.ts   # Sports-knowledge-registry provenance lineage (ADR-0033)
   healthContextDefaults.ts # Canonical defaults for a newly reported health-context block
   healthContextValidation.ts # Health-context/symptom check-in raw-input validator
-  healthAnomalyModels.ts # HA domain models: anomaly features, thresholds, rationale, respiration elevation
-  respirationElevation.ts # Respiration-elevation status/evidence evaluator feeding healthAnomalyModels
+  healthAnomalyModels.ts # Compatibility shim re-exporting derived/flags/illnessAnomaly/healthAnomalyModels.ts for adapters.ts (removed in #1144 PR1-4)
   garminTelemetryEvidence.ts # Power-zone feature extraction & direct-share stimulus candidate (measured, off by default)
   garminTelemetryComparison.ts # compareGarminZoneCredit -- TE-derived vs power-zone credit comparison report
   crossSourceTelemetry.ts # Cross-source sensor agreement/data-quality telemetry (MS13, ADR-0027)

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { PhysiologicalAnomalyAssessment } from '../engine/healthAnomalyModels';
-import { SHADOW_V1_HEALTH_ANOMALY_THRESHOLDS } from '../engine/healthAnomaly';
+import type { PhysiologicalAnomalyAssessment } from '../derived/flags/illnessAnomaly/healthAnomalyModels';
+import { SHADOW_V1_HEALTH_ANOMALY_THRESHOLDS } from '../derived/flags/illnessAnomaly/healthAnomaly';
 
 const firestore = vi.hoisted(() => ({
     collection: vi.fn(),

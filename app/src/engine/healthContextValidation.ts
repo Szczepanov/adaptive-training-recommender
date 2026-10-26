@@ -2,7 +2,7 @@ import type {
     HealthContextCheckin,
     HealthSymptomsCheckin,
     HealthSymptomType,
-} from './healthAnomalyModels';
+} from '../derived/flags/illnessAnomaly/healthAnomalyModels';
 import { normalizeHealthContext } from './healthContextDefaults';
 
 export const HEALTH_OTHER_DISRUPTION_MAX_LENGTH = 500;

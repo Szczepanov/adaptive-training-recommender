@@ -4,9 +4,9 @@ import type { NutritionDay } from '../../nutrition/models.ts';
 import type { MetricObservationRevision } from '../../observations/models.ts';
 import type { DailyRecoverySnapshot, DailySubjectiveCheckin } from '../models.ts';
 import { buildActivities } from './buildActivities.ts';
-import { collect, type BuildContext } from './buildContext.ts';
+import { collect, sourceState, type BuildContext } from './buildContext.ts';
 import type { LedgerExportRecords, OccurrenceInput } from './inputs.ts';
-import { fact, fieldMap, notYetSupported, rangedFact, record, type ValueRange } from './ledgerValue.ts';
+import { fact, fieldMap, notYetSupported, rangedFact, record, withSourceState, type ValueRange } from './ledgerValue.ts';
 import {
     ASSESSMENT_FIELDS,
     BODY_COMPOSITION_FIELDS,
@@ -17,6 +17,7 @@ import {
     RECOVERY_FIELDS,
     SESSION_RESPONSE_FIELDS,
     type LedgerFacts,
+    type LedgerState,
     type LedgerValue,
 } from './schema.ts';
 import { warsawDateOf } from './window.ts';
@@ -241,7 +242,7 @@ function intakeFact(
 function nutritionValues(
     day: NutritionDay,
     adherence: Map<string, string>,
-    checkinsRead: boolean,
+    checkinState: LedgerState,
 ): Record<typeof NUTRITION_FIELDS[number], LedgerValue<unknown>> {
     const macros = day.macronutrients;
     const grams: ValueRange = { min: 0, max: 5000 };
@@ -251,9 +252,9 @@ function nutritionValues(
         carbsGrams: intakeFact(day, macros?.carbsGrams, grams, 'g'),
         fatGrams: intakeFact(day, macros?.fatGrams, grams, 'g'),
         hasIntakeData: fact(day.hasIntakeData, { source: day.source.provider, observedOn: day.date }),
-        adherence: fact(adherence.get(day.date), {
-            source: 'athlete', observedOn: day.date, absent: checkinsRead ? 'not_recorded' : 'unavailable',
-        }),
+        adherence: withSourceState(fact(adherence.get(day.date), {
+            source: 'athlete', observedOn: day.date, absent: 'not_recorded',
+        }), checkinState),
     };
 }
 
@@ -264,7 +265,7 @@ function buildNutrition(records: LedgerExportRecords, context: BuildContext): Le
         records: records.nutritionDays,
         dateOf: row => row.date,
         toItem: row => record(`nutrition-${row.date}`, row.date,
-            nutritionValues(row, adherence, records.checkins !== undefined)),
+            nutritionValues(row, adherence, sourceState(context, 'daily_subjective_checkins', records.checkins !== undefined))),
     });
 }
 

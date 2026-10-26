@@ -1,4 +1,4 @@
-import type { HealthAnomalyAssessmentRevision } from '../engine/healthAnomalyModels';
+import type { HealthAnomalyAssessmentRevision } from '../derived/flags/illnessAnomaly/healthAnomalyModels';
 
 /**
  * App-shell persistence and the panel's independent Firestore read can complete in either

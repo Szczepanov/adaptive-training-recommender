@@ -172,20 +172,25 @@ export class LedgerExportService {
             for (const planId of [...ids.data].sort()) {
                 const header = await externalPlanService.getHeaderState(userId, planId);
                 const activations = await externalPlanService.getActivationState(userId, planId);
-                if (header.status !== 'AVAILABLE') { revisionState = 'unavailable'; placementState = 'unavailable'; continue; }
+                if (header.status !== 'AVAILABLE') {
+                    const state = header.status === 'INVALID' ? 'invalid' : 'unavailable';
+                    revisionState = worstState([revisionState, state]);
+                    placementState = worstState([placementState, state]);
+                    continue;
+                }
                 const refs = new Set([header.data.revision, ...(records.plannedToPerformed ?? []).filter(r => r.planId === planId).map(r => r.revision),
                     ...(activations.status === 'AVAILABLE' ? activations.data.map(a => a.revision) : [])]);
-                if (activations.status !== 'AVAILABLE') revisionState = 'unavailable';
+                if (activations.status !== 'AVAILABLE') revisionState = worstState([revisionState, activations.status === 'INVALID' ? 'invalid' : 'unavailable']);
                 for (const revision of [...refs].sort((a, b) => a - b)) {
                     const plan = await externalPlanService.getRevisionState(userId, planId, revision);
                     const placement = await externalPlanService.getPlacementState(userId, planId, revision);
                     if (placement.status === 'AVAILABLE') records.placements = [...records.placements, placement.data];
                     else if (placement.status !== 'MISSING') placementState = worstState([placementState, placement.status === 'INVALID' ? 'invalid' : 'unavailable']);
-                    if (plan.status !== 'AVAILABLE') { revisionState = 'unavailable'; continue; }
+                    if (plan.status !== 'AVAILABLE') { revisionState = worstState([revisionState, plan.status === 'INVALID' ? 'invalid' : 'unavailable']); continue; }
                     const activation = activations.status === 'AVAILABLE' ? activations.data.find(a => a.revision === revision) : undefined;
                     const hash = revision === header.data.revision ? header.data.contentHash : activation?.contentHash;
                     const importedAt = revision === header.data.revision ? header.data.importedAt : activation?.activatedAt;
-                    if (!hash || !importedAt || await computeContentHash(plan.data) !== hash) { revisionState = 'invalid'; continue; }
+                    if (!hash || !importedAt || await computeContentHash(plan.data) !== hash) { revisionState = worstState([revisionState, 'invalid']); continue; }
                     verified.set(`${planId}@${revision}`, { contentHash: hash, sessionIds: new Set(plan.data.sessions.map(session => session.id)) });
                     records.planRevisions = [...records.planRevisions, { planId, revision, contentHash: hash, importedAt, schema: plan.data.schema, notes: plan.data.notes }];
                 }

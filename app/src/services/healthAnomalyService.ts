@@ -3,8 +3,8 @@ import {
     evaluatePhysiologicalAnomaly,
     isAdverseCoreSignalEvidence,
     SHADOW_V1_HEALTH_ANOMALY_THRESHOLDS,
-} from '../engine/healthAnomaly';
-import { HEALTH_ANOMALY_BASELINE_WINDOW_DAYS, mapRecoverySnapshotToHealthAnomalyFeatures } from '../engine/healthAnomalyFeatures';
+} from '../derived/flags/illnessAnomaly/healthAnomaly';
+import { HEALTH_ANOMALY_BASELINE_WINDOW_DAYS, mapRecoverySnapshotToHealthAnomalyFeatures } from '../derived/flags/illnessAnomaly/healthAnomalyFeatures';
 import type {
     HealthAnomalyAssessmentRevision,
     HealthAnomalyInput,
@@ -12,7 +12,7 @@ import type {
     HealthAnomalySourceIdentity,
     HealthAnomalyThresholdPolicy,
     PhysiologicalAnomalyAssessment,
-} from '../engine/healthAnomalyModels';
+} from '../derived/flags/illnessAnomaly/healthAnomalyModels';
 import type { AuthoredPlanBlock, DailyRecoverySnapshot, DailySubjectiveCheckin } from '../engine/models';
 import { addDaysToLocalDateString } from '../utils/localDate';
 import { checkinService, type CheckinService } from './checkinService';

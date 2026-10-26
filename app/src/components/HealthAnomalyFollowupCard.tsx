@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
-import type { HealthAnomalyAssessmentRevision } from '../engine/healthAnomalyModels';
+import type { HealthAnomalyAssessmentRevision } from '../derived/flags/illnessAnomaly/healthAnomalyModels';
 import {
     HEALTH_ANOMALY_OUTCOME_EXPLANATIONS,
     type HealthAnomalyEpisodeOutcome,
     type HealthAnomalyOutcomeExplanation,
     type HealthAnomalyRespiratoryTestResult,
-} from '../engine/healthAnomalyOutcome';
+} from '../derived/flags/illnessAnomaly/healthAnomalyOutcome';
 import {
     findRecentHealthAnomalyFollowupCandidate,
     healthAnomalyOutcomeRepository,

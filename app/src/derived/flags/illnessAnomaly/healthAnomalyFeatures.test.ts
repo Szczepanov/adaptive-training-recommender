@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { DailyRecoverySnapshot } from './models';
+import type { DailyRecoverySnapshot } from '../../../ledger/models';
 import {
     HEALTH_ANOMALY_NEAR_ZERO_SCALE_EPSILON,
     mapRecoverySnapshotToHealthAnomalyFeatures,

@@ -34,7 +34,7 @@ const server = await createServer({
 let report;
 let markdown;
 try {
-  const module = await server.ssrLoadModule('/src/engine/healthAnomalyReplay.ts');
+  const module = await server.ssrLoadModule('/src/derived/flags/illnessAnomaly/healthAnomalyReplay.ts');
   report = module.runHealthAnomalyReplay(payload);
   markdown = module.renderHealthAnomalyReplayMarkdown(report);
 } finally {

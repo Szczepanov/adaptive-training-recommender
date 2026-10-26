@@ -5,7 +5,7 @@ import {
     type RulesTestEnvironment,
 } from '@firebase/rules-unit-testing';
 import type { Firestore } from 'firebase/firestore';
-import type { HealthAnomalyAssessmentRevision } from '../engine/healthAnomalyModels';
+import type { HealthAnomalyAssessmentRevision } from '../derived/flags/illnessAnomaly/healthAnomalyModels';
 
 const emulatorDescribe = process.env.FIRESTORE_EMULATOR_HOST ? describe : describe.skip;
 
@@ -26,7 +26,7 @@ const { healthAnomalyAssessmentRepository, buildHealthAnomalyAssessmentRevision 
     await import('../services/healthAnomalyPersistence');
 const { findRecentHealthAnomalyFollowupCandidate, healthAnomalyOutcomeRepository } =
     await import('../services/healthAnomalyOutcomeService');
-const { SHADOW_V1_HEALTH_ANOMALY_THRESHOLDS } = await import('../engine/healthAnomaly');
+const { SHADOW_V1_HEALTH_ANOMALY_THRESHOLDS } = await import('../derived/flags/illnessAnomaly/healthAnomaly');
 
 function source(date: string, priorDate: string | null) {
     return {

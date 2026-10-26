@@ -2,9 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { TEMPLATES, ENRICHED_TEMPLATES } from '../../templates';
 import { ELIGIBILITY_REASON_LABEL } from '../../eligibility';
 import { createProvisionalSafetyRecommendation } from '../../safetyCheckin';
-import { evaluatePhysiologicalAnomaly, SHADOW_V1_HEALTH_ANOMALY_THRESHOLDS } from '../../healthAnomaly';
+import { evaluatePhysiologicalAnomaly, SHADOW_V1_HEALTH_ANOMALY_THRESHOLDS } from '../../../derived/flags/illnessAnomaly/healthAnomaly';
 import { generateAdversarialCheckin, createPseudoRandom } from '../../testing/adversarialGenerators';
-import type { HealthAnomalyInput } from '../../healthAnomalyModels';
+import type { HealthAnomalyInput } from '../../../derived/flags/illnessAnomaly/healthAnomalyModels';
 import type { DailyRecoverySnapshot } from '../../models';
 
 function createTestSnapshot(date: string, overrides: Partial<DailyRecoverySnapshot['raw']> = {}): DailyRecoverySnapshot {

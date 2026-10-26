@@ -75,13 +75,16 @@ written by the import transaction. Revisions referenced by performed work are re
 activation history. Authored links require the execution content hash and session id to
 match that verified revision. A missing referenced execution makes linkage unavailable;
 it never becomes measured absence. The link keeps the recorded execution session date,
-not a date subsequently moved in the mutable overlay. The builder retains referenced in-window revisions plus the latest
-revision per plan. Placements are current overlays, never claimed as immutable history.
+not a date subsequently moved in the mutable overlay. The builder retains revisions referenced
+by in-window placements or performed links plus the latest revision per plan, even when a
+current placement has moved outside the window. Placements are current overlays, never
+claimed as immutable history.
 
 All source reads produce `SourceState` entries. Rejected reads report `unavailable`;
 validated corrupt sources report `invalid`; genuine absent documents report `missing`.
-Partial bounded discovery never becomes measured emptiness. `readAt` is an export/read
-provenance instant; `newestObservedOn` stays null when the reader supplies no trusted
+Partial bounded discovery never becomes measured emptiness. Nutrition adherence inherits a
+failed or invalid check-in read state rather than claiming no adherence was recorded.
+`readAt` is an export/read provenance instant; `newestObservedOn` stays null when the reader supplies no trusted
 source-level metadata. Errors or source document paths never enter the exported file.
 
 ## Dates, information bounds and determinism

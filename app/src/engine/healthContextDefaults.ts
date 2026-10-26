@@ -1,4 +1,4 @@
-import type { HealthContextCheckin } from './healthAnomalyModels';
+import type { HealthContextCheckin } from '../derived/flags/illnessAnomaly/healthAnomalyModels';
 
 /**
  * Canonical defaults for a newly reported health-context block. Historical check-ins that
