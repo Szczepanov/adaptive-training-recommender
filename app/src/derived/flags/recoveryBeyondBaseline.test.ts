@@ -4,6 +4,7 @@ import {
     classifyRecoveryMetric,
     evaluateRecoveryBeyondBaseline,
     RECOVERY_BEYOND_BASELINE_FLAG_DEFINITION_VERSION,
+    RECOVERY_BEYOND_BASELINE_WINDOW,
     RECOVERY_VARIABILITY_FLOORS,
     SLEEP_SCORE_ABSOLUTE_FLOOR,
 } from './recoveryBeyondBaseline';
@@ -129,11 +130,61 @@ describe('evaluateRecoveryBeyondBaseline', () => {
             AS_OF,
         );
         expect(metrics[1]).toMatchObject({ metric: 'rhr', state: 'stale', metricDate: '2026-09-24' });
-        expect(flag).toMatchObject({ active: false, state: 'measured' });
+        expect(flag).toMatchObject({ active: null, state: 'stale', reasonCode: 'incomplete_none_adverse' });
         expect(flag.inputs[1]).toEqual({
             name: 'rhr',
             value: { value: 48, unit: 'bpm', source: 'daily_recovery_snapshot', state: 'stale', observedOn: '2026-09-24' },
         });
+    });
+
+    it('does not read stale adverse-looking metrics as a measured negative (review #1174)', () => {
+        // HRV measured at baseline; RHR +10 bpm and sleep 40 are D-1 provider fallbacks.
+        const { flag, metrics } = evaluateRecoveryBeyondBaseline(
+            snapshot({ raw: { sleepScore: 40 }, deltas: { restingHrVs7d: 10 }, metricDates: { restingHr: '2026-09-24', sleep: '2026-09-24' } }),
+            AS_OF,
+        );
+        expect(metrics.map(result => result.state)).toEqual(['measured', 'stale', 'stale']);
+        expect(flag).toMatchObject({ active: null, state: 'stale', reasonCode: 'incomplete_none_adverse' });
+    });
+
+    it('derives the incomplete state from the unjudged metrics, worst first', () => {
+        const staleAndMissing = evaluateRecoveryBeyondBaseline(
+            snapshot({ raw: { restingHr: null }, metricDates: { sleep: '2026-09-24' } }),
+            AS_OF,
+        ).flag;
+        expect(staleAndMissing).toMatchObject({ active: null, state: 'missing', reasonCode: 'incomplete_none_adverse' });
+        const invalid = evaluateRecoveryBeyondBaseline(snapshot({ raw: { hrvOvernightAvg: 500 } }), AS_OF).flag;
+        expect(invalid).toMatchObject({ active: null, state: 'invalid', reasonCode: 'incomplete_none_adverse' });
+        const noDelta = evaluateRecoveryBeyondBaseline(snapshot({ deltas: { sleepScoreVs7d: null } }), AS_OF).flag;
+        expect(noDelta).toMatchObject({ active: null, state: 'unavailable', reasonCode: 'incomplete_none_adverse' });
+    });
+
+    it('derives the no-judged-metric state from the inputs instead of always missing', () => {
+        const allStale = evaluateRecoveryBeyondBaseline(
+            snapshot({ metricDates: { hrv: '2026-09-24', restingHr: '2026-09-24', sleep: '2026-09-24' } }),
+            AS_OF,
+        ).flag;
+        expect(allStale).toMatchObject({ active: null, state: 'stale', reasonCode: 'no_judged_metric' });
+        const mixed = evaluateRecoveryBeyondBaseline(
+            snapshot({ raw: { hrvOvernightAvg: null, restingHr: 500 }, metricDates: { sleep: '2026-09-24' } }),
+            AS_OF,
+        ).flag;
+        expect(mixed).toMatchObject({ active: null, state: 'invalid', reasonCode: 'no_judged_metric' });
+    });
+
+    it('states the D-1 and 7d-only semantics in its threshold and window', () => {
+        const { flag } = evaluateRecoveryBeyondBaseline(snapshot(), AS_OF);
+        expect(flag.threshold).toContain('D-1');
+        expect(flag.threshold).toContain('28-day drift');
+        expect(RECOVERY_BEYOND_BASELINE_WINDOW).toContain('excludes the 28-day chronic-drift term');
+    });
+
+    it('stays active when one metric is adverse and the others are stale', () => {
+        const { flag } = evaluateRecoveryBeyondBaseline(
+            snapshot({ deltas: { hrvVs7d: -12 }, metricDates: { restingHr: '2026-09-24', sleep: '2026-09-24' } }),
+            AS_OF,
+        );
+        expect(flag).toMatchObject({ active: true, state: 'measured', reasonCode: 'adverse:hrv' });
     });
 
     it('stays active when one metric is adverse and the others are missing', () => {

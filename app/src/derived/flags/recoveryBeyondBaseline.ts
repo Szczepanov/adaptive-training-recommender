@@ -1,3 +1,4 @@
+import { worstState } from '../../ledger/export/ledgerValue.ts';
 import type { LedgerState } from '../../ledger/export/schema.ts';
 import type { DailyRecoverySnapshot } from '../../ledger/models.ts';
 import type { FlagEvaluation } from './flagEvaluation.ts';
@@ -183,10 +184,19 @@ const SNAPSHOT_SOURCE = 'daily_recovery_snapshot';
 const THRESHOLD = 'Active when any of HRV, resting HR or sleep score is adverse: a 7-day delta in the adverse '
     + 'direction at least max(28-day stdev, variability floor HRV '
     + `${RECOVERY_VARIABILITY_FLOORS.hrv} ms / RHR ${RECOVERY_VARIABILITY_FLOORS.rhr} bpm / sleep `
-    + `${RECOVERY_VARIABILITY_FLOORS.sleep} pts), or a sleep score below ${SLEEP_SCORE_ABSOLUTE_FLOOR}`;
+    + `${RECOVERY_VARIABILITY_FLOORS.sleep} pts), or a sleep score below ${SLEEP_SCORE_ABSOLUTE_FLOOR}. `
+    + 'Only the 7-day delta is compared; the 28-day drift term of the engine strain model is not used. '
+    + 'Not active only when all three metrics are measured on the as-of date; a metric dated D-1 '
+    + '(provider fallback) is stale and is never counted, so a missing, stale, implausible or '
+    + 'delta-less metric without an adverse one leaves the flag unevaluated';
 
-/** Baseline window label for persisting the flag as a `LedgerFlag` (`baselineWindow`). */
-export const RECOVERY_BEYOND_BASELINE_WINDOW = '7-day delta vs 28-day variability';
+/**
+ * Baseline window label for persisting the flag as a `LedgerFlag` (`baselineWindow`). The flag
+ * matches the pre-extraction context-brief synthesis, not `rules.ts` `metricStrain`, which also
+ * adds a 28-day chronic-drift term.
+ */
+export const RECOVERY_BEYOND_BASELINE_WINDOW =
+    '7-day delta vs 28-day variability; excludes the 28-day chronic-drift term';
 
 function metricInputs(metrics: readonly RecoveryMetricResult[]): FlagEvaluation['inputs'] {
     return metrics.map(result => ({
@@ -222,7 +232,13 @@ function notEvaluated(reasonCode: string, state: LedgerState, snapshotDate: stri
 /**
  * Pure. Evaluates `recovery_beyond_baseline` for `asOfDate` from the latest snapshot on or
  * before it. A missing or stale snapshot, or a baseline with fewer than 7 days, cannot be
- * judged (`active: null`); so can a snapshot whose three metrics are all unjudgeable.
+ * judged (`active: null`).
+ *
+ * Otherwise any adverse metric makes the flag active (owner decision Q4), whatever the state of
+ * the others. A negative (`active: false`) needs all three metrics `measured`: without an
+ * adverse metric, any unjudged one leaves `active: null`, with the worst unjudged state
+ * (`worstState`: `stale` only when every unjudged metric is stale). A D-1 provider-fallback
+ * value is stale and is not counted; counting it would need an owner decision.
  */
 export function evaluateRecoveryBeyondBaseline(
     snapshot: DailyRecoverySnapshot | null | undefined,
@@ -235,17 +251,22 @@ export function evaluateRecoveryBeyondBaseline(
     }
     const inputs = recoveryMetricInputs(snapshot);
     const metrics = RECOVERY_METRICS.map(metric => classifyRecoveryMetric(metric, inputs[metric], asOfDate));
-    const judged = metrics.filter(result => result.adverse !== null);
     const adverse = metrics.filter(result => result.adverse === true);
+    const unjudged = metrics.filter(result => result.adverse === null);
     const base = {
         id: 'recovery_beyond_baseline' as const,
         definitionVersion: RECOVERY_BEYOND_BASELINE_FLAG_DEFINITION_VERSION,
         inputs: metricInputs(metrics),
         threshold: THRESHOLD,
     };
-    if (judged.length === 0) {
-        return { flag: { ...base, active: null, state: 'missing', reasonCode: 'no_judged_metric' }, metrics };
+    if (adverse.length > 0) {
+        const reasonCode = `adverse:${adverse.map(result => result.metric).join('+')}`;
+        return { flag: { ...base, active: true, state: 'measured', reasonCode }, metrics };
     }
-    const reasonCode = adverse.length > 0 ? `adverse:${adverse.map(result => result.metric).join('+')}` : 'none_adverse';
-    return { flag: { ...base, active: adverse.length > 0, state: 'measured', reasonCode }, metrics };
+    if (unjudged.length === 0) {
+        return { flag: { ...base, active: false, state: 'measured', reasonCode: 'none_adverse' }, metrics };
+    }
+    const state = worstState(unjudged.map(result => result.state));
+    const reasonCode = unjudged.length === metrics.length ? 'no_judged_metric' : 'incomplete_none_adverse';
+    return { flag: { ...base, active: null, state, reasonCode }, metrics };
 }

@@ -217,7 +217,7 @@ describe('recovery_beyond_baseline flag over the oracle (#1144 PR1-5, owner deci
         sleep: [{ current: null, delta7d: null }, { current: 78, delta7d: null }, { current: 78, delta7d: 2 }, { current: 45, delta7d: null }, { current: 90, delta7d: 12 }],
     };
 
-    it('is active iff any metric is adverse; all-unjudgeable is active null with an explicit missing state', () => {
+    it('is active iff any metric is adverse; a negative needs every metric judged, otherwise active null with an explicit state', () => {
         let cases = 0;
         for (const hrv of scenarios.hrv) {
             for (const rhr of scenarios.rhr) {
@@ -226,10 +226,13 @@ describe('recovery_beyond_baseline flag over the oracle (#1144 PR1-5, owner deci
                     const oracle = (['hrv', 'rhr', 'sleep'] as const).map(metric => oracleFor({
                         metric,
                         input: { ...{ hrv, rhr, sleep }[metric], sd28d: null, metricDate: AS_OF },
-                    }).evidence.state);
-                    const expected = oracle.includes('adverse') ? true : oracle.some(state => state !== 'unavailable') ? false : null;
+                    }).evidence);
+                    const expected = oracle.some(evidence => evidence.state === 'adverse') ? true
+                        : oracle.every(evidence => evidence.state !== 'unavailable') ? false : null;
+                    // Unjudged here is either not recorded (missing) or recorded without a delta (unavailable, the worse state).
+                    const unjudgedState = oracle.some(evidence => evidence.detail.includes('no 7d baseline delta')) ? 'unavailable' : 'missing';
                     expect(flag.active).toBe(expected);
-                    expect(flag.state).toBe(expected === null ? 'missing' : 'measured');
+                    expect(flag.state).toBe(expected === null ? unjudgedState : 'measured');
                     expect(metrics.map(result => result.metric)).toEqual(['hrv', 'rhr', 'sleep']);
                     cases += 1;
                 }
