@@ -158,7 +158,7 @@ describe('buildLedgerExport states', () => {
         expect(output.userContext.trainingDislikes).toMatchObject({ value: null, state: 'not_yet_supported' });
         expect(output.coachingHistory.placements.items[0].fields.statusHistory.state).toBe('not_yet_supported');
         expect(output.coachingHistory.overrides.items[0].fields.reason.state).toBe('not_yet_supported');
-        expect(output.userContext.injuries.items[0].since.state).toBe('not_yet_supported');
+        expect(output.userContext.injuries.items[0].since.state).toBe('not_recorded');
         expect(output.userContext.injuries.items[0].revisions.state).toBe('not_yet_supported');
     });
 
@@ -266,6 +266,18 @@ describe('buildLedgerExport states', () => {
 });
 
 describe('buildLedgerExport absence is not "none" (M4)', () => {
+    it('exports a resolved injury period even when no injury remains active', () => {
+        const result = buildLedgerExport(fullInput({ records: { trainingSettings: { ...settings, injuries: [],
+            injuryHistory: [{ severity: 'limit', createdAt: '2026-11-15', resolvedAt: '2026-11-17' }] } } }));
+        expect(result.userContext.injuries.items[0].since).toMatchObject({ value: '2026-11-15', state: 'measured' });
+        expect(result.userContext.injuries.items[0].fields.resolvedAt).toMatchObject({ value: '2026-11-17', state: 'measured' });
+    });
+
+    it('exports the recorded injury start date', () => {
+        const result = buildLedgerExport(fullInput({ records: { trainingSettings: { ...settings, injuries: [{ severity: 'limit', createdAt: '2026-10-27' }] } } }));
+        expect(result.userContext.injuries.items[0].since).toMatchObject({ value: '2026-10-27', state: 'measured' });
+    });
+
     it('reports injuries not_recorded without a settings document or an injuries field', () => {
         const noDocument = buildLedgerExport(fullInput({ records: { trainingSettings: null } }));
         expect(noDocument.userContext.injuries).toMatchObject({ state: 'not_recorded', items: [] });

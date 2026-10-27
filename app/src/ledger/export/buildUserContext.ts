@@ -1,9 +1,9 @@
 /**
  * Layer 4 (`userContext`, ADR-0052 D-USER). Items are forward-looking: they are bounded
  * below by the window start, never truncated at its end (travel next week matters to a plan).
- * Goals and constraints are the current active ones only. `since` and `revisions` stay
- * `not_yet_supported` wherever the backing record has no effective date or revision history;
- * `updatedAt` never stands in for either.
+ * Goals and constraints are the current active ones; injury periods include recent resolutions.
+ * Missing injury start dates are `not_recorded`; other unsupported effective dates and
+ * revisions remain `not_yet_supported`. `updatedAt` never stands in for either.
  */
 import type { TrainingSettings, UserPreferences } from '../models.ts';
 import { byDateThenId, collect, sourceState, type BuildContext } from './buildContext.ts';
@@ -102,17 +102,22 @@ function injuryValues(row: InjuryRow): Record<typeof INJURY_FIELDS[number], Ledg
         reviewBy: fact(row.reviewBy, optional),
         note: fact(row.note, optional),
         restrictedModalities: fact(row.restrictedModalities, optional),
+        resolvedAt: fact(row.resolvedAt, { source: SOURCE, absent: 'not_applicable' }),
     };
 }
 
 /** No settings document, or no `injuries` field, is "not recorded", never an empty "none". */
 function buildInjuries(records: LedgerExportRecords, context: BuildContext): LedgerUserContext['injuries'] {
     const settings = records.trainingSettings;
-    const rows = settings === undefined ? undefined : (settings?.injuries ?? []);
+    const rows = settings === undefined ? undefined : [
+        ...(settings?.injuries ?? []),
+        ...(settings?.injuryHistory ?? []).filter(row => row.resolvedAt && row.resolvedAt >= context.window.startDate),
+    ];
     const base = collect(context, {
         key: 'training_settings',
         records: rows?.map((row, index) => ({ row, id: `injury-${String(index + 1).padStart(3, '0')}` })),
-        toItem: ({ row, id }) => contextRecord(record(id, null, injuryValues(row))),
+        toItem: ({ row, id }) => contextRecord(record(id, null, injuryValues(row)),
+            fact(row.createdAt, { source: SOURCE, absent: 'not_recorded' })),
     });
     const ownState: LedgerState = settings?.injuries === undefined ? 'not_recorded' : 'measured';
     return { ...base, state: worstState([base.state, ownState]) };
