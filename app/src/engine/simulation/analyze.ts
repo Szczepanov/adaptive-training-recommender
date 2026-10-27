@@ -25,7 +25,7 @@ import {
     REFERENCE_SUBJECTIVE_BASELINE_POLICY,
     type SubjectiveBaselinePolicy,
     type SubjectiveCheckinForBaseline,
-} from '../subjectiveBaseline';
+} from '../../derived/baselines/subjectiveBaseline';
 import { SUBJECTIVE_DRIFT_SENSITIVITY_CONFIGS, type SubjectiveDriftSensitivityConfig } from './subjectiveDriftComparison';
 import { subjectiveProfileDay, subjectiveProfileReadiness, SUBJECTIVE_PROFILE_KINDS, type SubjectiveProfileKind } from './subjectiveProfiles';
 import { computeSequencingDiagnostics, type SequencingDiagnostics } from './sequencingMetrics';

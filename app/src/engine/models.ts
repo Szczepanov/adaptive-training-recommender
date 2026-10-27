@@ -2,7 +2,7 @@ import type { WorkoutPrescription } from '../workouts/models.ts';
 import type { SessionDefinition, SessionReferenceBinding } from '../sessions/models';
 import type { IdentityDecisionProvenance } from '../observations/identityModels';
 import type { DataIssue, DataState, DataStateSummary } from './dataState';
-import type { SubjectiveBaseline } from './subjectiveBaseline';
+import type { SubjectiveBaseline } from '../derived/baselines/subjectiveBaseline';
 import type { DataConfidenceScore } from './dataConfidence';
 import type { GoalPerformanceTarget } from './performanceTargetPolicy';
 import type { PerformanceGoalDemand } from './performanceGoalDemand';

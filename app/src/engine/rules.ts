@@ -53,7 +53,7 @@ import { ROLLING_LOAD_BUDGET_LOOKBACK_DAYS } from './rollingLoadBudget';
 import { resolvePriorityAOlympicTriathlonTaper, taperHistoryFromFixedActivities } from './taperPlanBudget';
 import { getUnresolvedObjectives } from './microcycle';
 import { applyCompletedSessionLoad, computeInternalResponseStrain, decayFatigue, type FatigueFusionPolicy } from './fatigue';
-import { SUBJECTIVE_BASELINE_METRICS, type SubjectiveBaseline, type SubjectiveBaselineMetric } from './subjectiveBaseline';
+import { SUBJECTIVE_BASELINE_METRICS, type SubjectiveBaseline, type SubjectiveBaselineMetric } from '../derived/baselines/subjectiveBaseline';
 import { resolveAvailability, scheduleOverlayCostProfileForDate } from './schedule';
 import { workoutForTemplate } from '../workouts/prescription';
 import { resolveEvergreenPlan } from './evergreenPlanning';

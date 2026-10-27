@@ -45,7 +45,7 @@
       "reason": "ADR-0019: the derived cost feeds the adjudication ceilings."
     },
     {
-      "path": "app/src/engine/subjectiveBaseline.ts",
+      "path": "app/src/derived/baselines/subjectiveBaseline.ts",
       "reason": "ADR-0020: once subjective drift is enabled, the baseline estimator is part of the deciding function even though it lives outside rules.ts."
     },
     {
@@ -94,5 +94,7 @@
       "reason": "Catalog definitions are executable recommendation content: changing one can alter the persisted primarySession/prescription without touching the selection algorithm."
     }
   ],
-  "relocations": []
+  "relocations": [
+    { "from": "app/src/engine/subjectiveBaseline.ts", "to": "app/src/derived/baselines/subjectiveBaseline.ts", "reason": "ADR-0052 #1144 PR1-3: behaviour-identical relocation into derived/baselines." }
+  ]
 }

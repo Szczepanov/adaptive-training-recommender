@@ -7,7 +7,7 @@ import {
     subjectiveDriftStrain,
     type SubjectiveDriftWeights,
 } from '../rules';
-import { SUBJECTIVE_BASELINE_METRICS, type SubjectiveBaselineMetric } from '../subjectiveBaseline';
+import { SUBJECTIVE_BASELINE_METRICS, type SubjectiveBaselineMetric } from '../../derived/baselines/subjectiveBaseline';
 
 export interface SubjectiveDriftDecisionEvidence extends SubjectiveDriftAuditSource {
     modeWithoutDrift: 'train' | 'modify' | 'recover';

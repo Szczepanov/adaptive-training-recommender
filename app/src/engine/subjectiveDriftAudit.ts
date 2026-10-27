@@ -1,4 +1,4 @@
-import { SUBJECTIVE_BASELINE_METRICS, type SubjectiveBaselineMetric } from './subjectiveBaseline';
+import { SUBJECTIVE_BASELINE_METRICS, type SubjectiveBaselineMetric } from '../derived/baselines/subjectiveBaseline';
 
 export interface SubjectiveDriftAudit {
     estimatorId: string;

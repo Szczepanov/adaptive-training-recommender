@@ -1,7 +1,7 @@
 import type { DailyDecisionInput, DailyRecoverySnapshot, DailySubjectiveCheckin, ScheduleOverlay, TrainingIntentProfile, TrainingSettings, UserGoal, UserPreferences } from './models';
 import type { DataIssue, DataState, DataStateSummary } from './dataState';
 import { summarizeDataState } from './dataState';
-import { computeSubjectiveBaseline, REFERENCE_SUBJECTIVE_BASELINE_POLICY, type SubjectiveBaseline } from './subjectiveBaseline';
+import { computeSubjectiveBaseline, REFERENCE_SUBJECTIVE_BASELINE_POLICY, type SubjectiveBaseline } from '../derived/baselines/subjectiveBaseline';
 import { evaluateDataConfidence } from './dataConfidence';
 import { deriveCarriedRegionRestrictions, type CarriedRegionRestriction } from './injuryPolicy';
 import { addDaysToLocalDateString } from '../utils/localDate';

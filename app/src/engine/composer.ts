@@ -1,7 +1,7 @@
 import type { DailyDecisionInput, DailyRecoverySnapshot, DailySubjectiveCheckin, ScheduleOverlay, TrainingIntentProfile, TrainingSettings, UserGoal, UserPreferences } from './models';
 import type { DataState } from './dataState';
 import { isSupportedTrainingSettingsSchemaVersion } from './trainingSettingsSchema';
-import { REFERENCE_SUBJECTIVE_BASELINE_POLICY } from './subjectiveBaseline';
+import { REFERENCE_SUBJECTIVE_BASELINE_POLICY } from '../derived/baselines/subjectiveBaseline';
 import { composeDailyDecisionInputFromSources, type ComposedDailyDecisionInput } from './decisionInputComposition';
 import { checkinService } from '../services/checkinService';
 import { goalService } from '../services/goalService';
