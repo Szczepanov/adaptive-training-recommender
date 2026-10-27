@@ -12,8 +12,8 @@ import type {
     AutomaticIdentityAssessment,
     EffectiveIdentityDecision,
     ObservationEligibility,
-} from '../observations/identityModels';
-import type { HealthObservationDayBundle } from '../observations/models';
+} from '../../observations/identityModels';
+import type { HealthObservationDayBundle } from '../../observations/models';
 
 export interface IdentityRequiredSource {
     provider: string;

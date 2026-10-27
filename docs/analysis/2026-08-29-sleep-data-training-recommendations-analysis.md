@@ -1004,7 +1004,7 @@ Relevant current architecture already exists in:
   - proprietary scores blocked
   - identity eligibility already integrated
 
-- `app/src/engine/multisourceBaselines.ts`
+- `app/src/derived/baselines/multisourceBaselines.ts`
   - source-specific baseline logic
 
 - `app/src/engine/analytics/signalFidelityEvaluator.ts`
@@ -1015,7 +1015,7 @@ Relevant current architecture already exists in:
 
 - `app/src/engine/identityPassport.ts`
 - `app/src/engine/identityAttribution.ts`
-- `app/src/engine/identityEligibility.ts`
+- `app/src/derived/baselines/identityEligibility.ts`
   - critical for Eight Sleep shared-sensor trust
 
 - `app/src/engine/replay.ts`
@@ -1215,11 +1215,11 @@ The product-level goal should therefore be:
 - `app/src/engine/rules.ts`
 - `app/src/engine/dataConfidence.ts`
 - `app/src/engine/multisourceFusion.ts`
-- `app/src/engine/multisourceBaselines.ts`
+- `app/src/derived/baselines/multisourceBaselines.ts`
 - `app/src/engine/healthAnomalyFeatures.ts`
 - `app/src/engine/identityPassport.ts`
 - `app/src/engine/identityAttribution.ts`
-- `app/src/engine/identityEligibility.ts`
+- `app/src/derived/baselines/identityEligibility.ts`
 - `app/src/engine/replay.ts`
 - `app/src/engine/simulation/`
 - `app/src/engine/tests/failures/sleepRevisions.test.ts`

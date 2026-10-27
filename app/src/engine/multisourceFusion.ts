@@ -26,8 +26,8 @@ import {
     selectEligibleHealthObservationBundles,
     type EffectiveBundleIdentityProjection,
     type IdentityEligibilityPolicy,
-} from './identityEligibility';
-import { sourceMetricBaselineKey, type SourceMetricBaseline } from './multisourceBaselines';
+} from '../derived/baselines/identityEligibility';
+import { sourceMetricBaselineKey, type SourceMetricBaseline } from '../derived/baselines/multisourceBaselines';
 
 /**
  * Default identity policy for the PI9 gate below: `eight_sleep`/`google_health` is the only

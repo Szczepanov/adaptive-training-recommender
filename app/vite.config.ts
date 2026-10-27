@@ -122,7 +122,7 @@ export default defineConfig({
             id.includes('/engine/identityAttribution') ||
             id.includes('/engine/identityFeatures') ||
             id.includes('/engine/identityLineage') ||
-            id.includes('/engine/identityEligibility') ||
+            id.includes('/derived/baselines/identityEligibility') ||
             id.includes('/engine/identityProvenance') ||
             id.includes('/engine/identityReviewUi')
           ) {
@@ -140,7 +140,7 @@ export default defineConfig({
             id.includes('/engine/adapters') ||
             id.includes('/engine/dataConfidence') ||
             id.includes('/engine/multisourceFusion') ||
-            id.includes('/engine/multisourceBaselines')
+            id.includes('/derived/baselines/multisourceBaselines')
           ) {
             return 'engine-context';
           }
