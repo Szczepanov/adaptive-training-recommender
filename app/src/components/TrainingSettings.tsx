@@ -78,7 +78,8 @@ export function TrainingSettings({ userId, onNavigate }: TrainingSettingsProps) 
 
   const save = async (update: TrainingSettingsUpdate) => {
     try {
-      const updated = await trainingSettingsService.updateTrainingSettings(userId, update);
+      const updated = await trainingSettingsService.updateTrainingSettings(userId, update.injuries !== undefined
+        ? { ...update, injuryExpected: settings?.injuries ?? [], injuryHistoryExpected: settings?.injuryHistory ?? [] } : update);
       setSettings(updated);
       setError(null);
       return updated;
@@ -129,7 +130,7 @@ export function TrainingSettings({ userId, onNavigate }: TrainingSettingsProps) 
     const isNewInjury = editingInjuryIndex === null;
     if (isNewInjury) nextInjuries.push(injury);
     else nextInjuries[editingInjuryIndex] = injury;
-    if (await saveDestructive({ injuries: nextInjuries }, isNewInjury ? 'Injury constraint added.' : 'Injury constraint updated.')) {
+    if (await saveDestructive({ injuries: nextInjuries, ...(editingInjuryIndex !== null ? { injuryEditIndex: editingInjuryIndex } : {}) }, isNewInjury ? 'Injury constraint added.' : 'Injury constraint updated.')) {
       setInjuryDraft(emptyInjuryDraft);
       setEditingInjuryIndex(null);
     }

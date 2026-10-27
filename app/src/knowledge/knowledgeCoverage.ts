@@ -724,7 +724,7 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         id: 'data_trust.identity_gated_source_fail_closed', domain: 'data_trust', title: 'Identity-gated health-source eligibility',
         currentRule: 'Configured shared sources enter recovery/baselines/passport learning only when exactly one projection matches the immutable bundle and resolves to effective USER with the requested eligibility; missing/stale/ambiguous projections are excluded.',
         classification: 'safety_invariant', coverage: 'not_applicable', decisionImpact: 'high', safetyImpact: 'high', researchPriority: 'none',
-        codeRefs: ['engine/identityEligibility.ts:selectEligibleHealthObservationBundles'], knowledgeRefs: [], coverageRationale: 'This is provenance/identity fail-closed behavior protecting physiological inputs, not a sports-science claim. Shadow classifier thresholds that may create projections require separate activation evidence before becoming authority.',
+        codeRefs: ['derived/baselines/identityEligibility.ts:selectEligibleHealthObservationBundles'], knowledgeRefs: [], coverageRationale: 'This is provenance/identity fail-closed behavior protecting physiological inputs, not a sports-science claim. Shadow classifier thresholds that may create projections require separate activation evidence before becoming authority.',
     },
     {
         id: 'goal_feasibility.strength_required_change_bands', domain: 'goal_feasibility', title: 'Strength performance-goal feasibility bands (ADR-0041, PG4.5)',

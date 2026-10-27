@@ -262,6 +262,25 @@ function validIdentityDecision() {
     };
 }
 
+emulatorDescribe('Injury history rules', () => {
+    beforeAll(async () => {
+        testEnvironment = await initializeTestEnvironment({ projectId: 'demo-injury-history', firestore: { rules: readFileSync('firestore.rules', 'utf8') } });
+    });
+    afterAll(async () => { await testEnvironment.cleanup(); });
+    it('allows the owner to save dated active and resolved injuries and denies another user', async () => {
+        const path = `users/${ownerId}/trainingSettings/profile`;
+        const data = { userId: ownerId, schemaVersion: 3, createdAt: '2026-10-27',
+            injuries: [{ severity: 'limit', createdAt: '2026-10-27' }],
+            injuryHistory: [{ severity: 'monitor', resolvedAt: '2026-10-27' }] };
+        const owner = testEnvironment.authenticatedContext(ownerId).firestore();
+        const other = testEnvironment.authenticatedContext(otherUserId).firestore();
+        await assertSucceeds(setDoc(doc(owner, path), data));
+        await assertFails(getDoc(doc(other, path)));
+        await assertFails(updateDoc(doc(other, path), { injuryHistory: [] }));
+        await assertFails(updateDoc(doc(owner, path), { injuryHistory: 'invalid' }));
+    });
+});
+
 emulatorDescribe('Firestore security rules', () => {
     beforeAll(async () => {
         testEnvironment = await initializeTestEnvironment({

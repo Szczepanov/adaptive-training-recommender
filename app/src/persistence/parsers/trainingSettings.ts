@@ -32,15 +32,22 @@ export function parseTrainingSettings(raw: unknown, userId: string): TrainingSet
     if (typeof migration.legacyReviewed !== 'boolean' || !(typeof migration.migratedAt === 'string' || migration.migratedAt === null)) return null;
     if (typeof data.createdAt !== 'string' || typeof data.updatedAt !== 'string') return null;
 
-    if (data.injuries !== undefined) {
-        if (!Array.isArray(data.injuries)) return null;
-        for (const injury of data.injuries) {
+    for (const list of [data.injuries, data.injuryHistory]) {
+        if (list === undefined) continue;
+        if (!Array.isArray(list)) return null;
+        for (const injury of list) {
             if (!injury || typeof injury !== 'object') return null;
             const item = injury as Record<string, unknown>;
             if (typeof item.severity !== 'string' || !['monitor', 'limit', 'exclude'].includes(item.severity)) return null;
             if (item.region !== undefined && (typeof item.region !== 'string' || !validBodyRegions.includes(item.region as BodyRegion))) return null;
             if (item.reviewBy !== undefined && (typeof item.reviewBy !== 'string' || !isValidDate(item.reviewBy))) return null;
             if (item.note !== undefined && typeof item.note !== 'string') return null;
+            if (list === data.injuries && item.resolvedAt !== undefined) return null;
+            if (list === data.injuryHistory && item.resolvedAt === undefined) return null;
+            for (const date of [item.createdAt, item.resolvedAt]) {
+                if (date !== undefined && (typeof date !== 'string' || !isValidDate(date))) return null;
+            }
+            if (typeof item.createdAt === 'string' && typeof item.resolvedAt === 'string' && item.resolvedAt < item.createdAt) return null;
             if (item.restrictedModalities !== undefined
                 && (!Array.isArray(item.restrictedModalities)
                     || !item.restrictedModalities.every(modality => typeof modality === 'string' && validModalities.includes(modality as SessionTemplate['modality'])))) return null;

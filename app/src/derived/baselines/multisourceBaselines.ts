@@ -12,7 +12,7 @@
  * bundle-revision evidence granting `baselineLearning`.
  */
 
-import type { BaselineMaturity, HealthObservationDayBundle } from '../observations/models';
+import type { BaselineMaturity, HealthObservationDayBundle } from '../../observations/models';
 import {
     selectEligibleHealthObservationBundles,
     type EffectiveBundleIdentityProjection,

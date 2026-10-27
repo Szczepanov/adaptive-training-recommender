@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { AutomaticIdentityAssessment, IdentityReviewEvent } from '../observations/identityModels';
-import type { EffectiveBundleIdentityProjection } from '../engine/identityEligibility';
+import type { EffectiveBundleIdentityProjection } from '../derived/baselines/identityEligibility';
 import {
     identityReviewCopyVariant,
     identityReviewEventFields,

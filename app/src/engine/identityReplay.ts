@@ -50,7 +50,7 @@ import {
     type PairedNightFeatureRecord,
     type PassportBootstrapConfig,
 } from './identityPassport';
-import { calculateMad, calculateMedian } from './multisourceBaselines';
+import { calculateMad, calculateMedian } from '../derived/baselines/multisourceBaselines';
 
 const HARD_ABSTENTION_REASON_CODES: readonly IdentityReasonCode[] = [
     'ANCHOR_MISSING',

@@ -5,8 +5,8 @@ import {
     type IdentityReviewEvent,
 } from '../observations/identityModels';
 import type { HealthObservationDayBundle } from '../observations/models';
-import { healthObservationBundleId, type EffectiveBundleIdentityProjection } from './identityEligibility';
-import type { SourceMetricBaseline } from './multisourceBaselines';
+import { healthObservationBundleId, type EffectiveBundleIdentityProjection } from '../derived/baselines/identityEligibility';
+import type { SourceMetricBaseline } from '../derived/baselines/multisourceBaselines';
 import { evaluateMultisourceFusion } from './multisourceFusion';
 
 /** PI9 (ADR-0028) identity-gate fixture helper -- mirrors identityEligibility.test.ts's `projection`. */

@@ -386,7 +386,8 @@ observedOn: Not recorded
 | reviewBy | 2026-12-01 | Not specified | athlete | measured | Not recorded |
 | note | patellar tendon | Not specified | athlete | measured | Not recorded |
 | restrictedModalities | Not recorded | Not specified | athlete | not_recorded | Not recorded |
-| since | Not recorded | Not specified | ledger | not_yet_supported | Not recorded |
+| resolvedAt | Not recorded | Not specified | athlete | not_applicable | Not recorded |
+| since | Not recorded | Not specified | athlete | not_recorded | Not recorded |
 | revisions | Not recorded | Not specified | ledger | not_yet_supported | Not recorded |
 
 ### equipment

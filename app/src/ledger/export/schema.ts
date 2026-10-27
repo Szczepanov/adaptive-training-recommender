@@ -145,7 +145,7 @@ export const OUTCOME_FIELDS = [
     'sport', 'completed', 'placing', 'fieldSize', 'elapsedSeconds', 'distanceM', 'summary',
 ] as const;
 
-export const INJURY_FIELDS = ['region', 'severity', 'reviewBy', 'note', 'restrictedModalities'] as const;
+export const INJURY_FIELDS = ['region', 'severity', 'reviewBy', 'note', 'restrictedModalities', 'resolvedAt'] as const;
 export const EQUIPMENT_FIELDS = [
     'free_weights', 'cable_machine', 'treadmill', 'indoor_bike', 'pullup_bar', 'outdoor_bike', 'swim_access',
 ] as const;

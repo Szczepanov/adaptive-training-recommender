@@ -166,7 +166,7 @@ describe('ledger export contract', () => {
 
     it('keeps unsupported effective dates and placement histories explicit, not inferred', () => {
         const [injury] = output.userContext.injuries.items;
-        expect(injury.since).toEqual({ value: null, source: 'ledger', state: 'not_yet_supported' });
+        expect(injury.since).toEqual({ value: null, source: 'athlete', state: 'not_recorded' });
         for (const item of output.userContext.goals.items) {
             expect(item.since.state).toBe('not_yet_supported');
             expect(item.revisions.state).toBe('not_yet_supported');

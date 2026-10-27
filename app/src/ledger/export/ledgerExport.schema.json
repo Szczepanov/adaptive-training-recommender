@@ -1250,7 +1250,8 @@
         "severity",
         "reviewBy",
         "note",
-        "restrictedModalities"
+        "restrictedModalities",
+        "resolvedAt"
       ],
       "properties": {
         "region": {
@@ -1266,6 +1267,9 @@
           "$ref": "#/$defs/ledgerValue"
         },
         "restrictedModalities": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "resolvedAt": {
           "$ref": "#/$defs/ledgerValue"
         }
       }
