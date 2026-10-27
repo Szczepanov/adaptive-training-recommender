@@ -3,7 +3,7 @@ import { fullRecords, AS_OF } from '../ledger/export/ledgerExportFixtures.testSu
 import { computeContentHash } from '../engine/externalPlanHash';
 import { SOURCE_KEYS } from '../ledger/export/inputs';
 const reads = vi.hoisted(() => Object.fromEntries([
-'recovery', 'checkins', 'activities', 'preferences', 'goals', 'fixed', 'blocks', 'anthropometry', 'constraints', 'schedule', 'responses', 'outcomes', 'intent', 'assessments', 'executions', 'occurrences', 'settings', 'plans', 'header', 'activations', 'revision', 'placement', 'performed',
+'recovery', 'checkins', 'activities', 'preferences', 'goals', 'fixed', 'blocks', 'anthropometry', 'constraints', 'schedule', 'responses', 'outcomes', 'intent', 'assessments', 'executions', 'occurrences', 'settings', 'plans', 'header', 'activations', 'revision', 'placement', 'history', 'performed',
 ].map(key => [key, vi.fn()])));
 vi.mock('./recoverySnapshotService', () => ({ recoverySnapshotService: { getRecoverySnapshotsInRangeState: reads.recovery } }));
 vi.mock('./checkinService', () => ({ checkinService: { getCheckinsInRangeState: reads.checkins } }));
@@ -26,7 +26,7 @@ vi.mock('../nutrition/nutritionService', () => ({ nutritionService: { getNutriti
 vi.mock('../training-occurrence/repository', () => ({ performedTrainingOccurrenceRepository: { queryActiveInDateWindow: reads.performed } }));
 vi.mock('./externalPlanService', () => ({ externalPlanService: {
     listPlanIds: reads.plans, getHeaderState: reads.header, getActivationState: reads.activations,
-    getRevisionState: reads.revision, getPlacementState: reads.placement,
+    getRevisionState: reads.revision, getPlacementState: reads.placement, getPlacementHistoryState: reads.history,
 } }));
 import { LedgerExportService } from './ledgerExportService';
 const available = <T,>(data: T) => ({ status: 'AVAILABLE', data, revision: null });
@@ -39,6 +39,7 @@ describe('LedgerExportService', () => {
         reads.preferences.mockResolvedValue({ status: 'MISSING' });
         for (const key of ['anthropometry', 'constraints', 'performed']) reads[key].mockResolvedValue([]);
         reads.plans.mockResolvedValue(available([]));
+        reads.history.mockResolvedValue(available([]));
         reads.executions.mockResolvedValue({ executions: [], invalidRecords: 0 });
         reads.intent.mockResolvedValue({ blocks: [], unreadableCount: 0, truncated: false });
         reads.outcomes.mockResolvedValue({ outcomes: [], unreadableCount: 0, truncated: false });

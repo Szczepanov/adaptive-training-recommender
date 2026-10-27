@@ -597,6 +597,8 @@ export interface ExternalPlanPlacement {
     planId: string;
     revision: number;
     assignments: ExternalPlacementAssignment[];
+    /** Explicit successor identities for superseded assignments. */
+    successors?: Record<string, { revision: number; sessionId: string }>;
     updatedAt: string;
 }
 
