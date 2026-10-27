@@ -467,6 +467,8 @@ export class ExternalPlanService {
             }).isValid;
             if (events.some(event => !event || typeof event !== 'object' || event.userId !== userId || event.planId !== planId || event.revision !== revision
                 || !isValidDate(event.changedOn) || typeof event.recordedAt !== 'string'
+                || !Number.isFinite(Date.parse(event.recordedAt))
+                || new Date(event.recordedAt).toISOString() !== event.recordedAt
                 || !validAssignments(event.previous) || !validAssignments(event.assignments)
                 || !event.successors || typeof event.successors !== 'object' || Array.isArray(event.successors)
                 || Object.values(event.successors).some(value => !value || !Number.isSafeInteger(value.revision)

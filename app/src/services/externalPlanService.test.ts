@@ -438,6 +438,13 @@ describe('ExternalPlanService', () => {
         })).rejects.toThrow(/at most one assignment/);
     });
 
+    it('rejects history with noncanonical timestamps before reconstructing order', async () => {
+        firestore.getDocs.mockResolvedValue({ docs: [{ data: () => ({ userId: 'u1', planId: 'autumn-block', revision: 1,
+            changedOn: '2026-08-18', recordedAt: 'invalid', previous: [], assignments: [], successors: {} }) }] });
+        await expect(new ExternalPlanService().getPlacementHistoryState('u1', 'autumn-block', 1))
+            .resolves.toMatchObject({ status: 'INVALID' });
+    });
+
     it('rejects an activation whose payload revision disagrees with its document id', async () => {
         firestore.getDocs.mockResolvedValue({
             docs: [{
