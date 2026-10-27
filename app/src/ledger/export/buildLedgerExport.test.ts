@@ -134,6 +134,18 @@ describe('buildLedgerExport real-model mapping (H1)', () => {
         expect((row?.fields.statusHistory.value as unknown[]).length).toBe(2);
     });
 
+    it('exports an unknown legacy successor without inventing a link', () => {
+        const input = fullRecords();
+        const old = { sessionId: 's1', date: '2026-11-20', status: 'superseded' as const };
+        input.placementHistory = [{ userId: 'owner', planId: 'plan-1', revision: 2,
+            changedOn: '2026-11-20', recordedAt: '2026-11-20T10:00:00.000Z',
+            previous: [old], assignments: [old, { sessionId: 'other', date: '2026-11-21', status: 'moved' }], successors: {} }];
+        const result = buildLedgerExport({ records: input, asOfDate: AS_OF, purpose: 'planning', exportedAt: '2026-11-21T12:00:00Z' });
+        const row = result.coachingHistory.placements.items.find(item => item.id === 'plan-1@2:s1');
+        expect(row?.fields.status.value).toBe('superseded');
+        expect(row?.fields.statusHistory.value).toMatchObject([{ successor: null }]);
+    });
+
     it('carries session response linkage and the placement revision', () => {
         const [response] = output.facts.sessionResponses.items;
         expect(response.fields.sourceSession.value).toEqual(sessionResponse.sourceSession);

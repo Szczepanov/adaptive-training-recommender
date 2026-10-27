@@ -473,7 +473,9 @@ export class ExternalPlanService {
                 || !event.successors || typeof event.successors !== 'object' || Array.isArray(event.successors)
                 || Object.values(event.successors).some(value => !value || !Number.isSafeInteger(value.revision)
                     || value.revision <= revision || typeof value.sessionId !== 'string' || !value.sessionId)
-                || event.assignments.some(assignment => assignment.status === 'superseded' && !event.successors[assignment.sessionId]))) {
+                || event.assignments.some(assignment => assignment.status === 'superseded' && !event.successors[assignment.sessionId]
+                    && !event.previous.some(previous => previous.sessionId === assignment.sessionId
+                        && previous.status === 'superseded' && previous.date === assignment.date)))) {
                 return { status: 'INVALID', issues: [{ code: 'invalid-placement-history', documentPath }] };
             }
             return { status: 'AVAILABLE', data: events, revision: String(events.length) };
@@ -515,6 +517,8 @@ export class ExternalPlanService {
                     throw new Error('Cannot replace an existing placement successor');
                 }
                 const successor = supplied ?? prior;
+                if (!successor && applicable?.assignments.some(item => item.sessionId === assignment.sessionId
+                    && item.status === 'superseded' && item.date === assignment.date)) continue;
                 if (!successor || !Number.isSafeInteger(successor.revision) || successor.revision <= placement.revision
                     || typeof successor.sessionId !== 'string' || !successor.sessionId) {
                     throw new Error('Superseded placement requires an explicit successor in a newer revision');

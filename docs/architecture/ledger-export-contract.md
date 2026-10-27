@@ -79,7 +79,7 @@ not a date subsequently moved in the mutable overlay. The builder retains revisi
 by in-window placements or performed links plus the latest revision per plan, even when a
 current placement has moved outside the window. Placements with recorded history are reconstructed as of the export date; their
 `statusHistory` contains the dated before/after events and explicit successor links.
-Earlier legacy history is unknown; titles are never used to infer successors. Placements
+Earlier legacy history and successors absent from legacy superseded assignments remain unknown; titles are never used to infer successors. Placements
 without history remain current overlays and are never claimed as immutable history.
 
 All source reads produce `SourceState` entries. Rejected reads report `unavailable`;

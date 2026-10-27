@@ -159,9 +159,10 @@
             && request.resource.data.revision is int && string(request.resource.data.revision) == revisionId
             && isValidActivityDate(request.resource.data.changedOn)
             && request.resource.data.recordedAt is string
+            && request.resource.data.recordedAt.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[.][0-9]{3}Z$')
             && request.resource.data.previous is list && request.resource.data.previous.size() <= 120
             && request.resource.data.assignments is list && request.resource.data.assignments.size() <= 120
-            && request.resource.data.successors is map
+            && request.resource.data.successors is map && request.resource.data.successors.size() <= 120
             && existsAfter(/databases/$(database)/documents/users/$(userId)/external_plans/$(planId)/revisions/$(revisionId));
           allow update, delete: if false;
         }

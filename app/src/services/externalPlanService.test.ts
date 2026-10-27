@@ -412,6 +412,23 @@ describe('ExternalPlanService', () => {
             .rejects.toThrow(/Cannot replace/);
     });
 
+    it('preserves unknown legacy successors across unrelated saves and history reads', async () => {
+        const service = new ExternalPlanService();
+        const path = 'users/u1/external_plans/autumn-block/revisions/1/placement/current';
+        const old = { sessionId: 'a', date: '2026-08-18', status: 'superseded' as const };
+        firestore.committedDocs.set(path, { userId: 'u1', planId: 'autumn-block', revision: 1,
+            assignments: [old], updatedAt: '2026-08-18T10:00:00.000Z' });
+        const saved = await service.savePlacement('u1', { planId: 'autumn-block', revision: 1,
+            assignments: [old, { sessionId: 'b', date: '2026-08-21', status: 'moved' }] });
+        expect(saved.successors).toEqual({});
+        expect(await service.getPlacementState('u1', 'autumn-block', 1)).toMatchObject({ status: 'AVAILABLE', data: { successors: {} } });
+        const event = firestore.transactions[0].stagedWrites.find(write => write.path.includes('/placement_history/'))!.data;
+        firestore.getDocs.mockResolvedValue({ docs: [{ data: () => event }] });
+        expect(await service.getPlacementHistoryState('u1', 'autumn-block', 1)).toMatchObject({ status: 'AVAILABLE', data: [{ successors: {} }] });
+        await expect(service.savePlacement('u1', { planId: 'autumn-block', revision: 1,
+            assignments: [{ ...old, date: '2026-08-19' }] })).rejects.toThrow(/explicit successor/);
+    });
+
     it('dates history in Warsaw and leaves no partial writes on transaction failure', async () => {
         vi.useFakeTimers();
         try {

@@ -1021,9 +1021,11 @@ emulatorDescribe('Firestore security rules', () => {
         const otherDb = testEnvironment.authenticatedContext(otherUserId).firestore();
         const path = `${externalPlanPath}/revisions/1/placement_history/event-1`;
         const event = { userId: ownerId, planId: 'autumn-block', revision: 1, changedOn: '2026-08-18',
-            recordedAt: '2026-08-18T12:00:00Z', previous: [], assignments: [], successors: {} };
+            recordedAt: '2026-08-18T12:00:00.000Z', previous: [], assignments: [], successors: {} };
         await assertFails(setDoc(doc(otherDb, path), event));
         await assertFails(setDoc(doc(ownerDb, path), { ...event, revision: 2 }));
+        await assertFails(setDoc(doc(ownerDb, path), { ...event, recordedAt: '2026-08-18T12:00:00Z' }));
+        await assertFails(setDoc(doc(ownerDb, path), { ...event, successors: Object.fromEntries(Array.from({ length: 121 }, (_, i) => [String(i), {}])) }));
         await assertSucceeds(setDoc(doc(ownerDb, path), event));
         await assertSucceeds(getDoc(doc(ownerDb, path)));
         await assertFails(getDoc(doc(otherDb, path)));
