@@ -1,8 +1,8 @@
 /**
  * Layer 5 (`coachingHistory`, ADR-0052 D-COACHLOG). Placements, overrides and links are
- * bounded to the export window. Plan revisions are immutable and backed: only those an
- * in-window placement references, plus each plan's latest revision, are exported. The
- * placement overlay is current-state only, so status/date history and override reasons are
+ * bounded to the export window. Immutable plan revisions include those referenced by an
+ * in-window placement or performed link, plus each plan's latest revision. The placement
+ * overlay is current-state only, so status/date history and override reasons are
  * `not_yet_supported` (OD3) rather than inferred.
  */
 import { collect, type BuildContext } from './buildContext.ts';
@@ -106,6 +106,9 @@ function buildPlanRevisions(
     const bounds = windowBounds(context.window);
     const referenced = new Set((flat ?? []).filter(row => inBounds(row.date, bounds))
         .map(row => `${row.planId}@${row.revision}`));
+    for (const link of records.plannedToPerformed ?? []) {
+        if (inBounds(link.date, bounds)) referenced.add(`${link.planId}@${link.revision}`);
+    }
     const latest = new Map<string, number>();
     for (const row of records.planRevisions ?? []) {
         latest.set(row.planId, Math.max(latest.get(row.planId) ?? row.revision, row.revision));

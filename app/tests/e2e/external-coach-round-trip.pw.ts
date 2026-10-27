@@ -1,3 +1,5 @@
+import { readFile } from 'node:fs/promises';
+import type { LedgerExport } from '../../src/ledger/export/schema';
 import { expect, test } from './support/test';
 import { provisionAthlete, seedRecoverySnapshot, signInThroughUi } from './support/athlete';
 import { seedExternalPlanningMode } from './support/externalPlan';
@@ -50,6 +52,17 @@ test('a validated v6 coach plan completes and Garmin enriches the same next-brie
   const completedSection = text.split('Completed training (canonical performed occurrences)')[1]?.split('\n## ')[0];
   expect(completedSection).toBeDefined();
   expect(completedSection?.split('\n').filter(row => row.startsWith('| ') && row.includes(today))).toHaveLength(1);
+  const downloading = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Export ledger (JSON)', exact: true }).click();
+  const download = await downloading;
+  const ledger: LedgerExport = JSON.parse(await readFile((await download.path())!, 'utf8'));
+  expect(ledger.facts.performedTraining.items).toHaveLength(1);
+  expect(ledger.coachingHistory.plannedToPerformed.state).toBe('measured');
+  expect(ledger.coachingHistory.plannedToPerformed.items).toHaveLength(1);
+  expect(ledger.coachingHistory.plannedToPerformed.items[0].fields).toMatchObject({
+    planId: { value: plan.planId }, sessionId: { value: 'session-today' },
+    performedOccurrenceRef: { value: performed.performedOccurrenceId },
+  });
 });
 
 test('V12 abandoned external execution retains logged evidence and exact next-brief ids', async ({ page }) => {

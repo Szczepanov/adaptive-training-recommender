@@ -105,6 +105,25 @@ export class SessionResponseService {
         }
     }
 
+    /** D-EXPORT: recorded response dates, with malformed rows distinct from an empty range. */
+    async getResponsesInRangeState(userId: string, startDate: string, throughExclusive: string): Promise<DataState<SessionResponse[]>> {
+        try {
+            const snapshot = await getDocs(query(collection(this.db, 'users', userId, 'session_responses'),
+                where('date', '>=', startDate), where('date', '<', throughExclusive)));
+            const responses: SessionResponse[] = [];
+            const issues = [];
+            for (const item of snapshot.docs) {
+                const parsed = parseSessionResponseDocument(item.data(), item.ref.path);
+                if (parsed.status === 'AVAILABLE' && parsed.data.userId === userId && parsed.data.responseId === item.id
+                    && parsed.data.date >= startDate && parsed.data.date < throughExclusive) responses.push(parsed.data);
+                else issues.push({ code: 'invalid-ledger-response', documentPath: item.ref.path });
+            }
+            return issues.length ? { status: 'INVALID', issues } : { status: 'AVAILABLE', data: responses, revision: null };
+        } catch {
+            return { status: 'UNAVAILABLE', operation: 'read ledger responses', retryable: true };
+        }
+    }
+
     /** Every response recorded so far for one source session, across all windows -- the
      * caller can tell "answered" from "never asked/answered" per window by which of
      * `immediate`/`later_day`/`next_morning` actually appears here. A single-field query

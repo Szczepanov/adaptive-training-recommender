@@ -271,3 +271,21 @@ describe('SessionResponseService (M5.1)', () => {
     });
 
 });
+
+
+describe('ledger response range', () => {
+    it('reads only user-scoped dated responses and rejects corrupt rows', async () => {
+        vi.clearAllMocks();
+        const service = new SessionResponseService({} as never);
+        const row = responseDoc();
+        firestore.getDocs.mockResolvedValue({ docs: [{ id: row.responseId, data: () => row, ref: { path: `users/u1/session_responses/${row.responseId}` } }] });
+        expect(await service.getResponsesInRangeState('u1', '2026-08-18', '2026-08-20')).toMatchObject({ status: 'AVAILABLE', data: [row] });
+        expect(firestore.collection).toHaveBeenCalledWith({}, 'users', 'u1', 'session_responses');
+        expect(firestore.where).toHaveBeenCalledWith('date', '>=', '2026-08-18');
+        expect(firestore.where).toHaveBeenCalledWith('date', '<', '2026-08-20');
+        firestore.getDocs.mockResolvedValue({ docs: [{ id: 'bad', data: () => ({ ...row, sessionRpe: 99 }), ref: { path: 'users/u1/session_responses/bad' } }] });
+        expect(await service.getResponsesInRangeState('u1', '2026-08-18', '2026-08-20')).toMatchObject({ status: 'INVALID' });
+        firestore.getDocs.mockRejectedValue(new Error('offline'));
+        expect(await service.getResponsesInRangeState('u1', '2026-08-18', '2026-08-20')).toMatchObject({ status: 'UNAVAILABLE' });
+    });
+});

@@ -244,3 +244,22 @@ describe('CompetitionOutcomeService', () => {
         });
     });
 });
+
+
+describe('ledger outcome listing', () => {
+    it('bounds the scan, validates identity and windows instants by Warsaw dates', async () => {
+        vi.clearAllMocks();
+        const service = new CompetitionOutcomeService({} as never);
+        const outcome = { ...validOutcome, occurredAt: '2026-08-19T23:30:00Z' };
+        firestore.getDocs.mockResolvedValue({ docs: [
+            { id: outcome.id, data: () => outcome },
+            { id: 'mismatch', data: () => outcome },
+            { id: 'older', data: () => ({ ...outcome, id: 'older', occurredAt: '2026-08-19T09:00:00Z' }) },
+        ] });
+        expect(await service.listForLedger('u1', '2026-08-20', '2026-08-20')).toMatchObject({ outcomes: [outcome], unreadableCount: 1, truncated: false });
+        expect(firestore.collection).toHaveBeenCalledWith({}, 'users', 'u1', 'competition_outcomes');
+        expect(firestore.limit).toHaveBeenCalledWith(201);
+        firestore.getDocs.mockResolvedValue({ docs: Array.from({ length: 201 }, (_, i) => ({ id: `r${i}`, data: () => ({ ...outcome, id: `r${i}` }) })) });
+        expect(await service.listForLedger('u1', '2026-08-20', '2026-08-20')).toMatchObject({ truncated: true });
+    });
+});

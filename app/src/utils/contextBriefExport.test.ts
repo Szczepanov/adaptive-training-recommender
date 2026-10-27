@@ -3,6 +3,7 @@ import {
   buildContextBriefJsonExport,
   contextBriefExportFilename,
   downloadContextBriefFile,
+  downloadLedgerExportFile,
   formatContextBriefExport,
   type ContextBriefExportSource,
 } from './contextBriefExport';
@@ -114,5 +115,26 @@ describe('contextBriefExport', () => {
     const exportedWithout = buildContextBriefJsonExport(BRIEF, '2026-09-28T07:00:00.000Z');
     expect(exportedWithout.measuredBenchmarks).toBeUndefined();
     expect('measuredBenchmarks' in exportedWithout).toBe(false);
+  });
+});
+
+
+describe('ledger export download', () => {
+  it('downloads the canonical structured JSON and cleans up if the click fails', async () => {
+    const { buildLedgerExport } = await import('../ledger/export/buildLedgerExport');
+    const ledger = buildLedgerExport({ records: {}, asOfDate: '2026-10-26', purpose: 'planning', exportedAt: '2026-10-26T08:00:00Z' });
+    const click = vi.fn(() => { throw new Error('blocked'); });
+    const link = { href: '', download: '', click, parentNode: null as unknown };
+    const removeChild = vi.fn();
+    const body = { appendChild: vi.fn(() => { link.parentNode = { removeChild }; }) };
+    vi.stubGlobal('document', { createElement: () => link, body });
+    const createObjectURL = vi.fn<(blob: Blob) => string>(() => 'blob:ledger');
+    const revokeObjectURL = vi.fn();
+    vi.stubGlobal('URL', { createObjectURL, revokeObjectURL });
+    expect(() => downloadLedgerExportFile(ledger)).toThrow('blocked');
+    expect(link.download).toBe('ledger_planning_2026-10-13_to_2026-10-26.json');
+    expect(JSON.parse(await (createObjectURL.mock.calls[0][0] as Blob).text())).toEqual(ledger);
+    expect(removeChild).toHaveBeenCalledWith(link);
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:ledger');
   });
 });

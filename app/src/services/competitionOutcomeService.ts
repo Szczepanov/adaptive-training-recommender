@@ -40,6 +40,27 @@ export class CompetitionOutcomeService {
         return outcome;
     }
 
+    /** D-EXPORT: bounded raw outcomes, independent of any engine/evaluation verdict. */
+    async listForLedger(userId: string, startDate: string, endDate: string): Promise<{
+        outcomes: CompetitionOutcome[]; unreadableCount: number; truncated: boolean;
+    }> {
+        // Stored instants can carry offsets: filter by Warsaw date after the bounded scan.
+        const snapshot = await getDocs(query(collection(this.db, 'users', userId, 'competition_outcomes'),
+            orderBy(documentId(), 'asc'), limit(COMPETITION_OUTCOME_MAX_SCANNED_RECORDS + 1)));
+        const outcomes: CompetitionOutcome[] = [];
+        let unreadableCount = 0;
+        for (const item of snapshot.docs.slice(0, COMPETITION_OUTCOME_MAX_SCANNED_RECORDS)) {
+            try {
+                const outcome = item.data() as CompetitionOutcome;
+                assertValidCompetitionOutcome(outcome);
+                if (outcome.id !== item.id) throw new Error('Competition outcome path mismatch');
+                const date = getLocalDateString(new Date(outcome.occurredAt));
+                if (date >= startDate && date <= endDate) outcomes.push(outcome);
+            } catch { unreadableCount++; }
+        }
+        return { outcomes, unreadableCount, truncated: snapshot.docs.length > COMPETITION_OUTCOME_MAX_SCANNED_RECORDS };
+    }
+
     /** Scope before the result cap; legacy missing links and offset timestamps require a bounded scan. */
     async listOutcomesWithDiagnostics(userId: string, evaluation: OutcomeEvaluationSnapshot, asOfDate: string, maxRecords = 100): Promise<{
         outcomes: CompetitionOutcome[]; unreadableCount: number; truncated: boolean; scanLimitReached?: boolean;

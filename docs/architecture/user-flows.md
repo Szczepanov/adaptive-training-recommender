@@ -738,3 +738,12 @@ living-reference section when implementing them.
     completion telemetry or `onCompleted`; the event is recorded only after durable or
     explicit session-only dismissal. No decision-engine, Firestore, or schema semantics
     changed.
+
+### Structured ledger export (#1145)
+
+The canonical Context Brief screen offers **Export ledger (JSON)** beside its existing
+clipboard/Markdown/JSON actions. It reads existing account-scoped records only after a click,
+uses the selected date and purpose, disables the action while assembling, and offers retry
+feedback on a failed download. Changing account/date/preset discards an in-flight result.
+The existing brief remains available during this transition (OD5). See the
+[ledger export contract](./ledger-export-contract.md) for source completeness and bounds.

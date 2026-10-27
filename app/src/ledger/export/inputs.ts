@@ -135,7 +135,7 @@ export interface PlannedToPerformedInput {
     planId: string;
     revision: number;
     sessionId: string;
-    /** The planned session's date. */
+    /** Recorded execution session date; a later mutable placement cannot redate this link. */
     date: string;
     performedOccurrenceId: string;
 }

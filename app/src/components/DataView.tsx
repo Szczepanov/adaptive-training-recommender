@@ -28,6 +28,7 @@ import './DataView.css';
 import type { CapabilityMaintenanceResult } from '../engine/capabilityMaintenance';
 import { downloadContextBriefFile, type ContextBriefExportFormat } from '../utils/contextBriefExport';
 import { ContextBriefExportActions } from './ContextBriefExportActions';
+import { LedgerExportButton } from './LedgerExportButton';
 
 interface DataViewProps {
   decisionInput: DailyDecisionInput | null;
@@ -956,7 +957,15 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery', onNav
                 onCopy={copyBrief}
                 onDownloadMarkdown={() => downloadBrief('markdown')}
                 onDownloadJson={() => downloadBrief('json')}
-              />
+              >
+                {brief.asOfDate === briefDate && brief.preset === briefPreset && <LedgerExportButton
+                  key={`${userId}:${brief.asOfDate}:${briefPreset}`}
+                  userId={userId}
+                  asOfDate={brief.asOfDate}
+                  purpose={brief.purpose}
+                  window={{ startDate: brief.startDate, endDate: brief.asOfDate }}
+                />}
+              </ContextBriefExportActions>
               <span className="brief-range">{brief.startDate} → {brief.asOfDate}</span>
               <span className="brief-size">
                 {brief.text.length.toLocaleString()} chars · ~{approxTokens?.toLocaleString()} tokens
