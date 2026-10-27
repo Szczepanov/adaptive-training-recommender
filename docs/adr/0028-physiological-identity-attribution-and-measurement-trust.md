@@ -644,7 +644,7 @@ Those require PI replay, prospective evidence, and deployment-specific review.
 - ADR-0027 — source-aware multisource health observations (`D-MS-IDENTITY`, `D-MS-PREBASE`)
 - `docs/analysis/2026-08-27-multisource-shadow-study.md`
 - `app/src/engine/coPresenceValidator.ts`
-- `app/src/engine/multisourceBaselines.ts`
+- `app/src/derived/baselines/multisourceBaselines.ts`
 - `app/src/engine/multisourceFusion.ts`
 - `app/src/observations/models.ts`
 - `src/garmin_sync/google_health_mapper.py`

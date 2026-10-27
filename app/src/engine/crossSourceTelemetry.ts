@@ -6,7 +6,7 @@
  */
 
 import type { HealthObservationDayBundle } from '../observations/models';
-import { sourceMetricBaselineKey, type SourceMetricBaseline } from './multisourceBaselines';
+import { sourceMetricBaselineKey, type SourceMetricBaseline } from '../derived/baselines/multisourceBaselines';
 
 export interface CrossSourceAgreementTelemetry {
     logicalDate: string;

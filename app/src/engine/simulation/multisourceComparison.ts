@@ -9,7 +9,7 @@
 import type { DailyReadiness } from '../models';
 import type { HealthObservationDayBundle } from '../../observations/models';
 import { computeInternalResponseStrain } from '../fatigue';
-import type { SourceMetricBaseline } from '../multisourceBaselines';
+import type { SourceMetricBaseline } from '../../derived/baselines/multisourceBaselines';
 import { evaluateMultisourceFusion, type MultisourceFusionResult } from '../multisourceFusion';
 
 /**

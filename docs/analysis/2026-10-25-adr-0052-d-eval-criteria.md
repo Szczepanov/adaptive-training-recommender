@@ -154,9 +154,9 @@ These are inputs for #1145 Part B and for Phase 2. Without them the criteria can
   audited afterwards. Retain evaluation time, session scope for session-dependent flags,
   definition version, inputs and source states, including unevaluable flags.
 - Check-in `illnessSymptoms`, `painOrInjury`, `redFlags` and `tissueResponses`, already present.
-- Injury constraint *creation dates*. `trainingSettings.injuries` has no history today, which
-  is why D-USER's injury history is `not_yet_supported`. Until it exists, C3 detects new
-  injuries through check-ins only, and the result document must say so.
+- Injury constraint creation dates are recorded for new constraints and retained with resolved
+  periods in `trainingSettings.injuryHistory`. C3 can use these dates as well as check-ins;
+  legacy constraints with unknown creation dates remain unknown and must not be backdated.
 
 ## 6. Owner decisions (recorded 2026-10-25)
 
@@ -182,6 +182,6 @@ These are inputs for #1145 Part B and for Phase 2. Without them the criteria can
 | C2 | | per protocol: retest interval / before (date, value) / after (due date, date, value) / noise / comparability; `pending` until each after-attempt is done |
 | C3 | | flagged hard days=…, adverse outcomes=… (with dates and sources); blind flag-input dates=…; final follow-up window closed at=…; incomplete follow-ups=… |
 | C4 | | rollback used? why? |
-- Known limits: <e.g. loop-vs-loop baseline, injury onset via check-ins only>
+- Known limits: <e.g. loop-vs-loop baseline, legacy injury onset may be unknown>
 - **Overall: GO / NO-GO / EXTEND / PENDING (C2 after-attempts due …)**
 ```

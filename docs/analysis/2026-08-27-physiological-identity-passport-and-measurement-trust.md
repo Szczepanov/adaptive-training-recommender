@@ -671,7 +671,7 @@ ADR-0027 already chose the pre-baseline ordering. ADR-0028 makes that choice **e
 - [ADR-0027 — Source-Aware Multisource Health Observations](../adr/0027-source-aware-multisource-health-observations.md)
 - [MS14 multisource shadow study](./2026-08-27-multisource-shadow-study.md)
 - `app/src/engine/coPresenceValidator.ts`
-- `app/src/engine/multisourceBaselines.ts`
+- `app/src/derived/baselines/multisourceBaselines.ts`
 - `app/src/engine/multisourceFusion.ts`
 - `app/src/observations/models.ts`
 - `src/garmin_sync/google_health_mapper.py`

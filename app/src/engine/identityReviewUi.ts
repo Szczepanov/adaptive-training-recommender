@@ -18,7 +18,7 @@ import type {
     IdentityStatus,
     OccupancyAttestation,
 } from '../observations/identityModels';
-import type { EffectiveBundleIdentityProjection } from './identityEligibility';
+import type { EffectiveBundleIdentityProjection } from '../derived/baselines/identityEligibility';
 
 /** Reason codes that make a night worth asking the user about (PI7 copy table). */
 const REVIEW_TRIGGER_REASON_CODES: readonly IdentityReasonCode[] = [

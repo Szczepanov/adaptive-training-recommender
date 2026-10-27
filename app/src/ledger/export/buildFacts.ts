@@ -131,6 +131,7 @@ function buildPerformedTraining(records: LedgerExportRecords, context: BuildCont
                 startedAt: fact(row.startedAt, base),
                 endedAt: fact(row.endedAt, base),
                 durationMin: fact(occurrenceDurationMin(row), { ...base, unit: 'min' }),
+                executedDefinitions: fact(row.executedDefinitions, { ...base, absent: 'unavailable' }),
                 structuredEntries: row.structuredEntries
                     ? fact(row.structuredEntries, base)
                     : notYetSupported('adaptive'),

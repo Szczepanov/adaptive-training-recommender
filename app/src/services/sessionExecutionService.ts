@@ -101,6 +101,7 @@ export interface StartExecutionParams {
     sessionSource: SessionSourceRef;
     occurrenceId?: string;
     prescriptionHash?: string;
+    executedDefinition?: 'authored' | 'reduced';
     fitWorkoutFingerprint?: string;
     fitWorkoutFingerprintKind?: FitWorkoutFingerprintKind;
     date: string;
@@ -288,6 +289,7 @@ export class SessionExecutionService {
             sessionSource: params.sessionSource,
             ...(params.occurrenceId ? { occurrenceId: params.occurrenceId } : {}),
             ...(params.prescriptionHash ? { prescriptionHash: params.prescriptionHash } : {}),
+            ...(params.executedDefinition ? { executedDefinition: params.executedDefinition } : {}),
             ...(params.fitWorkoutFingerprint ? { fitWorkoutFingerprint: params.fitWorkoutFingerprint } : {}),
             ...(params.fitWorkoutFingerprintKind ? { fitWorkoutFingerprintKind: params.fitWorkoutFingerprintKind } : {}),
             date: params.date,

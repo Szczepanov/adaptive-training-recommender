@@ -3,8 +3,8 @@ import {
     deriveEffectiveIdentityDecision,
     type AutomaticIdentityAssessment,
     type IdentityReviewEvent,
-} from '../observations/identityModels';
-import type { HealthObservationDayBundle } from '../observations/models';
+} from '../../observations/identityModels';
+import type { HealthObservationDayBundle } from '../../observations/models';
 import {
     healthObservationBundleId,
     selectEligibleHealthObservationBundles,

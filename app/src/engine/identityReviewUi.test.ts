@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AutomaticIdentityAssessment, IdentityReasonCode, ObservationBundleRef } from '../observations/identityModels';
-import type { EffectiveBundleIdentityProjection } from './identityEligibility';
+import type { EffectiveBundleIdentityProjection } from '../derived/baselines/identityEligibility';
 import {
     identityReviewCopyVariant,
     identityReviewEventFields,

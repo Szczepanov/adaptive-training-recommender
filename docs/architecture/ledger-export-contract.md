@@ -36,7 +36,7 @@ or policy-version bump is required for this additive path.
 | `facts` | Recovery, check-ins, canonical performed occurrences, session responses, current assessment observation heads, body mass, nutrition, bounded activity detail, competition outcomes | Recorded facts only; provider activity rows are provenance and never added to canonical totals |
 | `derived` | Named baseline, D−1 step normalization and performed-load slots, each with definition/window/inputs | `not_yet_supported` until independently extracted under #1144; no engine derivations are called |
 | `flags` | The closed four D-FLAGS ids with persisted evaluation metadata and inputs | Service emits `not_yet_supported` while historical evaluation persistence is absent; builder can preserve supplied persisted evaluations without recomputation |
-| `userContext` | Current active goals/constraints, settings/injuries/equipment, preferences, travel, venue restrictions, availability and intent-block events | Unsupported effective dates and revision history stay explicit; `updatedAt` does not establish field-level history |
+| `userContext` | Current active goals/constraints, settings/equipment, active injuries and resolved injury periods overlapping the window, preferences, travel, venue restrictions, availability and intent-block events | Injury `since` and `resolvedAt` use recorded dates; legacy onset stays unknown. Other unsupported effective dates and revision history stay explicit; `updatedAt` does not establish field-level history |
 | `coachingHistory` | Immutable external-plan revision headers/rationale, as-of placements, immutable placement events, moved/dropped overrides, canonical planned→performed links | Missing override reasons and unrecorded legacy history remain `not_yet_supported` |
 
 `legacyEngine` is null in the user-facing export. The pure builder supports an explicitly
@@ -57,7 +57,11 @@ second copy of the legacy brief build. In particular, settings use
 `peekTrainingSettingsState`, schedule availability uses authoritative
 `schedule_window_manifests` through `getWindowsForDateState` (the export's compatibility
 source key remains `schedule_windows`), and performed occurrences use the canonical
-repository. Validated execution entries supply a bounded occurrence-level exercise/set
+repository. Each performed-training fact includes `executedDefinitions` for its linked executions,
+with the `authored` or `reduced` choice recorded at an external-plan launch, and `unknown` when
+no choice was recorded (older executions, and launches that offer no such choice). The value is
+never inferred from the session source. Missing or unreadable linked executions leave the field unavailable.
+Validated execution entries supply a bounded occurrence-level exercise/set
 summary, excluding deleted entries and choice events. Missing entry evidence is not a zero
 summary. A linked provider activity does not create a second performed row.
 

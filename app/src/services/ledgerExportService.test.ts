@@ -101,6 +101,10 @@ describe('LedgerExportService', () => {
         const result = await new LedgerExportService().build('owner', request);
         expect(result.facts.performedTraining.items).toHaveLength(1);
         expect(result.facts.performedTraining.items[0].fields.structuredEntries.value).toEqual({ exerciseCount: 1, setCount: 2 });
+        expect(result.facts.performedTraining.items[0].fields.executedDefinitions.value).toEqual([{ executionId: 'exec-1', executedDefinition: 'unknown' }]);
+        reads.executions.mockResolvedValue({ invalidRecords: 0, executions: [{ execution: { executionId: 'exec-1', sessionSource: source, date: '2026-11-19', executedDefinition: 'reduced' }, entries: [] }] });
+        const reduced = await new LedgerExportService().build('owner', request);
+        expect(reduced.facts.performedTraining.items[0].fields.executedDefinitions.value).toEqual([{ executionId: 'exec-1', executedDefinition: 'reduced' }]);
         expect(result.coachingHistory.plannedToPerformed.items[0].fields).toMatchObject({ performedOccurrenceRef: { value: 'pto-1' }, sessionId: { value: 'session-1' } });
         // A mutable moved overlay must not redate the recorded execution linkage.
         expect(result.coachingHistory.plannedToPerformed.items[0].observedOn).toBe('2026-11-19');

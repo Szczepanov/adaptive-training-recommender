@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { HealthObservationDayBundle } from '../observations/models';
+import type { HealthObservationDayBundle } from '../../observations/models';
 import {
     calculateMad,
     calculateMedian,

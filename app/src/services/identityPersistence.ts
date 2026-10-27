@@ -25,7 +25,7 @@ import type {
     RobustRatioEstimate,
     RobustScalarEstimate,
 } from '../engine/identityPassport';
-import type { EffectiveBundleIdentityProjection } from '../engine/identityEligibility';
+import type { EffectiveBundleIdentityProjection } from '../derived/baselines/identityEligibility';
 
 const IDENTITY_STATUSES = ['USER', 'NOT_USER', 'UNCERTAIN'] as const;
 const CONFIDENCE_TIERS = ['HIGH', 'MODERATE', 'LOW', 'NONE'] as const;

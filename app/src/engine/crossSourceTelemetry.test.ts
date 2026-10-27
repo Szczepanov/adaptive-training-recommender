@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { HealthObservationDayBundle } from '../observations/models';
 import { computeCrossSourceTelemetry } from './crossSourceTelemetry';
-import type { SourceMetricBaseline } from './multisourceBaselines';
+import type { SourceMetricBaseline } from '../derived/baselines/multisourceBaselines';
 
 describe('crossSourceTelemetry', () => {
     it('computes agreement on normalized deviations', () => {

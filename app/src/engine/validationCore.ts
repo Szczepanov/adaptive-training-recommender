@@ -1353,6 +1353,7 @@ function isValidSessionReferenceBinding(value: any): value is SessionReferenceBi
     const hasFingerprintKind = Object.prototype.hasOwnProperty.call(value, 'fitWorkoutFingerprintKind');
     return isValidSessionSourceRef(value.sessionSource)
         && typeof value.prescriptionHash === 'string' && value.prescriptionHash.length > 0
+        && (value.executedDefinition === undefined || ['authored', 'reduced'].includes(value.executedDefinition))
         && (value.occurrenceId === undefined || (typeof value.occurrenceId === 'string' && value.occurrenceId.length > 0))
         && hasFingerprint === hasFingerprintKind
         && (!hasFingerprint || (
