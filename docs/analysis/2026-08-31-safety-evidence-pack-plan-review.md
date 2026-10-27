@@ -49,7 +49,7 @@ The parent plan's phrases such as "after #312 is merged" should be read as satis
 
 The current repository already contains a deliberate measurement-only subjective drift path:
 
-- `engine/subjectiveBaseline.ts` computes an individualized prior-history baseline;
+- `derived/baselines/subjectiveBaseline.ts` computes an individualized prior-history baseline;
 - `DailyReadiness` can carry `subjectiveBaseline`;
 - `rules.ts` exposes `SubjectiveDriftPolicy = 'off' | 'drift'`;
 - the live default remains `off`;

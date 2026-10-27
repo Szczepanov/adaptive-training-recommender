@@ -4,7 +4,7 @@ import {
     REFERENCE_SUBJECTIVE_BASELINE_POLICY,
     type SubjectiveBaselinePolicy,
     type SubjectiveCheckinForBaseline,
-} from '../subjectiveBaseline';
+} from '../../derived/baselines/subjectiveBaseline';
 import {
     buildSubjectiveDriftDecisionEvidence,
     type SubjectiveDriftDecisionEvidence,

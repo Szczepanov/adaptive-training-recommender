@@ -1,4 +1,4 @@
-import { addDaysToLocalDateString } from '../utils/localDate';
+import { addDaysToLocalDateString } from '../../utils/localDate';
 
 /**
  * Phase 9.1: computes a per-athlete subjective baseline -- recent (default 7d) vs a

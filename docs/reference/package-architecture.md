@@ -68,6 +68,7 @@ app/src/derived/           # ADR-0052 Phase 1: derived metrics and D-FLAGS evalu
   baselines/
     multisourceBaselines.ts # Source-specific robust 7d/28d median+MAD baseline calculator (MS12, ADR-0024/0027)
     identityEligibility.ts # Pre-baseline effective-identity eligibility boundary (PI5, D-PID-PREBASE)
+    subjectiveBaseline.ts # Phase 9.1: pure recent-vs-long subjective baseline
   flags/
     flagEvaluation.ts    # FlagEvaluation: one pure D-FLAGS result, in ledger-export state names
     illnessAnomaly/      # Health-anomaly family (ADR-0025), moved from engine/ in #1144 PR1-1
@@ -143,7 +144,6 @@ app/src/engine/
   sequenceSearch.ts    # Phase 5.1 beam-search prototype -- measured, NOT in any live path
   shadowAgreement.ts   # Phase 9.0: pure engine-vs-athlete verdict classifier (evidence only)
   shadowLog.ts         # Phase 9.0: pure day-row joiner + CSV renderer for export
-  subjectiveBaseline.ts # Phase 9.1: pure recent-vs-long subjective baseline
   subjectiveDriftAudit.ts # Phase 9.7: compact SubjectiveDriftAudit shape + replay validation
   decisionEvidence.ts  # Pure evidence ranking, DoD deltas, boundary classification, confidence tiers
   adapters.ts           # mapSnapshotToEngineInput and the other read-model -> engine input mappers

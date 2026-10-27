@@ -19,7 +19,7 @@ import {
     computeSubjectiveBaseline,
     REFERENCE_SUBJECTIVE_BASELINE_POLICY,
     type SubjectiveCheckinForBaseline,
-} from '../subjectiveBaseline';
+} from '../../derived/baselines/subjectiveBaseline';
 import { makeThreshold3x17Exposure } from './deliveredDoseScenarios';
 
 /**

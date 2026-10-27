@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { SUBJECTIVE_DRIFT_SENSITIVITY_CONFIGS } from './subjectiveDriftComparison';
-import { REFERENCE_SUBJECTIVE_BASELINE_POLICY } from '../subjectiveBaseline';
+import { REFERENCE_SUBJECTIVE_BASELINE_POLICY } from '../../derived/baselines/subjectiveBaseline';
 
 describe('Phase 9.6a sensitivity contract', () => {
     it('uses unique configuration ids so report rows remain attributable', () => {

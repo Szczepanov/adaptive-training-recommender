@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { DailyReadiness, UserContext } from './models';
 import { evaluateReadinessAndSafetyEnvelope } from './rules';
-import { computeSubjectiveBaseline, REFERENCE_SUBJECTIVE_BASELINE_POLICY, type SubjectiveCheckinForBaseline } from './subjectiveBaseline';
+import { computeSubjectiveBaseline, REFERENCE_SUBJECTIVE_BASELINE_POLICY, type SubjectiveCheckinForBaseline } from '../derived/baselines/subjectiveBaseline';
 import { addDaysToLocalDateString } from '../utils/localDate';
 
 const DATE = '2026-08-16';

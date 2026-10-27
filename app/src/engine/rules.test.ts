@@ -7,7 +7,7 @@ import {
 } from './rules';
 import type { TrainingHistoryProvider } from './trainingHistory';
 import type { DailyReadiness, UserContext, EngineObjectiveInput, SubjectiveInput, TrainingSettings } from './models';
-import type { SubjectiveBaseline, SubjectiveBaselineMetric, SubjectiveMetricBaseline } from './subjectiveBaseline';
+import type { SubjectiveBaseline, SubjectiveBaselineMetric, SubjectiveMetricBaseline } from '../derived/baselines/subjectiveBaseline';
 import { createSubjectiveOnlyObjectiveInput, mapContextFromGoalsAndTrainingSettings } from './adapters';
 import { TEMPLATES_BY_ID } from './templates';
 import { computeInternalResponseStrain, decayFatigue } from './fatigue';
@@ -1558,8 +1558,10 @@ describe('Phase 9.3: no production call site passes subjectiveDriftPolicy "drift
     // uses -- that answers a different question, module reachability, not literal argument
     // values) catches the straightforward case: nobody writes the literal string today.
     const ENGINE_DIR = __dirname;
+    // derived/ holds relocated decision-path code (e.g. subjectiveBaseline), so it is scanned too.
+    const DERIVED_DIR = join(ENGINE_DIR, '..', 'derived');
 
-    function productionFiles(directory = ENGINE_DIR): string[] {
+    function productionFiles(directory: string): string[] {
         return readdirSync(directory, { withFileTypes: true }).flatMap(entry => {
             const absolutePath = join(directory, entry.name);
             if (entry.isDirectory()) {
@@ -1572,9 +1574,9 @@ describe('Phase 9.3: no production call site passes subjectiveDriftPolicy "drift
         });
     }
 
-    it('no non-test engine file outside simulation/ contains the literal \'drift\' as a value', () => {
+    it('no non-test engine or derived file outside simulation/ contains the literal \'drift\' as a value', () => {
         const offenders: string[] = [];
-        for (const file of productionFiles()) {
+        for (const file of [...productionFiles(ENGINE_DIR), ...productionFiles(DERIVED_DIR)]) {
             const source = readFileSync(file, 'utf8');
             // Matches a quoted 'drift' that is not immediately preceded by "'off' | " -- i.e.
             // not the SubjectiveDriftPolicy type declaration itself.
