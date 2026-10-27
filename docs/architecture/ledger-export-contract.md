@@ -58,8 +58,9 @@ second copy of the legacy brief build. In particular, settings use
 `schedule_window_manifests` through `getWindowsForDateState` (the export's compatibility
 source key remains `schedule_windows`), and performed occurrences use the canonical
 repository. Each performed-training fact includes `executedDefinitions` for its linked executions,
-with the recorded `authored` or `reduced` choice and `unknown` when an older execution has no
-choice recorded. Missing or unreadable linked executions leave the field unavailable.
+with the `authored` or `reduced` choice recorded at an external-plan launch, and `unknown` when
+no choice was recorded (older executions, and launches that offer no such choice). The value is
+never inferred from the session source. Missing or unreadable linked executions leave the field unavailable.
 Validated execution entries supply a bounded occurrence-level exercise/set
 summary, excluding deleted entries and choice events. Missing entry evidence is not a zero
 summary. A linked provider activity does not create a second performed row.

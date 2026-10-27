@@ -489,7 +489,7 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
                 sessionSource: source,
                 ...(options.occurrenceId ? { occurrenceId: options.occurrenceId } : {}),
                 ...(options.prescriptionHash ? { prescriptionHash: options.prescriptionHash } : {}),
-                ...(options.executedDefinition ? { executedDefinition: options.executedDefinition } : source.kind !== 'external_plan' ? { executedDefinition: 'authored' as const } : {}),
+                ...(options.executedDefinition ? { executedDefinition: options.executedDefinition } : {}),
                 ...(fitWorkoutFingerprint ? { fitWorkoutFingerprint } : {}),
                 ...(fitWorkoutFingerprintKind ? { fitWorkoutFingerprintKind } : {}),
                 date: today,

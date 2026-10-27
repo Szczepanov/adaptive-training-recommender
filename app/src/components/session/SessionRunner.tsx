@@ -185,6 +185,26 @@ interface SessionRunnerProps {
     mode?: 'session' | 'assessment';
 }
 
+/**
+ * Launch options for a persisted binding. The executed-definition choice is passed through
+ * exactly as the launch recorded it; an absent choice stays absent (read as `unknown`).
+ */
+export function resolveInitialSessionStartOptions(initialSession: NonNullable<SessionRunnerProps['initialSession']>) {
+    const { binding } = initialSession;
+    return {
+        occurrenceId: binding.occurrenceId,
+        prescriptionHash: binding.prescriptionHash,
+        executedDefinition: binding.executedDefinition,
+        ...(binding.fitWorkoutFingerprint && binding.fitWorkoutFingerprintKind
+            ? {
+                fitWorkoutFingerprint: binding.fitWorkoutFingerprint,
+                fitWorkoutFingerprintKind: binding.fitWorkoutFingerprintKind,
+            }
+            : {}),
+        allowDuplicateCompleted: initialSession.allowDuplicateCompleted,
+    };
+}
+
 export const SessionRunner: React.FC<SessionRunnerProps> = ({
     userId,
     initialSession,
@@ -394,18 +414,8 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
         if (!initialSession || runner.isRestoring || initialLaunchAttempted.current) return;
         if (runner.execution) return;
         initialLaunchAttempted.current = true;
-        runner.startSession(initialSession.definition, initialSession.binding.sessionSource, {
-            occurrenceId: initialSession.binding.occurrenceId,
-            prescriptionHash: initialSession.binding.prescriptionHash,
-            executedDefinition: initialSession.binding.executedDefinition,
-            ...(initialSession.binding.fitWorkoutFingerprint && initialSession.binding.fitWorkoutFingerprintKind
-                ? {
-                    fitWorkoutFingerprint: initialSession.binding.fitWorkoutFingerprint,
-                    fitWorkoutFingerprintKind: initialSession.binding.fitWorkoutFingerprintKind,
-                }
-                : {}),
-            allowDuplicateCompleted: initialSession.allowDuplicateCompleted,
-        }).then(() => onInitialSessionHandled?.()).catch(() => {
+        runner.startSession(initialSession.definition, initialSession.binding.sessionSource, resolveInitialSessionStartOptions(initialSession))
+            .then(() => onInitialSessionHandled?.()).catch(() => {
             initialLaunchAttempted.current = false;
         });
     }, [initialSession, onInitialSessionHandled, runner]);
