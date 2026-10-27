@@ -780,6 +780,21 @@ service cloud.firestore {
           && string(request.resource.data.revision) == revisionId;
         allow update, delete: if false;
 
+        match /placement_history/{eventId} {
+          allow read: if isOwner(userId);
+          allow create: if hasOwnedUserId(userId)
+            && request.resource.data.keys().hasOnly(['userId', 'planId', 'revision', 'changedOn', 'recordedAt', 'previous', 'assignments', 'successors'])
+            && request.resource.data.planId == planId
+            && request.resource.data.revision is int && string(request.resource.data.revision) == revisionId
+            && isValidActivityDate(request.resource.data.changedOn)
+            && request.resource.data.recordedAt is string
+            && request.resource.data.previous is list && request.resource.data.previous.size() <= 120
+            && request.resource.data.assignments is list && request.resource.data.assignments.size() <= 120
+            && request.resource.data.successors is map
+            && existsAfter(/databases/$(database)/documents/users/$(userId)/external_plans/$(planId)/revisions/$(revisionId));
+          allow update, delete: if false;
+        }
+
         match /placement/{placementId} {
           allow read: if isOwner(userId);
           allow create, update: if hasValidExternalPlanPlacement(userId)

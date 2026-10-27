@@ -104,6 +104,36 @@ describe('buildLedgerExport real-model mapping (H1)', () => {
         expect(output.facts.events.items[0].fields.placing.source).toBe('manual');
     });
 
+    it('exports recorded placement history and reconstructs the as-of assignment', () => {
+        const input = fullRecords();
+        input.placementHistory = [{ userId: 'owner', planId: 'plan-1', revision: 2,
+            changedOn: '2026-11-19', recordedAt: '2026-11-19T10:00:00Z', previous: [],
+            assignments: [{ sessionId: 's1', date: '2026-11-20', status: 'planned' }], successors: {} },
+        { userId: 'owner', planId: 'plan-1', revision: 2,
+            changedOn: '2026-11-22', recordedAt: '2026-11-22T10:00:00Z', previous: [{ sessionId: 's1', date: '2026-11-20', status: 'planned' }],
+            assignments: [{ sessionId: 's1', date: '2026-11-23', status: 'moved' }], successors: {} }];
+        const result = buildLedgerExport({ records: input, asOfDate: AS_OF, purpose: 'planning', exportedAt: '2026-11-21T12:00:00Z' });
+        const row = result.coachingHistory.placements.items.find(item => item.id === 'plan-1@2:s1');
+        expect(row?.fields.date.value).toBe('2026-11-20');
+        expect(row?.fields.statusHistory.state).toBe('measured');
+        expect((row?.fields.statusHistory.value as unknown[]).length).toBe(1);
+        expect(JSON.stringify(result)).not.toContain('owner');
+    });
+
+    it('retains history for a removed assignment without presenting it as current', () => {
+        const input = fullRecords();
+        const assignment = { sessionId: 's1', date: '2026-11-20', status: 'planned' as const };
+        input.placementHistory = [{ userId: 'owner', planId: 'plan-1', revision: 2,
+            changedOn: '2026-11-19', recordedAt: '2026-11-19T10:00:00Z', previous: [], assignments: [assignment], successors: {} },
+        { userId: 'owner', planId: 'plan-1', revision: 2,
+            changedOn: '2026-11-20', recordedAt: '2026-11-20T10:00:00Z', previous: [assignment], assignments: [], successors: {} }];
+        const result = buildLedgerExport({ records: input, asOfDate: AS_OF, purpose: 'planning', exportedAt: '2026-11-21T12:00:00Z' });
+        const row = result.coachingHistory.placements.items.find(item => item.id === 'plan-1@2:s1');
+        expect(row?.fields.status.value).toBeNull();
+        expect(row?.fields.date.value).toBeNull();
+        expect((row?.fields.statusHistory.value as unknown[]).length).toBe(2);
+    });
+
     it('carries session response linkage and the placement revision', () => {
         const [response] = output.facts.sessionResponses.items;
         expect(response.fields.sourceSession.value).toEqual(sessionResponse.sourceSession);

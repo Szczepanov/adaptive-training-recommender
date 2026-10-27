@@ -1,3 +1,4 @@
+import type { PlacementEvent } from '../placementHistory.ts';
 /**
  * Inputs to the pure ledger-export builder: already-read records, never IO handles.
  *
@@ -195,6 +196,7 @@ export interface LedgerExportRecords {
     constraints?: readonly UserConstraint[];
     planRevisions?: readonly PlanRevisionInput[];
     placements?: readonly PlacementInput[];
+    placementHistory?: readonly PlacementEvent[];
     plannedToPerformed?: readonly PlannedToPerformedInput[];
 }
 

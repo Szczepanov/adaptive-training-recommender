@@ -163,6 +163,7 @@ export class LedgerExportService {
         const verified = new Map<string, { contentHash: string; sessionIds: Set<string> }>();
         records.planRevisions = [];
         records.placements = [];
+        records.placementHistory = [];
         let revisionState: LedgerState = 'measured';
         let placementState: LedgerState = 'measured';
         try {
@@ -184,6 +185,9 @@ export class LedgerExportService {
                 for (const revision of [...refs].sort((a, b) => a - b)) {
                     const plan = await externalPlanService.getRevisionState(userId, planId, revision);
                     const placement = await externalPlanService.getPlacementState(userId, planId, revision);
+                    const history = await externalPlanService.getPlacementHistoryState(userId, planId, revision);
+                    if (history.status === 'AVAILABLE') records.placementHistory = [...records.placementHistory, ...history.data];
+                    else placementState = worstState([placementState, history.status === 'INVALID' ? 'invalid' : 'unavailable']);
                     if (placement.status === 'AVAILABLE') records.placements = [...records.placements, placement.data];
                     else if (placement.status !== 'MISSING') placementState = worstState([placementState, placement.status === 'INVALID' ? 'invalid' : 'unavailable']);
                     if (plan.status !== 'AVAILABLE') { revisionState = worstState([revisionState, plan.status === 'INVALID' ? 'invalid' : 'unavailable']); continue; }

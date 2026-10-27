@@ -1013,6 +1013,25 @@ emulatorDescribe('Firestore security rules', () => {
         await assertSucceeds(getDoc(doc(ownerDb, externalActivationPath)));
     });
 
+    it('allows only owner creation of immutable revision-scoped placement history', async () => {
+        await testEnvironment.withSecurityRulesDisabled(async context => {
+            await setDoc(doc(context.firestore(), externalRevisionPath), validExternalPlanRevision());
+        });
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        const otherDb = testEnvironment.authenticatedContext(otherUserId).firestore();
+        const path = `${externalPlanPath}/revisions/1/placement_history/event-1`;
+        const event = { userId: ownerId, planId: 'autumn-block', revision: 1, changedOn: '2026-08-18',
+            recordedAt: '2026-08-18T12:00:00Z', previous: [], assignments: [], successors: {} };
+        await assertFails(setDoc(doc(otherDb, path), event));
+        await assertFails(setDoc(doc(ownerDb, path), { ...event, revision: 2 }));
+        await assertSucceeds(setDoc(doc(ownerDb, path), event));
+        await assertSucceeds(getDoc(doc(ownerDb, path)));
+        await assertFails(getDoc(doc(otherDb, path)));
+        await assertFails(setDoc(doc(ownerDb, path), event));
+        await assertFails(updateDoc(doc(ownerDb, path), { changedOn: '2026-08-19' }));
+        await assertFails(deleteDoc(doc(ownerDb, path)));
+    });
+
     it('denies cross-user and revision-mismatched revision-scoped placement writes', async () => {
         await testEnvironment.withSecurityRulesDisabled(async context => {
             const admin = context.firestore();

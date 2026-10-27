@@ -89,7 +89,7 @@ describe('ExternalPlanService', () => {
         vi.clearAllMocks();
         firestore.committedDocs.clear();
         firestore.transactions.length = 0;
-        firestore.doc.mockImplementation((_db: unknown, ...segments: string[]) => ({ path: segments.join('/') }));
+        firestore.doc.mockImplementation((db: unknown, ...segments: string[]) => ({ path: segments.length ? segments.join('/') : `${(db as { path: string }).path}/event-${firestore.transactions.length}` }));
         firestore.collection.mockImplementation((_db: unknown, ...segments: string[]) => ({ path: segments.join('/') }));
         firestore.getDoc.mockImplementation((ref: { path: string }) => Promise.resolve({
             exists: () => firestore.committedDocs.has(ref.path),
@@ -390,6 +390,36 @@ describe('ExternalPlanService', () => {
             assignments: [{ sessionId: 'a', date: '2026-08-18', status: 'bogus' as never }],
         })).rejects.toThrow(/Invalid placement overlay/);
         expect(firestore.setDoc).not.toHaveBeenCalled();
+    });
+
+    it('atomically stores previous and new assignments and requires explicit successors', async () => {
+        const service = new ExternalPlanService();
+        const initial = { planId: 'autumn-block', revision: 1, assignments: [{ sessionId: 'a', date: '2026-08-18', status: 'planned' as const }] };
+        await service.savePlacement('u1', initial);
+        await service.savePlacement('u1', { ...initial, assignments: [{ ...initial.assignments[0], date: '2026-08-19', status: 'moved' }] });
+        const event = firestore.transactions[1].stagedWrites.find(write => write.path.includes('/placement_history/'))?.data;
+        expect(event).toMatchObject({ previous: initial.assignments, assignments: [{ sessionId: 'a', date: '2026-08-19', status: 'moved' }] });
+        const superseded = { ...initial, assignments: [{ ...initial.assignments[0], status: 'superseded' as const }] };
+        await expect(service.savePlacement('u1', superseded)).rejects.toThrow(/explicit successor/);
+        await service.savePlacement('u1', superseded, { a: { revision: 2, sessionId: 'new-a' } });
+        expect(firestore.transactions[2].stagedWrites.find(write => write.path.includes('/placement_history/'))?.data)
+            .toMatchObject({ successors: { a: { revision: 2, sessionId: 'new-a' } } });
+    });
+
+    it('dates history in Warsaw and leaves no partial writes on transaction failure', async () => {
+        vi.useFakeTimers();
+        try {
+            vi.setSystemTime(new Date('2026-08-17T22:30:00.000Z'));
+            const placement = { planId: 'autumn-block', revision: 1, assignments: [] };
+            await new ExternalPlanService().savePlacement('u1', placement);
+            expect(firestore.transactions[0].stagedWrites.find(write => write.path.includes('/placement_history/'))?.data)
+                .toMatchObject({ changedOn: '2026-08-18' });
+            firestore.failNextTransaction(new Error('offline'));
+            await expect(new ExternalPlanService().savePlacement('u1', placement)).rejects.toThrow('offline');
+            expect(firestore.transactions).toHaveLength(1);
+        } finally {
+            vi.useRealTimers();
+        }
     });
 
     it('rejects two assignments claiming the same session', async () => {

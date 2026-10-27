@@ -1,4 +1,4 @@
-import { collection, doc, getDoc, getDocs, runTransaction, setDoc, type DocumentData } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, runTransaction, type DocumentData } from 'firebase/firestore';
 import { getDb } from '../firebase';
 import type {
     ExternalPlanHeader,
@@ -17,6 +17,8 @@ import { EXTERNAL_PLAN_SCHEMA_V5, type ExternalTrainingPlanV5 } from '../session
 import { EXTERNAL_PLAN_SCHEMA_V6, type ExternalTrainingPlanV6 } from '../sessions/externalPlanV6';
 import { validateAnyExternalTrainingPlan, validateExternalPlanImport } from '../sessions/externalPlanValidation';
 import { isValidDate } from '../engine/validation';
+import { getLocalDateString } from '../utils/localDate';
+import type { PlacementEvent } from '../ledger/placementHistory';
 
 /** Re-exported so existing callers keep one import site. The implementation lives in
  * `engine/externalPlanHash.ts` because `replay.ts` verifies against it and must not pull
@@ -455,16 +457,77 @@ export class ExternalPlanService {
         }
     }
 
-    /** The overlay is the only mutable part of an imported plan. */
-    async savePlacement(userId: string, placement: Omit<ExternalPlanPlacement, 'userId' | 'updatedAt'>): Promise<ExternalPlanPlacement> {
-        const stored: ExternalPlanPlacement = { ...placement, userId, updatedAt: new Date().toISOString() };
+    async getPlacementHistoryState(userId: string, planId: string, revision: number): Promise<DataState<PlacementEvent[]>> {
+        const documentPath = `users/${userId}/external_plans/${planId}/revisions/${revision}/placement_history`;
+        try {
+            const snapshot = await getDocs(collection(getDb(), documentPath));
+            const events = snapshot.docs.map(item => item.data() as PlacementEvent);
+            const validAssignments = (assignments: PlacementEvent['assignments']) => validateExternalPlanPlacement({
+                userId, planId, revision, assignments, updatedAt: '',
+            }).isValid;
+            if (events.some(event => !event || typeof event !== 'object' || event.userId !== userId || event.planId !== planId || event.revision !== revision
+                || !isValidDate(event.changedOn) || typeof event.recordedAt !== 'string'
+                || !validAssignments(event.previous) || !validAssignments(event.assignments)
+                || !event.successors || typeof event.successors !== 'object' || Array.isArray(event.successors)
+                || Object.values(event.successors).some(value => !value || !Number.isSafeInteger(value.revision)
+                    || value.revision <= revision || typeof value.sessionId !== 'string' || !value.sessionId)
+                || event.assignments.some(assignment => assignment.status === 'superseded' && !event.successors[assignment.sessionId]))) {
+                return { status: 'INVALID', issues: [{ code: 'invalid-placement-history', documentPath }] };
+            }
+            return { status: 'AVAILABLE', data: events, revision: String(events.length) };
+        } catch (error: unknown) {
+            return { status: 'UNAVAILABLE', operation: 'read external plan placement history', retryable: getErrorCode(error) !== 'permission-denied' };
+        }
+    }
+
+    /** Atomically retain each previous overlay alongside the new current read model. */
+    async savePlacement(userId: string, placement: Omit<ExternalPlanPlacement, 'userId' | 'updatedAt'>,
+        successors: PlacementEvent['successors'] = {}): Promise<ExternalPlanPlacement> {
+        const now = new Date();
+        const stored: ExternalPlanPlacement = { ...placement, userId, updatedAt: now.toISOString() };
         const parsed = validateExternalPlanPlacement(stored);
         if (!parsed.isValid) {
             throw new Error(`Invalid placement overlay: ${parsed.errors.map(error => `${error.field}: ${error.message}`).join('; ')}`);
         }
-        await setDoc(this.placementRef(userId, placement.planId, placement.revision), stored as unknown as DocumentData);
-        return stored;
+        for (const assignment of placement.assignments) {
+            if (assignment.status === 'superseded') {
+                const successor = successors[assignment.sessionId];
+                if (!successor || !Number.isSafeInteger(successor.revision) || successor.revision <= placement.revision
+                    || typeof successor.sessionId !== 'string' || !successor.sessionId) {
+                    throw new Error('Superseded placement requires an explicit successor in a newer revision');
+                }
+            }
+        }
+        if (Object.entries(successors).some(([id, successor]) => !placement.assignments.some(a => a.sessionId === id && a.status === 'superseded')
+            || !successor || !Number.isSafeInteger(successor.revision) || successor.revision <= placement.revision
+            || typeof successor.sessionId !== 'string' || !successor.sessionId)) {
+            throw new Error('Invalid placement successor');
+        }
+        const currentRef = this.placementRef(userId, placement.planId, placement.revision);
+        const eventRef = doc(collection(getDb(), 'users', userId, 'external_plans', placement.planId,
+            'revisions', String(placement.revision), 'placement_history'));
+        return runTransaction(getDb(), async transaction => {
+            const current = await transaction.get(currentRef);
+            const legacy = current.exists() ? null : await transaction.get(this.legacyPlacementRef(userId, placement.planId));
+            const previousRaw = current.exists() ? current.data() : legacy?.exists() ? legacy.data() : null;
+            const previous = previousRaw ? validateExternalPlanPlacement(previousRaw) : null;
+            if (previous && (!previous.isValid || !previous.data || previous.data.userId !== userId || previous.data.planId !== placement.planId)) {
+                throw new Error('Invalid previous placement overlay');
+            }
+            const applicable = previous?.data?.revision === placement.revision ? previous.data : null;
+            if (current.exists() && !applicable) throw new Error('Invalid previous placement revision');
+            const previousTime = applicable ? Date.parse(applicable.updatedAt) : NaN;
+            const recordedAt = new Date(Math.max(now.getTime(), Number.isFinite(previousTime) ? previousTime + 1 : 0)).toISOString();
+            const next = { ...stored, updatedAt: recordedAt };
+            const event: PlacementEvent = { userId, planId: placement.planId, revision: placement.revision,
+                changedOn: getLocalDateString(now), recordedAt, previous: applicable?.assignments ?? [],
+                assignments: next.assignments, successors };
+            transaction.set(currentRef, next as unknown as DocumentData);
+            transaction.set(eventRef, event as unknown as DocumentData);
+            return next;
+        });
     }
+
 }
 
 export const externalPlanService = new ExternalPlanService();
