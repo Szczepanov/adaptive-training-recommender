@@ -2,6 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { computeInternalResponseStrain } from '../engine/fatigue';
 import { evaluateReadinessAndSafetyEnvelope } from '../engine/rules';
 import type { DailyReadiness, EngineObjectiveInput, SubjectiveInput, UserContext } from '../engine/models';
+import {
+    classifyRecoveryMetric,
+    RECOVERY_VARIABILITY_FLOORS,
+    SLEEP_SCORE_ABSOLUTE_FLOOR,
+    type RecoveryMetric,
+} from '../derived/flags/recoveryBeyondBaseline';
 import { ENGINE_KNOWLEDGE_COVERAGE } from './knowledgeCoverage';
 import { getActiveKnowledgeClaim, KNOWLEDGE_CLAIM_IDS } from './sportsKnowledgeRegistry';
 
@@ -165,5 +171,47 @@ describe('readiness evidence pack aligns with current decision policy', () => {
         expect(sore.impactTissue).toBe(0.88);
         expect(sore.upperBody).toBeCloseTo(0.88 * 0.7, 10);
         expect(strain({}, { soreness: 7 }).lowerBody).toBeCloseTo(6 / 9, 10);
+    });
+});
+
+describe('derived recovery_beyond_baseline floors match rules.ts (#1144 PR1-5)', () => {
+    // rules.ts keeps a private copy of these floors until ADR-0052 Phase 3. Each derived floor
+    // must still be exactly one engine z-unit: with no 28-day stdev, a floor-sized adverse
+    // delta yields acuteDeviation = weight, and 90% of it stays below. 7d and 28d deltas are
+    // equal so the multi-day drift term is zero.
+    const cases: Array<[RecoveryMetric, number, -1 | 1, (delta: number) => Partial<EngineObjectiveInput>]> = [
+        ['hrv', 0.5, -1, delta => ({ hrv_delta: delta, hrv_delta_28d: delta })],
+        ['rhr', 0.3, 1, delta => ({ rhr_delta: delta, rhr_delta_28d: delta })],
+        ['sleep', 0.2, -1, delta => ({ sleep_score_delta_7d: delta, sleep_score_delta_28d: delta })],
+    ];
+    const noStdev: Partial<EngineObjectiveInput> = { hrv_stdev_28d: null, rhr_stdev_28d: null, sleep_score_stdev_28d: null };
+    const acute = (overrides: Partial<EngineObjectiveInput>) =>
+        evaluateReadinessAndSafetyEnvelope(readiness({ ...noStdev, ...overrides }), context()).telemetry.metricStrain.acuteDeviation;
+
+    it.each(cases)('%s: a floor-sized adverse delta is one engine z-unit and adverse in the derived flag', (metric, weight, sign, engineDelta) => {
+        const floor = RECOVERY_VARIABILITY_FLOORS[metric];
+        expect(acute(engineDelta(sign * floor))).toBeCloseTo(weight, 2);
+        expect(acute(engineDelta(sign * floor * 0.9))).toBeLessThan(weight);
+        const derived = (delta: number) =>
+            classifyRecoveryMetric(metric, { current: metric === 'sleep' ? 78 : 60, delta7d: delta, sd28d: null, metricDate: '2026-09-25' }, '2026-09-25');
+        expect(derived(sign * floor)).toMatchObject({ reasonCode: 'adverse_vs_baseline', band: floor });
+        expect(derived(sign * floor * 0.9).reasonCode).toBe('at_baseline');
+    });
+
+    it('sleep absolute floor: engine penalty and derived adverse verdict share the same boundary', () => {
+        const engine = (sleepScore: number) =>
+            evaluateReadinessAndSafetyEnvelope(readiness({ sleep_score: sleepScore }), context()).telemetry.contextPenalties.sleepFloorPenalty;
+        const derived = (sleepScore: number) =>
+            classifyRecoveryMetric('sleep', { current: sleepScore, delta7d: 0, sd28d: null, metricDate: '2026-09-25' }, '2026-09-25').reasonCode;
+        expect(engine(SLEEP_SCORE_ABSOLUTE_FLOOR - 1)).toBe(0.5);
+        expect(engine(SLEEP_SCORE_ABSOLUTE_FLOOR)).toBe(0);
+        expect(derived(SLEEP_SCORE_ABSOLUTE_FLOOR - 1)).toBe('below_absolute_floor');
+        expect(derived(SLEEP_SCORE_ABSOLUTE_FLOOR)).toBe('at_baseline');
+    });
+
+    it('lists the derived evaluator on the physiological strain coverage item', () => {
+        const coverage = ENGINE_KNOWLEDGE_COVERAGE.find(item => item.id === 'readiness.physiological_strain_model');
+        expect(coverage?.codeRefs).toContain('derived/flags/recoveryBeyondBaseline.ts:RECOVERY_VARIABILITY_FLOORS');
+        expect(coverage?.currentRule).toContain('variability floors 3 ms/1.5 bpm/4 points');
     });
 });

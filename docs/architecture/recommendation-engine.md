@@ -379,15 +379,18 @@ rendering paths, not by recommendation/readiness authority modules; it produces 
   isolated; only a single adverse objective signal is described as isolated. In every
   case the text defers to the engine's readiness/safety evaluation.
 - A stale (not the as-of date) or missing snapshot, an immature baseline, implausible
-  values (`dataConfidence.ts` `PHYSIOLOGICAL_BOUNDS`) or a missing check-in make the
+  values (`derived/flags/recoveryBeyondBaseline.ts` `PHYSIOLOGICAL_BOUNDS`) or a missing check-in make the
   family unavailable and are stated — never read as normal recovery.
 - Pain, illness, red flags and non-normal tissue response render first as dominant safety
   facts that override the synthesis. Reassuring evidence is explicitly stated never to
   justify raising volume or intensity above authored intent.
 - The subjective adverse band mirrors the `rules.ts` subjective triggers that move a day
-  off `train`, and the copied HRV/RHR/sleep variability floors and sleep floor 50 mirror
-  `rules.ts`; `contextBriefRecoverySynthesis.test.ts` pins both behaviourally against the live
-  evaluator. Its other bands are display constants without decision authority (ADR-0033).
+  off `train`. The HRV/RHR/sleep classification is the D-FLAGS `recovery_beyond_baseline`
+  evaluator (`derived/flags/recoveryBeyondBaseline.ts`, #1144 PR1-5), whose variability
+  floors and sleep floor 50 mirror `rules.ts`'s private copy;
+  `readinessSleepHrvPolicyAlignment.test.ts` and `contextBriefRecoverySynthesis.test.ts` pin
+  both behaviourally against the live evaluator. Its other bands are display constants
+  without decision authority (ADR-0033).
 
 #### Configured sensors vs observed telemetry (issue #816)
 

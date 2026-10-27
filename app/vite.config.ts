@@ -140,7 +140,8 @@ export default defineConfig({
             id.includes('/engine/adapters') ||
             id.includes('/engine/dataConfidence') ||
             id.includes('/engine/multisourceFusion') ||
-            id.includes('/derived/baselines/multisourceBaselines')
+            id.includes('/derived/baselines/multisourceBaselines') ||
+            id.includes('/derived/flags/recoveryBeyondBaseline')
           ) {
             return 'engine-context';
           }

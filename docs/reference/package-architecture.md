@@ -79,6 +79,7 @@ app/src/derived/           # ADR-0052 Phase 1: derived metrics and D-FLAGS evalu
       healthAnomalyReplay.ts   # Historical replay runner for health anomaly telemetry
       respirationElevation.ts # Respiration-elevation status/evidence evaluator feeding healthAnomalyModels
       illnessAnomalyFlag.ts  # D-FLAGS illness_anomaly: active only on possible_illness_or_systemic_stress
+    recoveryBeyondBaseline.ts # D-FLAGS recovery_beyond_baseline (ADR-0024, #1144 PR1-5): per-metric HRV/RHR/sleep vs 7d baseline, active if any is adverse; owns RECOVERY_VARIABILITY_FLOORS, SLEEP_SCORE_ABSOLUTE_FLOOR, PHYSIOLOGICAL_BOUNDS
 
 app/src/engine/
   models.ts            # Engine decision models, event schemas, microcycle & strain telemetry; re-exports ledger/models.ts
@@ -148,7 +149,7 @@ app/src/engine/
   decisionEvidence.ts  # Pure evidence ranking, DoD deltas, boundary classification, confidence tiers
   adapters.ts           # mapSnapshotToEngineInput and the other read-model -> engine input mappers
   validationCore.ts     # Validates untyped external input (raw Firestore docs/client payloads)
-  dataConfidence.ts     # Read-confidence classification shared across context/composer
+  dataConfidence.ts     # Read-confidence classification shared across context/composer; PHYSIOLOGICAL_BOUNDS come from derived/flags/recoveryBeyondBaseline.ts
   eventPresets.ts       # Preset user-event -> demand-profile mapping (goalToUserEvent)
   checkinCompletion.ts  # isCompletedSubjectiveCheckin / hasCompletedSubjectiveCheckinForDecision
   fixedActivityIdentity.ts # Resolves a FixedActivity's catalog identity & occurrence key
@@ -159,7 +160,7 @@ app/src/engine/
   contextBriefPlanningHandoff.ts # Upcoming external-plan/recovery-timeline context for planning handoff
   contextBriefPurpose.ts # Export purposes (morning/planning/diagnostic), section titles, goal/use-instruction renderers
   contextBriefRecovery.ts # Objective wearable + body-composition sections of the context brief
-  contextBriefRecoverySynthesis.ts # Explanatory multisignal recovery synthesis for the brief; no decision authority (#812)
+  contextBriefRecoverySynthesis.ts # Explanatory multisignal recovery synthesis for the brief; no decision authority (#812); renders the derived recovery_beyond_baseline per-metric results
   briefPlanAuthority.ts # Reconciles persisted verdict + imported occurrence into one brief authority outcome (#810)
   trainingSettingsSchema.ts # Persisted TrainingSettings schema version gate (current v3, supports v2)
   strengthSessionLifecycle.ts # Strength session state machine (new/in_progress/... transitions)
