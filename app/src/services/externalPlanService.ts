@@ -489,20 +489,6 @@ export class ExternalPlanService {
         if (!parsed.isValid) {
             throw new Error(`Invalid placement overlay: ${parsed.errors.map(error => `${error.field}: ${error.message}`).join('; ')}`);
         }
-        for (const assignment of placement.assignments) {
-            if (assignment.status === 'superseded') {
-                const successor = successors[assignment.sessionId];
-                if (!successor || !Number.isSafeInteger(successor.revision) || successor.revision <= placement.revision
-                    || typeof successor.sessionId !== 'string' || !successor.sessionId) {
-                    throw new Error('Superseded placement requires an explicit successor in a newer revision');
-                }
-            }
-        }
-        if (Object.entries(successors).some(([id, successor]) => !placement.assignments.some(a => a.sessionId === id && a.status === 'superseded')
-            || !successor || !Number.isSafeInteger(successor.revision) || successor.revision <= placement.revision
-            || typeof successor.sessionId !== 'string' || !successor.sessionId)) {
-            throw new Error('Invalid placement successor');
-        }
         const currentRef = this.placementRef(userId, placement.planId, placement.revision);
         const eventRef = doc(collection(getDb(), 'users', userId, 'external_plans', placement.planId,
             'revisions', String(placement.revision), 'placement_history'));
@@ -516,12 +502,32 @@ export class ExternalPlanService {
             }
             const applicable = previous?.data?.revision === placement.revision ? previous.data : null;
             if (current.exists() && !applicable) throw new Error('Invalid previous placement revision');
+            const existing = applicable?.successors ?? {};
+            const retained: PlacementEvent['successors'] = {};
+            for (const assignment of placement.assignments) {
+                if (assignment.status !== 'superseded') continue;
+                const wasSuperseded = applicable?.assignments.some(item => item.sessionId === assignment.sessionId && item.status === 'superseded');
+                const prior = wasSuperseded ? existing[assignment.sessionId] : undefined;
+                const supplied = successors[assignment.sessionId];
+                if (prior && supplied && (prior.revision !== supplied.revision || prior.sessionId !== supplied.sessionId)) {
+                    throw new Error('Cannot replace an existing placement successor');
+                }
+                const successor = supplied ?? prior;
+                if (!successor || !Number.isSafeInteger(successor.revision) || successor.revision <= placement.revision
+                    || typeof successor.sessionId !== 'string' || !successor.sessionId) {
+                    throw new Error('Superseded placement requires an explicit successor in a newer revision');
+                }
+                retained[assignment.sessionId] = successor;
+            }
+            if (Object.keys(successors).some(id => !placement.assignments.some(item => item.sessionId === id && item.status === 'superseded'))) {
+                throw new Error('Invalid placement successor');
+            }
             const previousTime = applicable ? Date.parse(applicable.updatedAt) : NaN;
             const recordedAt = new Date(Math.max(now.getTime(), Number.isFinite(previousTime) ? previousTime + 1 : 0)).toISOString();
-            const next = { ...stored, updatedAt: recordedAt };
+            const next = { ...stored, successors: retained, updatedAt: recordedAt };
             const event: PlacementEvent = { userId, planId: placement.planId, revision: placement.revision,
                 changedOn: getLocalDateString(now), recordedAt, previous: applicable?.assignments ?? [],
-                assignments: next.assignments, successors };
+                assignments: next.assignments, successors: retained };
             transaction.set(currentRef, next as unknown as DocumentData);
             transaction.set(eventRef, event as unknown as DocumentData);
             return next;

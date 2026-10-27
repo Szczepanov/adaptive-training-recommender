@@ -1044,6 +1044,8 @@ emulatorDescribe('Firestore security rules', () => {
         const scopedPath = `${externalPlanPath}/revisions/1/placement/current`;
         // Owner writes bound to the owning revision succeed.
         await assertSucceeds(setDoc(doc(ownerDb, scopedPath), validExternalPlacement()));
+        await assertSucceeds(setDoc(doc(ownerDb, scopedPath), { ...validExternalPlacement(), successors: { a: { revision: 2, sessionId: 'b' } } }));
+        await assertFails(setDoc(doc(ownerDb, scopedPath), { ...validExternalPlacement(), successors: [] }));
         // A placement claiming another revision never lands under this revision's path:
         // historical revisions cannot consume another revision's overlay.
         await assertFails(setDoc(doc(ownerDb, scopedPath), { ...validExternalPlacement(), revision: 2 }));

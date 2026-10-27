@@ -732,10 +732,11 @@ service cloud.firestore {
       function hasValidExternalPlanPlacement(userId) {
         let data = request.resource.data;
         return hasOwnedUserId(userId)
-          && data.keys().hasOnly(['userId', 'planId', 'revision', 'assignments', 'updatedAt'])
+          && data.keys().hasOnly(['userId', 'planId', 'revision', 'assignments', 'successors', 'updatedAt'])
           && data.planId is string && data.planId.size() > 0 && data.planId.size() <= 64
           && data.revision is int && data.revision >= 1
           && data.assignments is list && data.assignments.size() <= 120
+          && (!('successors' in data) || (data.successors is map && data.successors.size() <= 120))
           && data.updatedAt is string;
       }
 

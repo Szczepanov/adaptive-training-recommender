@@ -404,6 +404,12 @@ describe('ExternalPlanService', () => {
         await service.savePlacement('u1', superseded, { a: { revision: 2, sessionId: 'new-a' } });
         expect(firestore.transactions[2].stagedWrites.find(write => write.path.includes('/placement_history/'))?.data)
             .toMatchObject({ successors: { a: { revision: 2, sessionId: 'new-a' } } });
+        await service.savePlacement('u1', { ...superseded, assignments: [...superseded.assignments,
+            { sessionId: 'b', date: '2026-08-21', status: 'moved' }] });
+        expect(firestore.transactions[3].stagedWrites.find(write => write.path.includes('/placement_history/'))?.data)
+            .toMatchObject({ successors: { a: { revision: 2, sessionId: 'new-a' } } });
+        await expect(service.savePlacement('u1', superseded, { a: { revision: 3, sessionId: 'other' } }))
+            .rejects.toThrow(/Cannot replace/);
     });
 
     it('dates history in Warsaw and leaves no partial writes on transaction failure', async () => {
