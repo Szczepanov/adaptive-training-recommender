@@ -219,7 +219,7 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         id: 'readiness.physiological_strain_model', domain: 'readiness_recovery', title: 'HRV/RHR/sleep/respiration strain model',
         currentRule: 'Uses weights HRV 0.5, RHR 0.3, sleep 0.2, respiration 0.3; variability floors 3 ms/1.5 bpm/4 points/1 brpm; z cap 2.0; chronic component multiplier 1.5.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'none',
-        codeRefs: ['engine/rules.ts:metricStrain', 'engine/rules.ts:evaluateReadinessAndSafetyEnvelope'],
+        codeRefs: ['engine/rules.ts:metricStrain', 'engine/rules.ts:evaluateReadinessAndSafetyEnvelope', 'derived/flags/recoveryBeyondBaseline.ts:RECOVERY_VARIABILITY_FLOORS'],
         knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.hrvContextualMonitoring, KNOWLEDGE_CLAIM_IDS.hrvGuidedTrainingConditional, KNOWLEDGE_CLAIM_IDS.rhrContextualMonitoring, KNOWLEDGE_CLAIM_IDS.sleepPerformanceImportance, KNOWLEDGE_CLAIM_IDS.wearableSleepMeasurementLimits, KNOWLEDGE_CLAIM_IDS.respirationLongitudinalContext, KNOWLEDGE_CLAIM_IDS.readinessPhysiologicalStrainModel],
         coverageRationale: 'HRV and resting-HR evidence supports longitudinal, individualized, multi-signal interpretation; meaningful sleep loss is performance-relevant but consumer sleep scores retain measurement limits; nocturnal respiration can contribute contextual anomaly information but is not a specific illness/readiness marker. The exact weights, variability floors, z cap and chronic multiplier remain explicit product calibration rather than scientific coefficients.',
     },

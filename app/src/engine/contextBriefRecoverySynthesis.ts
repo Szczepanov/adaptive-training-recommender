@@ -1,5 +1,12 @@
 import type { DailyRecoverySnapshot, DailySubjectiveCheckin } from './models';
-import { PHYSIOLOGICAL_BOUNDS } from './dataConfidence';
+import {
+    classifyRecoveryMetric,
+    RECOVERY_METRICS,
+    recoveryMetricInputs,
+    SLEEP_SCORE_ABSOLUTE_FLOOR,
+    type RecoveryMetric,
+    type RecoveryMetricResult,
+} from '../derived/flags/recoveryBeyondBaseline';
 import { round, signed } from './contextBriefRecovery';
 
 /*
@@ -10,7 +17,9 @@ import { round, signed } from './contextBriefRecovery';
  * evaluation in `rules.ts` `evaluateReadinessAndSafetyEnvelope` stays the sole decision
  * authority. Because it has no decision authority, its bands are display constants and do
  * not need a knowledge claim (ADR-0033); where it mirrors a live threshold, a parity test
- * (`contextBriefRecoverySynthesis.test.ts`) keeps the mirror honest.
+ * (`contextBriefRecoverySynthesis.test.ts`) keeps the mirror honest. The HRV, resting-HR and
+ * sleep classification itself is the D-FLAGS `recovery_beyond_baseline` evaluator
+ * (`derived/flags/recoveryBeyondBaseline.ts`, #1144 PR1-5); this module only renders it.
  *
  * Structure, not prose, prevents double counting: evidence is grouped into four
  * independent families (athlete-reported state, HRV, resting HR, sleep). Each family casts
@@ -53,61 +62,50 @@ export interface RecoveryEvidenceSynthesis {
     implications: string[];
 }
 
-// Mirrors of the live engine's personal-variability floors (`rules.ts`, private there).
-// Used here only to decide "outside usual night-to-night variation" for display.
-const HRV_SD_FLOOR_MS = 3;
-const RHR_SD_FLOOR_BPM = 1.5;
-const SLEEP_SD_FLOOR_PTS = 4;
-/** Mirrors `rules.ts` SLEEP_SCORE_ABSOLUTE_FLOOR. */
-const SLEEP_SCORE_ABSOLUTE_FLOOR = 50;
 /** Display band: an average physical subjective load (fatigue, soreness, inverted readiness,
  * inverted sleep quality) at or below this reads as "low" — the engine's modify line is >5. */
 const SUBJECTIVE_REASSURING_MAX_LOAD = 4;
 
 const isNum = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
 
-function plausible(value: number, bounds: { min: number; max: number }): boolean {
-    return value >= bounds.min && value <= bounds.max;
-}
+export interface ObjectiveResult { evidence: FamilyEvidence; implausible: boolean }
 
-interface ObjectiveSpec {
-    family: Exclude<EvidenceFamily, 'subjective'>;
-    label: string;
-    unit: string;
-    current: number | null;
-    delta7d: number | null | undefined;
-    sd28d: number | null | undefined;
-    sdFloor: number;
-    /** +1 when a higher value is adverse (RHR), -1 when a lower value is adverse. */
-    adverseSign: 1 | -1;
-    bounds: { min: number; max: number };
-}
+const OBJECTIVE_LABELS: Readonly<Record<RecoveryMetric, string>> = {
+    hrv: 'HRV (overnight)',
+    rhr: 'Resting HR',
+    sleep: 'Sleep score',
+};
 
-interface ObjectiveResult { evidence: FamilyEvidence; implausible: boolean }
-
-/** Pure. `metricDate` is the date the metric actually describes: the Garmin provider can
- * fall back to D-1 sleep/RHR when today's is not ready (`source.metricDates`), read the same
- * way `dataConfidence.ts` `evaluateDataConfidence` reads it. */
-function classifyObjective(spec: ObjectiveSpec, metricDate: string, asOfDate: string): ObjectiveResult {
-    const base = { family: spec.family, label: spec.label, kind: 'measured_core' as const };
+/** Pure renderer over one `recovery_beyond_baseline` metric result. `metricDate` is the date
+ * the metric actually describes: the Garmin provider can fall back to D-1 sleep/RHR when
+ * today's is not ready (`source.metricDates`), read the same way `dataConfidence.ts`
+ * `evaluateDataConfidence` reads it. Exported for the frozen-oracle parity test only. */
+export function classifyObjective(result: RecoveryMetricResult, asOfDate: string): ObjectiveResult {
+    const base = { family: result.metric, label: OBJECTIVE_LABELS[result.metric], kind: 'measured_core' as const };
     const out = (state: FamilyState, detail: string, implausible = false): ObjectiveResult =>
         ({ evidence: { ...base, state, detail }, implausible });
-    if (!isNum(spec.current)) return out('unavailable', `not recorded (metric date ${metricDate})`);
-    if (metricDate !== asOfDate) {
-        return out('unavailable', `${round(spec.current)} ${spec.unit} is dated ${metricDate}, not ${asOfDate} (provider fallback) — stale, not read as current recovery`);
+    const { metricDate } = result;
+    const value = `${round(result.current)} ${result.unit}`;
+    switch (result.reasonCode) {
+        case 'not_recorded':
+            return out('unavailable', `not recorded (metric date ${metricDate})`);
+        case 'stale_metric_date':
+            return out('unavailable', `${value} is dated ${metricDate}, not ${asOfDate} (provider fallback) — stale, not read as current recovery`);
+        case 'implausible':
+            return out('unavailable', `${value} is outside the plausible range; ignored`, true);
+        case 'below_absolute_floor':
+            return out('adverse', `${value} on ${metricDate}, below the absolute floor of ${SLEEP_SCORE_ABSOLUTE_FLOOR}`);
+        case 'no_baseline_delta':
+            return out('unavailable', `${value} on ${metricDate}; no 7d baseline delta`);
+        case 'at_baseline':
+        case 'adverse_vs_baseline':
+        case 'favorable_vs_baseline': {
+            const where = `${value} on ${metricDate}, ${signed(result.delta7d)} vs 7d (usual variation ±${round(result.band)})`;
+            if (result.reasonCode === 'at_baseline') return out('reassuring', `${where} — at baseline`);
+            const adverse = result.reasonCode === 'adverse_vs_baseline';
+            return out(adverse ? 'adverse' : 'reassuring', `${where} — ${adverse ? 'adverse' : 'favorable'} vs baseline`);
+        }
     }
-    if (!plausible(spec.current, spec.bounds)) {
-        return out('unavailable', `${round(spec.current)} ${spec.unit} is outside the plausible range; ignored`, true);
-    }
-    if (spec.family === 'sleep' && spec.current < SLEEP_SCORE_ABSOLUTE_FLOOR) {
-        return out('adverse', `${round(spec.current)} ${spec.unit} on ${metricDate}, below the absolute floor of ${SLEEP_SCORE_ABSOLUTE_FLOOR}`);
-    }
-    if (!isNum(spec.delta7d)) return out('unavailable', `${round(spec.current)} ${spec.unit} on ${metricDate}; no 7d baseline delta`);
-    const band = Math.max(isNum(spec.sd28d) ? spec.sd28d : spec.sdFloor, spec.sdFloor);
-    const where = `${round(spec.current)} ${spec.unit} on ${metricDate}, ${signed(spec.delta7d)} vs 7d (usual variation ±${round(band)})`;
-    if (Math.abs(spec.delta7d) < band) return out('reassuring', `${where} — at baseline`);
-    const adverse = spec.adverseSign * spec.delta7d > 0;
-    return out(adverse ? 'adverse' : 'reassuring', `${where} — ${adverse ? 'adverse' : 'favorable'} vs baseline`);
 }
 
 /** Mirrors the subjective triggers of `rules.ts` `evaluateReadinessAndSafetyEnvelope` that
@@ -185,13 +183,8 @@ function objectiveFamilies(snapshot: DailyRecoverySnapshot | undefined, asOfDate
     if (!snapshot) return blocked('no wearable snapshot in the exported window — missing, not normal');
     if (confidence.wearable === 'stale') return blocked(`latest snapshot is ${snapshot.date}, not ${asOfDate} — stale, not read as current recovery`);
     if (confidence.baseline === 'immature') return blocked('personal baseline not yet mature (<7 days) — deviations cannot be judged');
-    const { raw, derived } = snapshot;
-    const dates = snapshot.source?.metricDates;
-    return [
-        classifyObjective({ family: 'hrv', label: 'HRV (overnight)', unit: 'ms', current: raw.hrvOvernightAvg, delta7d: derived.deltas.hrvVs7d, sd28d: derived.hrv28dStdev, sdFloor: HRV_SD_FLOOR_MS, adverseSign: -1, bounds: PHYSIOLOGICAL_BOUNDS.hrv }, dates?.hrv ?? snapshot.date, asOfDate),
-        classifyObjective({ family: 'rhr', label: 'Resting HR', unit: 'bpm', current: raw.restingHr, delta7d: derived.deltas.restingHrVs7d, sd28d: derived.restingHr28dStdev, sdFloor: RHR_SD_FLOOR_BPM, adverseSign: 1, bounds: PHYSIOLOGICAL_BOUNDS.rhr }, dates?.restingHr ?? snapshot.date, asOfDate),
-        classifyObjective({ family: 'sleep', label: 'Sleep score', unit: 'pts', current: raw.sleepScore, delta7d: derived.deltas.sleepScoreVs7d, sd28d: derived.sleepScore28dStdev, sdFloor: SLEEP_SD_FLOOR_PTS, adverseSign: -1, bounds: PHYSIOLOGICAL_BOUNDS.sleepScore }, dates?.sleep ?? snapshot.date, asOfDate),
-    ];
+    const inputs = recoveryMetricInputs(snapshot);
+    return RECOVERY_METRICS.map(metric => classifyObjective(classifyRecoveryMetric(metric, inputs[metric], asOfDate), asOfDate));
 }
 
 function patternFor(families: readonly FamilyEvidence[]): RecoveryPattern {

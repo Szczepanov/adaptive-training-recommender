@@ -1,3 +1,4 @@
+import { PHYSIOLOGICAL_BOUNDS } from '../derived/flags/recoveryBeyondBaseline';
 import { getPreviousLocalDateString } from '../utils/localDate';
 import type { DailyDecisionInput, DailyRecoverySnapshot } from './models';
 
@@ -42,16 +43,8 @@ export interface DataConfidenceScore {
     summaryMessage: string;
 }
 
-export const PHYSIOLOGICAL_BOUNDS = {
-    hrv: { min: 8, max: 300, warnMin: 15, warnMax: 200, unit: 'ms' },
-    rhr: { min: 28, max: 140, warnMin: 35, warnMax: 100, unit: 'bpm' },
-    sleepScore: { min: 0, max: 100, unit: 'pts' },
-    sleepDurationMin: { min: 60, max: 900, warnMin: 180, warnMax: 720, unit: 'min' },
-    respiration: { min: 6, max: 35, warnMin: 8, warnMax: 25, unit: 'brpm' },
-    bodyBattery: { min: 0, max: 100, unit: 'pts' },
-    steps: { min: 0, max: 100000, warnMax: 50000, unit: 'steps' },
-    subjectiveScale: { min: 1, max: 10, unit: '1-10' },
-} as const;
+// The bounds moved to derived/ in #1144 PR1-5; re-exported so existing importers keep working.
+export { PHYSIOLOGICAL_BOUNDS };
 
 export const FRESHNESS_LIMITS_HOURS = {
     sleep: 18,
