@@ -78,7 +78,9 @@ it never becomes measured absence. The link keeps the recorded execution session
 not a date subsequently moved in the mutable overlay. The builder retains revisions referenced
 by in-window placements or performed links plus the latest revision per plan, even when a
 current placement has moved outside the window. Placements with recorded history are reconstructed as of the export date; their
-`statusHistory` contains the dated before/after events and explicit successor links.
+`statusHistory` contains the dated before/after events and explicit successor links. An export
+date before the first recorded event uses that event's previous snapshot, with `statusHistory`
+left `not_yet_supported`.
 Earlier legacy history and successors absent from legacy superseded assignments remain unknown; titles are never used to infer successors. Placements
 without history remain current overlays and are never claimed as immutable history.
 

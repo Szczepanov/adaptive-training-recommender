@@ -445,6 +445,21 @@ describe('ExternalPlanService', () => {
         }
     });
 
+    it('dates a change from its clamped recorded instant so a lagging clock cannot reorder history', async () => {
+        vi.useFakeTimers();
+        try {
+            const path = 'users/u1/external_plans/autumn-block/revisions/1/placement/current';
+            firestore.committedDocs.set(path, { userId: 'u1', planId: 'autumn-block', revision: 1,
+                assignments: [], updatedAt: '2026-08-18T22:30:00.000Z' });
+            vi.setSystemTime(new Date('2026-08-18T21:30:00.000Z'));
+            await new ExternalPlanService().savePlacement('u1', { planId: 'autumn-block', revision: 1, assignments: [] });
+            expect(firestore.transactions[0].stagedWrites.find(write => write.path.includes('/placement_history/'))?.data)
+                .toMatchObject({ changedOn: '2026-08-19', recordedAt: '2026-08-18T22:30:00.001Z' });
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
     it('rejects two assignments claiming the same session', async () => {
         await expect(new ExternalPlanService().savePlacement('u1', {
             planId: 'autumn-block', revision: 1,

@@ -1,5 +1,5 @@
 /** Layer 5: bounded coaching records and recorded placement history. */
-import { placementAsOf } from '../placementHistory.ts';
+import { placementAsOf, placementBeforeHistory } from '../placementHistory.ts';
 import { collect, type BuildContext } from './buildContext.ts';
 import type { LedgerExportRecords, PlacementInput } from './inputs.ts';
 import { fact, notYetSupported, record } from './ledgerValue.ts';
@@ -147,7 +147,9 @@ export function buildCoachingHistory(records: LedgerExportRecords, context: Buil
     for (const events of groups.values()) {
         const { planId, revision } = events[0];
         const index = placements.findIndex(row => row.planId === planId && row.revision === revision);
-        const assignments = placementAsOf(events, context.asOfDate);
+        // An as-of date before the first recorded change falls back to that change's `previous`
+        // snapshot rather than dropping the revision's placements.
+        const assignments = placementAsOf(events, context.asOfDate) ?? placementBeforeHistory(events);
         if (index >= 0) placements.splice(index, 1);
         if (assignments) placements.push({ planId, revision, assignments });
     }

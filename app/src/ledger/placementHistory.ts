@@ -22,3 +22,13 @@ export function placementAsOf(events: readonly PlacementEvent[], date: string): 
         .sort((a, b) => a.changedOn.localeCompare(b.changedOn) || a.recordedAt.localeCompare(b.recordedAt)).at(-1);
     return latest ? latest.assignments.map(assignment => ({ ...assignment })) : null;
 }
+
+/**
+ * The overlay as it stood before the first recorded change. History says nothing about when
+ * that state began, so callers use it only as the best-known state before history starts.
+ */
+export function placementBeforeHistory(events: readonly PlacementEvent[]): PlacementAssignment[] | null {
+    const first = [...events]
+        .sort((a, b) => a.changedOn.localeCompare(b.changedOn) || a.recordedAt.localeCompare(b.recordedAt))[0];
+    return first ? first.previous.map(assignment => ({ ...assignment })) : null;
+}

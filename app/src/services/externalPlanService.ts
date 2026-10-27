@@ -532,7 +532,7 @@ export class ExternalPlanService {
             const recordedAt = new Date(Math.max(now.getTime(), Number.isFinite(previousTime) ? previousTime + 1 : 0)).toISOString();
             const next = { ...stored, successors: retained, updatedAt: recordedAt };
             const event: PlacementEvent = { userId, planId: placement.planId, revision: placement.revision,
-                changedOn: getLocalDateString(now), recordedAt, previous: applicable?.assignments ?? [],
+                changedOn: getLocalDateString(new Date(recordedAt)), recordedAt, previous: applicable?.assignments ?? [],
                 assignments: next.assignments, successors: retained };
             transaction.set(currentRef, next as unknown as DocumentData);
             transaction.set(eventRef, event as unknown as DocumentData);

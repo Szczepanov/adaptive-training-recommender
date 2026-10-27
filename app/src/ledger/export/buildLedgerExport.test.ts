@@ -120,6 +120,21 @@ describe('buildLedgerExport real-model mapping (H1)', () => {
         expect(JSON.stringify(result)).not.toContain('owner');
     });
 
+    it('keeps the pre-history snapshot when the as-of date precedes the first recorded change', () => {
+        const input = fullRecords();
+        const before = [{ sessionId: 's1', date: '2026-11-19', status: 'completed' as const },
+            { sessionId: 's2', date: '2026-11-18', status: 'dropped' as const }];
+        input.placementHistory = [{ userId: 'owner', planId: 'plan-1', revision: 2,
+            changedOn: '2026-11-25', recordedAt: '2026-11-25T10:00:00.000Z', previous: before,
+            assignments: [{ sessionId: 's1', date: '2026-11-26', status: 'moved' }], successors: {} }];
+        const result = buildLedgerExport({ records: input, asOfDate: AS_OF, purpose: 'planning', exportedAt: '2026-11-21T12:00:00Z' });
+        const ids = result.coachingHistory.placements.items.map(item => item.id);
+        expect(ids).toEqual(expect.arrayContaining(['plan-1@2:s1', 'plan-1@2:s2']));
+        const row = result.coachingHistory.placements.items.find(item => item.id === 'plan-1@2:s1');
+        expect(row?.fields.date.value).toBe('2026-11-19');
+        expect(row?.fields.statusHistory.state).toBe('not_yet_supported');
+    });
+
     it('retains history for a removed assignment without presenting it as current', () => {
         const input = fullRecords();
         const assignment = { sessionId: 's1', date: '2026-11-20', status: 'planned' as const };
