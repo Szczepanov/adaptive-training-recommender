@@ -204,12 +204,13 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
       function hasValidSessionExecution(userId, executionId) {
         let data = request.resource.data;
         return hasOwnedUserId(userId)
-          && data.keys().hasOnly(['userId', 'executionId', 'occurrenceId', 'sessionSource', 'prescriptionHash', 'fitWorkoutFingerprint', 'fitWorkoutFingerprintKind', 'date', 'startedAt', 'completedAt', 'updatedAt', 'state', 'sessionRpe', 'notes', 'schemaVersion'])
+          && data.keys().hasOnly(['userId', 'executionId', 'occurrenceId', 'sessionSource', 'prescriptionHash', 'executedDefinition', 'fitWorkoutFingerprint', 'fitWorkoutFingerprintKind', 'date', 'startedAt', 'completedAt', 'updatedAt', 'state', 'sessionRpe', 'notes', 'schemaVersion'])
           && data.executionId == executionId
           && isValidActivityDate(data.date)
           && hasValidSessionSource(data.sessionSource)
           && (!('occurrenceId' in data) || data.occurrenceId is string)
           && (!('prescriptionHash' in data) || data.prescriptionHash is string)
+          && (!('executedDefinition' in data) || data.executedDefinition in ['authored', 'reduced'])
           && (('fitWorkoutFingerprint' in data) == ('fitWorkoutFingerprintKind' in data))
           && (!('fitWorkoutFingerprint' in data) || (data.fitWorkoutFingerprint is string && data.fitWorkoutFingerprint.matches('^fit-workout-v2:[0-9a-f]{32}$')))
           && (!('fitWorkoutFingerprintKind' in data) || data.fitWorkoutFingerprintKind in ['semantic_definition', 'index_fallback'])

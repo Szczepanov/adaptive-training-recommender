@@ -29,6 +29,7 @@ export type SessionSourceRef =
 export interface SessionReferenceBinding {
     sessionSource: SessionSourceRef;
     occurrenceId?: string;
+    executedDefinition?: 'authored' | 'reduced';
     prescriptionHash: string;
     /**
      * Optional 1:1 Garmin workout identity derived from the exact canonical export payload
@@ -390,6 +391,7 @@ export interface SessionExecution {
     occurrenceId?: string;
     sessionSource: SessionSourceRef;
     prescriptionHash?: string;
+    executedDefinition?: 'authored' | 'reduced';
     fitWorkoutFingerprint?: string;
     fitWorkoutFingerprintKind?: FitWorkoutFingerprintKind;
     date: string;

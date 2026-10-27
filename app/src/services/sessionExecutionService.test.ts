@@ -467,6 +467,17 @@ describe('SessionExecutionService', () => {
             expect(firestore.setDoc).not.toHaveBeenCalled();
         });
 
+        it.each(['authored', 'reduced'] as const)('persists the %s launch choice', async choice => {
+            firestore.getDocs.mockResolvedValueOnce({ docs: [] });
+            const tx = makeTransactionMock();
+            const exec = await service.startExecution(USER_ID, 'exec-new', {
+                sessionSource: { kind: 'catalog', workoutId: 'w1', catalogVersion: '1' },
+                date: '2026-08-17', executedDefinition: choice,
+            });
+            expect(exec.executedDefinition).toBe(choice);
+            expect(tx.set).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ executedDefinition: choice }));
+        });
+
         it('resumes existing in_progress execution without creating a second execution document', async () => {
             firestore.getDocs.mockResolvedValueOnce({
                 docs: [

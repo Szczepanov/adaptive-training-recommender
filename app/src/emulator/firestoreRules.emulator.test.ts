@@ -2594,6 +2594,7 @@ emulatorDescribe('Firestore security rules', () => {
             },
             occurrenceId: 'occ-authored-1',
             prescriptionHash: 'b'.repeat(64),
+            executedDefinition: 'reduced',
         };
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
         await expect(assertSucceeds(setDoc(doc(ownerDb, recommendationPath), {
@@ -2606,6 +2607,14 @@ emulatorDescribe('Firestore security rules', () => {
                 authoredOccurrence: { occurrenceId: 'occ-authored-1', decision: 'scale' },
             },
         }))).resolves.toBeUndefined();
+    });
+
+    it('accepts valid execution definition choices and keeps them immutable', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertSucceeds(setDoc(doc(ownerDb, sessionExecPath), { ...validSessionExecution(), executedDefinition: 'reduced' }));
+        await assertFails(updateDoc(doc(ownerDb, sessionExecPath), { executedDefinition: 'authored' }));
+        await assertFails(setDoc(doc(ownerDb, `users/${ownerId}/session_executions/exec-invalid`), { ...validSessionExecution(), executionId: 'exec-invalid', executedDefinition: 'unknown' }));
+        await assertSucceeds(setDoc(doc(ownerDb, `users/${ownerId}/session_executions/exec-authored`), { ...validSessionExecution(), executionId: 'exec-authored', executedDefinition: 'authored' }));
     });
 
     it.each([

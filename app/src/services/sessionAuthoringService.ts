@@ -451,6 +451,7 @@ export async function prepareExternalPlanSessionLaunch(
         binding: {
             sessionSource,
             ...(effectiveOccurrenceId ? { occurrenceId: effectiveOccurrenceId } : {}),
+            executedDefinition: options.useReducedDefinition ? 'reduced' : 'authored',
             prescriptionHash,
         },
     };

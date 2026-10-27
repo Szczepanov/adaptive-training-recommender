@@ -71,7 +71,7 @@ export interface UseSessionRunnerResult {
     ineligibleOptionIds: ReadonlySet<string>;
 
     startFixtureSession: (fixture: SessionDefinition) => Promise<void>;
-    startSession: (definition: SessionDefinition, source: SessionSourceRef, options?: { occurrenceId?: string; prescriptionHash?: string; allowDuplicateCompleted?: boolean }) => Promise<void>;
+    startSession: (definition: SessionDefinition, source: SessionSourceRef, options?: { occurrenceId?: string; prescriptionHash?: string; executedDefinition?: 'authored' | 'reduced'; allowDuplicateCompleted?: boolean }) => Promise<void>;
     selectStep: (blockIndex: number, stepIndex: number) => void;
     nextStep: () => void;
     prevStep: () => void;
@@ -452,6 +452,7 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
         options: {
             occurrenceId?: string;
             prescriptionHash?: string;
+            executedDefinition?: 'authored' | 'reduced';
             allowDuplicateCompleted?: boolean;
             fitWorkoutFingerprint?: string;
             fitWorkoutFingerprintKind?: FitWorkoutFingerprintKind;
@@ -488,6 +489,7 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
                 sessionSource: source,
                 ...(options.occurrenceId ? { occurrenceId: options.occurrenceId } : {}),
                 ...(options.prescriptionHash ? { prescriptionHash: options.prescriptionHash } : {}),
+                ...(options.executedDefinition ? { executedDefinition: options.executedDefinition } : {}),
                 ...(fitWorkoutFingerprint ? { fitWorkoutFingerprint } : {}),
                 ...(fitWorkoutFingerprintKind ? { fitWorkoutFingerprintKind } : {}),
                 date: today,

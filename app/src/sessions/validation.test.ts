@@ -347,6 +347,8 @@ describe('Session Validation (M2.1 / ADR-0023)', () => {
                 updatedAt: '2026-08-18T10:00:00Z',
             };
             expect(validateSessionExecution(execution).ok).toBe(true);
+            expect(validateSessionExecution({ ...execution, executedDefinition: 'reduced' }).ok).toBe(true);
+            expect(validateSessionExecution({ ...execution, executedDefinition: 'unknown' }).ok).toBe(false);
         });
 
         it('accepts and validates fitWorkoutFingerprint and fitWorkoutFingerprintKind on execution', () => {
