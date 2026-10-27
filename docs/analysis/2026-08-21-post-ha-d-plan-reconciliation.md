@@ -35,7 +35,7 @@ Do **not** start HA8 visible warning copy or HA9 training gating. Both remain do
 
 The Phase 9 task board correctly records 9.1–9.7 as complete and 9.8 as the only remaining item. Some acceptance bullets below it have not been mechanically reconciled with the implementation.
 
-Example: the acceptance line requiring a regression that decision date `D` never contributes to decision `D`'s subjective baseline remains unchecked, while `app/src/engine/subjectiveBaseline.test.ts` already contains the explicit `D-SUBJHIST` regression (`excludes a check-in dated exactly asOfDate`) and a future-date exclusion case.
+Example: the acceptance line requiring a regression that decision date `D` never contributes to decision `D`'s subjective baseline remains unchecked, while `app/src/derived/baselines/subjectiveBaseline.test.ts` already contains the explicit `D-SUBJHIST` regression (`excludes a check-in dated exactly asOfDate`) and a future-date exclusion case.
 
 Treat unchecked acceptance prose as an audit prompt, not automatically as missing implementation. Reconcile the plan when the next Phase 9 documentation change lands rather than creating duplicate tests blindly.
 

@@ -609,6 +609,9 @@ export function validateSessionExecution(raw: unknown): ValidationResult<Session
     if (typeof raw.startedAt !== 'string' || raw.startedAt.length === 0) issues.push({ path: 'startedAt', message: 'Missing startedAt' });
     if (typeof raw.updatedAt !== 'string' || raw.updatedAt.length === 0) issues.push({ path: 'updatedAt', message: 'Missing updatedAt' });
     validateSessionSource(raw.sessionSource, issues);
+    if (raw.executedDefinition !== undefined && raw.executedDefinition !== 'authored' && raw.executedDefinition !== 'reduced') {
+        issues.push({ path: 'executedDefinition', message: 'executedDefinition must be authored or reduced' });
+    }
 
     if (raw.state === 'completed' && (typeof raw.completedAt !== 'string' || raw.completedAt.length === 0)) {
         issues.push({ path: 'completedAt', message: 'completed state requires completedAt timestamp' });

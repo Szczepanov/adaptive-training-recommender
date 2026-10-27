@@ -7,6 +7,7 @@ import {
     resolveRepetitionWeightSuggestion,
     resolveNextDueStep,
     resolveRestPreviewStep,
+    resolveInitialSessionStartOptions,
 } from './SessionRunner';
 import { useSessionRunner } from '../../hooks/useSessionRunner';
 import { formatSessionLoad } from '../../sessions/loadDisplay';
@@ -575,5 +576,23 @@ describe('visible group progress', () => {
         const html = renderToStaticMarkup(<GroupProgress block={block} entries={[left, right]} activeStepIndex={0} onSelectStep={() => {}} />);
         expect(html).toContain('Current: Hold (Set 2 of 2)');
         expect(html).not.toContain('Set 3 of 2');
+    });
+});
+
+describe('resolveInitialSessionStartOptions', () => {
+    const definition = definitionWithBlock('sequential', [repetitionStep('squat', 3)]);
+    const sessionSource = { kind: 'manual', definitionId: 'test-session', revision: 1, contentHash: 'sha256:test' } as const;
+
+    it('passes the recorded reduced choice from the binding to the runner (#1152)', () => {
+        const options = resolveInitialSessionStartOptions({
+            definition,
+            binding: { sessionSource, prescriptionHash: 'hash-1', occurrenceId: 'occ-1', executedDefinition: 'reduced' },
+        });
+        expect(options.executedDefinition).toBe('reduced');
+    });
+
+    it('leaves the choice absent when the launch did not record one, never inferring authored (#1152)', () => {
+        const options = resolveInitialSessionStartOptions({ definition, binding: { sessionSource, prescriptionHash: 'hash-1' } });
+        expect(options.executedDefinition).toBeUndefined();
     });
 });

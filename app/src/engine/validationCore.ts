@@ -1353,6 +1353,7 @@ function isValidSessionReferenceBinding(value: any): value is SessionReferenceBi
     const hasFingerprintKind = Object.prototype.hasOwnProperty.call(value, 'fitWorkoutFingerprintKind');
     return isValidSessionSourceRef(value.sessionSource)
         && typeof value.prescriptionHash === 'string' && value.prescriptionHash.length > 0
+        && (value.executedDefinition === undefined || ['authored', 'reduced'].includes(value.executedDefinition))
         && (value.occurrenceId === undefined || (typeof value.occurrenceId === 'string' && value.occurrenceId.length > 0))
         && hasFingerprint === hasFingerprintKind
         && (!hasFingerprint || (
@@ -2193,7 +2194,7 @@ export function validateExternalPlanPlacement(raw: any): ValidationResult<Extern
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
         return { isValid: false, errors: [{ field: 'placement', message: 'Placement must be an object' }] };
     }
-    const extra = unknownKeys(raw, ['userId', 'planId', 'revision', 'assignments', 'updatedAt']);
+    const extra = unknownKeys(raw, ['userId', 'planId', 'revision', 'assignments', 'successors', 'updatedAt']);
     if (extra.length) errors.push({ field: 'placement', message: `Unrecognized field(s): ${extra.join(', ')}` });
     if (typeof raw.userId !== 'string' || !raw.userId) errors.push({ field: 'userId', message: 'User ID is required' });
     if (typeof raw.planId !== 'string' || !/^[a-z0-9-]{1,64}$/.test(raw.planId)) errors.push({ field: 'planId', message: 'planId must be a lowercase slug' });
@@ -2224,6 +2225,16 @@ export function validateExternalPlanPlacement(raw: any): ValidationResult<Extern
             if (!isValidDate(assignment.date)) errors.push({ field: `${path}.date`, message: 'date must be YYYY-MM-DD' });
             if (!PLACEMENT_STATUSES.includes(assignment.status)) errors.push({ field: `${path}.status`, message: 'Unsupported status' });
         });
+    }
+
+    if (raw.successors !== undefined) {
+        if (!raw.successors || typeof raw.successors !== 'object' || Array.isArray(raw.successors)
+            || Object.entries(raw.successors).some(([id, value]) => {
+                const successor = value as { revision?: unknown; sessionId?: unknown } | null;
+                return !Array.isArray(raw.assignments) || !raw.assignments.some((item: any) => item && item.sessionId === id && item.status === 'superseded')
+                    || !successor || !Number.isSafeInteger(successor.revision) || (successor.revision as number) <= raw.revision
+                    || typeof successor.sessionId !== 'string' || !successor.sessionId;
+            })) errors.push({ field: 'successors', message: 'Invalid placement successors' });
     }
 
     if (errors.length > 0) return { isValid: false, errors };

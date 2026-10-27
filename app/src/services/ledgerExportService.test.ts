@@ -3,7 +3,7 @@ import { fullRecords, AS_OF } from '../ledger/export/ledgerExportFixtures.testSu
 import { computeContentHash } from '../engine/externalPlanHash';
 import { SOURCE_KEYS } from '../ledger/export/inputs';
 const reads = vi.hoisted(() => Object.fromEntries([
-'recovery', 'checkins', 'activities', 'preferences', 'goals', 'fixed', 'blocks', 'anthropometry', 'constraints', 'schedule', 'responses', 'outcomes', 'intent', 'assessments', 'executions', 'occurrences', 'settings', 'plans', 'header', 'activations', 'revision', 'placement', 'performed',
+'recovery', 'checkins', 'activities', 'preferences', 'goals', 'fixed', 'blocks', 'anthropometry', 'constraints', 'schedule', 'responses', 'outcomes', 'intent', 'assessments', 'executions', 'occurrences', 'settings', 'plans', 'header', 'activations', 'revision', 'placement', 'history', 'performed',
 ].map(key => [key, vi.fn()])));
 vi.mock('./recoverySnapshotService', () => ({ recoverySnapshotService: { getRecoverySnapshotsInRangeState: reads.recovery } }));
 vi.mock('./checkinService', () => ({ checkinService: { getCheckinsInRangeState: reads.checkins } }));
@@ -26,7 +26,7 @@ vi.mock('../nutrition/nutritionService', () => ({ nutritionService: { getNutriti
 vi.mock('../training-occurrence/repository', () => ({ performedTrainingOccurrenceRepository: { queryActiveInDateWindow: reads.performed } }));
 vi.mock('./externalPlanService', () => ({ externalPlanService: {
     listPlanIds: reads.plans, getHeaderState: reads.header, getActivationState: reads.activations,
-    getRevisionState: reads.revision, getPlacementState: reads.placement,
+    getRevisionState: reads.revision, getPlacementState: reads.placement, getPlacementHistoryState: reads.history,
 } }));
 import { LedgerExportService } from './ledgerExportService';
 const available = <T,>(data: T) => ({ status: 'AVAILABLE', data, revision: null });
@@ -39,6 +39,7 @@ describe('LedgerExportService', () => {
         reads.preferences.mockResolvedValue({ status: 'MISSING' });
         for (const key of ['anthropometry', 'constraints', 'performed']) reads[key].mockResolvedValue([]);
         reads.plans.mockResolvedValue(available([]));
+        reads.history.mockResolvedValue(available([]));
         reads.executions.mockResolvedValue({ executions: [], invalidRecords: 0 });
         reads.intent.mockResolvedValue({ blocks: [], unreadableCount: 0, truncated: false });
         reads.outcomes.mockResolvedValue({ outcomes: [], unreadableCount: 0, truncated: false });
@@ -100,6 +101,10 @@ describe('LedgerExportService', () => {
         const result = await new LedgerExportService().build('owner', request);
         expect(result.facts.performedTraining.items).toHaveLength(1);
         expect(result.facts.performedTraining.items[0].fields.structuredEntries.value).toEqual({ exerciseCount: 1, setCount: 2 });
+        expect(result.facts.performedTraining.items[0].fields.executedDefinitions.value).toEqual([{ executionId: 'exec-1', executedDefinition: 'unknown' }]);
+        reads.executions.mockResolvedValue({ invalidRecords: 0, executions: [{ execution: { executionId: 'exec-1', sessionSource: source, date: '2026-11-19', executedDefinition: 'reduced' }, entries: [] }] });
+        const reduced = await new LedgerExportService().build('owner', request);
+        expect(reduced.facts.performedTraining.items[0].fields.executedDefinitions.value).toEqual([{ executionId: 'exec-1', executedDefinition: 'reduced' }]);
         expect(result.coachingHistory.plannedToPerformed.items[0].fields).toMatchObject({ performedOccurrenceRef: { value: 'pto-1' }, sessionId: { value: 'session-1' } });
         // A mutable moved overlay must not redate the recorded execution linkage.
         expect(result.coachingHistory.plannedToPerformed.items[0].observedOn).toBe('2026-11-19');

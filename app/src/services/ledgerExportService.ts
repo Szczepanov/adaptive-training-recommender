@@ -115,6 +115,7 @@ export class LedgerExportService {
             const linked = occurrence.sourceRefs.filter(ref => ref.kind === 'structured_execution').map(ref => executionMap.get(ref.executionId));
             const entries = linked.flatMap(row => row?.entries ?? []).filter(e => e.payload.kind !== 'choice' && !e.deletedAt);
             return { ...occurrence, ...(linked.length > 0 && linked.every(Boolean) && executions.status === 'fulfilled' && executions.value.invalidRecords === 0 ? {
+                executedDefinitions: linked.map(row => ({ executionId: row!.execution.executionId, executedDefinition: row!.execution.executedDefinition ?? 'unknown' })),
                 structuredEntries: { exerciseCount: new Set(entries.map(e => (e.exerciseRef?.kind === 'catalog' ? e.exerciseRef.exerciseId : e.exerciseRef?.name) ?? e.stepId).filter(Boolean)).size, setCount: entries.length },
             } : {}) };
         }) : [];
@@ -163,6 +164,7 @@ export class LedgerExportService {
         const verified = new Map<string, { contentHash: string; sessionIds: Set<string> }>();
         records.planRevisions = [];
         records.placements = [];
+        records.placementHistory = [];
         let revisionState: LedgerState = 'measured';
         let placementState: LedgerState = 'measured';
         try {
@@ -184,6 +186,9 @@ export class LedgerExportService {
                 for (const revision of [...refs].sort((a, b) => a - b)) {
                     const plan = await externalPlanService.getRevisionState(userId, planId, revision);
                     const placement = await externalPlanService.getPlacementState(userId, planId, revision);
+                    const history = await externalPlanService.getPlacementHistoryState(userId, planId, revision);
+                    if (history.status === 'AVAILABLE') records.placementHistory = [...records.placementHistory, ...history.data];
+                    else placementState = worstState([placementState, history.status === 'INVALID' ? 'invalid' : 'unavailable']);
                     if (placement.status === 'AVAILABLE') records.placements = [...records.placements, placement.data];
                     else if (placement.status !== 'MISSING') placementState = worstState([placementState, placement.status === 'INVALID' ? 'invalid' : 'unavailable']);
                     if (plan.status !== 'AVAILABLE') { revisionState = worstState([revisionState, plan.status === 'INVALID' ? 'invalid' : 'unavailable']); continue; }

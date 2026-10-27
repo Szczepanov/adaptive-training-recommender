@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { DailyReadiness, UserContext } from './models';
-import type { SubjectiveBaseline } from './subjectiveBaseline';
+import type { SubjectiveBaseline } from '../derived/baselines/subjectiveBaseline';
 import { buildSubjectiveDriftDecisionEvidence } from './simulation/subjectiveDriftEvidence';
 import { compactSubjectiveDriftAudit } from './subjectiveDriftAudit';
 import { REFERENCE_SUBJECTIVE_DRIFT_WEIGHTS } from './rules';

@@ -37,7 +37,7 @@ or policy-version bump is required for this additive path.
 | `derived` | Named baseline, D−1 step normalization and performed-load slots, each with definition/window/inputs | `not_yet_supported` until independently extracted under #1144; no engine derivations are called |
 | `flags` | The closed four D-FLAGS ids with persisted evaluation metadata and inputs | Service emits `not_yet_supported` while historical evaluation persistence is absent; builder can preserve supplied persisted evaluations without recomputation |
 | `userContext` | Current active goals/constraints, settings/equipment, active injuries and resolved injury periods overlapping the window, preferences, travel, venue restrictions, availability and intent-block events | Injury `since` and `resolvedAt` use recorded dates; legacy onset stays unknown. Other unsupported effective dates and revision history stay explicit; `updatedAt` does not establish field-level history |
-| `coachingHistory` | Immutable external-plan revision headers/rationale, current placements, moved/dropped overrides, canonical planned→performed links | Missing override reasons and mutable placement history remain `not_yet_supported` |
+| `coachingHistory` | Immutable external-plan revision headers/rationale, as-of placements, immutable placement events, moved/dropped overrides, canonical planned→performed links | Missing override reasons and unrecorded legacy history remain `not_yet_supported` |
 
 `legacyEngine` is null in the user-facing export. The pure builder supports an explicitly
 supplied legacy layer; the production service never supplies it. No engine opinion belongs
@@ -57,7 +57,11 @@ second copy of the legacy brief build. In particular, settings use
 `peekTrainingSettingsState`, schedule availability uses authoritative
 `schedule_window_manifests` through `getWindowsForDateState` (the export's compatibility
 source key remains `schedule_windows`), and performed occurrences use the canonical
-repository. Validated execution entries supply a bounded occurrence-level exercise/set
+repository. Each performed-training fact includes `executedDefinitions` for its linked executions,
+with the `authored` or `reduced` choice recorded at an external-plan launch, and `unknown` when
+no choice was recorded (older executions, and launches that offer no such choice). The value is
+never inferred from the session source. Missing or unreadable linked executions leave the field unavailable.
+Validated execution entries supply a bounded occurrence-level exercise/set
 summary, excluding deleted entries and choice events. Missing entry evidence is not a zero
 summary. A linked provider activity does not create a second performed row.
 
@@ -69,7 +73,7 @@ ID-ordered scan of at most 200 records plus a truncation sentinel and filter by 
 a scan limit reports `unavailable`, not completeness. Invalid bounded rows report `invalid`.
 
 External-plan reads reuse the plan list, header, activation, immutable revision and current
-placement readers. Each exported revision is content-hash verified. Latest revision import
+placement and placement-history readers. Each exported revision is content-hash verified. Latest revision import
 times come from the header; older activation records preserve the same import instant
 written by the import transaction. Revisions referenced by performed work are read alongside
 activation history. Authored links require the execution content hash and session id to
@@ -77,8 +81,12 @@ match that verified revision. A missing referenced execution makes linkage unava
 it never becomes measured absence. The link keeps the recorded execution session date,
 not a date subsequently moved in the mutable overlay. The builder retains revisions referenced
 by in-window placements or performed links plus the latest revision per plan, even when a
-current placement has moved outside the window. Placements are current overlays, never
-claimed as immutable history.
+current placement has moved outside the window. Placements with recorded history are reconstructed as of the export date; their
+`statusHistory` contains the dated before/after events and explicit successor links. An export
+date before the first recorded event uses that event's previous snapshot, with `statusHistory`
+left `not_yet_supported`.
+Earlier legacy history and successors absent from legacy superseded assignments remain unknown; titles are never used to infer successors. Placements
+without history remain current overlays and are never claimed as immutable history.
 
 All source reads produce `SourceState` entries. Rejected reads report `unavailable`;
 validated corrupt sources report `invalid`; genuine absent documents report `missing`.
@@ -113,5 +121,5 @@ the actual user action and verifies the downloaded schema on desktop and mobile 
 
 This export does not turn off engine adjudication or close #1144. Phase 2 still needs the
 ADR-0052 extraction and device evidence gates. Historical flag evaluation persistence,
-placement/status successor history, and the owner-completed protocol retest-interval table
+legacy placement history before event recording, and the owner-completed protocol retest-interval table
 remain prerequisites for a qualifying D-EVAL block; explicit gaps are not passing evidence.

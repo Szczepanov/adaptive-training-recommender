@@ -1,3 +1,4 @@
+import type { PlacementEvent } from '../placementHistory.ts';
 /**
  * Inputs to the pure ledger-export builder: already-read records, never IO handles.
  *
@@ -41,6 +42,7 @@ export interface OccurrenceInput {
     modality?: string;
     /** Summarised from `session_executions`; absent means no summary is wired yet. */
     structuredEntries?: { exerciseCount: number; setCount: number };
+    executedDefinitions?: { executionId: string; executedDefinition: 'authored' | 'reduced' | 'unknown' }[];
 }
 
 /** Structural subset of `FixedActivity` (`engine/models.ts`). */
@@ -195,6 +197,7 @@ export interface LedgerExportRecords {
     constraints?: readonly UserConstraint[];
     planRevisions?: readonly PlanRevisionInput[];
     placements?: readonly PlacementInput[];
+    placementHistory?: readonly PlacementEvent[];
     plannedToPerformed?: readonly PlannedToPerformedInput[];
 }
 

@@ -143,6 +143,7 @@ describe('Firestore rules parity with TypeScript domain models', () => {
             'sessionSource',
             'occurrenceId',
             'prescriptionHash',
+            'executedDefinition',
             'fitWorkoutFingerprint',
             'fitWorkoutFingerprintKind',
         ];

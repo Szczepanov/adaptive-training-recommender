@@ -119,7 +119,7 @@ partial safety-only check-ins cannot inflate either coverage count; zero-varianc
 bounded by the policy floor; and either insufficient recent or insufficient long coverage
 returns `null`.
 
-**Implementation note.** `engine/subjectiveBaseline.ts` implements exactly this contract:
+**Implementation note.** `derived/baselines/subjectiveBaseline.ts` (originally `engine/subjectiveBaseline.ts`) implements exactly this contract:
 `SubjectiveBaselinePolicy`, `REFERENCE_SUBJECTIVE_BASELINE_POLICY` (7/28 windows, 1.0
 variability floor, 2.0 cap matching `STRAIN_Z_CAP` -- documented as a reference candidate,
 not an invariant, per D-SUBJEST), and `computeSubjectiveBaseline`. Coverage is deduplicated

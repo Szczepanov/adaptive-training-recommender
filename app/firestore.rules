@@ -734,10 +734,11 @@ service cloud.firestore {
       function hasValidExternalPlanPlacement(userId) {
         let data = request.resource.data;
         return hasOwnedUserId(userId)
-          && data.keys().hasOnly(['userId', 'planId', 'revision', 'assignments', 'updatedAt'])
+          && data.keys().hasOnly(['userId', 'planId', 'revision', 'assignments', 'successors', 'updatedAt'])
           && data.planId is string && data.planId.size() > 0 && data.planId.size() <= 64
           && data.revision is int && data.revision >= 1
           && data.assignments is list && data.assignments.size() <= 120
+          && (!('successors' in data) || (data.successors is map && data.successors.size() <= 120))
           && data.updatedAt is string;
       }
 
@@ -781,6 +782,22 @@ service cloud.firestore {
           && request.resource.data.planId == planId
           && string(request.resource.data.revision) == revisionId;
         allow update, delete: if false;
+
+        match /placement_history/{eventId} {
+          allow read: if isOwner(userId);
+          allow create: if hasOwnedUserId(userId)
+            && request.resource.data.keys().hasOnly(['userId', 'planId', 'revision', 'changedOn', 'recordedAt', 'previous', 'assignments', 'successors'])
+            && request.resource.data.planId == planId
+            && request.resource.data.revision is int && string(request.resource.data.revision) == revisionId
+            && isValidActivityDate(request.resource.data.changedOn)
+            && request.resource.data.recordedAt is string
+            && request.resource.data.recordedAt.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[.][0-9]{3}Z$')
+            && request.resource.data.previous is list && request.resource.data.previous.size() <= 120
+            && request.resource.data.assignments is list && request.resource.data.assignments.size() <= 120
+            && request.resource.data.successors is map && request.resource.data.successors.size() <= 120
+            && existsAfter(/databases/$(database)/documents/users/$(userId)/external_plans/$(planId)/revisions/$(revisionId));
+          allow update, delete: if false;
+        }
 
         match /placement/{placementId} {
           allow read: if isOwner(userId);
@@ -1362,12 +1379,13 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
       function hasValidSessionExecution(userId, executionId) {
         let data = request.resource.data;
         return hasOwnedUserId(userId)
-          && data.keys().hasOnly(['userId', 'executionId', 'occurrenceId', 'sessionSource', 'prescriptionHash', 'fitWorkoutFingerprint', 'fitWorkoutFingerprintKind', 'date', 'startedAt', 'completedAt', 'updatedAt', 'state', 'sessionRpe', 'notes', 'schemaVersion'])
+          && data.keys().hasOnly(['userId', 'executionId', 'occurrenceId', 'sessionSource', 'prescriptionHash', 'executedDefinition', 'fitWorkoutFingerprint', 'fitWorkoutFingerprintKind', 'date', 'startedAt', 'completedAt', 'updatedAt', 'state', 'sessionRpe', 'notes', 'schemaVersion'])
           && data.executionId == executionId
           && isValidActivityDate(data.date)
           && hasValidSessionSource(data.sessionSource)
           && (!('occurrenceId' in data) || data.occurrenceId is string)
           && (!('prescriptionHash' in data) || data.prescriptionHash is string)
+          && (!('executedDefinition' in data) || data.executedDefinition in ['authored', 'reduced'])
           && (('fitWorkoutFingerprint' in data) == ('fitWorkoutFingerprintKind' in data))
           && (!('fitWorkoutFingerprint' in data) || (data.fitWorkoutFingerprint is string && data.fitWorkoutFingerprint.matches('^fit-workout-v2:[0-9a-f]{32}$')))
           && (!('fitWorkoutFingerprintKind' in data) || data.fitWorkoutFingerprintKind in ['semantic_definition', 'index_fallback'])
@@ -1650,10 +1668,11 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
 
       function hasValidSessionReferenceBinding(binding) {
         return binding is map
-          && binding.keys().hasOnly(['sessionSource', 'occurrenceId', 'prescriptionHash', 'fitWorkoutFingerprint', 'fitWorkoutFingerprintKind'])
+          && binding.keys().hasOnly(['sessionSource', 'occurrenceId', 'prescriptionHash', 'executedDefinition', 'fitWorkoutFingerprint', 'fitWorkoutFingerprintKind'])
           && hasValidSessionSource(binding.sessionSource)
           && binding.prescriptionHash is string && binding.prescriptionHash.size() > 0
           && (!('occurrenceId' in binding) || (binding.occurrenceId is string && binding.occurrenceId.size() > 0))
+          && (!('executedDefinition' in binding) || binding.executedDefinition in ['authored', 'reduced'])
           && (('fitWorkoutFingerprint' in binding) == ('fitWorkoutFingerprintKind' in binding))
           && (!('fitWorkoutFingerprintKind' in binding) || binding.fitWorkoutFingerprintKind in ['semantic_definition', 'index_fallback'])
           && (!('fitWorkoutFingerprint' in binding) || (binding.fitWorkoutFingerprint is string && binding.fitWorkoutFingerprint.size() > 0));

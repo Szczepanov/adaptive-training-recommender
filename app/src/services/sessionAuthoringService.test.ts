@@ -231,6 +231,7 @@ describe('prepareExternalPlanSessionLaunch (ADR-0036 H4)', () => {
             sessionId: 'session-101',
             contentHash: 'c'.repeat(64),
         });
+        expect(launch.binding.executedDefinition).toBe('authored');
         expect(launch.binding.occurrenceId).toBeUndefined();
         expect(launch.binding.prescriptionHash).toMatch(/^[0-9a-f]{64}$/);
         expect(services.occurrence.saveOccurrence).not.toHaveBeenCalled();
@@ -274,6 +275,7 @@ describe('prepareExternalPlanSessionLaunch (ADR-0036 H4)', () => {
         }, { useReducedDefinition: true, scaleVolume: 0.5, date: '2026-09-06', now: '2026-09-06T12:00:00.000Z' });
 
         expect(launch.definition).toEqual(reducedDefinition);
+        expect(launch.binding.executedDefinition).toBe('reduced');
         const saved = services.prescription.savePrescription.mock.calls.at(-1)?.[1];
         expect(saved?.blocks).toEqual(reducedDefinition.blocks);
         expect(saved?.blocks).not.toEqual(authored.blocks);
