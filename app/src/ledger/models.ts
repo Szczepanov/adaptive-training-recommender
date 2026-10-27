@@ -454,6 +454,9 @@ export const BODY_REGIONS = [
 export type BodyRegion = typeof BODY_REGIONS[number];
 
 export interface InjuryConstraint {
+  /** Warsaw-local calendar dates; absent creation date means unknown. */
+  createdAt?: string;
+  resolvedAt?: string;
   region?: BodyRegion;
   severity: 'monitor' | 'limit' | 'exclude';
   /** ISO date; absent = indefinite. Expired entries are ignored, not deleted. */
@@ -502,6 +505,7 @@ export interface TrainingSettings {
     equipment: Record<LegacyEquipmentKey, boolean> & Partial<Record<SportAccessKey, boolean>>;
     guardrails: Record<GuardrailKey, boolean>;
     injuries?: InjuryConstraint[];
+    injuryHistory?: InjuryConstraint[];
     capabilities?: {
         powerMeter?: boolean;
         heartRateMonitor?: boolean;

@@ -7,12 +7,17 @@ import { constraintService } from './constraintService';
 import { getErrorCode } from '../utils/errors';
 import { isValidDate } from '../engine/validation';
 import { parseTrainingSettings } from '../persistence/parsers/trainingSettings';
+import { getLocalDateString } from '../utils/localDate';
 export { parseTrainingSettings };
 
 export type TrainingSettingsUpdate = {
     equipment?: Partial<TrainingSettings['equipment']>;
     guardrails?: Partial<TrainingSettings['guardrails']>;
     injuries?: TrainingSettings['injuries'];
+    injuryEditIndex?: number;
+    injuryRestore?: boolean;
+    injuryExpected?: TrainingSettings['injuries'];
+    injuryHistoryExpected?: TrainingSettings['injuryHistory'];
     defaults?: Partial<TrainingSettings['defaults']>;
     preferences?: Partial<TrainingSettings['preferences']>;
     migration?: Partial<TrainingSettings['migration']>;
@@ -59,13 +64,47 @@ export function migrateLegacyConstraints(userId: string, constraints: UserConstr
     return result;
 }
 
-export function mergeSettings(current: TrainingSettings, update: TrainingSettingsUpdate): TrainingSettings {
+export function mergeSettings(current: TrainingSettings, update: TrainingSettingsUpdate, today = getLocalDateString()): TrainingSettings {
+    const previous = current.injuries ?? [];
+    if ((update.injuryExpected && !valuesEqual(previous, update.injuryExpected))
+        || (update.injuryHistoryExpected && !valuesEqual(current.injuryHistory ?? [], update.injuryHistoryExpected))) {
+        throw new Error('Injuries changed since they were loaded');
+    }
+    let injuries = previous;
+    let injuryHistory = current.injuryHistory;
+    if (update.injuries !== undefined) {
+        const remaining = previous.map((injury, index) => ({ injury, index }));
+        injuries = update.injuries.map((injury, index) => {
+            const match = remaining.findIndex(item => item.index === update.injuryEditIndex && index === update.injuryEditIndex);
+            const exact = remaining.findIndex(item => valuesEqual(item.injury, injury));
+            const selected = match >= 0 ? match : exact;
+            const fields = { ...injury };
+            delete fields.createdAt;
+            delete fields.resolvedAt;
+            if (selected >= 0) {
+                const [old] = remaining.splice(selected, 1);
+                return { ...fields, ...(old.injury.createdAt ? { createdAt: old.injury.createdAt } : {}) };
+            }
+            if (update.injuryRestore && injuryHistory) {
+                const historyIndex = injuryHistory.findLastIndex(item => {
+                    const original = { ...item };
+                    delete original.resolvedAt;
+                    return valuesEqual(original, injury);
+                });
+                if (historyIndex >= 0) injuryHistory = injuryHistory.filter((_, i) => i !== historyIndex);
+            }
+            return { ...fields, ...(update.injuryRestore ? (injury.createdAt ? { createdAt: injury.createdAt } : {}) : { createdAt: today }) };
+        });
+        if (remaining.length && !update.injuryRestore) injuryHistory = [...(injuryHistory ?? []), ...remaining.map(({ injury }) => ({ ...injury, resolvedAt: today }))];
+    }
+
     const next: TrainingSettings = {
         ...current,
         schemaVersion: CURRENT_TRAINING_SETTINGS_SCHEMA_VERSION,
         equipment: { ...current.equipment, ...update.equipment },
         guardrails: { ...current.guardrails, ...update.guardrails },
-        injuries: update.injuries !== undefined ? update.injuries : current.injuries ?? [],
+        injuries,
+        ...(injuryHistory !== undefined ? { injuryHistory } : {}),
         defaults: { ...current.defaults, ...update.defaults },
         preferences: { ...current.preferences, ...update.preferences },
         migration: { ...current.migration, ...update.migration },
@@ -110,6 +149,8 @@ export function buildRevertUpdate(previous: TrainingSettings, update: TrainingSe
     }
     if (update.injuries !== undefined && !valuesEqual(previous.injuries ?? [], update.injuries)) {
         revert.injuries = [...(previous.injuries ?? [])];
+        revert.injuryRestore = true;
+        if (update.injuryEditIndex !== undefined) revert.injuryEditIndex = update.injuryEditIndex;
     }
     if (update.defaults) {
         const defaults = buildPartialRevert(previous.defaults, update.defaults);

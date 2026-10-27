@@ -120,22 +120,55 @@ describe('destructive settings revert (#492)', () => {
         const update: TrainingSettingsUpdate = { injuries: [{ region: 'knee', severity: 'limit' }] };
         const next = mergeSettings(previous, update);
         const revert = buildRevertUpdate(previous, update);
-        expect(revert).toEqual({ injuries: [] });
-        expect(mergeSettings(next, revert!).injuries).toEqual([]);
+        expect(revert).toEqual({ injuries: [], injuryRestore: true });
+        const restored = mergeSettings(next, revert!);
+        expect(restored.injuries).toEqual([]);
+        expect(restored.injuryHistory ?? []).toEqual([]);
     });
 
     it('reverts an injury-constraint edit back to the previous list', () => {
         const previous = createDefaultTrainingSettings('athlete', '2026-08-07T10:00:00.000Z');
         const withInjury = mergeSettings(previous, { injuries: [{ region: 'knee', severity: 'monitor' }] });
-        const update: TrainingSettingsUpdate = { injuries: [{ region: 'knee', severity: 'exclude' }] };
+        const update: TrainingSettingsUpdate = { injuries: [{ region: 'knee', severity: 'exclude' }], injuryEditIndex: 0 };
         const edited = mergeSettings(withInjury, update);
         const revert = buildRevertUpdate(withInjury, update);
-        expect(revert).toEqual({ injuries: withInjury.injuries });
-        expect(mergeSettings(edited, revert!).injuries).toEqual([{ region: 'knee', severity: 'monitor' }]);
+        expect(revert).toEqual({ injuries: withInjury.injuries, injuryRestore: true, injuryEditIndex: 0 });
+        expect(mergeSettings(edited, revert!).injuries).toEqual(withInjury.injuries);
     });
 
     it('returns null when the requested update would not change anything', () => {
         const previous = createDefaultTrainingSettings('athlete', '2026-08-07T10:00:00.000Z');
         expect(buildRevertUpdate(previous, { equipment: { treadmill: false } })).toBeNull();
+    });
+});
+
+
+describe('injury history', () => {
+    it('rejects stale injury updates and invalid history dates', () => {
+        const current = { ...createDefaultTrainingSettings('athlete'), injuries: [{ severity: 'limit' as const }] };
+        expect(() => mergeSettings(current, { injuries: [], injuryExpected: [] })).toThrow('Injuries changed');
+        expect(() => mergeSettings({ ...current, injuryHistory: [{ severity: 'limit', resolvedAt: '2026-10-27' }] },
+            { injuries: [], injuryExpected: current.injuries, injuryHistoryExpected: [] })).toThrow('Injuries changed');
+        expect(parseTrainingSettings({ ...current, injuryHistory: [{ severity: 'limit', resolvedAt: '2026-02-30' }] }, 'athlete')).toBeNull();
+        expect(parseTrainingSettings({ ...current, injuryHistory: [{ severity: 'limit', createdAt: '2026-10-28', resolvedAt: '2026-10-27' }] }, 'athlete')).toBeNull();
+        expect(parseTrainingSettings({ ...current, injuries: [{ severity: 'limit', resolvedAt: '2026-10-27' }] }, 'athlete')).toBeNull();
+    });
+
+    it('preserves legacy onset through edits, removal and undo; reopening starts a new period', () => {
+        const legacy = { region: 'knee' as const, severity: 'limit' as const };
+        const earlier = { severity: 'exclude' as const, resolvedAt: '2026-10-20' };
+        const initial = { ...createDefaultTrainingSettings('athlete'), injuries: [legacy], injuryHistory: [earlier] };
+        const edit = { injuries: [{ ...legacy, severity: 'monitor' as const }], injuryEditIndex: 0 };
+        const edited = mergeSettings(initial, edit, '2026-10-27');
+        expect(edited.injuries?.[0].createdAt).toBeUndefined();
+        const removal = { injuries: [] };
+        const removed = mergeSettings(edited, removal, '2026-10-28');
+        expect(removed.injuryHistory).toEqual([earlier, { ...edited.injuries![0], resolvedAt: '2026-10-28' }]);
+        const restored = mergeSettings(removed, buildRevertUpdate(edited, removal)!, '2026-10-29');
+        expect(restored.injuries?.[0].createdAt).toBeUndefined();
+        expect(restored.injuryHistory).toEqual([earlier]);
+        const reopened = mergeSettings(removed, { injuries: [legacy] }, '2026-10-30');
+        expect(reopened.injuries?.[0].createdAt).toBe('2026-10-30');
+        expect(reopened.injuryHistory).toEqual(removed.injuryHistory);
     });
 });
