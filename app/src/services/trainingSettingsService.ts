@@ -8,6 +8,7 @@ import { getErrorCode } from '../utils/errors';
 import { isValidDate } from '../engine/validation';
 import { parseTrainingSettings } from '../persistence/parsers/trainingSettings';
 import { getLocalDateString } from '../utils/localDate';
+import { canonicalizeSessionData } from '../sessions/sessionDefinitionHash';
 export { parseTrainingSettings };
 
 export type TrainingSettingsUpdate = {
@@ -115,8 +116,9 @@ export function mergeSettings(current: TrainingSettings, update: TrainingSetting
     return next;
 }
 
+/** Key-order insensitive: Firestore does not preserve map key insertion order on read. */
 function valuesEqual(left: unknown, right: unknown): boolean {
-    return JSON.stringify(left) === JSON.stringify(right);
+    return JSON.stringify(canonicalizeSessionData(left)) === JSON.stringify(canonicalizeSessionData(right));
 }
 
 function buildPartialRevert<T extends object>(previous: T, update: Partial<T>): Partial<T> | null {

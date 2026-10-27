@@ -154,6 +154,17 @@ describe('injury history', () => {
         expect(parseTrainingSettings({ ...current, injuries: [{ severity: 'limit', resolvedAt: '2026-10-27' }] }, 'athlete')).toBeNull();
     });
 
+    it('matches injuries regardless of key order after a Firestore round-trip', () => {
+        const stored = { createdAt: '2026-10-01', region: 'knee' as const, severity: 'limit' as const };
+        const inMemory = { region: 'knee' as const, severity: 'limit' as const, createdAt: '2026-10-01' };
+        const current = { ...createDefaultTrainingSettings('athlete'), injuries: [stored] };
+        const added = { severity: 'monitor' as const };
+        const next = mergeSettings(current, { injuries: [inMemory, added], injuryExpected: [inMemory], injuryHistoryExpected: [] }, '2026-10-27');
+        expect(next.injuries?.[0].createdAt).toBe('2026-10-01');
+        expect(next.injuries?.[1].createdAt).toBe('2026-10-27');
+        expect(next.injuryHistory ?? []).toEqual([]);
+    });
+
     it('preserves legacy onset through edits, removal and undo; reopening starts a new period', () => {
         const legacy = { region: 'knee' as const, severity: 'limit' as const };
         const earlier = { severity: 'exclude' as const, resolvedAt: '2026-10-20' };
