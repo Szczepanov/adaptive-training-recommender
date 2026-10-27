@@ -397,6 +397,7 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
         runner.startSession(initialSession.definition, initialSession.binding.sessionSource, {
             occurrenceId: initialSession.binding.occurrenceId,
             prescriptionHash: initialSession.binding.prescriptionHash,
+            executedDefinition: initialSession.binding.executedDefinition,
             ...(initialSession.binding.fitWorkoutFingerprint && initialSession.binding.fitWorkoutFingerprintKind
                 ? {
                     fitWorkoutFingerprint: initialSession.binding.fitWorkoutFingerprint,

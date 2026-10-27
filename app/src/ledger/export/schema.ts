@@ -124,7 +124,7 @@ export const CHECKIN_FIELDS = [
     'tissueResponses', 'redFlags', 'timeAvailableMin', 'indoorOnly', 'preferredModalityToday',
 ] as const;
 export const PERFORMED_TRAINING_FIELDS = [
-    'status', 'modality', 'startedAt', 'endedAt', 'durationMin', 'structuredEntries',
+    'status', 'modality', 'startedAt', 'endedAt', 'durationMin', 'structuredEntries', 'executedDefinitions',
 ] as const;
 export const SESSION_RESPONSE_FIELDS = [
     'window', 'sourceSession', 'occurrenceId', 'sessionRpe', 'completedFraction', 'unexpectedFatigue',

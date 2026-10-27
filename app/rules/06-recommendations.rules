@@ -24,10 +24,11 @@
 
       function hasValidSessionReferenceBinding(binding) {
         return binding is map
-          && binding.keys().hasOnly(['sessionSource', 'occurrenceId', 'prescriptionHash', 'fitWorkoutFingerprint', 'fitWorkoutFingerprintKind'])
+          && binding.keys().hasOnly(['sessionSource', 'occurrenceId', 'prescriptionHash', 'executedDefinition', 'fitWorkoutFingerprint', 'fitWorkoutFingerprintKind'])
           && hasValidSessionSource(binding.sessionSource)
           && binding.prescriptionHash is string && binding.prescriptionHash.size() > 0
           && (!('occurrenceId' in binding) || (binding.occurrenceId is string && binding.occurrenceId.size() > 0))
+          && (!('executedDefinition' in binding) || binding.executedDefinition in ['authored', 'reduced'])
           && (('fitWorkoutFingerprint' in binding) == ('fitWorkoutFingerprintKind' in binding))
           && (!('fitWorkoutFingerprintKind' in binding) || binding.fitWorkoutFingerprintKind in ['semantic_definition', 'index_fallback'])
           && (!('fitWorkoutFingerprint' in binding) || (binding.fitWorkoutFingerprint is string && binding.fitWorkoutFingerprint.size() > 0));

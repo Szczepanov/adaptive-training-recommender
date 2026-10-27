@@ -1360,12 +1360,13 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
       function hasValidSessionExecution(userId, executionId) {
         let data = request.resource.data;
         return hasOwnedUserId(userId)
-          && data.keys().hasOnly(['userId', 'executionId', 'occurrenceId', 'sessionSource', 'prescriptionHash', 'fitWorkoutFingerprint', 'fitWorkoutFingerprintKind', 'date', 'startedAt', 'completedAt', 'updatedAt', 'state', 'sessionRpe', 'notes', 'schemaVersion'])
+          && data.keys().hasOnly(['userId', 'executionId', 'occurrenceId', 'sessionSource', 'prescriptionHash', 'executedDefinition', 'fitWorkoutFingerprint', 'fitWorkoutFingerprintKind', 'date', 'startedAt', 'completedAt', 'updatedAt', 'state', 'sessionRpe', 'notes', 'schemaVersion'])
           && data.executionId == executionId
           && isValidActivityDate(data.date)
           && hasValidSessionSource(data.sessionSource)
           && (!('occurrenceId' in data) || data.occurrenceId is string)
           && (!('prescriptionHash' in data) || data.prescriptionHash is string)
+          && (!('executedDefinition' in data) || data.executedDefinition in ['authored', 'reduced'])
           && (('fitWorkoutFingerprint' in data) == ('fitWorkoutFingerprintKind' in data))
           && (!('fitWorkoutFingerprint' in data) || (data.fitWorkoutFingerprint is string && data.fitWorkoutFingerprint.matches('^fit-workout-v2:[0-9a-f]{32}$')))
           && (!('fitWorkoutFingerprintKind' in data) || data.fitWorkoutFingerprintKind in ['semantic_definition', 'index_fallback'])
@@ -1648,10 +1649,11 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
 
       function hasValidSessionReferenceBinding(binding) {
         return binding is map
-          && binding.keys().hasOnly(['sessionSource', 'occurrenceId', 'prescriptionHash', 'fitWorkoutFingerprint', 'fitWorkoutFingerprintKind'])
+          && binding.keys().hasOnly(['sessionSource', 'occurrenceId', 'prescriptionHash', 'executedDefinition', 'fitWorkoutFingerprint', 'fitWorkoutFingerprintKind'])
           && hasValidSessionSource(binding.sessionSource)
           && binding.prescriptionHash is string && binding.prescriptionHash.size() > 0
           && (!('occurrenceId' in binding) || (binding.occurrenceId is string && binding.occurrenceId.size() > 0))
+          && (!('executedDefinition' in binding) || binding.executedDefinition in ['authored', 'reduced'])
           && (('fitWorkoutFingerprint' in binding) == ('fitWorkoutFingerprintKind' in binding))
           && (!('fitWorkoutFingerprintKind' in binding) || binding.fitWorkoutFingerprintKind in ['semantic_definition', 'index_fallback'])
           && (!('fitWorkoutFingerprint' in binding) || (binding.fitWorkoutFingerprint is string && binding.fitWorkoutFingerprint.size() > 0));

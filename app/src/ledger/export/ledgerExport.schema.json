@@ -666,7 +666,8 @@
         "startedAt",
         "endedAt",
         "durationMin",
-        "structuredEntries"
+        "structuredEntries",
+        "executedDefinitions"
       ],
       "properties": {
         "status": {
@@ -685,6 +686,9 @@
           "$ref": "#/$defs/ledgerValue"
         },
         "structuredEntries": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "executedDefinitions": {
           "$ref": "#/$defs/ledgerValue"
         }
       }

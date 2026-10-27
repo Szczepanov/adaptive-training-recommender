@@ -137,6 +137,7 @@ observedOn: 2026-11-19
 | startedAt | 2026-11-19T16:00:00Z | Not specified | adaptive | measured | 2026-11-19 |
 | endedAt | 2026-11-19T17:00:00Z | Not specified | adaptive | measured | 2026-11-19 |
 | durationMin | 60 | min | adaptive | measured | 2026-11-19 |
+| executedDefinitions | Not recorded | Not specified | adaptive | unavailable | 2026-11-19 |
 | structuredEntries | Not recorded | Not specified | adaptive | not_yet_supported | Not recorded |
 
 ### sessionResponses

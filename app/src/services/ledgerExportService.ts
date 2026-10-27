@@ -115,6 +115,7 @@ export class LedgerExportService {
             const linked = occurrence.sourceRefs.filter(ref => ref.kind === 'structured_execution').map(ref => executionMap.get(ref.executionId));
             const entries = linked.flatMap(row => row?.entries ?? []).filter(e => e.payload.kind !== 'choice' && !e.deletedAt);
             return { ...occurrence, ...(linked.length > 0 && linked.every(Boolean) && executions.status === 'fulfilled' && executions.value.invalidRecords === 0 ? {
+                executedDefinitions: linked.map(row => ({ executionId: row!.execution.executionId, executedDefinition: row!.execution.executedDefinition ?? 'unknown' })),
                 structuredEntries: { exerciseCount: new Set(entries.map(e => (e.exerciseRef?.kind === 'catalog' ? e.exerciseRef.exerciseId : e.exerciseRef?.name) ?? e.stepId).filter(Boolean)).size, setCount: entries.length },
             } : {}) };
         }) : [];

@@ -57,7 +57,10 @@ second copy of the legacy brief build. In particular, settings use
 `peekTrainingSettingsState`, schedule availability uses authoritative
 `schedule_window_manifests` through `getWindowsForDateState` (the export's compatibility
 source key remains `schedule_windows`), and performed occurrences use the canonical
-repository. Validated execution entries supply a bounded occurrence-level exercise/set
+repository. Each performed-training fact includes `executedDefinitions` for its linked executions,
+with the recorded `authored` or `reduced` choice and `unknown` when an older execution has no
+choice recorded. Missing or unreadable linked executions leave the field unavailable.
+Validated execution entries supply a bounded occurrence-level exercise/set
 summary, excluding deleted entries and choice events. Missing entry evidence is not a zero
 summary. A linked provider activity does not create a second performed row.
 

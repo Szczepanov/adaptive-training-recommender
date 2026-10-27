@@ -41,6 +41,7 @@ export interface OccurrenceInput {
     modality?: string;
     /** Summarised from `session_executions`; absent means no summary is wired yet. */
     structuredEntries?: { exerciseCount: number; setCount: number };
+    executedDefinitions?: { executionId: string; executedDefinition: 'authored' | 'reduced' | 'unknown' }[];
 }
 
 /** Structural subset of `FixedActivity` (`engine/models.ts`). */
