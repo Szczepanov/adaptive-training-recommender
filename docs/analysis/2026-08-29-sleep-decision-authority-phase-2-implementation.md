@@ -28,7 +28,7 @@ Sleep-score deltas (`sleep_score_delta_7d`/`28d`) aren't computed client-side in
 engine -- they're precomputed server-side in Python
 (`compute_derived_metrics`/`DerivedDeltas`/`DerivedMetrics`) at sync/backfill time and
 stored as `derived.deltas.*`/`derived.*` fields on `daily_recovery_snapshots`, just read
-by `rules.ts` via `adapters.ts`. `app/src/engine/multisourceBaselines.ts` is a separate,
+by `rules.ts` via `adapters.ts`. `app/src/derived/baselines/multisourceBaselines.ts` is a separate,
 TS-side calculator for the Eight-Sleep/Google-Health shadow pipeline -- not what Garmin's
 live numbers use. This phase follows the *first* pattern (Python, `compute_derived_metrics`),
 extending it the same way the existing v4 (median/MAD for sleep score/RHR/HRV/steps) and

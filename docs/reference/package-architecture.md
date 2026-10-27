@@ -65,6 +65,9 @@ app/src/ledger/            # ADR-0052 Phase 1: ledger record types; must never i
 
 app/src/derived/           # ADR-0052 Phase 1: derived metrics and D-FLAGS evaluators; engine may import it, never the reverse
   derived.architecture.test.ts # Fails if anything under derived/ reaches engine/, directly or transitively
+  baselines/
+    multisourceBaselines.ts # Source-specific robust 7d/28d median+MAD baseline calculator (MS12, ADR-0024/0027)
+    identityEligibility.ts # Pre-baseline effective-identity eligibility boundary (PI5, D-PID-PREBASE)
   flags/
     flagEvaluation.ts    # FlagEvaluation: one pure D-FLAGS result, in ledger-export state names
     illnessAnomaly/      # Health-anomaly family (ADR-0025), moved from engine/ in #1144 PR1-1
@@ -168,13 +171,11 @@ app/src/engine/
   garminTelemetryEvidence.ts # Power-zone feature extraction & direct-share stimulus candidate (measured, off by default)
   garminTelemetryComparison.ts # compareGarminZoneCredit -- TE-derived vs power-zone credit comparison report
   crossSourceTelemetry.ts # Cross-source sensor agreement/data-quality telemetry (MS13, ADR-0027)
-  multisourceBaselines.ts # Source-specific robust 7d/28d median+MAD baseline calculator (MS12, ADR-0024/0027)
   multisourceFusion.ts  # Multi-source recovery evidence fusion evaluator (MS15, ADR-0027)
   coPresenceValidator.ts # @deprecated secondary-source identity/session concordance validator; superseded by PI
   identityFeatures.ts   # Cross-source night/session pairing & physiological relation features (PI2, ADR-0028)
   identityLineage.ts    # Provenance-lineage independence evaluation feeding identity attribution (PI2)
   identityAttribution.ts # Shadow-only ternary physiological-identity evaluator with abstention (PI4)
-  identityEligibility.ts # Pre-baseline effective-identity eligibility boundary (PI5, D-PID-PREBASE)
   identityPassport.ts   # Versioned Physiological Identity Passport model + historical bootstrap (PI3)
   identityProvenance.ts # Replay-oriented identity provenance for ADR-0010 recommendation audits (PI6)
   identityReplay.ts     # Historical out-of-sample shadow replay of the PI2/PI3 pipeline (PI8)

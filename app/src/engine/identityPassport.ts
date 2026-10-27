@@ -14,7 +14,7 @@
  * core" is recorded only as descriptive concordance data for PI8's replay report.
  */
 
-import { calculateMad, calculateMedian } from './multisourceBaselines';
+import { calculateMad, calculateMedian } from '../derived/baselines/multisourceBaselines';
 import type { IntervalOverlapMetrics, PhysiologicalRelationFeatures } from './identityFeatures';
 
 // --- Robust estimators -----------------------------------------------------------------------

@@ -726,7 +726,7 @@ The mandatory "invalidate and rebuild, or enforce a versioned read barrier" requ
 satisfied by construction rather than by new reconciliation code: `computeSourceMetricBaseline()`
 has no materialized baseline document to invalidate — it recomputes eligibility from whatever
 `EffectiveIdentityDecision` projections it is handed on every call (see the regression test added
-to [`identityEligibility.test.ts`](../../app/src/engine/identityEligibility.test.ts)). If a future
+to [`identityEligibility.test.ts`](../../app/src/derived/baselines/identityEligibility.test.ts)). If a future
 change introduces a cached/materialized baseline, that cache must add its own invalidation path.
 
 **Not yet done** (requires a live account/UI session, not just code): actually seeing the card
@@ -1302,7 +1302,7 @@ The capability is implemented when:
 - [MS multisource implementation plan](./multisource-health-and-recovery-ingestion.md)
 - [MS14 shadow study](../analysis/2026-08-27-multisource-shadow-study.md)
 - `app/src/engine/coPresenceValidator.ts`
-- `app/src/engine/multisourceBaselines.ts`
+- `app/src/derived/baselines/multisourceBaselines.ts`
 - `app/src/engine/multisourceFusion.ts`
 - `app/src/observations/models.ts`
 - `src/garmin_sync/google_health_mapper.py`
