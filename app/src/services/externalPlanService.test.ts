@@ -662,6 +662,18 @@ describe('ExternalPlanService', () => {
         }]);
     });
 
+    it.each([
+        ['parseable', { userId: 'u2', planId: 'autumn-block', revision: 1, assignments: [], updatedAt: '2026-08-18T07:00:00Z' }],
+        ['schema-invalid', { userId: 'u2', planId: 'autumn-block', revision: 1, assignments: 'nope' }],
+    ])('reports a %s overlay naming another owner as owner-mismatch, the rule savePlacement refuses (#1172)', async (_label, foreign) => {
+        const scopedPath = 'users/u1/external_plans/autumn-block/revisions/1/placement/current';
+        firestore.committedDocs.set(scopedPath, foreign);
+        const service = new ExternalPlanService();
+        expect(await service.getPlacementState('u1', 'autumn-block', 1)).toEqual({ status: 'INVALID',
+            issues: [{ code: 'owner-mismatch', documentPath: scopedPath }] });
+        await expect(service.savePlacement('u1', { planId: 'autumn-block', revision: 1, assignments: [] })).rejects.toThrow(/another owner/);
+    });
+
     it('distinguishes an inapplicable legacy overlay from corrupt revision-scoped placement', async () => {
         const legacyPath = 'users/u1/external_plans/autumn-block/placement/current';
         const scopedPath = 'users/u1/external_plans/autumn-block/revisions/2/placement/current';

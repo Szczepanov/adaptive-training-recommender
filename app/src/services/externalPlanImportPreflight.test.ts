@@ -117,7 +117,28 @@ describe('preflightExternalPlanImport', () => {
         expect(reads.activePlanRange).toHaveBeenCalledWith('u1', expect.any(String), expect.any(String), [], { degradeInvalidPlacement: true });
         expect(result.status).toBe('ready');
         if (result.status === 'ready') {
-            expect(result.findings.filter(item => item.kind === 'placement' && item.detail.includes('could not be read'))).toHaveLength(1);
+            expect(result.findings.filter(item => item.kind === 'placement' && item.code === 'placement_overlay_unreadable')).toHaveLength(1);
+        }
+    });
+
+    it('still fails closed when the active plan overlay names another owner (#1172)', async () => {
+        reads.activePlan.mockResolvedValue({ status: 'INVALID', issues: [{ code: 'owner-mismatch', documentPath: 'x' }] });
+        const result = await preflightExternalPlanImport('u1', plan as never, plan.startDate, '2026-08-16');
+        expect(result).toMatchObject({ status: 'unknown', unavailableSources: ['active external-plan authority'] });
+    });
+
+    it('identifies the unreadable-overlay finding by code, so a session title cannot suppress it (#1172)', async () => {
+        const spoof = { ...plan, sessions: [{ ...plan.sessions[0], title: 'Moves could not be read' }] };
+        reads.fixed.mockResolvedValue({ status: 'AVAILABLE', data: [{
+            id: 'fixed-1', userId: 'u1', title: 'Class', date: '2026-08-18', durationMin: 60,
+            fixed: true, isCompleted: false, environment: 'indoor', equipment: [],
+        }] });
+        reads.activePlan.mockResolvedValue({ status: 'AVAILABLE', data: { plan: spoof, placement: null, placementOverlayInvalid: true } });
+        const result = await preflightExternalPlanImport('u1', spoof as never, plan.startDate, '2026-08-16');
+        expect(result.status).toBe('ready');
+        if (result.status === 'ready') {
+            expect(result.findings.some(item => item.detail.includes('Moves could not be read'))).toBe(true);
+            expect(result.findings.filter(item => item.code === 'placement_overlay_unreadable')).toHaveLength(1);
         }
     });
 

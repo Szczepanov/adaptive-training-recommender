@@ -271,7 +271,19 @@
   margin-bottom: 16px;
 }
 
+/* The schedule modals' danger pair. On the #1e293b card: text 6.74:1 at rest and 5.99:1 on
+ * hover; the #ef4444 boundary is 3.89:1. */
 .plan-reset-confirm-btn {
-  color: #f87171;
-  border-color: #f87171;
+  color: #fca5a5;
+  background: rgba(239, 68, 68, 0.15);
+  border-color: var(--danger, #ef4444);
+}
+
+.plan-reset-confirm-btn:hover {
+  background: rgba(239, 68, 68, 0.25);
+}
+
+.plan-reset-confirm-btn[aria-disabled='true'],
+.plan-overlay-recovery-card .plan-retry-btn[aria-disabled='true'] {
+  cursor: progress;
 }

@@ -124,6 +124,8 @@ export interface PlanRevisionInput {
 export interface PlacementInput {
     planId: string;
     revision: number;
+    /** When the current overlay was last written; dates it when its history is unavailable. */
+    updatedAt?: string;
     assignments: {
         sessionId: string;
         date: string;

@@ -405,6 +405,15 @@ describe('ActiveExternalPlanService', () => {
             expect(range[0]).toMatchObject({ status: 'AVAILABLE', data: { placementOverlayInvalid: true } });
         });
 
+        it('keeps an overlay that names another owner failing closed even when opted in', async () => {
+            const foreign: DataState<never> = { status: 'INVALID', issues: [{ code: 'owner-mismatch', documentPath: 'users/u1/external_plans/autumn-block/revisions/1/placement/current' }] };
+            expect(await new ActiveExternalPlanService(stubPlans({ placement: foreign }))
+                .getActivePlanState('u1', '2026-08-18', [], { degradeInvalidPlacement: true })).toEqual(foreign);
+            const range = await new ActiveExternalPlanService(stubPlans({ placement: foreign }))
+                .getActivePlanStatesInRange('u1', '2026-08-18', '2026-08-18', [], { degradeInvalidPlacement: true });
+            expect(range).toEqual([foreign]);
+        });
+
         it('keeps an unavailable overlay and an invalid revision failing even when opted in', async () => {
             const unavailable: DataState<never> = { status: 'UNAVAILABLE', operation: 'read external plan placement', retryable: true };
             expect(await new ActiveExternalPlanService(stubPlans({ placement: unavailable }))

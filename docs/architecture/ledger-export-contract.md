@@ -101,8 +101,10 @@ Each revision's placement history is read in document-id-ordered pages of 200
 (`PLACEMENT_HISTORY_MAX_SCANNED_EVENTS`) plus one truncation sentinel. A revision beyond that
 bound degrades alone. Its placements fall back to the current overlay, and their
 `statusHistory` is `unavailable`, never partial history. Other revisions, and the placement
-source state, are unaffected. A failed history read still reports the whole placement source
-`unavailable`. A repair event is recorded after the corrupt overlay's own canonical
+source state, are unaffected. The current overlay stands for the as-of state only if its
+`updatedAt` falls, as a Warsaw date, on or before the export date. A later or unreadable
+`updatedAt` omits that revision's placements, and the placement and override collections report
+`unavailable`. A failed history read still reports the whole placement source `unavailable`. A repair event is recorded after the corrupt overlay's own canonical
 `updatedAt`, so it cannot sort before the last recorded change.
 Earlier legacy history and successors absent from legacy superseded assignments remain unknown; titles are never used to infer successors. Placements
 without history remain current overlays and are never claimed as immutable history.

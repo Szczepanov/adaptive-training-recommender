@@ -3,6 +3,7 @@ import { hasRecordedPrevious, placementAsOf, placementBeforeHistory, type Placem
 import { collect, sourceState, type BuildContext } from './buildContext.ts';
 import type { LedgerExportRecords, PlacementInput } from './inputs.ts';
 import { fact, notYetSupported, record, worstState } from './ledgerValue.ts';
+import type { LedgerState } from './schema.ts';
 import type {
     LedgerCoachingHistory,
     LedgerValue,
@@ -145,7 +146,7 @@ function buildPlanRevisions(
 }
 
 /** Degrades the placement collections when a revision's as-of state cannot be reconstructed. */
-function withPlacementState(context: BuildContext, state: 'invalid'): BuildContext {
+function withPlacementState(context: BuildContext, state: LedgerState): BuildContext {
     const key = 'external_plan_placements';
     const current = context.sources[key];
     return { ...context, sources: { ...context.sources,
@@ -171,6 +172,17 @@ export function buildCoachingHistory(records: LedgerExportRecords, context: Buil
         if (index >= 0) placements.splice(index, 1);
         if (assignments) placements.push({ planId, revision, assignments });
     }
+    // A revision whose history exceeded the bounded scan can only show its current overlay. That
+    // overlay is the as-of state only if it was last written on or before the as-of date.
+    let unknownTruncatedOverlay = false;
+    for (const truncated of records.placementHistoryUnavailable ?? []) {
+        const index = placements.findIndex(row => row.planId === truncated.planId && row.revision === truncated.revision);
+        if (index < 0) continue;
+        const writtenOn = warsawDateOf(placements[index].updatedAt ?? '');
+        if (writtenOn && writtenOn <= context.asOfDate) continue;
+        placements.splice(index, 1);
+        unknownTruncatedOverlay = true;
+    }
     const flat = records.placements === undefined && records.placementHistory === undefined ? undefined : flatten(placements);
     for (const events of groups.values()) {
         const ordered = events.filter(event => event.changedOn <= context.asOfDate)
@@ -189,7 +201,9 @@ export function buildCoachingHistory(records: LedgerExportRecords, context: Buil
         }
         flat?.push(...removed.values());
     }
-    const placementContext = unknownBeforeHistory ? withPlacementState(context, 'invalid') : context;
+    const placementState: LedgerState = worstState([unknownBeforeHistory ? 'invalid' : 'measured',
+        unknownTruncatedOverlay ? 'unavailable' : 'measured']);
+    const placementContext = placementState === 'measured' ? context : withPlacementState(context, placementState);
     return {
         planRevisions: buildPlanRevisions(records, flat, context),
         placements: buildPlacements(flat, records, placementContext),

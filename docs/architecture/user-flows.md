@@ -417,8 +417,11 @@ moves** asks for confirmation, then saves an empty overlay. A normal move also s
 unreadable overlay. Either save records the replaced state as invalid in placement history
 (#1172). While the overlay is unreadable, the coach-week critique and `PlanAuthorityBanner`
 are withheld, because today's coach session is not known. A plan or revision that is itself
-invalid still blocks the week and offers corrected-plan import. Home, the Context Brief and the
-recommendation engine still treat an unreadable overlay as an unreadable plan.
+invalid still blocks the week and offers corrected-plan import. So does an overlay that names
+another owner. That is a security signal, which saves refuse, so no repair is offered. Home,
+the Context Brief and the recommendation engine still treat an unreadable overlay as an
+unreadable plan. Focus moves to Cancel when the reset confirmation opens, and returns to Reset
+moves after Cancel or a failed reset.
 
 Current verdict banner: `WeekAheadStrip` intentionally starts at tomorrow, so `PlanView`
 keeps the same-day ranked adaptive recommendation that seeds that forecast separately. When

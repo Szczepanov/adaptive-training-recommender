@@ -129,7 +129,7 @@ describe('LedgerExportService', () => {
         reads.header.mockResolvedValue(available({ planId: 'plan-1', revision: 2, contentHash: hash, importedAt: '2026-11-10T08:00:00Z' }));
         reads.activations.mockResolvedValue(available([{ revision: 2, contentHash: hash, activatedAt: '2026-11-10T08:00:00Z' }]));
         reads.revision.mockResolvedValue(available(plan));
-        reads.placement.mockResolvedValue(available({ planId: 'plan-1', revision: 2, assignments: [{ sessionId: 's1', date: AS_OF, status: 'moved' }] }));
+        reads.placement.mockResolvedValue(available({ planId: 'plan-1', revision: 2, assignments: [{ sessionId: 's1', date: AS_OF, status: 'moved' }], updatedAt: '2026-11-15T08:00:00.000Z' }));
         const output = await new LedgerExportService().build('owner', request);
         expect(output.coachingHistory.planRevisions.items[0].fields.authorRationale.value).toBe('Aerobic block');
         expect(output.coachingHistory.placements.items[0].fields.statusHistory.state).toBe('not_yet_supported');

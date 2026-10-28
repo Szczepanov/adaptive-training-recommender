@@ -393,7 +393,7 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
   );
 
   const persistAssignments = useCallback(
-    async (assignments: ExternalPlacementAssignment[]) => {
+    async (assignments: ExternalPlacementAssignment[], { reportError = true }: { reportError?: boolean } = {}) => {
       if (!activePlan) return;
       setWriteError(null);
       try {
@@ -404,7 +404,8 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
         });
       } catch (err) {
         console.error('Failed to save external plan placement:', err);
-        setWriteError('That change could not be saved. Check your connection and try again.');
+        // A caller with its own error surface (the overlay reset card) reports the failure once.
+        if (reportError) setWriteError('That change could not be saved. Check your connection and try again.');
         throw err;
       }
       await loadPlanData();
@@ -585,7 +586,7 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
         <div className="plan-active-content">
           {activePlan.placementOverlayInvalid && (
             <PlacementOverlayRecoveryCard
-              onReset={() => persistAssignments([])}
+              onReset={() => persistAssignments([], { reportError: false })}
               disabled={clinicalEscalationRequired}
             />
           )}

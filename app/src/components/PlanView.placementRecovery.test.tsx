@@ -120,6 +120,14 @@ describe('PlanView placement overlay recovery (#1172)', () => {
         expect(find(render(), PlacementOverlayRecoveryCard)).toBeUndefined();
     });
 
+    it('leaves a failed reset to the card alert, without a second plan-week error', async () => {
+        mocks.activePlan.mockResolvedValue(active({ placementOverlayInvalid: true }));
+        const elements = await mount();
+        mocks.savePlacement.mockRejectedValueOnce(new Error('offline'));
+        await expect((find(elements, PlacementOverlayRecoveryCard)!.props.onReset as () => Promise<void>)()).rejects.toThrow('offline');
+        expect(find(render(), ExternalPlanWeek)?.props.writeError).toBeNull();
+    });
+
     it('lets a normal move proceed after the warning, replacing the unreadable moves', async () => {
         mocks.activePlan.mockResolvedValue(active({ placementOverlayInvalid: true }));
         const elements = await mount();

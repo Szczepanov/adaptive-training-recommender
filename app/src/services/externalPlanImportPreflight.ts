@@ -12,6 +12,8 @@ export interface ImportPreflightFinding {
     kind: 'placement' | 'external_plan' | 'fixed_activity' | 'travel_block' | 'authored_occurrence' | 'rest_directive' | 'plan_horizon' | 'intent_blocks';
     date: string;
     detail: string;
+    /** Stable identity for findings that callers must deduplicate or match; never parsed from `detail`. */
+    code?: 'placement_overlay_unreadable';
 }
 
 export type ExternalPlanImportPreflight =
@@ -136,8 +138,9 @@ export async function preflightExternalPlanImport(
             findings.push({ kind: 'placement', date: activeDates[index], detail: 'Importing this revision resets an existing confirmed placement overlay.' });
         }
         if (state.data.plan.planId === plan.planId && state.data.placementOverlayInvalid
-            && !findings.some(item => item.kind === 'placement' && item.detail.includes('could not be read'))) {
-            findings.push({ kind: 'placement', date: activeDates[index], detail: 'Existing placement moves for this plan could not be read. This revision does not restore them.' });
+            && !findings.some(item => item.code === 'placement_overlay_unreadable')) {
+            findings.push({ kind: 'placement', code: 'placement_overlay_unreadable', date: activeDates[index],
+                detail: 'Existing placement moves for this plan could not be read. This revision does not restore them.' });
         }
     }
 

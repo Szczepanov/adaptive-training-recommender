@@ -44,6 +44,16 @@ interface PreviousOverlay {
     invalidUpdatedAt?: string;
 }
 
+/**
+ * A stored overlay that names another owner is a security signal, never repairable corruption.
+ * The rule applies whether or not the rest of the document parses: a string `userId` that is
+ * not the caller's. `getPlacementState` reports it as `owner-mismatch`; `savePlacement` refuses it.
+ */
+export function placementClaimsOtherOwner(raw: unknown, userId: string): boolean {
+    const claimedOwner = raw && typeof raw === 'object' ? (raw as { userId?: unknown }).userId : undefined;
+    return typeof claimedOwner === 'string' && claimedOwner !== userId;
+}
+
 const canonicalInstant = (value: unknown): string | undefined => typeof value === 'string'
     && Number.isFinite(Date.parse(value)) && new Date(value).toISOString() === value ? value : undefined;
 
@@ -54,8 +64,7 @@ const canonicalInstant = (value: unknown): string | undefined => typeof value ==
 function readPreviousOverlay(source: 'current' | 'legacy' | null, raw: unknown, userId: string,
     planId: string, revision: number): PreviousOverlay {
     if (!source) return { overlay: null };
-    const claimedOwner = raw && typeof raw === 'object' ? (raw as { userId?: unknown }).userId : undefined;
-    if (typeof claimedOwner === 'string' && claimedOwner !== userId) {
+    if (placementClaimsOtherOwner(raw, userId)) {
         throw new Error('Previous placement overlay belongs to another owner');
     }
     const invalid = (reason: PlacementPreviousStateReason): PreviousOverlay => {
@@ -476,6 +485,11 @@ export class ExternalPlanService {
             const documentPath = usedLegacyPath
                 ? `users/${userId}/external_plans/${planId}/placement/current`
                 : `users/${userId}/external_plans/${planId}/revisions/${revision}/placement/current`;
+            // Checked before the schema so a corrupt document naming another owner is never
+            // reported as ordinary, repairable corruption (#1172).
+            if (placementClaimsOtherOwner(snapshot.data(), userId)) {
+                return { status: 'INVALID', issues: [{ code: 'owner-mismatch', documentPath }] };
+            }
             const parsed = validateExternalPlanPlacement(snapshot.data());
             if (!parsed.isValid || !parsed.data) {
                 return {

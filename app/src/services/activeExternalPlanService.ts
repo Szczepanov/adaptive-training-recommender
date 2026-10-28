@@ -480,7 +480,10 @@ export class ActiveExternalPlanService {
                     : this.plans.getPlacementState(userId, latestHeader.planId, activation.revision));
                 // An unreadable or malformed overlay is unknown, never a clean placement. An opted-in
                 // caller gets the default dates with an explicit flag instead of a failed plan.
-                const overlayInvalid = placementState.status === 'INVALID' && options.degradeInvalidPlacement === true;
+                // An overlay naming another owner stays fail-closed: savePlacement refuses it, so
+                // offering a repair would only lead to failing saves (#1172).
+                const overlayInvalid = placementState.status === 'INVALID' && options.degradeInvalidPlacement === true
+                    && !placementState.issues.some(issue => issue.code === 'owner-mismatch');
                 if ((placementState.status === 'INVALID' && !overlayInvalid) || placementState.status === 'UNAVAILABLE') return placementState;
                 const placement = placementState.status === 'AVAILABLE' && placementState.data.revision === activation.revision
                     ? placementState.data

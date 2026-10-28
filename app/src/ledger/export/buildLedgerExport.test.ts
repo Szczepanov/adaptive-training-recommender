@@ -189,7 +189,8 @@ describe('buildLedgerExport real-model mapping (H1)', () => {
 
     it('marks only a revision with truncated history as having unavailable statusHistory (#1172)', () => {
         const input = fullRecords();
-        input.placements = [...input.placements!, { planId: 'plan-2', revision: 1,
+        // The truncated revision's overlay was last written before the as-of date, so it is current.
+        input.placements = [{ ...input.placements![0], updatedAt: '2026-11-19T08:00:00.000Z' }, { planId: 'plan-2', revision: 1,
             assignments: [{ sessionId: 'x1', date: '2026-11-19', status: 'moved' }] }];
         input.placementHistoryUnavailable = [{ planId: 'plan-1', revision: 2 }];
         const result = buildLedgerExport({ records: input, asOfDate: AS_OF, purpose: 'planning', exportedAt: '2026-11-21T12:00:00Z' });
@@ -199,6 +200,28 @@ describe('buildLedgerExport real-model mapping (H1)', () => {
         const other = result.coachingHistory.placements.items.find(item => item.id === 'plan-2@1:x1');
         expect(other?.fields.statusHistory.state).toBe('not_yet_supported');
         expect(result.coachingHistory.placements.state).toBe('measured');
+    });
+
+    it('omits a truncated revision whose current overlay postdates the as-of date (#1172)', () => {
+        const input = fullRecords();
+        const assignments = input.placements![0].assignments;
+        const build = (updatedAt?: string) => {
+            input.placements = [{ planId: 'plan-1', revision: 2, assignments, ...(updatedAt ? { updatedAt } : {}) }];
+            input.placementHistoryUnavailable = [{ planId: 'plan-1', revision: 2 }];
+            return buildLedgerExport({ records: input, asOfDate: AS_OF, purpose: 'planning', exportedAt: '2026-11-21T12:00:00Z' }).coachingHistory;
+        };
+        const later = build('2026-11-21T08:00:00.000Z');
+        expect(later.placements.items.filter(item => item.id.startsWith('plan-1@2:'))).toEqual([]);
+        expect(later.placements.state).toBe('unavailable');
+        expect(later.overrides.state).toBe('unavailable');
+        // Warsaw date (UTC+1 in November): 23:30Z on the 20th is already the 21st, after the as-of date.
+        expect(build('2026-11-20T23:30:00.000Z').placements.state).toBe('unavailable');
+        expect(build('2026-11-20T22:30:00.000Z').placements.state).toBe('measured');
+        const current = build('2026-11-20T20:00:00.000Z');
+        expect(current.placements.state).toBe('measured');
+        expect(current.placements.items.some(item => item.id === 'plan-1@2:s1')).toBe(true);
+        // Without a readable instant the overlay cannot be dated, so it fails closed.
+        expect(build().placements.state).toBe('unavailable');
     });
 
     it('exports an unknown legacy successor without inventing a link', () => {
