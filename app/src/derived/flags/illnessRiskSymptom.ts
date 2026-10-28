@@ -48,9 +48,14 @@ const THRESHOLD = 'Active when the check-in reports illness symptoms, unless the
     + `and a non-empty symptom list drawn only from ${ALLERGY_COMPATIBLE_SYMPTOM_TYPES.join(', ')} (ADR-0032)`;
 
 /**
- * Pure. Evaluates `illness_risk_symptom` for one check-in. No check-in cannot be judged
- * (`active: null`, state `missing`); otherwise the flag is measured and active exactly when
- * `illnessSymptoms` is set and the day is not allergy-like.
+ * Pure. Evaluates `illness_risk_symptom` for one check-in. No check-in, or a check-in whose
+ * illness question was left unanswered (`dataQuality.missingFields` names `illnessSymptoms`;
+ * the parser stores `false` for it), cannot be judged (`active: null`, state `missing`).
+ * Otherwise the flag is measured and active exactly when `illnessSymptoms` is set and the day
+ * is not allergy-like.
+ *
+ * The unanswered case deliberately diverges from the frozen engine, which reads the stored
+ * `false` as "no illness": D-EXPORT forbids reporting a missing answer as a negative.
  */
 export function evaluateIllnessRiskSymptom(checkin: DailySubjectiveCheckin | null): FlagEvaluation {
     if (checkin === null) {
@@ -64,7 +69,24 @@ export function evaluateIllnessRiskSymptom(checkin: DailySubjectiveCheckin | nul
             threshold: THRESHOLD,
         };
     }
+    if (checkin.dataQuality?.missingFields?.includes('illnessSymptoms')) {
+        return {
+            id: 'illness_risk_symptom',
+            active: null,
+            state: 'missing',
+            reasonCode: 'illness_question_unanswered',
+            definitionVersion: ILLNESS_RISK_SYMPTOM_FLAG_DEFINITION_VERSION,
+            inputs: [{
+                name: 'illness_symptoms',
+                value: { value: null, source: CHECKIN_SOURCE, state: 'missing', observedOn: checkin.date },
+            }],
+            threshold: THRESHOLD,
+        };
+    }
     const illnessSymptoms = Boolean(checkin.illnessSymptoms);
+    // No symptom block: the allergy detail was never recorded. The predicate fails closed
+    // (not allergy-like), so the flag result is unchanged; only the input's state says so.
+    const symptomDetailRecorded = Boolean(checkin.healthContext?.symptoms);
     const allergyLike = isAllergyLikeSymptomDay(checkin);
     const active = illnessSymptoms && !allergyLike;
     const reasonCode = !illnessSymptoms
@@ -79,7 +101,12 @@ export function evaluateIllnessRiskSymptom(checkin: DailySubjectiveCheckin | nul
         definitionVersion: ILLNESS_RISK_SYMPTOM_FLAG_DEFINITION_VERSION,
         inputs: [
             { name: 'illness_symptoms', value: { value: illnessSymptoms, ...observed } },
-            { name: 'allergy_like_symptom_day', value: { value: allergyLike, ...observed } },
+            {
+                name: 'allergy_like_symptom_day',
+                value: symptomDetailRecorded
+                    ? { value: allergyLike, ...observed }
+                    : { value: null, source: CHECKIN_SOURCE, state: 'not_recorded', observedOn: checkin.date },
+            },
         ],
         threshold: THRESHOLD,
     };

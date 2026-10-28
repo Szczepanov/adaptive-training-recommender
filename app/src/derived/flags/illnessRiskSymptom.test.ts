@@ -65,6 +65,34 @@ describe('evaluateIllnessRiskSymptom', () => {
         expect(resolveClinicalEnvelopeSources(null)).toEqual([]);
     });
 
+    it('cannot evaluate when the illness question was left unanswered (D-EXPORT: missing is never "none")', () => {
+        // Deliberate divergence from the frozen engine, like the null check-in above: the parser
+        // fills an unanswered question as `illnessSymptoms: false` and records it in
+        // dataQuality.missingFields. The engine reads that as no illness; the flag reports missing.
+        const unanswered = checkin({ dataQuality: { isComplete: false, missingFields: ['illnessSymptoms'] } });
+        const flag = evaluateIllnessRiskSymptom(unanswered);
+        expect(flag).toMatchObject({ id: 'illness_risk_symptom', active: null, state: 'missing', reasonCode: 'illness_question_unanswered' });
+        expect(flag.inputs[0]).toEqual({
+            name: 'illness_symptoms',
+            value: { value: null, source: 'daily_subjective_checkin', state: 'missing', observedOn: DATE },
+        });
+        expect(resolveClinicalEnvelopeSources(unanswered)).not.toContain('non_allergy_illness');
+    });
+
+    it('still judges a check-in whose other fields are missing', () => {
+        expect(evaluateIllnessRiskSymptom(checkin({ dataQuality: { isComplete: false, missingFields: ['readiness'] } })))
+            .toMatchObject({ active: false, state: 'measured', reasonCode: 'no_illness_symptoms' });
+    });
+
+    it('marks the allergy detail not_recorded when no symptom block exists, and stays fail-closed', () => {
+        const flag = evaluateIllnessRiskSymptom(checkin({ illnessSymptoms: true }));
+        expect(flag).toMatchObject({ active: true, state: 'measured', reasonCode: 'non_allergy_illness' });
+        expect(flag.inputs[1]).toEqual({
+            name: 'allergy_like_symptom_day',
+            value: { value: null, source: 'daily_subjective_checkin', state: 'not_recorded', observedOn: DATE },
+        });
+    });
+
     it('is a measured negative when no illness symptoms are reported', () => {
         expect(evaluateIllnessRiskSymptom(checkin())).toMatchObject({
             active: false, state: 'measured', reasonCode: 'no_illness_symptoms',
@@ -72,7 +100,7 @@ describe('evaluateIllnessRiskSymptom', () => {
     });
 
     it('is active for undifferentiated illness symptoms', () => {
-        const flag = evaluateIllnessRiskSymptom(checkin({ illnessSymptoms: true }));
+        const flag = evaluateIllnessRiskSymptom(checkin({ illnessSymptoms: true, healthContext: { symptoms: { present: true } } }));
         expect(flag).toMatchObject({ active: true, state: 'measured', reasonCode: 'non_allergy_illness' });
         expect(flag.inputs).toEqual([
             { name: 'illness_symptoms', value: { value: true, source: 'daily_subjective_checkin', state: 'measured', observedOn: DATE } },
@@ -118,6 +146,13 @@ function symptomsOf(present: boolean, severity: Severity, cause: Cause, types: T
     };
 }
 
+/*
+ * Call-site parity: resolveClinicalEnvelopeSources now calls the same moved
+ * isAllergyLikeSymptomDay, so this sweep proves the flag and the engine agree on every
+ * check-in shape, not that the predicate is unchanged. The predicate itself is pinned by
+ * knowledge/injuryPainPolicyAlignment.test.ts and the unchanged ADR-0032 suite in
+ * engine/adapters.test.ts.
+ */
 describe('illness_risk_symptom parity with the engine envelope source (ADR-0032)', () => {
     it('matches resolveClinicalEnvelopeSources non_allergy_illness on every non-null check-in', () => {
         const variants = typeVariants();
