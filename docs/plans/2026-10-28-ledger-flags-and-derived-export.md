@@ -43,13 +43,13 @@ Combining `#1165` and `#1153` avoids building an export-only synthesis path that
 
 ## Work items and dependencies
 
-- **WI-1 (`#1153`): Persist per-date `D-FLAGS` revisions (`flagEvaluationPersistence`, `flagCaptureService`, Firestore rules)**
+- [x] **WI-1 (`#1153`): Persist per-date `D-FLAGS` revisions (`flagEvaluationPersistence`, `flagCaptureService`, Firestore rules)**
   - **Depends on:** Landed evaluators in `app/src/derived/flags/` (`evaluateRecoveryBeyondBaseline`, `evaluateIllnessRiskSymptom`, `evaluateIllnessAnomalyFlag`, `evaluateInjuryConstraintTouchesSession`)
-- **WI-2 (`#1165` part A): Wire `flag_evaluations` into `SOURCE_KEYS`, `LedgerExportService`, and windowed `buildFlags`**
+- [x] **WI-2 (`#1165` part A): Wire `flag_evaluations` into `SOURCE_KEYS`, `LedgerExportService`, and windowed `buildFlags`**
   - **Depends on:** WI-1 persistence parser and query contract
-- **WI-3 (`#1165` part B): Populate extracted Layer 2 `derived` baselines and extend `LedgerExportService` check-in history read**
+- [x] **WI-3 (`#1165` part B): Populate extracted Layer 2 `derived` baselines and extend `LedgerExportService` check-in history read**
   - **Depends on:** Landed `computeSubjectiveBaseline` (`app/src/derived/baselines/subjectiveBaseline.ts`) and `DailyRecoverySnapshot.derived` (`app/src/types/recovery.type.ts`)
-- **WI-4 (`#1153`, `#1165`): Contract schema regeneration, renderer/golden updates, rules emulator tests, and browser export verification**
+- [x] **WI-4 (`#1153`, `#1165`): Contract schema regeneration, renderer/golden updates, rules emulator tests, and browser export verification**
   - **Depends on:** WI-1, WI-2, WI-3
 
 ## Capture and persistence (`#1153`)
@@ -169,3 +169,17 @@ Combining `#1165` and `#1153` avoids building an export-only synthesis path that
 - **Repository gates:**
   - Run `npm run typecheck`, `npm run lint`, `npm test`, `npm run rules:check`, `python scripts/repository_hygiene.py`, `make verify`, and simulation baseline equality (`D-ENGINE` freeze proof).
   - Run diff-first correctness and scoped security review before opening a single PR linking `#1165` and `#1153`. Do not switch off the engine (`#1167`) or waive device acceptance.
+
+## Implementation record (2026-10-28)
+
+All four work items are implemented on `codex/1165-1153-ledger-flags`; merge and deployment
+remain pending. `make verify` passed in 309 seconds: 9,935 frontend unit tests, both
+Firestore-rule shards, both browser E2E shards, Python checks, builds, registry validators,
+simulations and latency gates. The committed simulation baseline is unchanged. Independent
+correctness findings were repaired with regressions; the scoped security review found no blocker.
+
+The browser tests exercise actual app-side capture followed by the exported JSON at desktop
+and mobile widths. Additional regressions cover legacy imported definitions, strict invalid
+header propagation for capture only, abandonment and pinned execution refresh, and chronological
+ordering of evaluation instants with explicit UTC offsets. Recovery records retain compared
+deltas and bands as well as the source digest. No engine threshold or recommendation changed.
