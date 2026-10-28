@@ -6,11 +6,14 @@ No live Firestore or Garmin calls.
 from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from threading import Lock
 from typing import Any
 
 import pytest
 
+from garmin_sync import training_occurrence_backfill
 from garmin_sync.training_occurrence_backfill import (
     apply_training_occurrence_backfill,
     audit_training_occurrence_backfill,
@@ -131,6 +134,46 @@ class _MockDb:
 
     def transaction(self) -> _MockTransaction:
         return _MockTransaction(self)
+
+
+def test_fallback_reads_share_one_ten_worker_budget(monkeypatch: pytest.MonkeyPatch) -> None:
+    allocated = 0
+    lock = Lock()
+
+    class BoundedExecutor(ThreadPoolExecutor):
+        def __enter__(self) -> BoundedExecutor:
+            nonlocal allocated
+            with lock:
+                allocated += self._max_workers
+                assert allocated <= 10, "nested pools multiply the document-read budget"
+            return self
+
+        def __exit__(self, *args: Any) -> None:
+            nonlocal allocated
+            try:
+                super().__exit__(*args)
+            finally:
+                with lock:
+                    allocated -= self._max_workers
+
+    monkeypatch.setattr(training_occurrence_backfill, "ThreadPoolExecutor", BoundedExecutor)
+    db = _MockDb()
+    refs = [_Ref({}, str(i), db) for i in range(801)]
+    snapshots = training_occurrence_backfill._batch_get_docs(object(), refs)
+    assert set(snapshots) == {str(i) for i in range(801)}
+    assert all(not snapshot.exists for snapshot in snapshots.values())
+
+
+def test_fallback_read_failure_aborts_batch() -> None:
+    class FailedRef:
+        id = "failed"
+
+        def get(self) -> Any:
+            raise RuntimeError("individual read failed")
+
+    refs = [_Ref({}, "missing", _MockDb()), FailedRef()]
+    with pytest.raises(RuntimeError, match="individual read failed"):
+        training_occurrence_backfill._batch_get_docs(object(), refs)
 
 
 def test_batch_read_failure_aborts_planning_and_audit(monkeypatch: pytest.MonkeyPatch) -> None:
