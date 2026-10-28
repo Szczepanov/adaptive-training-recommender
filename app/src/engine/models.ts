@@ -9,20 +9,25 @@ import type { PerformanceGoalDemand } from './performanceGoalDemand';
 import type {
     ActivitySessionCost,
     ActivityStimulusDomain,
+    AthleticCapabilityKey,
     BodyRegion,
+    CompletedTrainingIntensity,
     DailyRecoverySnapshot,
     DailySubjectiveCheckin,
+    EvidenceTier,
     GuardrailKey,
     LegacyEquipmentKey,
     Modality,
     OccupationalLoadBaseline,
     PhysicalWorkCheckin,
     RedFlagCategory,
+    SessionCategory,
     SportAccessKey,
     TrainingEnvironment,
     TrainingSettings,
     UserConstraint,
     UserPreferences,
+    WorkoutStimulusProfile,
 } from '../ledger/models';
 
 // ADR-0052 Phase 1 (#1144): ledger record types moved to ledger/models.ts; re-exported so
@@ -631,17 +636,6 @@ export type TrainingPriority =
     | 'health' | 'balanced_performance' | 'endurance'
     | 'strength_muscle' | 'speed_power' | 'sport_readiness';
 
-/** Persisted athlete-owned planning inputs. This is deliberately distinct from
- * `trainingIntent.ts`'s per-decision `TrainingIntent`, which resolves these inputs with
- * history and readiness for one date and is never persisted as this profile. */
-/** Issue #805: sport-neutral athletic capabilities that broad-athleticism maintenance can
- * preserve. Future racket/court/field identities add workout mappings, not new keys. */
-export type AthleticCapabilityKey =
-    | 'linear_speed_skill'
-    | 'acceleration_deceleration'
-    | 'multidirectional_change_of_direction'
-    | 'sport_skill';
-
 /** Issue #805: explicit, default-off opt-in to periodic multidirectional/skill exposure.
  * Independent of the `sport_readiness` priority (D-A); absent means opted out. */
 export interface CapabilityMaintenancePreference {
@@ -649,6 +643,9 @@ export interface CapabilityMaintenancePreference {
     capabilities: AthleticCapabilityKey[];
 }
 
+/** Persisted athlete-owned planning inputs. This is deliberately distinct from
+ * `trainingIntent.ts`'s per-decision `TrainingIntent`, which resolves these inputs with
+ * history and readiness for one date and is never persisted as this profile. */
 export interface TrainingIntentProfile {
     userId: string;
     planningMode: PlanningMode;
@@ -757,17 +754,6 @@ export interface RankingCounterfactual {
      * optimizer.ts). A precise weekly-role-allocation feasibility cross-check is deferred --
      * see docs/plans/issue-458-sequencing-and-ranking-diagnostics.md. */
     selectedAdvancesRequiredRole: boolean;
-}
-
-export interface WorkoutStimulusProfile {
-    aerobicEndurance: number;     // 0.0 - 1.0 (canonical)
-    thresholdPower: number;       // 0.0 - 1.0 (canonical)
-    vo2MaxPower: number;          // 0.0 - 1.0 (canonical)
-    repeatedSurges: number;       // 0.0 - 1.0 (canonical)
-    sprintPower: number;          // 0.0 - 1.0 (canonical)
-    fatigueResistance: number;    // 0.0 - 1.0 (canonical)
-    maxStrength: number;          // 0.0 - 1.0 (canonical)
-    hypertrophy: number;          // 0.0 - 1.0 (canonical)
 }
 
 export interface ObjectiveQualification {
@@ -904,7 +890,7 @@ export interface TemplatePhaseEligibility {
 
 export interface SessionTemplate {
     id: string;
-    category: 'Hard Endurance' | 'Moderate Endurance' | 'Easy Endurance' | 'Race-Specific Endurance' | 'Upper-body Strength' | 'Lower-body Strength' | 'Full-body Strength' | 'Power Maintenance' | 'Field Maintenance' | 'Technical Skill' | 'Mobility/Recovery' | 'Rest';
+    category: SessionCategory;
     modality: Modality;
     durationMin: number;
     durationMax: number;
@@ -1344,46 +1330,8 @@ export interface DailyRecommendation {
  */
 export type DailyRecommendationWithVerdict = DailyRecommendation & { engineVerdict?: ShadowVerdict };
 
-export interface ActivityOverride {
-    activityId: string;
-    userId: string;
-    date: string;
-    originalType: string;
-    originalIntensityTag: string;
-    overriddenModality: SessionTemplate['modality'] | 'Unknown';
-    overriddenIntensity: CompletedTrainingIntensity;
-    rpe?: number | null;
-    stimulusFocus?: keyof WorkoutStimulusProfile | null;
-    notes?: string | null;
-    createdAt: string;
-    updatedAt: string;
-}
-
 export type CompletedTrainingSource = 'garmin' | 'adherence' | 'manual';
-export type CompletedTrainingIntensity = 'easy' | 'moderate' | 'hard' | 'unknown';
 export type CompletedTrainingConfidence = 'high' | 'medium' | 'low';
-
-/** The evidence hierarchy for inferring completed-training stimulus (Phase 5.5) -- see
- *  docs/plans/phase-5-sequence-planning.md 5.5 and completedTraining.ts's
- *  classifyGarminTier/stimulusConfidenceForTier. Strongest to weakest evidence.
- *  `completedStructuredWorkout` is named for completeness against the plan's full ladder
- *  but is not currently reachable -- no ingested source yet carries a structured
- *  completed-workout record independent of the prescribed template. `measuredEffort` IS
- *  reachable: classifyGarminTier returns it when a Garmin activity has both a training
- *  effect and a positive `activityTrainingLoad`, Garmin's own proprietary composite
- *  (derived from HR/pace/power across the session) standing in as the closest available
- *  approximation of true per-interval power/cadence structure. */
-export type EvidenceTier =
-    | 'exactPrescribedMatch'
-    | 'completedStructuredWorkout'
-    | 'measuredEffort'
-    | 'garminTrainingEffect'
-    /** An externally-authored session (ADR-0019 D-EXTTIER): structured and deliberate,
-     * but written against no catalog, so its stimulus is derived rather than authored. */
-    | 'authoredExternal'
-    | 'durationIntensity'
-    | 'athleteClassification'
-    | 'genericModalityFallback';
 
 /**
  * One real-world completed session after all available evidence is reconciled. It is an
