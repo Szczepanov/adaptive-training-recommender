@@ -213,10 +213,11 @@ describe('engine knowledge coverage inventory', () => {
         // #931 adds one covered performed stimulus-domain quality anti-repetition item.
         // #927 adds one covered explicit event-development authority product policy.
         // #929 adds one partial/p1 season-roadmap event-role, conflict and supporting-dose item.
+        // #1164 adds one partial/p1 injury-constraint-touches-session advisory flag item.
         const summary = summarizeKnowledgeCoverage();
-        expect(summary.total).toBe(86);
-        expect(summary.byCoverage).toEqual({ covered: 59, partial: 20, uncovered: 1, not_applicable: 6 });
-        expect(summary.byPriority).toEqual({ p0: 8, p1: 10, p2: 3, p3: 0, none: 65 });
+        expect(summary.total).toBe(87);
+        expect(summary.byCoverage).toEqual({ covered: 59, partial: 21, uncovered: 1, not_applicable: 6 });
+        expect(summary.byPriority).toEqual({ p0: 8, p1: 11, p2: 3, p3: 0, none: 65 });
         expect(byId('periodization.event_development_authority')).toMatchObject({
             classification: 'product_heuristic', coverage: 'covered',
             knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.developmentAuthorityPolicy],

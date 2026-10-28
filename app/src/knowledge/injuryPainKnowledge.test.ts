@@ -42,6 +42,7 @@ describe('injury and clinical-symptom knowledge pack', () => {
             INJURY_PAIN_CLAIM_IDS.upperLimbLoadingPolicy,
             INJURY_PAIN_CLAIM_IDS.genericClinicalEnvelopePolicy,
             INJURY_PAIN_CLAIM_IDS.clinicalEscalationProtocol,
+            INJURY_PAIN_CLAIM_IDS.constraintTouchesSessionFlagPolicy,
         ];
         policyIds.forEach(id => {
             const claim = getActiveKnowledgeClaim(id);

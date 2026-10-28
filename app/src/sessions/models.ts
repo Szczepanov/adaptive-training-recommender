@@ -6,7 +6,7 @@
  * have distinct lifecycles and ownership (D-MRECORDS).
  */
 
-import type { FitWorkoutFingerprintKind, IntensityGauge } from '../engine/models';
+import type { FitWorkoutFingerprintKind, IntensityGauge } from '../ledger/models';
 export type { FitWorkoutFingerprintKind };
 import type { MovementCompositionPattern, SessionMovementCompositionRequirement } from './movementCompositionContract';
 
