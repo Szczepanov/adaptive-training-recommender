@@ -460,7 +460,11 @@ export function PlanPreview({
                 )}
                 {preflight?.status === 'invalid_replacements' && (
                     <>
-                        <p className="external-import-blocked">This revision cannot be imported until its session replacements are fixed.</p>
+                        <p className="external-import-blocked">
+                            {preflight.issues.every(issue => issue.code === 'replaced-placement-unreadable')
+                                ? 'This revision cannot be imported yet.'
+                                : 'This revision cannot be imported until its session replacements are fixed.'}
+                        </p>
                         <ul>
                             {preflight.issues.map(issue => (
                                 <li key={`${issue.code}-${issue.field}`}>{describeReplacementIssue(issue, plan, previousPlan)}</li>

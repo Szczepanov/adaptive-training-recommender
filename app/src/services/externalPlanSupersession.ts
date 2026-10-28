@@ -23,9 +23,19 @@ export type SupersessionChange =
 
 /** What the replacement checks read besides the two revisions and the previous overlay. */
 export interface ReplacementContext {
-    /** Fixed activities: the occupancy the plan view resolves placement with. */
+    /** Fixed activities in `planViewFixedActivityWindow`: the occupancy the plan view resolves with. */
     fixedActivities: readonly FixedActivity[];
+    /** Occurrences over `replacementReadRange`. */
     occurrences: readonly SessionOccurrence[];
+}
+
+/**
+ * The fixed activities PlanView (and Home) resolve the coach plan with: Warsaw today through
+ * today + 6. Past fixed activities are never marked completed, so a wider read would keep
+ * blocking dates the plan view no longer blocks and date sessions where the athlete never saw them.
+ */
+export function planViewFixedActivityWindow(today: string): { start: string; end: string } {
+    return { start: today, end: addDaysToLocalDateString(today, 6) };
 }
 
 /**
@@ -39,7 +49,7 @@ const PERFORMED_STATES: ReadonlySet<SessionOccurrence['state']> = new Set(['acti
 const planEnd = (plan: { startDate: string; weekCount: number }): string =>
     addDaysToLocalDateString(plan.startDate, plan.weekCount * 7 - 1);
 
-/** The calendar range a replacement check reads: both revisions' horizons. */
+/** The calendar range a replacement check reads occurrences over: both revisions' horizons. */
 export function replacementReadRange(plan: AnyExternalTrainingPlan, previousPlan: AnyExternalTrainingPlan): { start: string; end: string } {
     const [nextEnd, previousEnd] = [planEnd(plan), planEnd(previousPlan)];
     return {
@@ -59,9 +69,9 @@ export function performedSessionIds(previousPlan: AnyExternalTrainingPlan, overl
 }
 
 /**
- * Where the previous revision shows each session: `resolvePlacement` with the overlay and fixed
- * activities, as the plan view resolves it. A session the resolver leaves unplaced (a full week)
- * falls back to its authored date.
+ * Where the previous revision shows each session: `resolvePlacement` with the overlay and the
+ * fixed activities of `planViewFixedActivityWindow`, as the plan view resolves it. A session the
+ * resolver leaves unplaced (a full week) falls back to its authored date.
  */
 export function previousSessionDates(previousPlan: AnyExternalTrainingPlan, overlay: ExternalPlanPlacement | null,
     fixedActivities: readonly FixedActivity[]): Map<string, string> {

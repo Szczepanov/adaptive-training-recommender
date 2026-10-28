@@ -12,9 +12,10 @@ const titleOf = (plan: AnyExternalTrainingPlan | null | undefined, id: string): 
 const revisionName = (previousPlan: AnyExternalTrainingPlan | null | undefined): string =>
     previousPlan ? `revision ${previousPlan.revision}` : 'the earlier revision';
 
-/** Not a pasted-JSON fix: the athlete clears the unreadable moves first, then retries. */
+/** The athlete clears the unreadable moves first, then retries. The plan view offers Reset moves
+ * only while that revision is today's active plan; otherwise dropping the declaration is the way out. */
 const unreadableMoves = (previousPlan: AnyExternalTrainingPlan | null | undefined, stored: string): string =>
-    `The saved moves for ${revisionName(previousPlan)} could not be read, so its replaced sessions cannot be marked.${stored} Open the plan, use Reset moves on ${revisionName(previousPlan)} first, then import this revision again.`;
+    `The saved moves for ${revisionName(previousPlan)} could not be read, so its replaced sessions cannot be marked.${stored} Open the plan, use Reset moves on ${revisionName(previousPlan)} first, then import this revision again. If the plan does not offer Reset moves, remove replacesSessionId from this revision instead.`;
 
 export function describeReplacementIssue(issue: SessionReplacementIssue, plan: AnyExternalTrainingPlan,
     previousPlan: AnyExternalTrainingPlan | null | undefined): string {

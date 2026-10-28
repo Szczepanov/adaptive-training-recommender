@@ -31,7 +31,7 @@ describe('session replacement copy (#1172)', () => {
         expect(describeReplacementIssue(issue('replaced-session-before-effective-date'), plan(), previous)).toBe(
             'New ride would replace Old ride before this revision takes effect. Choose an earlier effective date or remove replacesSessionId for New ride.');
         expect(describeReplacementIssue(issue('replaced-placement-unreadable'), plan(), previous)).toBe(
-            'The saved moves for revision 1 could not be read, so its replaced sessions cannot be marked. Open the plan, use Reset moves on revision 1 first, then import this revision again.');
+            'The saved moves for revision 1 could not be read, so its replaced sessions cannot be marked. Open the plan, use Reset moves on revision 1 first, then import this revision again. If the plan does not offer Reset moves, remove replacesSessionId from this revision instead.');
         expect(describeReplacementIssue(issue('replaced-session-completed'), plan(), previous)).toBe(
             'New ride would replace Old ride, which you have already started or completed. A performed session cannot be replaced. Remove replacesSessionId for New ride.');
     });
@@ -47,7 +47,7 @@ describe('session replacement copy (#1172)', () => {
         expect(describeImportRejection([{ code: 'replaced-placement-owner-mismatch', documentPath }], next, previous))
             .toEqual(['The earlier revision’s saved moves belong to another account, so its replaced sessions cannot be marked. Nothing was stored.']);
         expect(describeImportRejection([{ code: 'replaced-placement-unreadable', documentPath }], next, previous))
-            .toEqual(['The saved moves for revision 1 could not be read, so its replaced sessions cannot be marked. Nothing was stored. Open the plan, use Reset moves on revision 1 first, then import this revision again.']);
+            .toEqual(['The saved moves for revision 1 could not be read, so its replaced sessions cannot be marked. Nothing was stored. Open the plan, use Reset moves on revision 1 first, then import this revision again. If the plan does not offer Reset moves, remove replacesSessionId from this revision instead.']);
         expect(describeImportRejection([{ code: 'replaced-session-successor-conflict', field: 'sessions[0].replacesSessionId', documentPath }], next, previous))
             .toEqual(['Old ride is already marked as replaced by a different session. Nothing was stored.']);
         expect(describeImportRejection([{ code: 'revision-not-newer', field: 'revision', documentPath }], next, previous)).toEqual([]);
@@ -63,6 +63,18 @@ describe('session replacement copy (#1172)', () => {
         );
         expect(html).toContain('This revision cannot be imported until its session replacements are fixed.');
         expect(html).toContain('revision 1 has no session with that id');
+        expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Import this plan<\/button>/);
+    });
+
+    it('uses a neutral heading when the earlier revision’s moves are unreadable', () => {
+        const html = renderToStaticMarkup(
+            <PlanPreview plan={plan()} previous={null} diff={null} previousPlan={previous} today="2026-08-16" effectiveFrom="2026-08-17"
+                preflight={{ status: 'invalid_replacements', issues: [issue('replaced-placement-unreadable')] }}
+                onConfirm={() => {}} onCancel={() => {}} />,
+        );
+        expect(html).toContain('This revision cannot be imported yet.');
+        expect(html).not.toContain('until its session replacements are fixed');
+        expect(html).toContain('use Reset moves on revision 1 first');
         expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Import this plan<\/button>/);
     });
 

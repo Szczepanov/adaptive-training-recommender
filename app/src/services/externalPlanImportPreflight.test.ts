@@ -201,11 +201,30 @@ describe('preflightExternalPlanImport', () => {
             expect(result.status === 'ready' && result.findings.find(item => item.code === 'session_replacement_declared')?.date).toBe('2026-08-19');
         });
 
-        it('reads occurrences and fixed activities across both revisions’ horizons', async () => {
+        it('reads occurrences across both revisions’ horizons and fixed activities for the plan view’s week', async () => {
             const earlier = { ...previous, startDate: '2026-08-10', weekCount: 2 };
             await preflightExternalPlanImport('u1', next as never, plan.startDate, '2026-08-16', earlier as never);
-            expect(reads.fixed).toHaveBeenCalledWith('u1', '2026-08-10', '2026-08-23');
             expect(reads.occurrences).toHaveBeenCalledWith('u1', '2026-08-10', '2026-08-23');
+            expect(reads.fixed).toHaveBeenCalledWith('u1', '2026-08-17', '2026-08-23');
+            expect(reads.fixed).toHaveBeenCalledWith('u1', '2026-08-16', '2026-08-22');
+        });
+
+        it('dates replaced sessions as the plan view shows them, ignoring fixed activities before today', async () => {
+            // Review probe: Monday and Tuesday are booked, today is Wednesday 2026-08-19.
+            const booked = [classOn('2026-08-17'), { ...classOn('2026-08-18'), id: 'fixed-2' }];
+            reads.fixed.mockImplementation(async (_userId: string, start: string, end: string) => ({
+                status: 'AVAILABLE', data: booked.filter(item => item.date >= start && item.date <= end),
+            }));
+            const twoDay = { ...previous, sessions: [
+                { ...plan.sessions[0], id: 'old-a', title: 'A', placement: { ...plan.sessions[0].placement, preferredDay: 'monday' } },
+                { ...plan.sessions[0], id: 'old-b', title: 'B', placement: { ...plan.sessions[0].placement, preferredDay: 'wednesday' } },
+            ] };
+            const declaring = (replaces: string) => ({ ...next, sessions: [{ ...next.sessions[0], replacesSessionId: replaces }] });
+
+            const rejected = await preflightExternalPlanImport('u1', declaring('old-a') as never, '2026-08-19', '2026-08-19', twoDay as never);
+            expect(rejected).toMatchObject({ status: 'invalid_replacements', issues: [{ code: 'replaced-session-before-effective-date', replacesSessionId: 'old-a' }] });
+            const accepted = await preflightExternalPlanImport('u1', declaring('old-b') as never, '2026-08-19', '2026-08-19', twoDay as never);
+            expect(accepted.status === 'ready' && accepted.findings.find(item => item.code === 'session_replacement_declared')?.date).toBe('2026-08-19');
         });
 
         it('allows an identical same-revision retry without revalidating its old declarations', async () => {

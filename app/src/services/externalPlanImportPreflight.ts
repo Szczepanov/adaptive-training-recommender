@@ -12,7 +12,7 @@ import {
 import type { SessionOccurrence } from '../sessions/models';
 import { activeExternalPlanService } from './activeExternalPlanService';
 import { externalPlanService } from './externalPlanService';
-import { performedSessionIds, previousSessionDates, replacementReadRange, type ReplacementContext } from './externalPlanSupersession';
+import { performedSessionIds, planViewFixedActivityWindow, previousSessionDates, replacementReadRange, type ReplacementContext } from './externalPlanSupersession';
 import { fixedActivityService } from './fixedActivityService';
 import { planBlockService } from './planBlockService';
 import { sessionOccurrenceService } from './sessionOccurrenceService';
@@ -54,20 +54,25 @@ export async function preflightExternalPlanImport(
         && await computeContentHash(previousPlan) === await computeContentHash(plan);
     const replacementIssues = identicalRetry ? [] : validateReplacementsAgainstPrevious(plan, previousPlan ?? null);
     if (replacementIssues.length > 0) return { status: 'invalid_replacements', issues: replacementIssues };
-    // #1172: replacement checks resolve the previous revision, which may span other dates.
+    // #1172: replacement checks read occurrences over both revisions' horizons, and resolve the
+    // previous revision with the plan view's fixed-activity week.
     const replacing = previousPlan && !identicalRetry && declaredSessionReplacements(plan).length > 0 ? previousPlan : null;
-    const readRange = replacing ? replacementReadRange(plan, replacing) : { start: plan.startDate, end: lastPlanDate };
-    const [fixedState, blockState, occurrenceState] = await Promise.all([
-        fixedActivityService.getActivitiesInRangeState(userId, readRange.start, readRange.end),
+    const occurrenceRange = replacing ? replacementReadRange(plan, replacing) : { start: plan.startDate, end: lastPlanDate };
+    const planViewWindow = planViewFixedActivityWindow(today);
+    const [fixedState, blockState, occurrenceState, planViewFixedState] = await Promise.all([
+        fixedActivityService.getActivitiesInRangeState(userId, plan.startDate, lastPlanDate),
         planBlockService.getBlocksInRangeState(userId, plan.startDate, lastPlanDate),
-        sessionOccurrenceService.getOccurrencesInRangeState(userId, readRange.start, readRange.end),
+        sessionOccurrenceService.getOccurrencesInRangeState(userId, occurrenceRange.start, occurrenceRange.end),
+        replacing ? fixedActivityService.getActivitiesInRangeState(userId, planViewWindow.start, planViewWindow.end)
+            : Promise.resolve({ status: 'MISSING' as const }),
     ]);
     const fixedActivities = valuesOrEmpty(fixedState);
+    const planViewFixed = valuesOrEmpty(planViewFixedState);
     const blocks = valuesOrEmpty(blockState);
     const occurrences = occurrenceState.status === 'MISSING' ? []
         : occurrenceState.status === 'AVAILABLE' ? occurrenceState.data : null;
     const unavailableSources = [
-        fixedActivities === null && 'fixed activities',
+        (fixedActivities === null || planViewFixed === null) && 'fixed activities',
         blocks === null && 'travel / plan blocks',
         occurrences === null && 'authored session occurrences',
     ].filter((item): item is string => Boolean(item));
@@ -163,7 +168,7 @@ export async function preflightExternalPlanImport(
     }
 
     const replacements = replacing
-        ? await replacementFindings(userId, plan, replacing, effectiveFrom, { fixedActivities: activeFixed, occurrences: occurrences as SessionOccurrence[] })
+        ? await replacementFindings(userId, plan, replacing, effectiveFrom, { fixedActivities: planViewFixed ?? [], occurrences: occurrences as SessionOccurrence[] })
         : { findings: [] };
     if ('unavailable' in replacements) return { status: 'unknown', unavailableSources: [replacements.unavailable], findings };
     if ('issues' in replacements) return { status: 'invalid_replacements', issues: replacements.issues };

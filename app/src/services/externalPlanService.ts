@@ -20,7 +20,7 @@ import { isValidDate } from '../engine/validation';
 import { getLocalDateString } from '../utils/localDate';
 import { declaredSessionReplacements, validateReplacementsAgainstPrevious } from '../sessions/externalPlanReplacements';
 import type { AnyExternalTrainingPlan } from '../sessions/externalPlanV2';
-import { replacementReadRange, supersedeDeclaredSessions, type ReplacementContext } from './externalPlanSupersession';
+import { planViewFixedActivityWindow, replacementReadRange, supersedeDeclaredSessions, type ReplacementContext } from './externalPlanSupersession';
 import {
     PLACEMENT_HISTORY_TRUNCATED_OPERATION,
     PLACEMENT_PREVIOUS_STATE_REASONS,
@@ -204,21 +204,23 @@ function buildPlacementChange(userId: string, placement: Omit<ExternalPlanPlacem
 }
 
 /**
- * #1172: the occurrences and fixed activities the replacement checks read, over the range
- * preflight reads. A Firestore transaction cannot run these range queries, so they are plain
+ * #1172: the occurrences and fixed activities the replacement checks read, over the ranges
+ * preflight reads: occurrences across both revisions, fixed activities for the plan view's week
+ * starting at the Warsaw date of `now`, the instant the import fixed before its transaction. A Firestore transaction cannot run these range queries, so they are plain
  * reads made after the import transaction's own reads and before any write. The started or
  * completed check is therefore best-effort against a session started between this read and
  * the commit; the import preview runs the same check first. Lazily imported so storing a plan
  * without declarations never loads the occurrence service. A failed read rejects the import.
  */
 async function readReplacementContext(userId: string, plan: ImportResult['plan'],
-    previousPlan: AnyExternalTrainingPlan): Promise<ReplacementContext> {
+    previousPlan: AnyExternalTrainingPlan, now: Date): Promise<ReplacementContext> {
     const [{ sessionOccurrenceService }, { fixedActivityService }] = await Promise.all([
         import('./sessionOccurrenceService'), import('./fixedActivityService')]);
     const range = replacementReadRange(plan, previousPlan);
+    const planViewWindow = planViewFixedActivityWindow(getLocalDateString(now));
     const [occurrences, fixed] = await Promise.all([
         sessionOccurrenceService.getOccurrencesInRangeState(userId, range.start, range.end),
-        fixedActivityService.getActivitiesInRangeState(userId, range.start, range.end),
+        fixedActivityService.getActivitiesInRangeState(userId, planViewWindow.start, planViewWindow.end),
     ]);
     const valuesOf = <T>(state: DataState<T[]>): T[] | null =>
         state.status === 'MISSING' ? [] : state.status === 'AVAILABLE' ? state.data : null;
@@ -722,7 +724,7 @@ export class ExternalPlanService {
         try {
             const prior = await this.readPlacementPrior(transaction, userId, plan.planId, previousPlan.revision);
             if (prior.invalid) return [{ code: 'replaced-placement-unreadable', documentPath: placementPath }];
-            const context = await readReplacementContext(userId, plan, previousPlan);
+            const context = await readReplacementContext(userId, plan, previousPlan, now);
             const superseded = supersedeDeclaredSessions(previousPlan, prior.overlay, declarations, plan.revision, effectiveFrom, context);
             if (!superseded.ok) return [{ code: superseded.code, field: superseded.field, documentPath: placementPath }];
             const placement = { planId: plan.planId, revision: previousPlan.revision, assignments: superseded.assignments };

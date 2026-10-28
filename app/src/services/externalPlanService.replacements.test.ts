@@ -334,10 +334,49 @@ describe('ExternalPlanService import records declared session replacements (#117
 
         await expect(service.import('u1', revision2(), '2026-11-11')).resolves.toMatchObject({ status: 'AVAILABLE' });
 
-        expect(context.fixed).toHaveBeenCalledWith('u1', '2026-11-09', '2026-11-22');
+        // The plan view's window: Warsaw today (2026-11-10) through today + 6.
+        expect(context.fixed).toHaveBeenCalledWith('u1', '2026-11-10', '2026-11-16');
         expect(firestore.committedDocs.get(REV1_PLACEMENT)).toMatchObject({ assignments: [
             { sessionId: 'old-a', date: '2026-11-11', status: 'superseded' },
         ] });
+    });
+
+    describe('with past fixed activities the plan view no longer loads', () => {
+        // Review probe: Monday and Tuesday are booked, today is Wednesday 2026-11-11. The plan
+        // view loads only today..today+6, so it shows A on Monday and B on Wednesday.
+        const booked = ['2026-11-09', '2026-11-10'].map(date => ({
+            id: `fixed-${date}`, userId: 'u1', title: 'Class', date, durationMin: 60,
+            fixed: true, isCompleted: false, environment: 'indoor', equipment: [],
+        }));
+
+        beforeEach(async () => {
+            firestore.committedDocs.clear();
+            vi.setSystemTime(new Date('2026-11-11T09:00:00.000Z'));
+            context.fixed.mockImplementation(async (_userId: string, start: string, end: string) => ({
+                status: 'AVAILABLE', data: booked.filter(item => item.date >= start && item.date <= end),
+            }));
+            await service.import('u1', v6Plan(1, [session('old-a', 'monday'), session('old-b', 'wednesday')]));
+            firestore.transactions.length = 0;
+        });
+
+        it('rejects replacing a session the plan view shows before the activation date', async () => {
+            const next = v6Plan(2, [session('new-a', 'thursday', { replacesSessionId: 'old-a' }), session('old-b', 'wednesday')]);
+
+            await expect(service.import('u1', next, '2026-11-11')).resolves.toMatchObject({
+                status: 'INVALID', issues: [{ code: 'replaced-session-before-effective-date' }],
+            });
+            expect(context.fixed).toHaveBeenCalledWith('u1', '2026-11-11', '2026-11-17');
+            expect(writesOf(0)).toEqual([]);
+        });
+
+        it('supersedes a session on the date the plan view shows', async () => {
+            const next = v6Plan(2, [session('old-a', 'monday'), session('new-b', 'thursday', { replacesSessionId: 'old-b' })]);
+
+            await expect(service.import('u1', next, '2026-11-11')).resolves.toMatchObject({ status: 'AVAILABLE' });
+            expect(firestore.committedDocs.get(REV1_PLACEMENT)).toMatchObject({ assignments: [
+                { sessionId: 'old-b', date: '2026-11-11', status: 'superseded' },
+            ] });
+        });
     });
 
     it('refuses to overwrite a different recorded successor', async () => {

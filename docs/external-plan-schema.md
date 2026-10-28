@@ -237,7 +237,7 @@ without the field replaces nothing.
 | It may name its own id, but not a different session the new revision also keeps. This also rules out swap cycles. | Schema. |
 | The previous revision of the plan exists and contains that session id. | Import (`ExternalPlanService.import`) and preflight. |
 | The earlier session was not started or completed: no session occurrence of that plan, previous revision and session id is `active`, `completed` or `abandoned`, and its overlay assignment is not `completed`. `abandoned` counts because it is a terminal record of an attempt. | Preflight, from the occurrences it already reads. Import repeats it with plain reads outside the transaction (a transaction cannot run the range query), so the import-side check is best-effort against a session started in between; preflight is the gate. |
-| The date the plan view shows it on is on or after the new revision’s effective date. That is its overlay date, else the date `resolvePlacement` gives it with the previous overlay and fixed activities (its authored date only when the resolver leaves it unplaced). | Import and preflight. |
+| The date the plan view shows it on is on or after the new revision’s effective date. That is its overlay date, else the date `resolvePlacement` gives it with the previous overlay and the fixed activities from today through today + 6 (Warsaw), the window the plan view uses. Its authored date is used only when the resolver leaves it unplaced. | Import and preflight. |
 | The previous revision’s placement overlay is readable. An unreadable one rejects with `replaced-placement-unreadable` and nothing is written; the athlete uses Reset moves on that revision first, then imports again. An overlay that names another owner also rejects. | Import and preflight. |
 
 Activation records the link in the same Firestore transaction that stores the revision and its
@@ -246,9 +246,10 @@ becomes `superseded` on the date the plan view showed it: its overlay date, or i
 when it had no assignment. Other assignments are unchanged. The appended `placement_history` event
 records `successors: { <oldSessionId>: { revision, sessionId } }` under the same rules as
 `savePlacement`. An unreadable previous overlay, or one that names another owner, rejects the
-import instead of being overwritten. Preflight and import resolve dates with fixed activities
-over both revisions' horizons; the plan view loads only the coming week's fixed activities, so
-the two agree for every date the plan view shows. An identical retry of the same
+import instead of being overwritten. Preflight and import resolve these dates exactly as the plan
+view does, with the fixed activities from Warsaw today through today + 6; at import, today is the
+Warsaw date of the import's own timestamp. Occurrences are read over both revisions' horizons.
+An identical retry of the same
 revision returns before this step and writes nothing. The import preview lists each declared
 replacement as a finding to acknowledge, and blocks the import when a declaration is invalid.
 
