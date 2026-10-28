@@ -82,7 +82,10 @@ it never becomes measured absence. The link keeps the recorded execution session
 not a date subsequently moved in the mutable overlay. The builder retains revisions referenced
 by in-window placements or performed links plus the latest revision per plan, even when a
 current placement has moved outside the window. Placements with recorded history are reconstructed as of the export date; their
-`statusHistory` contains the dated before/after events and explicit successor links. An export
+`statusHistory` contains the dated before/after events and explicit successor links. Successor
+links are written when a revision that declares `replacesSessionId` is imported: the replaced
+session's placement in the previous revision becomes `superseded`, and its event names the
+replacing revision and session (`docs/external-plan-schema.md`, #1172). An export
 date before the first recorded event uses that event's previous snapshot, with `statusHistory`
 left `not_yet_supported`.
 A save over a corrupt current overlay, or a corrupt legacy fallback, still writes the new overlay.

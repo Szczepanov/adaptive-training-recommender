@@ -9,7 +9,8 @@
 > required no schema change. **v2** (`external-plan@2`, M3.6) is documented separately
 > below — v1 remains fully importable and this document's v1 sections are otherwise
 > unchanged. New copy/paste external-coach imports emit **v6** (`external-plan@6`), which
-> inherits v5 and adds an optional exact `scaling.reducedDefinition`. Historical v1–v5 plans
+> inherits v5 and adds an optional exact `scaling.reducedDefinition` and an optional
+> per-session `replacesSessionId` ([below](#declared-session-replacement-replacessessionid-v6)). Historical v1–v5 plans
 > remain readable; v6 reduced definitions are the only structured scaled form accepted by the
 > launch adapter, and the only scaled form Home offers to Start
 > ([#949](https://github.com/Szczepanov/adaptive-training-recommender/issues/949)).
@@ -220,6 +221,35 @@ A revision is a full replacement for the horizon it declares. Omitted sessions a
 they are not implicitly carried forward from an earlier revision. The import preview therefore
 shows the effective date and the added, changed, removed, and retained session counts before
 confirmation.
+
+### Declared session replacement (`replacesSessionId`, v6)
+
+A v6 session may carry an optional `replacesSessionId`: the exact id of the session in the
+immediately previous stored revision of the same `planId` that this session replaces
+([#1172](https://github.com/Szczepanov/adaptive-training-recommender/issues/1172)). The coach
+declares it; the app never infers a replacement from titles, dates or similarity, and a session
+without the field replaces nothing.
+
+| Rule | Where it is checked |
+|---|---|
+| A non-empty string of at most 64 characters. | Schema (`validateExternalTrainingPlanV6`). |
+| No two sessions replace the same earlier session. | Schema. |
+| It may name its own id, but not a different session the new revision also keeps. This also rules out swap cycles. | Schema. |
+| The previous revision of the plan exists and contains that session id. | Import (`ExternalPlanService.import`) and preflight. |
+| The earlier session is not recorded as `completed`. | Import, and preflight when the previous overlay is readable. |
+
+Activation records the link in the same Firestore transaction that stores the revision and its
+activation. On the previous revision's revision-scoped placement overlay, each replaced session
+becomes `superseded` on the date it already held: its overlay date, or its authored date when it
+had no assignment. Other assignments are unchanged. The appended `placement_history` event
+records `successors: { <oldSessionId>: { revision, sessionId } }` under the same rules as
+`savePlacement`. A corrupt previous overlay is repaired with an invalid-prior event, as for any
+save; an overlay that names another owner rejects the import. An identical retry of the same
+revision returns before this step and writes nothing. The import preview lists each declared
+replacement as a finding to acknowledge, and blocks the import when a declaration is invalid.
+
+The field is additive within `external-plan@6`, so the schema literal did not change. Plans
+without it, and all v1–v5 plans, are unaffected. Earlier versions reject the field.
 
 `minimumUsefulDurationMin` is the floor below which the session stops being worth doing —
 under it, the verdict becomes `defer` or `skip` rather than a pointless fragment.
