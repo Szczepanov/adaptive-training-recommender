@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 from agent_eval import (
     CorpusError,
     create_result_template,
     find_case,
+    grade_worktree,
     load_and_validate_corpus,
     validate_result,
 )
@@ -71,3 +73,36 @@ def test_duplicate_case_ids_are_rejected(tmp_path: Path) -> None:
 
     with pytest.raises(CorpusError, match="case ids must be unique"):
         load_and_validate_corpus(path)
+
+
+def test_grade_worktree_executes_commands_without_shell_true(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[list[str], Any]] = []
+
+    def dummy_run(args: list[str], cwd: Path, check: bool = False, **kwargs: Any) -> Any:
+        shell_arg = kwargs.get("shell")
+        calls.append((args, shell_arg))
+
+        class DummyCompleted:
+            returncode = 0
+
+        return DummyCompleted()
+
+    monkeypatch.setattr("agent_eval.subprocess.run", dummy_run)
+    monkeypatch.setattr("agent_eval._changed_files", lambda base_ref: [])
+
+    case = {
+        "grader": {
+            "commands": ["uv run pytest", "echo 'hello world'"],
+            "forbidden_modified_globs": [],
+        }
+    }
+
+    result = grade_worktree(case, "main")
+
+    assert result["deterministic_pass"] is True
+    assert calls == [
+        (["uv", "run", "pytest"], None),
+        (["echo", "hello world"], None),
+    ]
