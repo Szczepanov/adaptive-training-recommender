@@ -605,7 +605,10 @@ def test_external_plan_batches_preserve_identity_when_results_are_reversed(
     assert [row["id"] for row in records["externalPlanHeaders"]] == ["plan-a", "plan-b"]
 
 
-def test_export_batches_execution_prescriptions_and_manual_definitions() -> None:
+@pytest.mark.parametrize("reverse_results", [False, True])
+def test_export_batches_execution_prescriptions_and_manual_definitions(
+    monkeypatch: pytest.MonkeyPatch, reverse_results: bool
+) -> None:
     db = _FakeDb(
         {
             "u1": {
@@ -638,7 +641,7 @@ def test_export_batches_execution_prescriptions_and_manual_definitions() -> None
                         "sessionSource": {
                             "kind": "manual",
                             "definitionId": "def2",
-                            "revision": 2,
+                            "revision": 1,
                         },
                     },
                 },
@@ -649,16 +652,22 @@ def test_export_batches_execution_prescriptions_and_manual_definitions() -> None
                 "_nested": {
                     "session_definitions": {
                         "def1": {"revisions": {"1": {"revision": 1, "title": "Def 1"}}},
-                        "def2": {"revisions": {"2": {"revision": 2, "title": "Def 2"}}},
+                        "def2": {"revisions": {"1": {"revision": 1, "title": "Def 2"}}},
                     }
                 },
             }
         }
     )
 
+    if reverse_results:
+        get_all = db.get_all
+        monkeypatch.setattr(db, "get_all", lambda refs: list(reversed(get_all(refs))))
     records = export_training_occurrence_records(db, "u1", "2026-08-01", "2026-08-08")
 
     assert [doc["id"] for doc in records["executionPrescriptions"]] == ["ph1", "ph2"]
-    assert [doc["id"] for doc in records["sessionDefinitionRevisions"]] == ["1", "2"]
+    assert [doc["data"]["title"] for doc in records["sessionDefinitionRevisions"]] == [
+        "Def 1",
+        "Def 2",
+    ]
     # get_all_batches should show batch fetches for executions, prescriptions, and definitions
-    assert db.get_all_batches == [["e1", "e2"], ["ph1", "ph2"], ["1", "2"]]
+    assert db.get_all_batches == [["e1", "e2"], ["ph1", "ph2"], ["1", "1"]]
