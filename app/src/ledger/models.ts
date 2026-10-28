@@ -857,7 +857,6 @@ export const FIT_WORKOUT_FINGERPRINT_KINDS = ['semantic_definition', 'index_fall
 export type FitWorkoutFingerprintKind = (typeof FIT_WORKOUT_FINGERPRINT_KINDS)[number];
 
 // Shared training and goal vocabulary (ADR-0052 Phase 1).
-type SessionTemplate = { modality: Modality };
 
 /** Issue #805: sport-neutral athletic capabilities that broad-athleticism maintenance can
  * preserve. Future racket/court/field identities add workout mappings, not new keys. */
@@ -884,7 +883,7 @@ export interface ActivityOverride {
     date: string;
     originalType: string;
     originalIntensityTag: string;
-    overriddenModality: SessionTemplate['modality'] | 'Unknown';
+    overriddenModality: Modality | 'Unknown';
     overriddenIntensity: CompletedTrainingIntensity;
     rpe?: number | null;
     stimulusFocus?: keyof WorkoutStimulusProfile | null;
