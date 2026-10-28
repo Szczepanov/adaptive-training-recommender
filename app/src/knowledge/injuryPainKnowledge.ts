@@ -116,7 +116,9 @@ export const INJURY_PAIN_POLICY_DESCRIPTOR = {
         activeRule: 'reviewBy_absent_or_on_or_after_date',
         regionFamilySource: 'injuryRegionMappingFamily',
         explicitRestrictedModalitiesTouch: true,
-        missingPatternEvidence: 'active_null',
+        missingPatternEvidence: 'active_null_when_a_reachable_pattern_lacks_evidence',
+        degradedCompositionIsEvidence: false,
+        relaxedRequirementsCount: false,
         familySeverityTouch: {
             lower_limb_impact: {
                 limit: { patterns: ['knee_dominant_bilateral', 'unilateral_lower_body'], modalities: ['Running', 'Field'] },
@@ -131,8 +133,8 @@ export const INJURY_PAIN_POLICY_DESCRIPTOR = {
                 exclude: { patterns: ['knee_dominant_bilateral', 'hip_dominant_hinge', 'unilateral_lower_body', 'trunk_tissue_capacity'], modalities: ['Running', 'Field'] },
             },
             upper_limb_loading: {
-                limit: { patterns: ['upper_push', 'upper_pull'], modalities: [] },
-                exclude: { patterns: ['upper_push', 'upper_pull'], modalities: [] },
+                limit: { patterns: ['upper_push', 'upper_pull', 'knee_dominant_bilateral', 'hip_dominant_hinge'], modalities: [] },
+                exclude: { patterns: ['upper_push', 'upper_pull', 'knee_dominant_bilateral', 'hip_dominant_hinge'], modalities: [] },
             },
         },
     },
@@ -226,7 +228,7 @@ export const INJURY_PAIN_SOURCES: readonly KnowledgeSource[] = [
         title: 'Injury constraint touches session advisory flag v1 (ADR-0052 D-FLAGS, issue #1164)',
         sourceType: 'product_policy',
         citation: 'Adaptive Training Recommender product policy: injury-constraint-touches-session-flag-v1 (ADR-0052 D-FLAGS, #1164).',
-        notes: 'Maps an active limit/exclude injury constraint region family and severity to the movement-composition patterns and session modalities it touches, mirroring the engine region restrictions where they imply a pattern or modality and choosing the cautious option where the engine is silent. Monitor never counts. The flag is advisory only and never blocks or re-doses a session; missing pattern evidence is reported as unknown, not as no touch.',
+        notes: 'Maps an active limit/exclude injury constraint region family and severity to the movement-composition patterns and session modalities it touches, mirroring the engine region restrictions where they imply a pattern or modality and choosing the cautious option where the engine is silent. Monitor never counts. The flag is advisory only and never blocks or re-doses a session; missing pattern evidence is reported as unknown when a counted constraint reaches a pattern and no touch is established.',
     },
 ];
 
@@ -405,7 +407,7 @@ export const INJURY_PAIN_CLAIMS: readonly KnowledgeClaim[] = [
         reviewedOn: '2026-09-19', version: 1,
     },    {
         id: INJURY_PAIN_CLAIM_IDS.constraintTouchesSessionFlagPolicy,
-        statement: 'The advisory injury-constraint-touches-session flag counts only active (reviewBy absent or on/after the date) limit and exclude constraints, never monitor. A constraint touches a session when its region family and severity map to a movement-composition pattern the session records, or when its explicit restricted modalities or family modalities include the session modality. Lower-limb impact touches knee-dominant bilateral and unilateral lower-body patterns plus Running and Field; lower-limb strength touches all three lower-body patterns plus Running and Field; lumbar loading touches the three lower-body patterns and trunk tissue capacity, plus Running and Field at exclude; upper-limb loading touches upper push and upper pull. A session whose exercise steps lack pattern evidence is unknown, not untouched.',
+        statement: 'The advisory injury-constraint-touches-session flag counts only active (reviewBy absent or on/after the date) limit and exclude constraints, never monitor. A constraint touches a session when its region family and severity map to a movement-composition pattern the session records, or when its explicit restricted modalities or family modalities include the session modality. Lower-limb impact touches knee-dominant bilateral and unilateral lower-body patterns plus Running and Field; lower-limb strength touches all three lower-body patterns plus Running and Field; lumbar loading touches the three lower-body patterns and trunk tissue capacity, plus Running and Field at exclude; upper-limb loading touches upper push, upper pull, knee-dominant bilateral and hip-dominant hinge. When a counted constraint reaches a pattern, incomplete step or alternative evidence yields unknown unless a touch is established.',
         claimType: 'heuristic', maturity: 'heuristic', status: 'active', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional', safetyImpact: 'high',
         applicability: { contexts: ['derived_flags', 'injury_safety'], sports: ['all_supported_sports'], populations: ['product_users_with_matching_active_constraint'], outcomes: ['advisory_flag'], horizon: 'acute' },
         evidence: [

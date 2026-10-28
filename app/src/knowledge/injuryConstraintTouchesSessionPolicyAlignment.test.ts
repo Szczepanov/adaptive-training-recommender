@@ -7,6 +7,8 @@ import {
 } from '../derived/flags/injuryConstraintTouchesSession';
 import { injuryRegionMappingFamily as engineInjuryRegionMappingFamily, resolveInjuryRestrictions } from '../engine/injuryPolicy';
 import { TEMPLATES } from '../engine/templates';
+import { EXERCISES_BY_ID } from '../workouts/exercises';
+import { workoutForTemplate } from '../workouts/prescription';
 import { BODY_REGIONS, type BodyRegion } from '../ledger/models';
 import type { SessionDefinition } from '../sessions/models';
 import { INJURY_PAIN_POLICY_DESCRIPTOR } from './injuryPainKnowledge';
@@ -56,10 +58,62 @@ describe('injury constraint touches session policy alignment', () => {
         },
     );
 
+    // Pattern precedent. Templates carry guardrails per whole session, not per pattern, so a
+    // cell cannot equal "every pattern in a blocked template" (for the overhead-pressing
+    // guardrail that union is all six patterns). What can be pinned is the subset: every
+    // pattern a precedent-backed cell names occurs in a Strength template the engine blocks
+    // for that family and severity. lower_limb_impact has no such template, which is why its
+    // pattern cells are labelled "proposed, no engine precedent".
+    function blockedStrengthTemplatePatterns(region: BodyRegion, severity: 'limit' | 'exclude'): Set<string> {
+        const restrictions = resolveInjuryRestrictions([{ region, severity }], TODAY);
+        const blocked = TEMPLATES.filter(template => template.modality === 'Strength'
+            && (template.safetyTags.some(tag => restrictions.impliedGuardrails.includes(tag))
+                || restrictions.restrictedCategories.includes(template.category)));
+        return new Set(blocked.flatMap(template => (workoutForTemplate(template.id)?.blocks ?? [])
+            .flatMap(block => block.steps)
+            .flatMap(step => EXERCISES_BY_ID.get(step.exerciseId)?.compositionPatterns ?? [])));
+    }
+
+    it.each(['lower_limb_strength', 'lumbar_loading', 'upper_limb_loading'] as const)(
+        'pins every %s pattern cell to a Strength template the engine blocks',
+        family => {
+            for (const severity of descriptor.countedSeverities) {
+                for (const region of regionsOf(family)) {
+                    const enginePatterns = blockedStrengthTemplatePatterns(region, severity);
+                    for (const pattern of INJURY_SESSION_TOUCH_TABLE[family][severity].patterns) {
+                        expect(enginePatterns.has(pattern), `${family}/${severity}/${region}: ${pattern}`).toBe(true);
+                    }
+                }
+            }
+        },
+    );
+
+    it('pins the upper-limb cells to the overhead-pressing template precedent (bar-on-back and grip loading)', () => {
+        for (const severity of descriptor.countedSeverities) {
+            expect([...INJURY_SESSION_TOUCH_TABLE.upper_limb_loading[severity].patterns].sort())
+                .toEqual(['hip_dominant_hinge', 'knee_dominant_bilateral', 'upper_pull', 'upper_push']);
+        }
+        const strLower = TEMPLATES.find(template => template.id === 'str_lower_01');
+        expect(strLower?.safetyTags).toContain('avoid_overhead_pressing');
+        expect(blockedStrengthTemplatePatterns('shoulder', 'limit')).toEqual(new Set([
+            'hip_dominant_hinge', 'knee_dominant_bilateral', 'trunk_tissue_capacity', 'unilateral_lower_body', 'upper_pull', 'upper_push',
+        ]));
+    });
+
+    it('records that the engine blocks no Strength template for lower_limb_impact (pattern cells are proposed)', () => {
+        for (const severity of descriptor.countedSeverities) {
+            for (const region of regionsOf('lower_limb_impact')) {
+                expect(blockedStrengthTemplatePatterns(region, severity).size).toBe(0);
+            }
+        }
+    });
+
     it('pins the counted severities, monitor exclusion and missing-evidence rule', () => {
         expect(descriptor.countedSeverities).toEqual(['limit', 'exclude']);
         expect(descriptor.monitorCounts).toBe(false);
-        expect(descriptor.missingPatternEvidence).toBe('active_null');
+        expect(descriptor.missingPatternEvidence).toBe('active_null_when_a_reachable_pattern_lacks_evidence');
+        expect(descriptor.degradedCompositionIsEvidence).toBe(false);
+        expect(descriptor.relaxedRequirementsCount).toBe(false);
 
         const squat: SessionDefinition = {
             schemaVersion: 1, id: 'd', revision: 1, title: 'Squat', intent: 'training', modalities: ['strength'],

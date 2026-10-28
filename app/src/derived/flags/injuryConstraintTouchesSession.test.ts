@@ -137,6 +137,8 @@ describe('evaluateInjuryConstraintTouchesSession: region/pattern touch', () => {
         ['lower_back', 'trunk_tissue_capacity'],
         ['shoulder', 'upper_push'],
         ['wrist', 'upper_pull'],
+        ['shoulder', 'knee_dominant_bilateral'],
+        ['elbow', 'hip_dominant_hinge'],
     ] as const)('%s limit touches a %s step', (region, pattern) => {
         const result = evaluate([{ region, severity: 'limit' }], session([step('x', { compositionPatterns: [pattern] })]));
         expect(result).toMatchObject({ active: true, state: 'measured', reasonCode: 'pattern_touch' });
@@ -145,24 +147,78 @@ describe('evaluateInjuryConstraintTouchesSession: region/pattern touch', () => {
 
     it('does not touch a session whose complete pattern evidence lies outside the cell', () => {
         expect(evaluate([kneeLimit], benchSession)).toMatchObject({ active: false, state: 'measured', reasonCode: 'no_touch' });
-        expect(evaluate([{ region: 'shoulder', severity: 'exclude' }], squatSession)).toMatchObject({ active: false, reasonCode: 'no_touch' });
+        const lungeAndPlank = session([
+            step('walking_lunge', { compositionPatterns: ['unilateral_lower_body'] }),
+            step('plank', { compositionPatterns: ['trunk_tissue_capacity'] }),
+        ]);
+        expect(evaluate([{ region: 'shoulder', severity: 'exclude' }], lungeAndPlank)).toMatchObject({ active: false, reasonCode: 'no_touch' });
     });
 
-    it('reads patterns from degraded composition, alternatives and session requirements', () => {
-        const degraded = session([step('a', { compositionPatterns: ['upper_pull'], degradedComposition: { pattern: 'upper_push', reason: 'swap' } })]);
-        expect(evaluate([{ region: 'shoulder', severity: 'limit' }], degraded).inputs
-            .find(input => input.name === 'touched_patterns')?.value.value).toEqual(['upper_pull', 'upper_push']);
+    it('never counts a degraded pattern as delivered: degradedComposition names what is NOT delivered', () => {
+        const degraded = session([step('a', { compositionPatterns: ['upper_pull'], degradedComposition: { pattern: 'knee_dominant_bilateral', reason: 'swap' } })]);
+        const result = evaluate([kneeLimit], degraded);
+        expect(result).toMatchObject({ active: null, state: 'not_recorded', reasonCode: 'pattern_evidence_incomplete' });
+        expect(result.inputs.find(input => input.name === 'touched_patterns')?.value.value).toEqual([]);
+    });
 
+    it('treats a degraded free-text alternative as missing evidence, not as a delivered pattern', () => {
+        const pullWithFreeText = session([step('pull_up', {
+            compositionPatterns: ['upper_pull'],
+            alternatives: [{
+                id: 'alt', title: 'Something else', exerciseRef: { kind: 'unresolved_free_text', name: 'Something else' },
+                degradedComposition: { pattern: 'upper_pull', reason: 'Authored custom alternative has no structured evidence for this movement component.' },
+            }],
+        })]);
+        expect(evaluate([kneeLimit], pullWithFreeText)).toMatchObject({ active: null, state: 'not_recorded', reasonCode: 'pattern_evidence_incomplete' });
+    });
+
+    it('does not read the review repro (squat step, free-text overhead press alternative, shoulder limit) as no touch', () => {
+        const squatWithPress = session([step('front_squat', {
+            compositionPatterns: ['knee_dominant_bilateral'],
+            alternatives: [{
+                id: 'alt', title: 'Overhead press', exerciseRef: { kind: 'unresolved_free_text', name: 'Overhead press' },
+                degradedComposition: { pattern: 'knee_dominant_bilateral', reason: 'Authored custom alternative has no structured evidence for this movement component.' },
+            }],
+        })]);
+        expect(evaluate([{ region: 'shoulder', severity: 'limit' }], squatWithPress).active).not.toBe(false);
+        expect(evaluate([{ region: 'hamstring', severity: 'limit' }], session([step('bench_press', {
+            compositionPatterns: ['upper_push'],
+            alternatives: [{ id: 'alt', title: 'Thing', exerciseRef: { kind: 'unresolved_free_text', name: 'Thing' }, degradedComposition: { pattern: 'upper_push', reason: 'r' } }],
+        })])).active).toBeNull();
+    });
+
+    it('reads patterns from a tagged catalog alternative', () => {
         const alternative = session([step('a', {
             compositionPatterns: ['upper_push'],
             alternatives: [{ id: 'alt', title: 'Lunge', exerciseRef: { kind: 'catalog', exerciseId: 'walking_lunge' }, compositionPatterns: ['unilateral_lower_body'] }],
         })]);
         expect(evaluate([kneeLimit], alternative).active).toBe(true);
+    });
 
+    it('lets a required requirement add a touch without making an untagged step complete', () => {
         const required = session([step('a')], {
             movementComposition: [{ id: 'r1', pattern: 'knee_dominant_bilateral', stepIds: ['a'], status: 'required' }],
         });
-        expect(evaluate([kneeLimit], required).active).toBe(true);
+        expect(evaluate([kneeLimit], required)).toMatchObject({ active: true, reasonCode: 'pattern_touch' });
+        const requiredPush = session([step('a')], {
+            movementComposition: [{ id: 'r1', pattern: 'upper_push', stepIds: ['a'], status: 'required' }],
+        });
+        const result = evaluate([{ region: 'hamstring', severity: 'limit' }], requiredPush);
+        expect(result).toMatchObject({ active: null, state: 'not_recorded', reasonCode: 'pattern_evidence_incomplete' });
+        expect(result.inputs.find(input => input.name === 'session_pattern_evidence_complete')?.value.value).toBe(false);
+    });
+
+    it('ignores relaxed requirements entirely: they mean no listed step carries evidence', () => {
+        const thruster = session([step('thruster', { exerciseRef: { kind: 'unresolved_free_text', name: 'Thruster' } })], {
+            movementComposition: [{ id: 'r1', pattern: 'upper_push', stepIds: ['thruster'], status: 'relaxed', reason: 'Imported session has no structured evidence for this movement component.' }],
+        });
+        expect(evaluate([kneeLimit], thruster)).toMatchObject({ active: null, state: 'not_recorded', reasonCode: 'pattern_evidence_incomplete' });
+        expect(evaluate([{ region: 'hamstring', severity: 'limit' }], thruster)).toMatchObject({ active: null, state: 'not_recorded', reasonCode: 'pattern_evidence_incomplete' });
+        const relaxedKnee = session([step('thruster')], {
+            movementComposition: [{ id: 'r1', pattern: 'knee_dominant_bilateral', stepIds: ['thruster'], status: 'relaxed' }],
+        });
+        expect(evaluate([kneeLimit], relaxedKnee)).toMatchObject({ active: null, reasonCode: 'pattern_evidence_incomplete' });
+        expect(evaluate([kneeLimit], relaxedKnee).inputs.find(input => input.name === 'touched_patterns')?.value.value).toEqual([]);
     });
 
     it('ignores rest and transition steps', () => {
@@ -262,7 +318,28 @@ describe('evaluateInjuryConstraintTouchesSession: no active constraints', () => 
         expect(evaluate([], runSession)).toMatchObject({ active: false, state: 'measured', reasonCode: 'no_active_constraints' });
     });
 
-    it('is not a measured negative when the session pattern evidence is incomplete', () => {
-        expect(evaluate([], session([step('mystery')]))).toMatchObject({ active: null, state: 'not_recorded', reasonCode: 'pattern_evidence_incomplete' });
+    it('is a measured negative even with incomplete pattern evidence, because no pattern is reachable', () => {
+        const result = evaluate([], session([step('mystery')]));
+        expect(result).toMatchObject({ active: false, state: 'measured', reasonCode: 'no_active_constraints' });
+        expect(result.inputs.find(input => input.name === 'session_pattern_evidence_complete')?.value.value).toBe(false);
+    });
+});
+
+describe('evaluateInjuryConstraintTouchesSession: modality-only constraints', () => {
+    const regionlessCycling: InjuryConstraint = { severity: 'limit', restrictedModalities: ['Cycling'] };
+
+    it('needs no pattern completeness when the counted constraints reach no pattern', () => {
+        const result = evaluate([regionlessCycling], session([step('mystery')]));
+        expect(result).toMatchObject({ active: false, state: 'measured', reasonCode: 'no_touch' });
+        expect(result.inputs.find(input => input.name === 'session_pattern_evidence_complete')?.value.value).toBe(false);
+    });
+
+    it('still cannot rule out the modality channel when the session records no modality', () => {
+        const result = evaluate([regionlessCycling], session([step('mystery')], { modalities: undefined, dominantModality: undefined }));
+        expect(result).toMatchObject({ active: null, state: 'not_recorded', reasonCode: 'session_modality_not_recorded' });
+    });
+
+    it('requires pattern completeness again as soon as a counted constraint reaches a pattern', () => {
+        expect(evaluate([regionlessCycling, kneeLimit], session([step('mystery')]))).toMatchObject({ active: null, reasonCode: 'pattern_evidence_incomplete' });
     });
 });

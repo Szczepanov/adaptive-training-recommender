@@ -79,7 +79,7 @@ app/src/derived/           # ADR-0052 Phase 1: derived metrics and D-FLAGS evalu
       healthAnomalyReplay.ts   # Historical replay runner for health anomaly telemetry
       respirationElevation.ts # Respiration-elevation status/evidence evaluator feeding healthAnomalyModels
       illnessAnomalyFlag.ts  # D-FLAGS illness_anomaly: active only on possible_illness_or_systemic_stress
-    injuryConstraintTouchesSession.ts # D-FLAGS injury_constraint_touches_session (ADR-0013, #1144 PR1-6): active limit/exclude constraints (never monitor) vs session composition patterns and modalities via INJURY_SESSION_TOUCH_TABLE; duplicates the engine reviewBy rule and injuryRegionMappingFamily; missing pattern evidence gives null
+    injuryConstraintTouchesSession.ts # D-FLAGS injury_constraint_touches_session (ADR-0013, #1144 PR1-6): active limit/exclude constraints (never monitor) vs session composition patterns and modalities via INJURY_SESSION_TOUCH_TABLE; duplicates the engine reviewBy rule and injuryRegionMappingFamily; incomplete pattern evidence gives null when a counted constraint reaches a pattern and no touch is established
     illnessRiskSymptom.ts # D-FLAGS illness_risk_symptom (ADR-0032, #1144 PR1-4): active on illness symptoms unless an explicit mild/moderate nasal allergy day; owns ALLERGY_COMPATIBLE_SYMPTOM_TYPES and isAllergyLikeSymptomDay, used by engine/adapters.ts
     recoveryBeyondBaseline.ts # D-FLAGS recovery_beyond_baseline (ADR-0024, #1144 PR1-5): per-metric HRV/RHR/sleep vs 7d baseline, active if any is adverse; owns RECOVERY_VARIABILITY_FLOORS, SLEEP_SCORE_ABSOLUTE_FLOOR, PHYSIOLOGICAL_BOUNDS
 

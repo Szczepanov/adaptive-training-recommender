@@ -88,9 +88,12 @@ export const INJURY_SESSION_TOUCH_TABLE: Readonly<Record<InjuryRegionMappingFami
         limit: { patterns: [...LOWER_BODY_PATTERNS, 'trunk_tissue_capacity'], modalities: [] },
         exclude: { patterns: [...LOWER_BODY_PATTERNS, 'trunk_tissue_capacity'], modalities: IMPACT_MODALITIES },
     },
+    // The overhead-pressing guardrail also blocks str_lower_01 (squats, deadlifts) and the
+    // full-body templates: bar-on-back and grip loading. Authored-session profiling is narrower
+    // (vertical_push only); the cell follows the broader template behaviour.
     upper_limb_loading: {
-        limit: { patterns: ['upper_push', 'upper_pull'], modalities: [] },
-        exclude: { patterns: ['upper_push', 'upper_pull'], modalities: [] },
+        limit: { patterns: ['upper_push', 'upper_pull', 'knee_dominant_bilateral', 'hip_dominant_hinge'], modalities: [] },
+        exclude: { patterns: ['upper_push', 'upper_pull', 'knee_dominant_bilateral', 'hip_dominant_hinge'], modalities: [] },
     },
 };
 
@@ -107,43 +110,43 @@ function describeTable(): string {
 const THRESHOLD = 'Active when an active (reviewBy absent or on/after the date) limit or exclude injury constraint '
     + 'touches the session: its region family x severity pattern set meets a pattern of an exercise step, alternative '
     + 'or composition requirement, or its explicit restrictedModalities or family modalities meet the session modalities '
-    + `or dominant modality. monitor never counts. ${describeTable()}. Not active only when every exercise step carries `
-    + 'pattern evidence; otherwise active is null (ADR-0013, ADR-0052 D-FLAGS)';
+    + `or dominant modality. monitor never counts. ${describeTable()}. Pattern evidence is a step or alternative's own `
+    + 'non-empty compositionPatterns; a degradedComposition names a pattern that is not delivered and leaves that evidence '
+    + 'incomplete, relaxed composition requirements are ignored, and a required one may add a touch but is not evidence. '
+    + 'Not active requires complete pattern evidence only when the counted constraints reach at least one pattern, and a '
+    + 'recorded session modality when one restricts a modality; otherwise active is null (ADR-0013, ADR-0052 D-FLAGS)';
 
 interface SessionPatternEvidence {
     patterns: ReadonlySet<MovementCompositionPattern>;
     complete: boolean;
 }
 
-function stepPatterns(step: SessionStep, required: ReadonlyMap<string, MovementCompositionPattern[]>): MovementCompositionPattern[] {
-    return [
-        ...(step.compositionPatterns ?? []),
-        ...(step.degradedComposition ? [step.degradedComposition.pattern] : []),
-        ...(required.get(step.id) ?? []),
-    ];
+/** Own evidence of a step or alternative: only a non-empty `compositionPatterns` without a
+ * declared degradation. A `degradedComposition.pattern` is the component it does NOT deliver. */
+function ownEvidence(item: Pick<SessionStep, 'compositionPatterns' | 'degradedComposition'>): { patterns: MovementCompositionPattern[]; complete: boolean } {
+    const patterns = item.compositionPatterns ?? [];
+    return { patterns, complete: patterns.length > 0 && item.degradedComposition === undefined };
 }
 
 /** Structured composition evidence only, never inferred from titles. Empty or absent is unknown. */
 function sessionPatternEvidence(session: SessionDefinition): SessionPatternEvidence {
+    // Only `required` requirements: `relaxed` means no listed step carries structured evidence.
+    // A required one adds a touch candidate for its steps but never completes their evidence.
     const required = new Map<string, MovementCompositionPattern[]>();
     for (const requirement of session.movementComposition ?? []) {
+        if (requirement.status !== 'required') continue;
         for (const stepId of requirement.stepIds) required.set(stepId, [...(required.get(stepId) ?? []), requirement.pattern]);
     }
     const patterns = new Set<MovementCompositionPattern>();
     let complete = true;
     const exerciseSteps = session.blocks.flatMap(block => block.steps).filter(step => step.kind === 'exercise');
     for (const step of exerciseSteps) {
-        const own = stepPatterns(step, required);
-        if (own.length === 0) complete = false;
-        own.forEach(pattern => patterns.add(pattern));
-        for (const alternative of step.alternatives ?? []) {
-            const alternativePatterns = [
-                ...(alternative.compositionPatterns ?? []),
-                ...(alternative.degradedComposition ? [alternative.degradedComposition.pattern] : []),
-            ];
-            if (alternativePatterns.length === 0) complete = false;
-            alternativePatterns.forEach(pattern => patterns.add(pattern));
+        for (const item of [step, ...(step.alternatives ?? [])]) {
+            const evidence = ownEvidence(item);
+            if (!evidence.complete) complete = false;
+            evidence.patterns.forEach(pattern => patterns.add(pattern));
         }
+        (required.get(step.id) ?? []).forEach(pattern => patterns.add(pattern));
     }
     return { patterns, complete };
 }
@@ -208,11 +211,13 @@ function sorted<T extends string>(values: Iterable<T>): T[] {
  * - No constraints record or no session: `active: null`, state `missing`.
  * - Any counted constraint touches a pattern or modality the session records: `active: true`,
  *   even when other evidence is incomplete, because positive evidence is measured.
- * - Otherwise `active: false` only when every exercise step (and alternative) carries pattern
- *   evidence, the session records a modality whenever a counted constraint restricts one, and
- *   every counted constraint has a region or a modality to judge it by. Anything less is
- *   `active: null`, state `not_recorded`: missing evidence is never read as a negative. This
- *   applies with no counted constraints too, so the flag is only `false` on complete evidence.
+ * - Otherwise `active: false` only when (a) every exercise step and alternative carries its own
+ *   pattern evidence, whenever the counted constraints reach at least one pattern; (b) the
+ *   session records a modality whenever a counted constraint restricts one; and (c) every
+ *   counted constraint has a region or a modality to judge it by. Anything less is
+ *   `active: null`, state `not_recorded`: missing evidence is never read as a negative. With no
+ *   reachable pattern (no counted constraints, or modality-only ones) pattern completeness
+ *   cannot change the answer, so it is not required; the evidence input still records it.
  */
 export function evaluateInjuryConstraintTouchesSession(
     constraints: readonly InjuryConstraint[] | null | undefined,
@@ -232,6 +237,8 @@ export function evaluateInjuryConstraintTouchesSession(
     const touchedPatterns = sorted(reaches.flatMap(reach => reach.patterns).filter(pattern => evidence.patterns.has(pattern)));
     const touchedModalities = sorted(reaches.flatMap(reach => reach.modalities).filter(modality => modalities.has(normalizeModality(modality))));
     const modalityNeeded = reaches.some(reach => reach.modalities.length > 0);
+    // Pattern completeness matters only when some counted constraint can reach a pattern.
+    const patternNeeded = reaches.some(reach => reach.patterns.length > 0);
     const unmapped = reaches.some(reach => reach.family === null && reach.modalities.length === 0);
 
     const observedOn = { observedOn: date };
@@ -259,7 +266,7 @@ export function evaluateInjuryConstraintTouchesSession(
             : touchedPatterns.length > 0 ? 'pattern_touch' : 'modality_touch';
         return { ...base, active: true, state: 'measured', reasonCode };
     }
-    const unjudged = !evidence.complete
+    const unjudged = patternNeeded && !evidence.complete
         ? 'pattern_evidence_incomplete'
         : modalityNeeded && modalities.size === 0
             ? 'session_modality_not_recorded'
