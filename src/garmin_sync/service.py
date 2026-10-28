@@ -859,6 +859,139 @@ class GarminSyncService:
         target_dates = get_date_range(start_d, end_d)
         return start_d, end_d, target_dates
 
+    def _filter_qualifying_activities_for_response(
+        self,
+        activities: list[dict[str, Any]],
+        force: bool,
+        start_iso: str,
+        end_iso: str,
+    ) -> tuple[list[dict[str, Any]], int]:
+        """Filter activities that qualify for activity response derivation."""
+        qualifying: list[dict[str, Any]] = []
+        malformed_count = 0
+        for activity in activities:
+            activity_type = str(activity.get("type", ""))
+            if not supports_activity_response(activity_type):
+                continue
+            if not force and activity.get("activityResponse") is not None:
+                continue
+            activity_id = activity.get("activityId")
+            if activity_id is None or not str(activity_id).strip():
+                malformed_count += 1
+                logger.warning(
+                    "Skipping malformed cycling activity without activityId in %s -> %s range.",
+                    start_iso,
+                    end_iso,
+                )
+                continue
+            qualifying.append(activity)
+
+        return qualifying, malformed_count
+
+    def _process_single_activity_response_backfill(
+        self,
+        activity: dict[str, Any],
+        fetch_fidelity: Any,
+        index: int,
+        total: int,
+        dry_run: bool,
+    ) -> str:
+        """Process a single activity for activity response derivation and optional persistence.
+
+        Returns one of: 'derived', 'skipped', or 'failed'.
+        Raises GarminConnectTooManyRequestsError on rate limits or
+        GarminConnectAuthenticationError on authentication failure.
+        """
+        activity_id = str(activity["activityId"])
+        activity_type = str(activity.get("type", ""))
+        logger.info(
+            "[%d/%d] Deriving bounded activity-response telemetry.",
+            index,
+            total,
+        )
+        try:
+            evidence = fetch_fidelity(activity_id)
+        except (GarminConnectTooManyRequestsError, GarminConnectAuthenticationError):
+            raise
+        except Exception as error:
+            logger.warning(
+                "Activity FIT evidence fetch failed for item %d/%d (%s).",
+                index,
+                total,
+                type(error).__name__,
+            )
+            return "failed"
+
+        if evidence is None:
+            logger.info(
+                "Original FIT unavailable for item %d/%d; leaving enrichment absent.",
+                index,
+                total,
+            )
+            return "skipped"
+
+        try:
+            response = derive_activity_response(activity_type, evidence)
+            if response is None:
+                logger.info(
+                    "No bounded activity response derivable for item %d/%d.",
+                    index,
+                    total,
+                )
+                return "skipped"
+
+            activity_response_payload = serialize_activity_response(response)
+            merged_updates: dict[str, Any] = {}
+
+            if activity.get("hrMeasurement") is None and evidence.records:
+                try:
+                    fidelity = assess_activity_hr_fidelity(
+                        activity_type,
+                        evidence,
+                        _source_evidence_from_fit_devices(evidence.devices),
+                    )
+                    merged_updates["hrMeasurement"] = serialize_hr_measurement(fidelity.quality)
+                except Exception as error:
+                    logger.debug(
+                        "Optional HR-fidelity enrichment failed for item %d/%d (%s).",
+                        index,
+                        total,
+                        type(error).__name__,
+                    )
+
+            if activity.get("fitWorkoutFingerprint") is None:
+                try:
+                    identity = compute_fit_workout_identity(
+                        evidence.workout_name,
+                        evidence.workout_step_indices,
+                    )
+                    if identity is not None:
+                        merged_updates["fitWorkoutFingerprint"] = identity.fingerprint
+                        merged_updates["fitWorkoutFingerprintKind"] = identity.kind
+                except Exception as error:
+                    logger.debug(
+                        "Optional FIT workout fingerprint failed for item %d/%d (%s).",
+                        index,
+                        total,
+                        type(error).__name__,
+                    )
+
+            if not dry_run:
+                self.repository.update_activity_enrichment(
+                    activity_id,
+                    activity_response=activity_response_payload,
+                    merged_fields=merged_updates,
+                )
+            return "derived"
+        except Exception as error:
+            logger.warning(
+                "Activity-response derivation/persistence failed for item %d/%d (%s).",
+                index,
+                total,
+                type(error).__name__,
+            )
+            return "failed"
+
     def backfill_activity_response(
         self,
         days: int | None = 20,
@@ -894,24 +1027,9 @@ class GarminSyncService:
         )
         activities = self.repository.get_activities_in_range(start_iso, end_iso)
 
-        qualifying: list[dict[str, Any]] = []
-        malformed_count = 0
-        for activity in activities:
-            activity_type = str(activity.get("type", ""))
-            if not supports_activity_response(activity_type):
-                continue
-            if not force and activity.get("activityResponse") is not None:
-                continue
-            activity_id = activity.get("activityId")
-            if activity_id is None or not str(activity_id).strip():
-                malformed_count += 1
-                logger.warning(
-                    "Skipping malformed cycling activity without activityId in %s -> %s range.",
-                    start_iso,
-                    end_iso,
-                )
-                continue
-            qualifying.append(activity)
+        qualifying, malformed_count = self._filter_qualifying_activities_for_response(
+            activities, force, start_iso, end_iso
+        )
 
         logger.info(
             "Activity-response backfill found %d qualifying activities (%d already/non-cycling omitted).",
@@ -945,15 +1063,20 @@ class GarminSyncService:
         failed_count = malformed_count
         try:
             for index, activity in enumerate(qualifying, start=1):
-                activity_id = str(activity["activityId"])
-                activity_type = str(activity.get("type", ""))
-                logger.info(
-                    "[%d/%d] Deriving bounded activity-response telemetry.",
-                    index,
-                    len(qualifying),
-                )
                 try:
-                    evidence = fetch_fidelity(activity_id)
+                    outcome = self._process_single_activity_response_backfill(
+                        activity,
+                        fetch_fidelity,
+                        index,
+                        len(qualifying),
+                        dry_run,
+                    )
+                    if outcome == "derived":
+                        derived_count += 1
+                    elif outcome == "skipped":
+                        skipped_count += 1
+                    else:
+                        failed_count += 1
                 except GarminConnectTooManyRequestsError as error:
                     logger.error(
                         "Garmin rate limit stopped activity-response backfill after %d/%d items (%s).",
@@ -963,91 +1086,6 @@ class GarminSyncService:
                     )
                     failed_count += 1
                     break
-                except GarminConnectAuthenticationError:
-                    raise
-                except Exception as error:
-                    logger.warning(
-                        "Activity FIT evidence fetch failed for item %d/%d (%s).",
-                        index,
-                        len(qualifying),
-                        type(error).__name__,
-                    )
-                    failed_count += 1
-                    continue
-
-                if evidence is None:
-                    logger.info(
-                        "Original FIT unavailable for item %d/%d; leaving enrichment absent.",
-                        index,
-                        len(qualifying),
-                    )
-                    skipped_count += 1
-                    continue
-
-                try:
-                    response = derive_activity_response(activity_type, evidence)
-                    if response is None:
-                        logger.info(
-                            "No bounded activity response derivable for item %d/%d.",
-                            index,
-                            len(qualifying),
-                        )
-                        skipped_count += 1
-                        continue
-
-                    activity_response_payload = serialize_activity_response(response)
-                    merged_updates: dict[str, Any] = {}
-
-                    if activity.get("hrMeasurement") is None and evidence.records:
-                        try:
-                            fidelity = assess_activity_hr_fidelity(
-                                activity_type,
-                                evidence,
-                                _source_evidence_from_fit_devices(evidence.devices),
-                            )
-                            merged_updates["hrMeasurement"] = serialize_hr_measurement(
-                                fidelity.quality
-                            )
-                        except Exception as error:
-                            logger.debug(
-                                "Optional HR-fidelity enrichment failed for item %d/%d (%s).",
-                                index,
-                                len(qualifying),
-                                type(error).__name__,
-                            )
-
-                    if activity.get("fitWorkoutFingerprint") is None:
-                        try:
-                            identity = compute_fit_workout_identity(
-                                evidence.workout_name,
-                                evidence.workout_step_indices,
-                            )
-                            if identity is not None:
-                                merged_updates["fitWorkoutFingerprint"] = identity.fingerprint
-                                merged_updates["fitWorkoutFingerprintKind"] = identity.kind
-                        except Exception as error:
-                            logger.debug(
-                                "Optional FIT workout fingerprint failed for item %d/%d (%s).",
-                                index,
-                                len(qualifying),
-                                type(error).__name__,
-                            )
-
-                    if not dry_run:
-                        self.repository.update_activity_enrichment(
-                            activity_id,
-                            activity_response=activity_response_payload,
-                            merged_fields=merged_updates,
-                        )
-                    derived_count += 1
-                except Exception as error:
-                    logger.warning(
-                        "Activity-response derivation/persistence failed for item %d/%d (%s).",
-                        index,
-                        len(qualifying),
-                        type(error).__name__,
-                    )
-                    failed_count += 1
 
             logger.info(
                 "Activity-response backfill finished: derived=%d skipped=%d failed=%d qualifying=%d dry_run=%s.",
@@ -1387,6 +1425,100 @@ class GarminSyncService:
             if isinstance(client, GarminClientWrapper):
                 client.configure_backfill_pacing(0.0, 0.0)
 
+    def _rebuild_single_date(
+        self,
+        target_date: date,
+        raw_memory_store: dict[str, dict[str, Any]],
+    ) -> bool:
+        """Process a single date for offline rebuild from archived payloads.
+
+        Returns True if snapshot was successfully rebuilt, False if skipped or failed.
+        """
+        target_iso = get_date_string(target_date)
+        yesterday_iso = get_date_string(n_days_ago(target_date, 1))
+
+        raw_stats = self.archive_store.load("stats", target_iso)
+        raw_sleep = self.archive_store.load("sleep", target_iso)
+        raw_hrv = self.archive_store.load("hrv", target_iso)
+        raw_activities = self.archive_store.load("activities", target_iso)
+
+        if raw_stats is None or raw_sleep is None or raw_hrv is None or raw_activities is None:
+            logger.warning(
+                f"[{target_iso}] Not rebuildable: missing archived payload(s) "
+                f"(stats={raw_stats is not None}, sleep={raw_sleep is not None}, "
+                f"hrv={raw_hrv is not None}, activities={raw_activities is not None}). Skipping."
+            )
+            # Keep history continuous: load existing Firestore raw snapshot if present
+            # so downstream dates in the rebuild range still have full 7d/28d baselines.
+            existing = self.repository.get_snapshot(target_iso)
+            if existing and existing.get("raw"):
+                raw_memory_store[target_iso] = existing["raw"]
+            return False
+
+        stats_fallback = self.archive_store.load("stats", yesterday_iso)
+        sleep_fallback = self.archive_store.load("sleep", yesterday_iso) if not raw_sleep else None
+
+        # Metric enrichment (stress/body battery/training readiness/training status,
+        # respiration, body composition, SpO2) is best-effort here, unlike the four
+        # required payloads above. Older archives can legitimately lack any of it
+        # without making an otherwise complete day non-rebuildable.
+        stress_today = self.archive_store.load("stress", target_iso)
+        body_battery_today = self.archive_store.load("body_battery", target_iso)
+        training_readiness_today = self.archive_store.load("training_readiness", target_iso)
+        training_status_today = self.archive_store.load("training_status", target_iso)
+        heart_rate_zones = self.archive_store.load("heart_rate_zones", target_iso)
+        respiration_today = self.archive_store.load("respiration", target_iso)
+        body_composition_today = self.archive_store.load("body_composition", target_iso)
+        spo2_today = self.archive_store.load("spo2", target_iso)
+
+        try:
+            telemetry = RawGarminTelemetry(
+                stats_today=raw_stats,
+                stats_fallback=stats_fallback,
+                sleep_today=raw_sleep,
+                sleep_fallback=sleep_fallback,
+                hrv_today=raw_hrv,
+                stress_today=stress_today,
+                body_battery_today=body_battery_today,
+                training_readiness_today=training_readiness_today,
+                training_status_today=training_status_today,
+                heart_rate_zones=heart_rate_zones,
+                respiration_today=respiration_today,
+                body_composition_today=body_composition_today,
+                spo2_today=spo2_today,
+            )
+
+            canonical = canonicalize_from_raw(
+                telemetry=telemetry,
+                target_date_iso=target_iso,
+                yesterday_iso=yesterday_iso,
+            )
+            zone4_floor = (
+                canonical.heart_rate_zones.zone4_floor if canonical.heart_rate_zones else None
+            )
+            canonical_activities = canonicalize_activities(raw_activities, zone4_floor=zone4_floor)
+
+            self._build_and_store_snapshot(
+                SnapshotContext(
+                    target_iso=target_iso,
+                    canonical=canonical,
+                    canonical_activities=canonical_activities,
+                    raw_memory_store=raw_memory_store,
+                    # Conservative: this archived "activities" entry may predate
+                    # same-day activity fetching (see mapper.build_snapshot_from_canonical),
+                    # so rebuild can't assert it covers through target_iso the way a live
+                    # sync_daily/backfill fetch can. todayTraining itself is still
+                    # populated from whatever canonical_activities actually contains --
+                    # only this coverage marker is deliberately understated.
+                    activities_through_iso=yesterday_iso,
+                )
+            )
+            logger.info(f"[{target_iso}] Rebuilt from archive.")
+            return True
+        except Exception as e:
+            logger.error(f"[{target_iso}] Rebuild failed: {e}")
+            return False
+
     def rebuild(self, start_date_str: str, end_date_str: str) -> bool:
         """Recreate normalized Firestore snapshots from archived raw payloads, without
         calling Garmin (no WearableProvider needed -- purely archive-driven, using the
@@ -1413,93 +1545,9 @@ class GarminSyncService:
 
         for target_date in target_dates:
             target_iso = get_date_string(target_date)
-            yesterday_iso = get_date_string(n_days_ago(target_date, 1))
-
-            raw_stats = self.archive_store.load("stats", target_iso)
-            raw_sleep = self.archive_store.load("sleep", target_iso)
-            raw_hrv = self.archive_store.load("hrv", target_iso)
-            raw_activities = self.archive_store.load("activities", target_iso)
-
-            if raw_stats is None or raw_sleep is None or raw_hrv is None or raw_activities is None:
-                logger.warning(
-                    f"[{target_iso}] Not rebuildable: missing archived payload(s) "
-                    f"(stats={raw_stats is not None}, sleep={raw_sleep is not None}, "
-                    f"hrv={raw_hrv is not None}, activities={raw_activities is not None}). Skipping."
-                )
-                skipped_dates.append(target_iso)
-                # Keep history continuous: load existing Firestore raw snapshot if present
-                # so downstream dates in the rebuild range still have full 7d/28d baselines.
-                existing = self.repository.get_snapshot(target_iso)
-                if existing and existing.get("raw"):
-                    raw_memory_store[target_iso] = existing["raw"]
-                continue
-
-            stats_fallback = self.archive_store.load("stats", yesterday_iso)
-            sleep_fallback = (
-                self.archive_store.load("sleep", yesterday_iso) if not raw_sleep else None
-            )
-
-            # Metric enrichment (stress/body battery/training readiness/training status,
-            # respiration, body composition, SpO2) is best-effort here, unlike the four
-            # required payloads above. Older archives can legitimately lack any of it
-            # without making an otherwise complete day non-rebuildable.
-            stress_today = self.archive_store.load("stress", target_iso)
-            body_battery_today = self.archive_store.load("body_battery", target_iso)
-            training_readiness_today = self.archive_store.load("training_readiness", target_iso)
-            training_status_today = self.archive_store.load("training_status", target_iso)
-            heart_rate_zones = self.archive_store.load("heart_rate_zones", target_iso)
-            respiration_today = self.archive_store.load("respiration", target_iso)
-            body_composition_today = self.archive_store.load("body_composition", target_iso)
-            spo2_today = self.archive_store.load("spo2", target_iso)
-
-            try:
-                telemetry = RawGarminTelemetry(
-                    stats_today=raw_stats,
-                    stats_fallback=stats_fallback,
-                    sleep_today=raw_sleep,
-                    sleep_fallback=sleep_fallback,
-                    hrv_today=raw_hrv,
-                    stress_today=stress_today,
-                    body_battery_today=body_battery_today,
-                    training_readiness_today=training_readiness_today,
-                    training_status_today=training_status_today,
-                    heart_rate_zones=heart_rate_zones,
-                    respiration_today=respiration_today,
-                    body_composition_today=body_composition_today,
-                    spo2_today=spo2_today,
-                )
-
-                canonical = canonicalize_from_raw(
-                    telemetry=telemetry,
-                    target_date_iso=target_iso,
-                    yesterday_iso=yesterday_iso,
-                )
-                zone4_floor = (
-                    canonical.heart_rate_zones.zone4_floor if canonical.heart_rate_zones else None
-                )
-                canonical_activities = canonicalize_activities(
-                    raw_activities, zone4_floor=zone4_floor
-                )
-
-                self._build_and_store_snapshot(
-                    SnapshotContext(
-                        target_iso=target_iso,
-                        canonical=canonical,
-                        canonical_activities=canonical_activities,
-                        raw_memory_store=raw_memory_store,
-                        # Conservative: this archived "activities" entry may predate
-                        # same-day activity fetching (see mapper.build_snapshot_from_canonical),
-                        # so rebuild can't assert it covers through target_iso the way a live
-                        # sync_daily/backfill fetch can. todayTraining itself is still
-                        # populated from whatever canonical_activities actually contains --
-                        # only this coverage marker is deliberately understated.
-                        activities_through_iso=yesterday_iso,
-                    )
-                )
+            if self._rebuild_single_date(target_date, raw_memory_store):
                 rebuilt_dates.append(target_iso)
-                logger.info(f"[{target_iso}] Rebuilt from archive.")
-            except Exception as e:
-                logger.error(f"[{target_iso}] Rebuild failed: {e}")
+            else:
                 skipped_dates.append(target_iso)
 
         logger.info(

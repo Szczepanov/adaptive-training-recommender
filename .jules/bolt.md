@@ -118,4 +118,8 @@
 
 ## 2026-10-28 - Parallelize fallback document fetching in _batch_get_docs
 **Learning:** When `db.get_all(chunk)` is unavailable on a Firestore database client wrapper, sequential `.get()` calls inside `_batch_get_docs` cause an N+1 query issue, incurring serial network roundtrips for every document reference. Using `ThreadPoolExecutor` to parallelize `.get()` calls across chunk references eliminates serial I/O bottlenecks and yields an ~89% latency reduction (~9.2x speedup) for document batch fetching in fallback paths.
-**Action:** When implementing fallback paths for batch operations where batch RPC endpoints are not available on the client, use `ThreadPoolExecutor` to fetch individual resources concurrently rather than iterating sequentially.
+**Action:** When implementing fallback paths for batch operations where batch RPC endpoints are not available on the client, use one shared `ThreadPoolExecutor` across all chunks so the worker limit bounds the whole request.
+
+## 2026-10-29 - Batch fetch execution prescriptions and session definition revisions in export_training_occurrence_records
+**Learning:** `export_training_occurrence_records` was issuing individual `.get()` calls inside a loop over session executions to fetch linked `execution_prescriptions` and manual `session_definitions` revisions. This created an N+1 query pattern where each execution incurred sequential RPC network roundtrip delays. Collecting all unique prescription hashes and session definition revision keys into sets and issuing `db.get_all(...)` batches the requests into single RPCs per collection, eliminating serial network delays and yielding a ~20x to 50x theoretical speedup on Firestore I/O during record exports.
+**Action:** When resolving linked child/hash documents across multiple items in Firestore, collect unique document references into sorted lists and fetch them in batch with `db.get_all(...)` rather than calling `.get()` in a loop.
