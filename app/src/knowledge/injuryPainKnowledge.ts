@@ -69,6 +69,10 @@ export const INJURY_PAIN_POLICY_DESCRIPTOR = {
     genericClinicalEnvelope: {
         aggregateFlag: 'painOrInjury || (illnessSymptoms && !allergyLikeSymptomDay)',
         sourceCategories: ['pain_or_injury', 'non_allergy_illness'],
+        // ADR-0032 allow-list: derived/flags/illnessRiskSymptom.ts ALLERGY_COMPATIBLE_SYMPTOM_TYPES
+        // and isAllergyLikeSymptomDay. Any other type, severity or cause keeps the illness gate.
+        allergyCompatibleSymptomTypes: ['congestion', 'runny_nose', 'sneezing'],
+        allergyEligibleSeverities: ['mild', 'moderate'],
         maxTierWhenCurrentClinicalSymptoms: 'Mobility',
         maxTierWhenAlreadyTrained: 'Rest',
         genericRunningRestriction: {

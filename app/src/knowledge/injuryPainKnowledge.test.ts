@@ -78,6 +78,8 @@ describe('injury and clinical-symptom knowledge pack', () => {
         expect(INJURY_PAIN_POLICY_DESCRIPTOR.genericClinicalEnvelope).toEqual({
             aggregateFlag: 'painOrInjury || (illnessSymptoms && !allergyLikeSymptomDay)',
             sourceCategories: ['pain_or_injury', 'non_allergy_illness'],
+            allergyCompatibleSymptomTypes: ['congestion', 'runny_nose', 'sneezing'],
+            allergyEligibleSeverities: ['mild', 'moderate'],
             maxTierWhenCurrentClinicalSymptoms: 'Mobility',
             maxTierWhenAlreadyTrained: 'Rest',
             genericRunningRestriction: {
