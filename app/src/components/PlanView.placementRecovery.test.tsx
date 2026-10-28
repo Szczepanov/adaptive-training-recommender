@@ -20,6 +20,11 @@ vi.mock('react', async importOriginal => ({
             mocks.slots[index] = typeof value === 'function' ? (value as (prev: unknown) => unknown)(mocks.slots[index]) : value;
         }];
     },
+    useRef: (initial: unknown) => {
+        const index = mocks.cursor++;
+        if (!(index in mocks.slots)) mocks.slots[index] = { current: initial };
+        return mocks.slots[index];
+    },
     useCallback: (callback: unknown) => callback,
     useMemo: (factory: () => unknown) => factory(),
     useEffect: (effect: () => unknown) => { mocks.effect ??= effect; },
@@ -118,6 +123,18 @@ describe('PlanView placement overlay recovery (#1172)', () => {
         await (find(elements, PlacementOverlayRecoveryCard)!.props.onReset as () => Promise<void>)();
         expect(mocks.savePlacement).toHaveBeenCalledWith('athlete-a', { planId: 'autumn-block', revision: 2, assignments: [] });
         expect(find(render(), PlacementOverlayRecoveryCard)).toBeUndefined();
+    });
+
+    it('moves focus to the plan heading after a successful reset, since the card unmounts', async () => {
+        mocks.activePlan.mockResolvedValue(active({ placementOverlayInvalid: true }));
+        const elements = await mount();
+        const heading = elements.find(item => item.props.className === 'plan-view-heading')!;
+        expect(heading.props.tabIndex).toBe(-1);
+        const focus = vi.fn();
+        (heading.props.ref as { current: unknown }).current = { focus };
+        mocks.activePlan.mockResolvedValue(active());
+        await (find(elements, PlacementOverlayRecoveryCard)!.props.onReset as () => Promise<void>)();
+        expect(focus).toHaveBeenCalledTimes(1);
     });
 
     it('leaves a failed reset to the card alert, without a second plan-week error', async () => {

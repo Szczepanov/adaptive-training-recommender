@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   activeExternalPlanService,
   externalRestContextForDate,
@@ -392,6 +392,10 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
     }, [activePlan, fixedActivities, today],
   );
 
+  // The reset card unmounts once the repaired plan reloads; focus lands on the screen heading
+  // instead of falling back to the document body (docs/standards/ui-ux.md §3.2).
+  const headingRef = useRef<HTMLHeadingElement>(null);
+
   const persistAssignments = useCallback(
     async (assignments: ExternalPlacementAssignment[], { reportError = true }: { reportError?: boolean } = {}) => {
       if (!activePlan) return;
@@ -485,7 +489,7 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
       <div className="plan-view-header">
         <div className="plan-view-title-group">
           <span className="plan-view-badge">Week Architecture</span>
-          <h2 className="plan-view-heading">{SCREEN_LABELS.plan}</h2>
+          <h2 className="plan-view-heading" ref={headingRef} tabIndex={-1}>{SCREEN_LABELS.plan}</h2>
           <p className="plan-week-range">Next 7 days · {formatWeekRange(today)}</p>
         </div>
         <div className="plan-header-actions">
@@ -586,7 +590,10 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
         <div className="plan-active-content">
           {activePlan.placementOverlayInvalid && (
             <PlacementOverlayRecoveryCard
-              onReset={() => persistAssignments([], { reportError: false })}
+              onReset={async () => {
+                await persistAssignments([], { reportError: false });
+                headingRef.current?.focus();
+              }}
               disabled={clinicalEscalationRequired}
             />
           )}
