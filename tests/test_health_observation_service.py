@@ -456,3 +456,19 @@ def test_health_observation_service_reconcile_missing_sources_ignores_invalid_do
 
     assert reconciled == []
     mock_repo.delete_health_observation_day_bundles_batch.assert_not_called()
+
+
+def test_reconciliation_batch_log_preserves_logical_date(caplog: pytest.LogCaptureFixture) -> None:
+    repository = MagicMock(spec=FirestoreRecoveryRepository)
+    repository.get_health_observation_bundles_in_range.return_value = [
+        {"provider": "garmin", "transport": "google_health"},
+        {"provider": "eight_sleep", "transport": "google_health"},
+    ]
+    service = HealthObservationService("test_uid", repository, NullArchiveStore())
+    with caplog.at_level(logging.INFO, logger="garmin_sync.health_observation_service"):
+        service._reconcile_missing_sources("2026-08-27", {"google_health"}, set())
+    assert len(caplog.records) == 1
+    assert "2026-08-27" in caplog.text
+    assert "garmin_google_health" in caplog.text
+    assert "eight_sleep_google_health" in caplog.text
+    repository.delete_health_observation_day_bundles_batch.assert_called_once()
