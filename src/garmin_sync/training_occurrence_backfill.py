@@ -62,13 +62,22 @@ def _batch_get_docs(db: Any, doc_refs: list[Any]) -> dict[str, Any]:
     get_all_fn = getattr(db, "get_all", None)
 
     def _fetch_chunk(chunk: list[Any]) -> dict[str, Any]:
-        chunk_snapshots = {}
+        chunk_snapshots: dict[str, Any] = {}
         if callable(get_all_fn):
             for snap in get_all_fn(chunk):
                 chunk_snapshots[snap.id] = snap
-        else:
-            for ref in chunk:
-                chunk_snapshots[ref.id] = ref.get()
+        elif len(chunk) == 1:
+            ref = chunk[0]
+            chunk_snapshots[ref.id] = ref.get()
+        elif chunk:
+
+            def _fetch_ref(ref: Any) -> tuple[str, Any]:
+                return ref.id, ref.get()
+
+            max_ref_workers = min(10, len(chunk))
+            with ThreadPoolExecutor(max_workers=max_ref_workers) as ref_executor:
+                for ref_id, snap in ref_executor.map(_fetch_ref, chunk):
+                    chunk_snapshots[ref_id] = snap
         return chunk_snapshots
 
     if len(chunks) == 1:
