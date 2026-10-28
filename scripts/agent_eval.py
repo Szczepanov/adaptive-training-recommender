@@ -7,6 +7,7 @@ import argparse
 import fnmatch
 import json
 import re
+import shlex
 import subprocess
 import sys
 from datetime import UTC, datetime
@@ -248,7 +249,8 @@ def grade_worktree(case: dict[str, Any], base_ref: str) -> dict[str, Any]:
     command_results: list[dict[str, Any]] = []
 
     for command in commands:
-        completed = subprocess.run(command, cwd=ROOT, shell=True, check=False)
+        args = shlex.split(command)
+        completed = subprocess.run(args, cwd=ROOT, check=False)
         command_results.append({"command": command, "exit_code": completed.returncode})
         if completed.returncode != 0:
             break
