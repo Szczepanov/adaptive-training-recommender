@@ -178,6 +178,15 @@ function validateAuditInput(input: IntradayBundlePlacementAuditInput): void {
     });
     const memberIds = new Set(input.members.map(member => member.sessionId));
     const projectionIds = new Set<string>();
+    // Pre-compute O(1) Maps to eliminate O(N*M) sequential array lookups
+    const sessionsById = new Map<string, ExternalTrainingPlanV4['sessions'][number]>();
+    for (const session of input.planSnapshot.sessions) {
+        sessionsById.set(session.id, session);
+    }
+    const membersBySessionId = new Map<string, IntradayBundleMember>();
+    for (const member of input.members) {
+        membersBySessionId.set(member.sessionId, member);
+    }
     input.planSessions.forEach((projection, index) => {
         if (!projection || typeof projection !== 'object' || !projection.sessionId || !DATE_PATTERN.test(projection.date)
             || !['planned', 'moved'].includes(projection.status) || projection.date !== input.date
@@ -185,8 +194,8 @@ function validateAuditInput(input: IntradayBundlePlacementAuditInput): void {
             throw new Error(`Invalid plan-session projection at index ${index}`);
         }
         projectionIds.add(projection.sessionId);
-        const session = input.planSnapshot.sessions.find(candidate => candidate.id === projection.sessionId);
-        const member = input.members.find(candidate => candidate.sessionId === projection.sessionId);
+        const session = sessionsById.get(projection.sessionId);
+        const member = membersBySessionId.get(projection.sessionId);
         if (!session?.intraday || !member || session.intraday.bundleId !== input.bundleId
             || session.intraday.order !== member.order
             || !equalJson(session.intraday.window, member.requestedWindow)
