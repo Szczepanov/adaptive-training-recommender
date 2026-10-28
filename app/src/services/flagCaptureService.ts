@@ -6,7 +6,7 @@ import { evaluateRecoveryBeyondBaseline, RECOVERY_BEYOND_BASELINE_WINDOW } from 
 import { evaluateInjuryConstraintTouchesSession } from '../derived/flags/injuryConstraintTouchesSession';
 import { worstState } from '../ledger/export/ledgerValue';
 import type { SessionDefinition } from '../sessions/models';
-import { isExternalPlanOccurrence } from '../sessions/models';
+import { compareExecutionPriority, isExternalPlanOccurrence } from '../sessions/models';
 import { resolveSessionDefinition } from '../sessions/sessionDefinitionResolver';
 import { getLocalDateString, addDaysToLocalDateString } from '../utils/localDate';
 import { assertLocalDate } from '../ledger/export/window';
@@ -105,16 +105,17 @@ export class FlagCaptureService {
         const executionFailure = executionRead.status === 'AVAILABLE'
             ? executionRead.data.invalidRecords > 0 ? 'invalid' : null : 'unavailable';
         const faults = [failure(settings), failure(plan), failure(occurrences), executionFailure].filter((s): s is 'invalid' | 'unavailable' => s !== null);
-        // Bind only what the flag reads, so diary edits or unrelated settings saves do not mint revisions.
+        // Bind the settings revision to preserve reversions; omit diary-only execution fields.
         const source = {
-            injuries: settings.status === 'AVAILABLE' ? { status: settings.status, injuries: settings.data.injuries ?? null } : settings,
+            injuries: settings.status === 'AVAILABLE' ? { status: settings.status, revision: settings.revision, injuries: settings.data.injuries ?? null } : settings,
             plan, occurrences,
             executions: executionRead.status === 'AVAILABLE' ? {
                 invalidRecords: executionRead.data.invalidRecords,
                 bindings: executionRead.data.executions
-                    .map(({ execution }) => ({ occurrenceId: execution.occurrenceId ?? null, prescriptionHash: execution.prescriptionHash ?? null }))
+                    .map(({ execution }) => ({ occurrenceId: execution.occurrenceId ?? null, prescriptionHash: execution.prescriptionHash ?? null, state: execution.state, startedAt: execution.startedAt }))
                     .sort((a, b) => String(a.occurrenceId).localeCompare(String(b.occurrenceId))
-                        || String(a.prescriptionHash).localeCompare(String(b.prescriptionHash))),
+                        || String(a.prescriptionHash).localeCompare(String(b.prescriptionHash))
+                        || String(a.state).localeCompare(String(b.state)) || String(a.startedAt).localeCompare(String(b.startedAt))),
             } : executionRead,
         };
         if (faults.length > 0) {
@@ -142,7 +143,9 @@ export class FlagCaptureService {
                 ? { kind: 'external_plan' as const, ...occurrence.externalPlanRef }
                 : { kind: 'manual' as const, ...occurrence.definitionRef };
             const execution = executionRead.status === 'AVAILABLE'
-                ? executionRead.data.executions.find(row => row.execution.occurrenceId === occurrence.occurrenceId)?.execution : null;
+                ? executionRead.data.executions.map(row => row.execution)
+                    .filter(execution => execution.occurrenceId === occurrence.occurrenceId)
+                    .sort(compareExecutionPriority)[0] : null;
             const definition = await readState(() => this.reads.resolve(userId, sessionSource, execution?.prescriptionHash));
             sessions.set(ref, definition);
         }

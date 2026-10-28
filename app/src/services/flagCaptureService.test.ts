@@ -168,7 +168,32 @@ describe('dated flag capture', () => {
         expect(next.active).toBe(first.active);
         expect(next.revisionId).not.toBe(first.revisionId);
     });
-    it('does not mint a new revision for diary or unrelated settings changes', async () => {
+    it('records A to B to A settings revisions and deduplicates a retry', async () => {
+        reads.occurrences.mockResolvedValue(ok([manual]));
+        const ids: string[] = [];
+        for (const [revision, severity] of [['1', 'limit'], ['2', 'exclude'], ['3', 'limit'], ['3', 'limit']]) {
+            reads.settings.mockResolvedValue({ status: 'AVAILABLE', revision,
+                data: { injuries: [{ region: 'shoulder', severity }] } as TrainingSettings });
+            saved = [];
+            await capture();
+            ids.push(saved.find(f => f.id === 'injury_constraint_touches_session')!.revisionId);
+        }
+        expect(new Set(ids.slice(0, 3)).size).toBe(3);
+        expect(ids[3]).toBe(ids[2]);
+    });
+    it.each([false, true])('selects the active redo regardless of header order (reversed: %s)', async reversed => {
+        reads.occurrences.mockResolvedValue(ok([manual]));
+        const headers = [
+            { execution: { occurrenceId: 'one', prescriptionHash: 'reduced', state: 'completed', startedAt: '2026-10-28T08:00:00Z' } },
+            { execution: { occurrenceId: 'one', prescriptionHash: 'authored', state: 'in_progress', startedAt: '2026-10-28T09:00:00Z' } },
+        ];
+        reads.executions.mockResolvedValue({ executions: reversed ? headers.reverse() : headers, invalidRecords: 0 });
+        reads.resolve.mockImplementation(async (_user: string, _source: unknown, hash: string) =>
+            ok(hash === 'reduced' ? { ...definition, blocks: [] } : definition));
+        await capture();
+        expect(saved.find(f => f.id === 'injury_constraint_touches_session')?.active).toBe(true);
+    });
+    it('does not mint a new revision for diary edits', async () => {
         const execution = { occurrenceId: manual.occurrenceId, prescriptionHash: 'hash', updatedAt: '2026-10-28T08:00:00.000Z' };
         reads.occurrences.mockResolvedValue(ok([manual]));
         reads.executions.mockResolvedValue({ executions: [{ execution, entries: [] }], invalidRecords: 0 });
@@ -178,8 +203,6 @@ describe('dated flag capture', () => {
         reads.executions.mockResolvedValue({ executions: [{
             execution: { ...execution, updatedAt: '2026-10-28T09:30:00.000Z' }, entries: [{ setIndex: 1 }],
         }], invalidRecords: 0 });
-        reads.settings.mockResolvedValue({ status: 'AVAILABLE', revision: '2',
-            data: { injuries: [{ region: 'shoulder', severity: 'limit' }], weeklyHours: 6 } as unknown as TrainingSettings });
         await capture();
         expect(saved.find(f => f.id === 'injury_constraint_touches_session')!.revisionId).toBe(first.revisionId);
     });

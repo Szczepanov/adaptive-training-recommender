@@ -41,15 +41,24 @@ The existing **Export ledger (JSON)** action includes extracted Layer 2 baseline
 
 Combining `#1165` and `#1153` avoids building an export-only synthesis path that `#1153` immediately replaces with persisted `flag_evaluations` reads.
 
+## Task board
+
+| Work item | Status |
+|---|---|
+| WI-1 — Flag capture and persistence | [x] Finished |
+| WI-2 — Flag export | [x] Finished |
+| WI-3 — Derived baselines | [x] Finished |
+| WI-4 — Contract and verification | [x] Finished |
+
 ## Work items and dependencies
 
-- [x] **WI-1 (`#1153`): Persist per-date `D-FLAGS` revisions (`flagEvaluationPersistence`, `flagCaptureService`, Firestore rules)**
+### [x] WI-1 (`#1153`): Persist per-date `D-FLAGS` revisions (`flagEvaluationPersistence`, `flagCaptureService`, Firestore rules)
   - **Depends on:** Landed evaluators in `app/src/derived/flags/` (`evaluateRecoveryBeyondBaseline`, `evaluateIllnessRiskSymptom`, `evaluateIllnessAnomalyFlag`, `evaluateInjuryConstraintTouchesSession`)
-- [x] **WI-2 (`#1165` part A): Wire `flag_evaluations` into `SOURCE_KEYS`, `LedgerExportService`, and windowed `buildFlags`**
+### [x] WI-2 (`#1165` part A): Wire `flag_evaluations` into `SOURCE_KEYS`, `LedgerExportService`, and windowed `buildFlags`
   - **Depends on:** WI-1 persistence parser and query contract
-- [x] **WI-3 (`#1165` part B): Populate extracted Layer 2 `derived` baselines and extend `LedgerExportService` check-in history read**
+### [x] WI-3 (`#1165` part B): Populate extracted Layer 2 `derived` baselines and extend `LedgerExportService` check-in history read
   - **Depends on:** Landed `computeSubjectiveBaseline` (`app/src/derived/baselines/subjectiveBaseline.ts`) and `DailyRecoverySnapshot.derived` (`app/src/types/recovery.type.ts`)
-- [x] **WI-4 (`#1153`, `#1165`): Contract schema regeneration, renderer/golden updates, rules emulator tests, and browser export verification**
+### [x] WI-4 (`#1153`, `#1165`): Contract schema regeneration, renderer/golden updates, rules emulator tests, and browser export verification
   - **Depends on:** WI-1, WI-2, WI-3
 
 ## Capture and persistence (`#1153`)
@@ -67,12 +76,11 @@ Combining `#1165` and `#1153` avoids building an export-only synthesis path that
   - `state: LedgerState`
   - `reasonCode?: string`
   - `definitionVersion: string`
-  - `rule: string`
   - `baselineWindow?: string` (`'28d_vs_7d'` for `recovery_beyond_baseline`; omitted when a flag does not use a baseline window)
   - `inputs: FlagEvaluationInput[]`
-  - `threshold?: Record<string, number | string | boolean>`
-- Compute `idempotencyKey` and `revisionId` deterministically from a canonical JSON digest of `(userId, observedOn, id, sessionRef ?? null, active, state, reasonCode ?? null, definitionVersion, rule, baselineWindow ?? null, inputs, threshold ?? null)` — intentionally **excluding** `evaluatedAt`.
-  - Repeated captures on the same day with unchanged inputs, sessions, injuries, and evaluator `definitionVersion` resolve to the same `revisionId`; the transaction (`runTransaction` with `tx.get(docRef)` before `tx.set(docRef, payload)`) treats an existing identical revision as an idempotent no-op without mutating `evaluatedAt`.
+  - `threshold: string | null`
+- Compute `idempotencyKey` and `revisionId` deterministically from a canonical JSON digest of `(userId, observedOn, id, sessionRef ?? null, active, state, reasonCode ?? null, definitionVersion, baselineWindow ?? null, inputs, threshold)` — intentionally **excluding** `evaluatedAt`.
+  - Repeated captures on the same day with unchanged source revisions, inputs, sessions, injuries, and evaluator `definitionVersion` resolve to the same `revisionId`; the transaction (`runTransaction` with `tx.get(docRef)` before `tx.set(docRef, payload)`) treats an existing identical revision as an idempotent no-op without mutating `evaluatedAt`.
   - When any input value/state, planned session set, injury constraint, or evaluator `definitionVersion` changes later on the same date, the digest produces a new `revisionId` and writes a new immutable revision alongside earlier revisions for that date.
 
 ### 2. Backing-source failure semantics during capture
@@ -118,8 +126,8 @@ Combining `#1165` and `#1153` avoids building an export-only synthesis path that
   - `active: null`
   - `state: 'not_yet_supported'` (not `'missing'` or `'unavailable'`, so unreleased HA7 does not trigger `OD8` blind-date counts against `C3`)
   - `reasonCode: 'ha7_release_gate_unmet'`
-  - `definitionVersion: ILLNESS_ANOMALY_FLAG_DEFINITION_VERSION` (`'illness_anomaly.v1'`)
-  - `rule: ILLNESS_ANOMALY_FLAG_RULE`
+  - `definitionVersion: ILLNESS_ANOMALY_FLAG_DEFINITION_VERSION` (`'illness_anomaly-v1'`)
+  - `threshold: 'Withheld until the HA7 release gate is met'`
   - `inputs: [{ name: 'ha7_release_gate', value: { value: 'unmet', unit: 'gate', observedAt: null, source: 'health_anomaly_assessment', state: 'not_yet_supported' } }]`
 - The remaining three flags (`recovery_beyond_baseline`, `illness_risk_symptom`, `injury_constraint_touches_session`) run their landed pure evaluators directly.
 
@@ -150,7 +158,7 @@ Combining `#1165` and `#1153` avoids building an export-only synthesis path that
   - Expand `DERIVED_METRIC_IDS` and `DerivedMetric` in `app/src/ledger/export/schema.ts` (and regenerate `app/src/ledger/export/ledgerExport.schema.json` via `UPDATE_LEDGER_SCHEMA=1` + update `renderLedgerExport.ts` / `renderLedgerExport.golden.md`):
     - Add `'subjective_baselines'` to `DERIVED_METRIC_IDS` alongside `'biometric_baselines'`, `'d_minus_1_step_normalization'`, and `'rolling_performed_training_load'`, **or** widen `DerivedMetric` to carry a structured `metrics?: Record<string, LedgerValue<number>>` map alongside top-level `value: LedgerValue<number>` so each sub-metric has its own explicit `unit`, `state`, `observedAt`, and `source`:
       - **`biometric_baselines`:** Populated from the `asOfDate` validated `DailyRecoverySnapshot.derived` (`sleepScore7dAvg`, `sleepScore28dAvg`, `sleepScore28dStdev`, `restingHr7dAvg`, `restingHr28dAvg`, `restingHr28dStdev`, `hrv7dAvg`, `hrv28dAvg`, `hrv28dStdev`, `respiration7dAvg`, `respiration28dAvg`, `respiration28dMad`, gated by `dataQuality.baseline7dReady` / `baseline28dReady`). When `daily_recovery_snapshots` source state is `'unavailable'` or `'invalid'`, propagate that state; when no `asOfDate` snapshot exists, emit `state: 'missing'`; when a snapshot exists but `baseline7dReady` / `baseline28dReady` is `false` or a sub-metric is absent, mark that metric `'missing'` (insufficient baseline readiness) rather than `0`.
-      - **`subjective_baselines`:** Computed via `computeSubjectiveBaseline(checkins, context.asOfDate, REFERENCE_SUBJECTIVE_BASELINE_POLICY)` over `[asOfDate - 28d, asOfDate)`. Exports `typical7d`, `typical28d`, `deviation`, `spread28d`, `longWindowCount`, and `recentWindowCount` for each of the 6 subjective metrics (`fatigue`, `soreness`, `stress`, `mood`, `motivation`, `sleepQuality` on the `1_5_ordinal` scale). When `daily_subjective_checkins` source state is `'unavailable'` or `'invalid'`, propagate that state; when `metric.state === 'insufficient_history'`, map to `LedgerState` `'missing'` with explicit window counts in `metrics`.
+      - **`subjective_baselines`:** Computed via `computeSubjectiveBaseline(checkins, context.asOfDate, REFERENCE_SUBJECTIVE_BASELINE_POLICY)` over `[asOfDate - 28d, asOfDate)`. Exports `recentAvg`, `longAvg`, `variability`, `recentRecordedDays`, and `longRecordedDays` for each of the six subjective metrics (`readiness`, `sleepQuality`, `fatigue`, `soreness`, `mentalStress`, `motivation` on the recorded 1–10 scale). When `daily_subjective_checkins` source state is `'unavailable'` or `'invalid'`, propagate that state; when `metric.state === 'insufficient_history'`, map to `LedgerState` `'missing'` with explicit window counts in `metrics`.
       - **`d_minus_1_step_normalization` and `rolling_performed_training_load`:** Remain `state: 'not_yet_supported'` (`value: null`) until `#1166` extracts their pure derivations into `app/src/derived/`.
   - Note on `multisourceBaselines.ts`: `computeSourceMetricBaseline` in `app/src/derived/baselines/multisourceBaselines.ts` operates on `HealthObservationDayBundle` + `EffectiveBundleIdentityProjection` (`ADR-0028` / `PI5`), which are default-off and not part of `SOURCE_KEYS`. Layer 2 biometric baselines therefore use the validated `DailyRecoverySnapshot.derived` series already read by `LedgerExportService`, without activating multisource bundle pipelines.
 
