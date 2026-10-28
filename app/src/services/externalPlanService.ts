@@ -1,4 +1,4 @@
-import { collection, doc, getDoc, getDocs, runTransaction, type DocumentData } from 'firebase/firestore';
+import { collection, doc, documentId, getDoc, getDocs, limit, orderBy, query, runTransaction, type DocumentData } from 'firebase/firestore';
 import { getDb } from '../firebase';
 import type {
     ExternalPlanHeader,
@@ -18,7 +18,42 @@ import { EXTERNAL_PLAN_SCHEMA_V6, type ExternalTrainingPlanV6 } from '../session
 import { validateAnyExternalTrainingPlan, validateExternalPlanImport } from '../sessions/externalPlanValidation';
 import { isValidDate } from '../engine/validation';
 import { getLocalDateString } from '../utils/localDate';
-import type { PlacementEvent } from '../ledger/placementHistory';
+import {
+    PLACEMENT_PREVIOUS_STATE_REASONS,
+    type PlacementEvent,
+    type PlacementPreviousStateReason,
+} from '../ledger/placementHistory';
+
+/**
+ * Bounded placement-history scan per revision, matching the 200-record ledger scan used for
+ * competition outcomes. One extra sentinel document detects truncation, which is reported as
+ * UNAVAILABLE rather than as a complete history (docs/architecture/ledger-export-contract.md).
+ */
+export const PLACEMENT_HISTORY_MAX_SCANNED_EVENTS = 200;
+
+interface PreviousOverlay {
+    overlay: ExternalPlanPlacement | null;
+    invalid?: PlacementPreviousStateReason;
+}
+
+/**
+ * Classifies the overlay a save is about to replace. Corruption is recoverable and recorded;
+ * a document that claims another owner is a security signal and is never overwritten.
+ */
+function readPreviousOverlay(source: 'current' | 'legacy' | null, raw: unknown, userId: string,
+    planId: string, revision: number): PreviousOverlay {
+    if (!source) return { overlay: null };
+    const claimedOwner = raw && typeof raw === 'object' ? (raw as { userId?: unknown }).userId : undefined;
+    if (typeof claimedOwner === 'string' && claimedOwner !== userId) {
+        throw new Error('Previous placement overlay belongs to another owner');
+    }
+    const parsed = validateExternalPlanPlacement(raw);
+    if (!parsed.isValid || !parsed.data) return { overlay: null, invalid: `${source}-schema-invalid` };
+    if (parsed.data.planId !== planId) return { overlay: null, invalid: `${source}-identity-mismatch` };
+    // A legacy overlay of another revision is simply not applicable; a revision-scoped one is corrupt.
+    if (parsed.data.revision !== revision) return source === 'current' ? { overlay: null, invalid: 'current-identity-mismatch' } : { overlay: null };
+    return { overlay: parsed.data };
+}
 
 /** Re-exported so existing callers keep one import site. The implementation lives in
  * `engine/externalPlanHash.ts` because `replay.ts` verifies against it and must not pull
@@ -460,7 +495,12 @@ export class ExternalPlanService {
     async getPlacementHistoryState(userId: string, planId: string, revision: number): Promise<DataState<PlacementEvent[]>> {
         const documentPath = `users/${userId}/external_plans/${planId}/revisions/${revision}/placement_history`;
         try {
-            const snapshot = await getDocs(collection(getDb(), documentPath));
+            const snapshot = await getDocs(query(collection(getDb(), documentPath),
+                orderBy(documentId(), 'asc'), limit(PLACEMENT_HISTORY_MAX_SCANNED_EVENTS + 1)));
+            if (snapshot.docs.length > PLACEMENT_HISTORY_MAX_SCANNED_EVENTS) {
+                return { status: 'UNAVAILABLE', operation: 'read external plan placement history', retryable: false,
+                    message: `Placement history exceeds the ${PLACEMENT_HISTORY_MAX_SCANNED_EVENTS}-event scan limit` };
+            }
             const events = snapshot.docs.map(item => item.data() as PlacementEvent);
             const validAssignments = (assignments: PlacementEvent['assignments']) => validateExternalPlanPlacement({
                 userId, planId, revision, assignments, updatedAt: '',
@@ -470,6 +510,9 @@ export class ExternalPlanService {
                 || !Number.isFinite(Date.parse(event.recordedAt))
                 || new Date(event.recordedAt).toISOString() !== event.recordedAt
                 || !validAssignments(event.previous) || !validAssignments(event.assignments)
+                || (event.previousState === undefined ? event.previousStateReason !== undefined
+                    : event.previousState !== 'invalid' || event.previous.length > 0
+                        || !PLACEMENT_PREVIOUS_STATE_REASONS.includes(event.previousStateReason as PlacementPreviousStateReason))
                 || !event.successors || typeof event.successors !== 'object' || Array.isArray(event.successors)
                 || Object.values(event.successors).some(value => !value || !Number.isSafeInteger(value.revision)
                     || value.revision <= revision || typeof value.sessionId !== 'string' || !value.sessionId)
@@ -499,13 +542,10 @@ export class ExternalPlanService {
         return runTransaction(getDb(), async transaction => {
             const current = await transaction.get(currentRef);
             const legacy = current.exists() ? null : await transaction.get(this.legacyPlacementRef(userId, placement.planId));
-            const previousRaw = current.exists() ? current.data() : legacy?.exists() ? legacy.data() : null;
-            const previous = previousRaw ? validateExternalPlanPlacement(previousRaw) : null;
-            if (previous && (!previous.isValid || !previous.data || previous.data.userId !== userId || previous.data.planId !== placement.planId)) {
-                throw new Error('Invalid previous placement overlay');
-            }
-            const applicable = previous?.data?.revision === placement.revision ? previous.data : null;
-            if (current.exists() && !applicable) throw new Error('Invalid previous placement revision');
+            const source = current.exists() ? 'current' : legacy?.exists() ? 'legacy' : null;
+            const prior = readPreviousOverlay(source, source === 'current' ? current.data() : legacy?.data(),
+                userId, placement.planId, placement.revision);
+            const applicable = prior.overlay;
             const existing = applicable?.successors ?? {};
             const retained: PlacementEvent['successors'] = {};
             for (const assignment of placement.assignments) {
@@ -533,7 +573,8 @@ export class ExternalPlanService {
             const next = { ...stored, successors: retained, updatedAt: recordedAt };
             const event: PlacementEvent = { userId, planId: placement.planId, revision: placement.revision,
                 changedOn: getLocalDateString(new Date(recordedAt)), recordedAt, previous: applicable?.assignments ?? [],
-                assignments: next.assignments, successors: retained };
+                assignments: next.assignments, successors: retained,
+                ...(prior.invalid ? { previousState: 'invalid' as const, previousStateReason: prior.invalid } : {}) };
             transaction.set(currentRef, next as unknown as DocumentData);
             transaction.set(eventRef, event as unknown as DocumentData);
             return next;

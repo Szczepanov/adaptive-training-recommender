@@ -19,6 +19,10 @@ const firestore = vi.hoisted(() => {
             data: () => committedDocs.get(ref.path),
         })),
         getDocs: vi.fn(),
+        query: vi.fn((ref: unknown) => ref),
+        orderBy: vi.fn(),
+        limit: vi.fn(),
+        documentId: vi.fn(),
         setDoc: vi.fn((ref: { path: string }, data: unknown) => {
             committedDocs.set(ref.path, data);
         }),
@@ -55,7 +59,7 @@ const firestore = vi.hoisted(() => {
 vi.mock('firebase/firestore', () => firestore);
 vi.mock('../firebase', () => ({ getDb: vi.fn(() => ({})) }));
 
-import { computeContentHash, ExternalPlanService } from './externalPlanService';
+import { computeContentHash, ExternalPlanService, PLACEMENT_HISTORY_MAX_SCANNED_EVENTS } from './externalPlanService';
 
 function plan(overrides: Record<string, unknown> = {}) {
     return {
@@ -475,6 +479,113 @@ describe('ExternalPlanService', () => {
             changedOn: '2026-08-18', recordedAt: 'invalid', previous: [], assignments: [], successors: {} }) }] });
         await expect(new ExternalPlanService().getPlacementHistoryState('u1', 'autumn-block', 1))
             .resolves.toMatchObject({ status: 'INVALID' });
+    });
+
+    describe('saving over a corrupt prior overlay (#1172)', () => {
+        const scopedPath = 'users/u1/external_plans/autumn-block/revisions/1/placement/current';
+        const legacyPath = 'users/u1/external_plans/autumn-block/placement/current';
+        const next = { planId: 'autumn-block', revision: 1, assignments: [{ sessionId: 'a', date: '2026-08-19', status: 'moved' as const }] };
+        const eventOf = (index = 0) => firestore.transactions[index].stagedWrites.find(write => write.path.includes('/placement_history/'))?.data;
+        const currentOf = (index = 0) => firestore.transactions[index].stagedWrites.find(write => write.path === scopedPath)?.data;
+
+        it.each([
+            ['schema-invalid', { userId: 'u1', planId: 'autumn-block', revision: 1, assignments: [{ sessionId: 'a', date: 'bogus', status: 'planned' }], updatedAt: 'x' }, 'current-schema-invalid'],
+            ['missing owner', { planId: 'autumn-block', revision: 1, assignments: [], updatedAt: '2026-08-18T10:00:00.000Z' }, 'current-schema-invalid'],
+            ['not an object', 'garbage', 'current-schema-invalid'],
+            ['wrong plan', { userId: 'u1', planId: 'other', revision: 1, assignments: [], updatedAt: '2026-08-18T10:00:00.000Z' }, 'current-identity-mismatch'],
+            ['wrong revision', { userId: 'u1', planId: 'autumn-block', revision: 2, assignments: [], updatedAt: '2026-08-18T10:00:00.000Z' }, 'current-identity-mismatch'],
+        ])('replaces a %s revision-scoped overlay and records the unknown prior state', async (_label, corrupt, reason) => {
+            firestore.committedDocs.set(scopedPath, corrupt);
+            const saved = await new ExternalPlanService().savePlacement('u1', next);
+            expect(saved.assignments).toEqual(next.assignments);
+            expect(currentOf()).toMatchObject({ userId: 'u1', assignments: next.assignments, successors: {} });
+            expect(eventOf()).toMatchObject({ previous: [], previousState: 'invalid', previousStateReason: reason, assignments: next.assignments });
+        });
+
+        it.each([
+            ['schema-invalid', { userId: 'u1', planId: 'autumn-block', revision: 1, assignments: 'nope', updatedAt: 'x' }, 'legacy-schema-invalid'],
+            ['wrong plan', { userId: 'u1', planId: 'other', revision: 1, assignments: [], updatedAt: '2026-08-18T10:00:00.000Z' }, 'legacy-identity-mismatch'],
+        ])('does not let a %s legacy overlay block a revision-scoped save', async (_label, corrupt, reason) => {
+            firestore.committedDocs.set(legacyPath, corrupt);
+            await new ExternalPlanService().savePlacement('u1', next);
+            expect(currentOf()).toMatchObject({ assignments: next.assignments });
+            expect(eventOf()).toMatchObject({ previous: [], previousState: 'invalid', previousStateReason: reason });
+            expect(firestore.transactions[0].stagedWrites.map(write => write.path)).not.toContain(legacyPath);
+        });
+
+        it('records no marker for a valid legacy overlay of another revision', async () => {
+            firestore.committedDocs.set(legacyPath, { userId: 'u1', planId: 'autumn-block', revision: 2, assignments: [], updatedAt: '2026-08-18T10:00:00.000Z' });
+            await new ExternalPlanService().savePlacement('u1', next);
+            const event = eventOf() as Record<string, unknown>;
+            expect(event.previous).toEqual([]);
+            expect(event).not.toHaveProperty('previousState');
+            expect(event).not.toHaveProperty('previousStateReason');
+        });
+
+        it.each([
+            ['current', scopedPath, { userId: 'u2', planId: 'autumn-block', revision: 1, assignments: [], updatedAt: '2026-08-18T10:00:00.000Z' }],
+            ['corrupt current', scopedPath, { userId: 'u2', planId: 'autumn-block', revision: 1, assignments: 'nope' }],
+            ['legacy', legacyPath, { userId: 'u2', planId: 'autumn-block', revision: 1, assignments: [], updatedAt: '2026-08-18T10:00:00.000Z' }],
+        ])('still refuses to overwrite a %s overlay that claims another owner', async (_label, path, foreign) => {
+            firestore.committedDocs.set(path, foreign);
+            await expect(new ExternalPlanService().savePlacement('u1', next)).rejects.toThrow(/owner/);
+            expect(firestore.transactions).toHaveLength(0);
+        });
+
+        it('retains no successor from a corrupt prior but still validates supplied successors', async () => {
+            const superseded = { ...next, assignments: [{ sessionId: 'a', date: '2026-08-19', status: 'superseded' as const }] };
+            firestore.committedDocs.set(scopedPath, { userId: 'u1', planId: 'autumn-block', revision: 1, assignments: superseded.assignments,
+                successors: { a: { revision: 2, sessionId: 'kept' } }, updatedAt: '2026-08-18T10:00:00.000Z', junk: true });
+            const service = new ExternalPlanService();
+            await expect(service.savePlacement('u1', superseded)).rejects.toThrow(/explicit successor/);
+            await expect(service.savePlacement('u1', superseded, { a: { revision: 1, sessionId: 'x' } })).rejects.toThrow(/explicit successor/);
+            await service.savePlacement('u1', superseded, { a: { revision: 3, sessionId: 'new-a' } });
+            expect(eventOf()).toMatchObject({ previousState: 'invalid', previous: [], successors: { a: { revision: 3, sessionId: 'new-a' } } });
+            await expect(service.savePlacement('u1', superseded, { a: { revision: 4, sessionId: 'other' } })).rejects.toThrow(/Cannot replace/);
+        });
+
+        it('accepts the marker on history reads and rejects a marker that carries previous assignments', async () => {
+            firestore.committedDocs.set(scopedPath, 'garbage');
+            const service = new ExternalPlanService();
+            await service.savePlacement('u1', next);
+            const event = eventOf() as Record<string, unknown>;
+            firestore.getDocs.mockResolvedValue({ docs: [{ data: () => event }] });
+            await expect(service.getPlacementHistoryState('u1', 'autumn-block', 1))
+                .resolves.toMatchObject({ status: 'AVAILABLE', data: [{ previousState: 'invalid', previousStateReason: 'current-schema-invalid' }] });
+            for (const tampered of [
+                { ...event, previous: next.assignments },
+                { ...event, previousStateReason: 'made-up' },
+                { ...event, previousStateReason: undefined },
+                { ...event, previousState: 'valid' },
+                { ...event, previousState: undefined },
+            ]) {
+                firestore.getDocs.mockResolvedValue({ docs: [{ data: () => tampered }] });
+                await expect(service.getPlacementHistoryState('u1', 'autumn-block', 1)).resolves.toMatchObject({ status: 'INVALID' });
+            }
+        });
+    });
+
+    describe('bounded placement history read (#1172)', () => {
+        const event = (index: number) => ({ userId: 'u1', planId: 'autumn-block', revision: 1, changedOn: '2026-08-18',
+            recordedAt: new Date(Date.UTC(2026, 7, 18, 10, 0, 0, index)).toISOString(), previous: [], assignments: [], successors: {} });
+
+        it('scans at most the cap plus one sentinel, ordered by document id', async () => {
+            firestore.getDocs.mockResolvedValue({ docs: Array.from({ length: PLACEMENT_HISTORY_MAX_SCANNED_EVENTS }, (_, i) => ({ data: () => event(i) })) });
+            const state = await new ExternalPlanService().getPlacementHistoryState('u1', 'autumn-block', 1);
+            expect(state).toMatchObject({ status: 'AVAILABLE' });
+            if (state.status !== 'AVAILABLE') throw new Error('unreachable');
+            expect(state.data).toHaveLength(PLACEMENT_HISTORY_MAX_SCANNED_EVENTS);
+            expect(firestore.limit).toHaveBeenCalledWith(PLACEMENT_HISTORY_MAX_SCANNED_EVENTS + 1);
+            expect(firestore.orderBy).toHaveBeenCalledTimes(1);
+            expect(firestore.documentId).toHaveBeenCalled();
+        });
+
+        it('reports a truncated history as unavailable rather than partial data', async () => {
+            firestore.getDocs.mockResolvedValue({ docs: Array.from({ length: PLACEMENT_HISTORY_MAX_SCANNED_EVENTS + 1 }, (_, i) => ({ data: () => event(i) })) });
+            const state = await new ExternalPlanService().getPlacementHistoryState('u1', 'autumn-block', 1);
+            expect(state).toMatchObject({ status: 'UNAVAILABLE', retryable: false });
+            expect(state).not.toHaveProperty('data');
+        });
     });
 
     it('rejects an activation whose payload revision disagrees with its document id', async () => {

@@ -786,7 +786,7 @@ service cloud.firestore {
         match /placement_history/{eventId} {
           allow read: if isOwner(userId);
           allow create: if hasOwnedUserId(userId)
-            && request.resource.data.keys().hasOnly(['userId', 'planId', 'revision', 'changedOn', 'recordedAt', 'previous', 'assignments', 'successors'])
+            && request.resource.data.keys().hasOnly(['userId', 'planId', 'revision', 'changedOn', 'recordedAt', 'previous', 'assignments', 'successors', 'previousState', 'previousStateReason'])
             && request.resource.data.planId == planId
             && request.resource.data.revision is int && string(request.resource.data.revision) == revisionId
             && isValidActivityDate(request.resource.data.changedOn)
@@ -795,6 +795,11 @@ service cloud.firestore {
             && request.resource.data.previous is list && request.resource.data.previous.size() <= 120
             && request.resource.data.assignments is list && request.resource.data.assignments.size() <= 120
             && request.resource.data.successors is map && request.resource.data.successors.size() <= 120
+            // #1172: a save over a corrupt overlay records an unknown prior state, never fabricated assignments.
+            && ((!('previousState' in request.resource.data) && !('previousStateReason' in request.resource.data))
+              || (request.resource.data.get('previousState', null) == 'invalid'
+                && request.resource.data.previous.size() == 0
+                && request.resource.data.get('previousStateReason', null) in ['current-schema-invalid', 'current-identity-mismatch', 'legacy-schema-invalid', 'legacy-identity-mismatch']))
             && existsAfter(/databases/$(database)/documents/users/$(userId)/external_plans/$(planId)/revisions/$(revisionId));
           allow update, delete: if false;
         }

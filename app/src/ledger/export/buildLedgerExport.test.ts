@@ -149,6 +149,44 @@ describe('buildLedgerExport real-model mapping (H1)', () => {
         expect((row?.fields.statusHistory.value as unknown[]).length).toBe(2);
     });
 
+    it('marks a change over a corrupt overlay as an unknown prior state, not an empty one (#1172)', () => {
+        const input = fullRecords();
+        const s1 = { sessionId: 's1', date: '2026-11-19', status: 'planned' as const };
+        const s2 = { sessionId: 's2', date: '2026-11-18', status: 'planned' as const };
+        input.placementHistory = [{ userId: 'owner', planId: 'plan-1', revision: 2,
+            changedOn: '2026-11-17', recordedAt: '2026-11-17T10:00:00.000Z', previous: [], assignments: [s1, s2], successors: {} },
+        { userId: 'owner', planId: 'plan-1', revision: 2,
+            changedOn: '2026-11-19', recordedAt: '2026-11-19T10:00:00.000Z', previous: [],
+            previousState: 'invalid', previousStateReason: 'current-schema-invalid',
+            assignments: [{ ...s1, date: '2026-11-20', status: 'moved' }], successors: {} }];
+        const result = buildLedgerExport({ records: input, asOfDate: AS_OF, purpose: 'planning', exportedAt: '2026-11-21T12:00:00Z' });
+        const s1Row = result.coachingHistory.placements.items.find(item => item.id === 'plan-1@2:s1');
+        expect(s1Row?.fields.date.value).toBe('2026-11-20');
+        expect(s1Row?.fields.statusHistory.value).toEqual([
+            { changedOn: '2026-11-17', recordedAt: '2026-11-17T10:00:00.000Z', previousState: 'recorded', previousStateReason: null,
+                previous: null, assignment: s1, successor: null },
+            { changedOn: '2026-11-19', recordedAt: '2026-11-19T10:00:00.000Z', previousState: 'invalid', previousStateReason: 'current-schema-invalid',
+                previous: null, assignment: { ...s1, date: '2026-11-20', status: 'moved' }, successor: null },
+        ]);
+        // s2 was last recorded before the corrupt overlay and is absent after the repair save.
+        const s2Row = result.coachingHistory.placements.items.find(item => item.id === 'plan-1@2:s2');
+        expect(s2Row?.fields.status.value).toBeNull();
+        expect(s2Row?.fields.statusHistory.value).toMatchObject([{ assignment: s2 }, { previousState: 'invalid', previous: null, assignment: null }]);
+        expect(result.coachingHistory.placements.state).toBe('measured');
+    });
+
+    it('reports placements before a first change over a corrupt overlay as invalid, never empty (#1172)', () => {
+        const input = fullRecords();
+        input.placementHistory = [{ userId: 'owner', planId: 'plan-1', revision: 2,
+            changedOn: '2026-11-25', recordedAt: '2026-11-25T10:00:00.000Z', previous: [],
+            previousState: 'invalid', previousStateReason: 'legacy-schema-invalid',
+            assignments: [{ sessionId: 's1', date: '2026-11-26', status: 'moved' }], successors: {} }];
+        const result = buildLedgerExport({ records: input, asOfDate: AS_OF, purpose: 'planning', exportedAt: '2026-11-21T12:00:00Z' });
+        expect(result.coachingHistory.placements.items.filter(item => item.id.startsWith('plan-1@2:'))).toEqual([]);
+        expect(result.coachingHistory.placements.state).toBe('invalid');
+        expect(result.coachingHistory.overrides.state).toBe('invalid');
+    });
+
     it('exports an unknown legacy successor without inventing a link', () => {
         const input = fullRecords();
         const old = { sessionId: 's1', date: '2026-11-20', status: 'superseded' as const };

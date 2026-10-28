@@ -85,6 +85,20 @@ current placement has moved outside the window. Placements with recorded history
 `statusHistory` contains the dated before/after events and explicit successor links. An export
 date before the first recorded event uses that event's previous snapshot, with `statusHistory`
 left `not_yet_supported`.
+A save over a corrupt current overlay, or a corrupt legacy fallback, still writes the new overlay.
+Its event records `previous: []` with `previousState: 'invalid'` and a `previousStateReason`
+code (`current-schema-invalid`, `current-identity-mismatch`, `legacy-schema-invalid` or
+`legacy-identity-mismatch`). It never fabricates previous assignments, and it retains no
+successor from the corrupt overlay. An overlay that claims another owner is never overwritten.
+Each `statusHistory` entry carries `previousState` (`recorded` or `invalid`) and
+`previousStateReason`. An invalid-prior event appears in the history of every placement of
+that revision, with a null `previous`. It never reads as "no assignment before". Sessions in
+the last recorded snapshot but absent after the repair save are exported as removed. An export
+date before a first event whose prior state is invalid cannot be reconstructed. That
+revision's placements are omitted, and the placement and override collections report `invalid`.
+Each revision's placement history is a document-id-ordered scan of at most 200 events plus one
+truncation sentinel (`PLACEMENT_HISTORY_MAX_SCANNED_EVENTS`). A scan limit reports the placement
+source `unavailable`, never partial history; that revision falls back to its current overlay.
 Earlier legacy history and successors absent from legacy superseded assignments remain unknown; titles are never used to infer successors. Placements
 without history remain current overlays and are never claimed as immutable history.
 

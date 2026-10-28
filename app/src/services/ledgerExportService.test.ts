@@ -133,6 +133,11 @@ describe('LedgerExportService', () => {
         expect(output.coachingHistory.planRevisions.items[0].fields.authorRationale.value).toBe('Aerobic block');
         expect(output.coachingHistory.placements.items[0].fields.statusHistory.state).toBe('not_yet_supported');
         expect(output.coachingHistory.overrides.items[0].fields.reason.state).toBe('not_yet_supported');
+        // A placement history beyond the bounded scan is unavailable, never partial or complete (#1172).
+        reads.history.mockResolvedValueOnce({ status: 'UNAVAILABLE', operation: 'read external plan placement history', retryable: false });
+        const truncated = await new LedgerExportService().build('owner', request);
+        expect(truncated.coachingHistory.placements.state).toBe('unavailable');
+        expect(truncated.sources.find(s => s.source === 'external_plan_placements')?.state).toBe('unavailable');
         reads.revision.mockResolvedValue(available({ ...plan, notes: 'tampered' }));
         const corrupt = await new LedgerExportService().build('owner', request);
         expect(corrupt.coachingHistory.planRevisions.state).toBe('invalid');
