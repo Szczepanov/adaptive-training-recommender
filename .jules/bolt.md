@@ -115,3 +115,7 @@
 ## 2026-10-22 - Use pre-computed Maps for O(1) PlanBlock lookups
 **Learning:** In `buildPlanDefinition`, iterating over `objectives` and `coverageRequirements` while performing a `.find()` on the `blockSchedule` array (which has size M) for every element (N elements) causes an O(N * M) performance bottleneck.
 **Action:** When performing repeated `.find()` lookups on the same static array inside loops, always pre-compute a `Map` keyed by the target identifier (e.g., `block.id`) outside the loop to reduce the lookup time complexity to O(1) inside the loop, resulting in O(N + M) total time complexity.
+
+## 2026-10-29 - Batch fetch execution prescriptions and session definition revisions in export_training_occurrence_records
+**Learning:** `export_training_occurrence_records` was issuing individual `.get()` calls inside a loop over session executions to fetch linked `execution_prescriptions` and manual `session_definitions` revisions. This created an N+1 query pattern where each execution incurred sequential RPC network roundtrip delays. Collecting all unique prescription hashes and session definition revision keys into sets and issuing `db.get_all(...)` batches the requests into single RPCs per collection, eliminating serial network delays and yielding a ~20x to 50x theoretical speedup on Firestore I/O during record exports.
+**Action:** When resolving linked child/hash documents across multiple items in Firestore, collect unique document references into sorted lists and fetch them in batch with `db.get_all(...)` rather than calling `.get()` in a loop.
