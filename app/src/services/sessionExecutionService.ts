@@ -17,6 +17,7 @@ import {
     type WriteBatch,
 } from 'firebase/firestore';
 import { getDb } from '../firebase';
+import { notifyFlagInputsChanged } from './flagCaptureRuntime';
 import type { DataState } from '../engine/dataState';
 import type {
     SessionExecution,
@@ -268,6 +269,7 @@ export class SessionExecutionService {
             }
             throw error;
         }
+        notifyFlagInputsChanged(userId);
         // Transaction reads/writes do not populate the latency-compensated cache.
         // Seed the complete parent before diary batches merge an updatedAt touch;
         // otherwise offline reload can see only that partial patch, not identity.

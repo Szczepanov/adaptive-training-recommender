@@ -37,6 +37,8 @@ export interface ActiveExternalPlan {
 }
 
 export interface ActivePlanReadOptions {
+    /** Ledger capture cannot interpret a corrupt header as a confirmed empty calendar. */
+    failOnInvalidHeader?: boolean;
     /**
      * Resolve a valid plan whose placement overlay alone is INVALID at its default dates,
      * flagged with `placementOverlayInvalid`, instead of failing the whole plan. Only the
@@ -433,6 +435,8 @@ export class ActiveExternalPlanService {
             : this.plans.getHeaderState(userId, planId)));
         const unavailable = headerStates.find(state => state.status === 'UNAVAILABLE');
         if (unavailable) return unavailable;
+        const invalid = headerStates.find(state => state.status === 'INVALID');
+        if (invalid && options.failOnInvalidHeader) return invalid;
 
         const candidates: ActiveExternalPlan[] = [];
         for (const headerState of headerStates) {

@@ -61,6 +61,7 @@ src/garmin_sync/
 
 app/src/ledger/            # ADR-0052 Phase 1: ledger record types; must never import engine/
   models.ts            # Recovery snapshots, check-ins, injuries, activities, strength logs, settings/preferences, Modality/GuardrailKey vocabulary
+  flagEvaluation.ts    # Immutable dated D-FLAGS revision shape; original evaluator inputs and session scope
   models.architecture.test.ts # Fails if anything under ledger/ reaches engine/, directly or transitively
 
 app/src/derived/           # ADR-0052 Phase 1: derived metrics and D-FLAGS evaluators; engine may import it, never the reverse

@@ -21,7 +21,7 @@ import {
     withExtra,
 } from './ledgerExportFixtures.testSupport.ts';
 import { ENVELOPE_SCALARS, resolvePath } from './ledgerExportPaths.testSupport.ts';
-import { LEDGER_EXPORT_FIELDS, LEDGER_FLAG_IDS, LEDGER_STATES, type LedgerFlag } from './schema.ts';
+import { LEDGER_EXPORT_FIELDS, LEDGER_STATES, type LedgerFlag } from './schema.ts';
 
 describe('buildLedgerExport completeness', () => {
     const output = buildLedgerExport(fullInput());
@@ -438,47 +438,84 @@ describe('buildLedgerExport absence is not "none" (M4)', () => {
     });
 });
 
-describe('buildLedgerExport flags (D-FLAGS, M9)', () => {
-    it('lists all four flags unevaluated and the derived layer unsupported by default', () => {
-        const output = buildLedgerExport(fullInput());
-        expect(output.flags.map(flag => flag.id)).toEqual([...LEDGER_FLAG_IDS]);
-        for (const flag of output.flags) {
-            expect(flag).toMatchObject({ active: null, state: 'not_yet_supported', evaluatedAt: null });
-        }
-        expect(output.derived.every(metric => metric.value.state === 'not_yet_supported')).toBe(true);
+describe('windowed flags and derived baselines', () => {
+    it('covers each date, withholding an injected illness anomaly', () => {
+        const flag: LedgerFlag = { id: 'illness_anomaly', observedOn: '2026-11-20', evaluatedAt: '2026-11-20T05:00:00Z', definitionVersion: 'v1', active: true, state: 'measured', inputs: [], threshold: 'secret' };
+        const output = buildLedgerExport(fullInput({ purpose: 'morning', flagEvaluations: [flag] }));
+        expect(output.flags).toHaveLength(8);
+        expect(output.flags.find(f => f.id === 'illness_anomaly' && f.observedOn === '2026-11-20')).toMatchObject({ active: null, state: 'not_yet_supported', reasonCode: 'ha7_release_gate_unmet', threshold: null });
+        expect(output.flags.find(f => f.id === 'illness_anomaly' && f.observedOn === '2026-11-20')?.inputs).toEqual([
+            { name: 'ha7_release_gate', value: { value: 'unmet', source: 'health_anomaly_assessment', state: 'not_yet_supported' } },
+        ]);
+        expect(output.flags.find(f => f.id === 'recovery_beyond_baseline')).toMatchObject({ state: 'not_recorded' });
     });
 
-    it('passes persisted evaluations through unchanged and leaves the rest unsupported', () => {
-        const injuryFlag: LedgerFlag = {
-            id: 'injury_constraint_touches_session',
-            observedOn: '2026-11-18',
-            evaluatedAt: '2026-11-18T05:00:00Z',
-            definitionVersion: 'injury-touch@3',
-            sessionRef: 'session-7',
-            active: true,
-            state: 'measured',
-            inputs: [{ name: 'region', value: { value: 'knee', source: 'athlete', state: 'measured' } }],
-            threshold: 'limit severity on a loaded knee session',
-        };
-        const unevaluable: LedgerFlag = {
-            id: 'illness_anomaly',
-            observedOn: '2026-11-19',
-            evaluatedAt: '2026-11-19T05:00:00Z',
-            definitionVersion: 'anomaly@1',
-            active: null,
-            state: 'missing',
-            inputs: [],
-            threshold: 'hrv below baseline band',
-            baselineWindow: '28d',
-        };
-        const output = buildLedgerExport(fullInput({ flagEvaluations: [injuryFlag, unevaluable] }));
-        expect(output.flags.filter(flag => flag.id === 'injury_constraint_touches_session')).toEqual([injuryFlag]);
-        expect(output.flags.filter(flag => flag.id === 'illness_anomaly')).toEqual([unevaluable]);
-        expect(output.flags.find(flag => flag.id === 'recovery_beyond_baseline'))
-            .toMatchObject({ state: 'not_yet_supported', active: null });
-        expect(output.flags.map(flag => flag.id)).toEqual([
-            'illness_anomaly', 'illness_risk_symptom', 'injury_constraint_touches_session', 'recovery_beyond_baseline',
-        ]);
+    it('sorts and deduplicates stored revisions without exporting persistence fields', () => {
+        const base = { schemaVersion: 1 as const, userId: 'private-owner', idempotencyKey: 'private-key', observedOn: '2026-11-20', id: 'illness_risk_symptom' as const, definitionVersion: 'v1', active: false, state: 'measured' as const, reasonCode: 'none', inputs: [], threshold: null };
+        const early = { ...base, revisionId: 'b', evaluatedAt: '2026-11-20T06:00:00Z' };
+        const late = { ...base, revisionId: 'a', evaluatedAt: '2026-11-20T07:00:00Z' };
+        const output = buildLedgerExport(fullInput({ purpose: 'morning', records: { flagEvaluations: [late, early, early] } }));
+        const present = output.flags.filter(f => f.id === base.id && f.observedOn === base.observedOn);
+        expect(present.map(f => f.evaluatedAt)).toEqual([early.evaluatedAt, late.evaluatedAt]);
+        expect(JSON.stringify(output.flags)).not.toMatch(/private-owner|private-key|revisionId/);
+    });
+    it('orders equal-session revisions by their actual instants across UTC offsets', () => {
+        const base: LedgerFlag = { id: 'illness_risk_symptom', observedOn: AS_OF, evaluatedAt: null,
+            definitionVersion: 'v1', active: false, state: 'measured', inputs: [], threshold: null };
+        const earlier = { ...base, evaluatedAt: '2026-11-20T09:00:00+02:00' };
+        const later = { ...base, evaluatedAt: '2026-11-20T08:00:00Z' };
+        const output = buildLedgerExport(fullInput({ purpose: 'morning', flagEvaluations: [later, earlier] }));
+        expect(output.flags.filter(f => f.id === base.id && f.observedOn === AS_OF).map(f => f.evaluatedAt))
+            .toEqual([earlier.evaluatedAt, later.evaluatedAt]);
+    });
+
+    it('respects biometric readiness and preserves incomplete subjective counts', () => {
+        const snapshot = recoverySnapshot('2026-11-20');
+        snapshot.dataQuality.baseline7dReady = true;
+        snapshot.derived.hrv7dAvg = 55;
+        snapshot.derived.hrv28dAvg = 60;
+        const output = buildLedgerExport(fullInput({ records: { recovery: [snapshot], checkins: [checkin('2026-11-19', { readiness: 6, sleepQuality: 6, fatigue: 6, soreness: 6, mentalStress: 6, motivation: 6 })] } }));
+        const biometric = output.derived.find(d => d.id === 'biometric_baselines')!;
+        expect(biometric.metrics?.hrv7dAvg).toMatchObject({ value: 55, unit: 'ms', state: 'measured' });
+        expect(biometric.metrics?.hrv28dAvg).toMatchObject({ value: null, state: 'missing' });
+        const subjective = output.derived.find(d => d.id === 'subjective_baselines')!;
+        expect(subjective.metrics?.readiness_recentAvg).toMatchObject({ value: null, state: 'missing' });
+        expect(subjective.metrics?.longRecordedDays).toMatchObject({ value: 1, state: 'measured' });
+    });
+
+    it('marks non-finite ready biometric values invalid', () => {
+        const snapshot = recoverySnapshot('2026-11-20');
+        snapshot.dataQuality.baseline7dReady = true;
+        snapshot.derived.hrv7dAvg = Number.NaN;
+        snapshot.derived.restingHr7dAvg = Number.POSITIVE_INFINITY;
+        const output = buildLedgerExport(fullInput({ records: { recovery: [snapshot] } }));
+        const metrics = output.derived.find(d => d.id === 'biometric_baselines')!.metrics!;
+        expect(metrics.hrv7dAvg).toMatchObject({ value: null, state: 'invalid' });
+        expect(metrics.restingHr7dAvg).toMatchObject({ value: null, state: 'invalid' });
+    });
+
+    it('reports a readable empty snapshot history as missing', () => {
+        const output = buildLedgerExport(fullInput({ records: { recovery: [] } }));
+        const biometric = output.derived.find(d => d.id === 'biometric_baselines')!;
+        expect(biometric.value).toMatchObject({ value: null, state: 'missing' });
+        expect(Object.values(biometric.metrics!).every(metric => metric.state === 'missing')).toBe(true);
+    });
+
+    it.each(['invalid', 'unavailable'] as const)('withholds history counts when checkins are %s', state => {
+        const output = buildLedgerExport(fullInput({
+            records: { checkins: [] }, sources: { daily_subjective_checkins: { state, readAt: null } },
+        }));
+        const metrics = output.derived.find(d => d.id === 'subjective_baselines')!.metrics!;
+        expect(metrics.longRecordedDays).toMatchObject({ value: null, state });
+        expect(metrics.recentRecordedDays).toMatchObject({ value: null, state });
+    });
+
+    it('propagates a failed flag source and computes subjective baseline from prior checkins', () => {
+        const rows = Array.from({ length: 12 }, (_, i) => checkin(`2026-11-${String(i + 8).padStart(2, '0')}`, { readiness: 6, sleepQuality: 6, fatigue: 6, soreness: 6, mentalStress: 6, motivation: 6 }));
+        const output = buildLedgerExport(fullInput({ purpose: 'morning', records: { checkins: rows, flagEvaluations: [] }, sources: { flag_evaluations: { state: 'invalid', readAt: null } } }));
+        expect(output.flags.every(f => f.state === 'invalid')).toBe(true);
+        expect(output.derived.find(d => d.id === 'subjective_baselines')?.metrics?.readiness_recentAvg).toMatchObject({ value: 6, state: 'measured' });
+        expect(output.facts.checkins.items).toHaveLength(1);
     });
 });
 

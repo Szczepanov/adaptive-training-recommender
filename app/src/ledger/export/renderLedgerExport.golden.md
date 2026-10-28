@@ -10,6 +10,7 @@ window: 2026-11-07 to 2026-11-20 (14 days)
 
 - daily_recovery_snapshots; state: measured; readAt: 2026-11-20T06:12:00Z; newestObservedOn: 2026-11-20
 - daily_subjective_checkins; state: measured; readAt: Not recorded; newestObservedOn: Not recorded
+- flag_evaluations; state: unavailable; readAt: Not recorded; newestObservedOn: Not recorded
 - performed_training_occurrences; state: measured; readAt: Not recorded; newestObservedOn: Not recorded
 - session_responses; state: measured; readAt: Not recorded; newestObservedOn: Not recorded
 - assessment_attempts; state: measured; readAt: Not recorded; newestObservedOn: Not recorded
@@ -289,7 +290,51 @@ inputs: &#91;&#93;
 
 | Field | Value | Unit | Source | State | Observed on |
 | --- | --- | --- | --- | --- | --- |
-| value | Not recorded | Not specified | ledger | not_yet_supported | Not recorded |
+| value | Not recorded | Not specified | daily_recovery_snapshots | not_applicable | Not recorded |
+| sleepScore7dAvg | Not recorded | score | daily_recovery_snapshots | missing | 2026-11-20 |
+| sleepScore28dAvg | Not recorded | score | daily_recovery_snapshots | missing | 2026-11-20 |
+| sleepScore28dStdev | Not recorded | score | daily_recovery_snapshots | missing | 2026-11-20 |
+| restingHr7dAvg | Not recorded | bpm | daily_recovery_snapshots | missing | 2026-11-20 |
+| restingHr28dAvg | Not recorded | bpm | daily_recovery_snapshots | missing | 2026-11-20 |
+| restingHr28dStdev | Not recorded | bpm | daily_recovery_snapshots | missing | 2026-11-20 |
+| hrv7dAvg | Not recorded | ms | daily_recovery_snapshots | missing | 2026-11-20 |
+| hrv28dAvg | Not recorded | ms | daily_recovery_snapshots | missing | 2026-11-20 |
+| hrv28dStdev | Not recorded | ms | daily_recovery_snapshots | missing | 2026-11-20 |
+| respiration7dAvg | Not recorded | breaths/min | daily_recovery_snapshots | missing | 2026-11-20 |
+| respiration28dAvg | Not recorded | breaths/min | daily_recovery_snapshots | missing | 2026-11-20 |
+| respiration28dMad | Not recorded | breaths/min | daily_recovery_snapshots | missing | 2026-11-20 |
+
+### subjective_baselines
+
+definition: Subjective baseline averages and variability
+
+window: 7d,28d
+
+inputs: &#91;&#93;
+
+| Field | Value | Unit | Source | State | Observed on |
+| --- | --- | --- | --- | --- | --- |
+| value | Not recorded | Not specified | daily_subjective_checkins | not_applicable | Not recorded |
+| readiness_recentAvg | Not recorded | 1-10 | daily_subjective_checkins | missing | 2026-11-20 |
+| readiness_longAvg | Not recorded | 1-10 | daily_subjective_checkins | missing | 2026-11-20 |
+| readiness_variability | Not recorded | 1-10 | daily_subjective_checkins | missing | 2026-11-20 |
+| sleepQuality_recentAvg | Not recorded | 1-10 | daily_subjective_checkins | missing | 2026-11-20 |
+| sleepQuality_longAvg | Not recorded | 1-10 | daily_subjective_checkins | missing | 2026-11-20 |
+| sleepQuality_variability | Not recorded | 1-10 | daily_subjective_checkins | missing | 2026-11-20 |
+| fatigue_recentAvg | Not recorded | 1-10 | daily_subjective_checkins | missing | 2026-11-20 |
+| fatigue_longAvg | Not recorded | 1-10 | daily_subjective_checkins | missing | 2026-11-20 |
+| fatigue_variability | Not recorded | 1-10 | daily_subjective_checkins | missing | 2026-11-20 |
+| soreness_recentAvg | Not recorded | 1-10 | daily_subjective_checkins | missing | 2026-11-20 |
+| soreness_longAvg | Not recorded | 1-10 | daily_subjective_checkins | missing | 2026-11-20 |
+| soreness_variability | Not recorded | 1-10 | daily_subjective_checkins | missing | 2026-11-20 |
+| mentalStress_recentAvg | Not recorded | 1-10 | daily_subjective_checkins | missing | 2026-11-20 |
+| mentalStress_longAvg | Not recorded | 1-10 | daily_subjective_checkins | missing | 2026-11-20 |
+| mentalStress_variability | Not recorded | 1-10 | daily_subjective_checkins | missing | 2026-11-20 |
+| motivation_recentAvg | Not recorded | 1-10 | daily_subjective_checkins | missing | 2026-11-20 |
+| motivation_longAvg | Not recorded | 1-10 | daily_subjective_checkins | missing | 2026-11-20 |
+| motivation_variability | Not recorded | 1-10 | daily_subjective_checkins | missing | 2026-11-20 |
+| recentRecordedDays | 0 | days | daily_subjective_checkins | measured | 2026-11-20 |
+| longRecordedDays | 0 | days | daily_subjective_checkins | measured | 2026-11-20 |
 
 ### d_minus_1_step_normalization
 
@@ -319,11 +364,687 @@ inputs: &#91;&#93;
 
 ### illness_anomaly
 
+observedOn: 2026-11-07; evaluatedAt: Not recorded
+
+definitionVersion: illness_anomaly-v1; sessionRef: Not recorded
+
+active: Not recorded; state: unavailable; reasonCode: flag_evaluations_source_unavailable
+
+threshold: Not recorded; baselineWindow: Not recorded
+
+| Field | Value | Unit | Source | State | Observed on |
+| --- | --- | --- | --- | --- | --- |
+
+### illness_risk_symptom
+
+observedOn: 2026-11-07; evaluatedAt: Not recorded
+
+definitionVersion: illness_risk_symptom-v1; sessionRef: Not recorded
+
+active: Not recorded; state: unavailable; reasonCode: flag_evaluations_source_unavailable
+
+threshold: Not recorded; baselineWindow: Not recorded
+
+| Field | Value | Unit | Source | State | Observed on |
+| --- | --- | --- | --- | --- | --- |
+
+### injury_constraint_touches_session
+
+observedOn: 2026-11-07; evaluatedAt: Not recorded
+
+definitionVersion: injury_constraint_touches_session-v1; sessionRef: Not recorded
+
+active: Not recorded; state: unavailable; reasonCode: flag_evaluations_source_unavailable
+
+threshold: Not recorded; baselineWindow: Not recorded
+
+| Field | Value | Unit | Source | State | Observed on |
+| --- | --- | --- | --- | --- | --- |
+
+### recovery_beyond_baseline
+
+observedOn: 2026-11-07; evaluatedAt: Not recorded
+
+definitionVersion: recovery_beyond_baseline-v1; sessionRef: Not recorded
+
+active: Not recorded; state: unavailable; reasonCode: flag_evaluations_source_unavailable
+
+threshold: Not recorded; baselineWindow: Not recorded
+
+| Field | Value | Unit | Source | State | Observed on |
+| --- | --- | --- | --- | --- | --- |
+
+### illness_anomaly
+
+observedOn: 2026-11-08; evaluatedAt: Not recorded
+
+definitionVersion: illness_anomaly-v1; sessionRef: Not recorded
+
+active: Not recorded; state: unavailable; reasonCode: flag_evaluations_source_unavailable
+
+threshold: Not recorded; baselineWindow: Not recorded
+
+| Field | Value | Unit | Source | State | Observed on |
+| --- | --- | --- | --- | --- | --- |
+
+### illness_risk_symptom
+
+observedOn: 2026-11-08; evaluatedAt: Not recorded
+
+definitionVersion: illness_risk_symptom-v1; sessionRef: Not recorded
+
+active: Not recorded; state: unavailable; reasonCode: flag_evaluations_source_unavailable
+
+threshold: Not recorded; baselineWindow: Not recorded
+
+| Field | Value | Unit | Source | State | Observed on |
+| --- | --- | --- | --- | --- | --- |
+
+### injury_constraint_touches_session
+
+observedOn: 2026-11-08; evaluatedAt: Not recorded
+
+definitionVersion: injury_constraint_touches_session-v1; sessionRef: Not recorded
+
+active: Not recorded; state: unavailable; reasonCode: flag_evaluations_source_unavailable
+
+threshold: Not recorded; baselineWindow: Not recorded
+
+| Field | Value | Unit | Source | State | Observed on |
+| --- | --- | --- | --- | --- | --- |
+
+### recovery_beyond_baseline
+
+observedOn: 2026-11-08; evaluatedAt: Not recorded
+
+definitionVersion: recovery_beyond_baseline-v1; sessionRef: Not recorded
+
+active: Not recorded; state: unavailable; reasonCode: flag_evaluations_source_unavailable
+
+threshold: Not recorded; baselineWindow: Not recorded
+
+| Field | Value | Unit | Source | State | Observed on |
+| --- | --- | --- | --- | --- | --- |
+
+### illness_anomaly
+
+observedOn: 2026-11-09; evaluatedAt: Not recorded
+
+definitionVersion: illness_anomaly-v1; sessionRef: Not recorded
+
+active: Not recorded; state: unavailable; reasonCode: flag_evaluations_source_unavailable
+
+threshold: Not recorded; baselineWindow: Not recorded
+
+| Field | Value | Unit | Source | State | Observed on |
+| --- | --- | --- | --- | --- | --- |
+
+### illness_risk_symptom
+
+observedOn: 2026-11-09; evaluatedAt: Not recorded
+
+definitionVersion: illness_risk_symptom-v1; sessionRef: Not recorded
+
+active: Not recorded; state: unavailable; reasonCode: flag_evaluations_source_unavailable
+
+threshold: Not recorded; baselineWindow: Not recorded
+
+| Field | Value | Unit | Source | State | Observed on |
+| --- | --- | --- | --- | --- | --- |
+
+### injury_constraint_touches_session
+
+observedOn: 2026-11-09; evaluatedAt: Not recorded
+
+definitionVersion: injury_constraint_touches_session-v1; sessionRef: Not recorded
+
+active: Not recorded; state: unavailable; reasonCode: flag_evaluations_source_unavailable
+
+threshold: Not recorded; baselineWindow: Not recorded
+
+| Field | Value | Unit | Source | State | Observed on |
+| --- | --- | --- | --- | --- | --- |
+
+### recovery_beyond_baseline
+
+observedOn: 2026-11-09; evaluatedAt: Not recorded
+
+definitionVersion: recovery_beyond_baseline-v1; sessionRef: Not recorded
+
+active: Not recorded; state: unavailable; reasonCode: flag_evaluations_source_unavailable
+
+threshold: Not recorded; baselineWindow: Not recorded
+
+| Field | Value | Unit | Source | State | Observed on |
+| --- | --- | --- | --- | --- | --- |
+
+### illness_anomaly
+
+observedOn: 2026-11-10; evaluatedAt: Not recorded
+
+definitionVersion: illness_anomaly-v1; sessionRef: Not recorded
+
+active: Not recorded; state: unavailable; reasonCode: flag_evaluations_source_unavailable
+
+threshold: Not recorded; baselineWindow: Not recorded
+
+| Field | Value | Unit | Source | State | Observed on |
+| --- | --- | --- | --- | --- | --- |
+
+### illness_risk_symptom
+
+observedOn: 2026-11-10; evaluatedAt: Not recorded
+
+definitionVersion: illness_risk_symptom-v1; sessionRef: Not recorded
+
+active: Not recorded; state: unavailable; reasonCode: flag_evaluations_source_unavailable
+
+threshold: Not recorded; baselineWindow: Not recorded
+
+| Field | Value | Unit | Source | State | Observed on |
+| --- | --- | --- | --- | --- | --- |
+
+### injury_constraint_touches_session
+
+observedOn: 2026-11-10; evaluatedAt: Not recorded
+
+definitionVersion: injury_constraint_touches_session-v1; sessionRef: Not recorded
+
+active: Not recorded; state: unavailable; reasonCode: flag_evaluations_source_unavailable
+
+threshold: Not recorded; baselineWindow: Not recorded
+
+| Field | Value | Unit | Source | State | Observed on |
+| --- | --- | --- | --- | --- | --- |
+
+### recovery_beyond_baseline
+
+observedOn: 2026-11-10; evaluatedAt: Not recorded
+
+definitionVersion: recovery_beyond_baseline-v1; sessionRef: Not recorded
+
+active: Not recorded; state: unavailable; reasonCode: flag_evaluations_source_unavailable
+
+threshold: Not recorded; baselineWindow: Not recorded
+
+| Field | Value | Unit | Source | State | Observed on |
+| --- | --- | --- | --- | --- | --- |
+
+### illness_anomaly
+
+observedOn: 2026-11-11; evaluatedAt: Not recorded
+
+definitionVersion: illness_anomaly-v1; sessionRef: Not recorded
+
+active: Not recorded; state: unavailable; reasonCode: flag_evaluations_source_unavailable
+
+threshold: Not recorded; baselineWindow: Not recorded
+
+| Field | Value | Unit | Source | State | Observed on |
+| --- | --- | --- | --- | --- | --- |
+
+### illness_risk_symptom
+
+observedOn: 2026-11-11; evaluatedAt: Not recorded
+
+definitionVersion: illness_risk_symptom-v1; sessionRef: Not recorded
+
+active: Not recorded; state: unavailable; reasonCode: flag_evaluations_source_unavailable
+
+threshold: Not recorded; baselineWindow: Not recorded
+
+| Field | Value | Unit | Source | State | Observed on |
+| --- | --- | --- | --- | --- | --- |
+
+### injury_constraint_touches_session
+
+observedOn: 2026-11-11; evaluatedAt: Not recorded
+
+definitionVersion: injury_constraint_touches_session-v1; sessionRef: Not recorded
+
+active: Not recorded; state: unavailable; reasonCode: flag_evaluations_source_unavailable
+
+threshold: Not recorded; baselineWindow: Not recorded
+
+| Field | Value | Unit | Source | State | Observed on |
+| --- | --- | --- | --- | --- | --- |
+
+### recovery_beyond_baseline
+
+observedOn: 2026-11-11; evaluatedAt: Not recorded
+
+definitionVersion: recovery_beyond_baseline-v1; sessionRef: Not recorded
+
+active: Not recorded; state: unavailable; reasonCode: flag_evaluations_source_unavailable
+
+threshold: Not recorded; baselineWindow: Not recorded
+
+| Field | Value | Unit | Source | State | Observed on |
+| --- | --- | --- | --- | --- | --- |
+
+### illness_anomaly
+
+observedOn: 2026-11-12; evaluatedAt: Not recorded
+
+definitionVersion: illness_anomaly-v1; sessionRef: Not recorded
+
+active: Not recorded; state: unavailable; reasonCode: flag_evaluations_source_unavailable
+
+threshold: Not recorded; baselineWindow: Not recorded
+
+| Field | Value | Unit | Source | State | Observed on |
+| --- | --- | --- | --- | --- | --- |
+
+### illness_risk_symptom
+
+observedOn: 2026-11-12; evaluatedAt: Not recorded
+
+definitionVersion: illness_risk_symptom-v1; sessionRef: Not recorded
+
+active: Not recorded; state: unavailable; reasonCode: flag_evaluations_source_unavailable
+
+threshold: Not recorded; baselineWindow: Not recorded
+
+| Field | Value | Unit | Source | State | Observed on |
+| --- | --- | --- | --- | --- | --- |
+
+### injury_constraint_touches_session
+
+observedOn: 2026-11-12; evaluatedAt: Not recorded
+
+definitionVersion: injury_constraint_touches_session-v1; sessionRef: Not recorded
+
+active: Not recorded; state: unavailable; reasonCode: flag_evaluations_source_unavailable
+
+threshold: Not recorded; baselineWindow: Not recorded
+
+| Field | Value | Unit | Source | State | Observed on |
+| --- | --- | --- | --- | --- | --- |
+
+### recovery_beyond_baseline
+
+observedOn: 2026-11-12; evaluatedAt: Not recorded
+
+definitionVersion: recovery_beyond_baseline-v1; sessionRef: Not recorded
+
+active: Not recorded; state: unavailable; reasonCode: flag_evaluations_source_unavailable
+
+threshold: Not recorded; baselineWindow: Not recorded
+
+| Field | Value | Unit | Source | State | Observed on |
+| --- | --- | --- | --- | --- | --- |
+
+### illness_anomaly
+
+observedOn: 2026-11-13; evaluatedAt: Not recorded
+
+definitionVersion: illness_anomaly-v1; sessionRef: Not recorded
+
+active: Not recorded; state: unavailable; reasonCode: flag_evaluations_source_unavailable
+
+threshold: Not recorded; baselineWindow: Not recorded
+
+| Field | Value | Unit | Source | State | Observed on |
+| --- | --- | --- | --- | --- | --- |
+
+### illness_risk_symptom
+
+observedOn: 2026-11-13; evaluatedAt: Not recorded
+
+definitionVersion: illness_risk_symptom-v1; sessionRef: Not recorded
+
+active: Not recorded; state: unavailable; reasonCode: flag_evaluations_source_unavailable
+
+threshold: Not recorded; baselineWindow: Not recorded
+
+| Field | Value | Unit | Source | State | Observed on |
+| --- | --- | --- | --- | --- | --- |
+
+### injury_constraint_touches_session
+
+observedOn: 2026-11-13; evaluatedAt: Not recorded
+
+definitionVersion: injury_constraint_touches_session-v1; sessionRef: Not recorded
+
+active: Not recorded; state: unavailable; reasonCode: flag_evaluations_source_unavailable
+
+threshold: Not recorded; baselineWindow: Not recorded
+
+| Field | Value | Unit | Source | State | Observed on |
+| --- | --- | --- | --- | --- | --- |
+
+### recovery_beyond_baseline
+
+observedOn: 2026-11-13; evaluatedAt: Not recorded
+
+definitionVersion: recovery_beyond_baseline-v1; sessionRef: Not recorded
+
+active: Not recorded; state: unavailable; reasonCode: flag_evaluations_source_unavailable
+
+threshold: Not recorded; baselineWindow: Not recorded
+
+| Field | Value | Unit | Source | State | Observed on |
+| --- | --- | --- | --- | --- | --- |
+
+### illness_anomaly
+
+observedOn: 2026-11-14; evaluatedAt: Not recorded
+
+definitionVersion: illness_anomaly-v1; sessionRef: Not recorded
+
+active: Not recorded; state: unavailable; reasonCode: flag_evaluations_source_unavailable
+
+threshold: Not recorded; baselineWindow: Not recorded
+
+| Field | Value | Unit | Source | State | Observed on |
+| --- | --- | --- | --- | --- | --- |
+
+### illness_risk_symptom
+
+observedOn: 2026-11-14; evaluatedAt: Not recorded
+
+definitionVersion: illness_risk_symptom-v1; sessionRef: Not recorded
+
+active: Not recorded; state: unavailable; reasonCode: flag_evaluations_source_unavailable
+
+threshold: Not recorded; baselineWindow: Not recorded
+
+| Field | Value | Unit | Source | State | Observed on |
+| --- | --- | --- | --- | --- | --- |
+
+### injury_constraint_touches_session
+
+observedOn: 2026-11-14; evaluatedAt: Not recorded
+
+definitionVersion: injury_constraint_touches_session-v1; sessionRef: Not recorded
+
+active: Not recorded; state: unavailable; reasonCode: flag_evaluations_source_unavailable
+
+threshold: Not recorded; baselineWindow: Not recorded
+
+| Field | Value | Unit | Source | State | Observed on |
+| --- | --- | --- | --- | --- | --- |
+
+### recovery_beyond_baseline
+
+observedOn: 2026-11-14; evaluatedAt: Not recorded
+
+definitionVersion: recovery_beyond_baseline-v1; sessionRef: Not recorded
+
+active: Not recorded; state: unavailable; reasonCode: flag_evaluations_source_unavailable
+
+threshold: Not recorded; baselineWindow: Not recorded
+
+| Field | Value | Unit | Source | State | Observed on |
+| --- | --- | --- | --- | --- | --- |
+
+### illness_anomaly
+
+observedOn: 2026-11-15; evaluatedAt: Not recorded
+
+definitionVersion: illness_anomaly-v1; sessionRef: Not recorded
+
+active: Not recorded; state: unavailable; reasonCode: flag_evaluations_source_unavailable
+
+threshold: Not recorded; baselineWindow: Not recorded
+
+| Field | Value | Unit | Source | State | Observed on |
+| --- | --- | --- | --- | --- | --- |
+
+### illness_risk_symptom
+
+observedOn: 2026-11-15; evaluatedAt: Not recorded
+
+definitionVersion: illness_risk_symptom-v1; sessionRef: Not recorded
+
+active: Not recorded; state: unavailable; reasonCode: flag_evaluations_source_unavailable
+
+threshold: Not recorded; baselineWindow: Not recorded
+
+| Field | Value | Unit | Source | State | Observed on |
+| --- | --- | --- | --- | --- | --- |
+
+### injury_constraint_touches_session
+
+observedOn: 2026-11-15; evaluatedAt: Not recorded
+
+definitionVersion: injury_constraint_touches_session-v1; sessionRef: Not recorded
+
+active: Not recorded; state: unavailable; reasonCode: flag_evaluations_source_unavailable
+
+threshold: Not recorded; baselineWindow: Not recorded
+
+| Field | Value | Unit | Source | State | Observed on |
+| --- | --- | --- | --- | --- | --- |
+
+### recovery_beyond_baseline
+
+observedOn: 2026-11-15; evaluatedAt: Not recorded
+
+definitionVersion: recovery_beyond_baseline-v1; sessionRef: Not recorded
+
+active: Not recorded; state: unavailable; reasonCode: flag_evaluations_source_unavailable
+
+threshold: Not recorded; baselineWindow: Not recorded
+
+| Field | Value | Unit | Source | State | Observed on |
+| --- | --- | --- | --- | --- | --- |
+
+### illness_anomaly
+
+observedOn: 2026-11-16; evaluatedAt: Not recorded
+
+definitionVersion: illness_anomaly-v1; sessionRef: Not recorded
+
+active: Not recorded; state: unavailable; reasonCode: flag_evaluations_source_unavailable
+
+threshold: Not recorded; baselineWindow: Not recorded
+
+| Field | Value | Unit | Source | State | Observed on |
+| --- | --- | --- | --- | --- | --- |
+
+### illness_risk_symptom
+
+observedOn: 2026-11-16; evaluatedAt: Not recorded
+
+definitionVersion: illness_risk_symptom-v1; sessionRef: Not recorded
+
+active: Not recorded; state: unavailable; reasonCode: flag_evaluations_source_unavailable
+
+threshold: Not recorded; baselineWindow: Not recorded
+
+| Field | Value | Unit | Source | State | Observed on |
+| --- | --- | --- | --- | --- | --- |
+
+### injury_constraint_touches_session
+
+observedOn: 2026-11-16; evaluatedAt: Not recorded
+
+definitionVersion: injury_constraint_touches_session-v1; sessionRef: Not recorded
+
+active: Not recorded; state: unavailable; reasonCode: flag_evaluations_source_unavailable
+
+threshold: Not recorded; baselineWindow: Not recorded
+
+| Field | Value | Unit | Source | State | Observed on |
+| --- | --- | --- | --- | --- | --- |
+
+### recovery_beyond_baseline
+
+observedOn: 2026-11-16; evaluatedAt: Not recorded
+
+definitionVersion: recovery_beyond_baseline-v1; sessionRef: Not recorded
+
+active: Not recorded; state: unavailable; reasonCode: flag_evaluations_source_unavailable
+
+threshold: Not recorded; baselineWindow: Not recorded
+
+| Field | Value | Unit | Source | State | Observed on |
+| --- | --- | --- | --- | --- | --- |
+
+### illness_anomaly
+
+observedOn: 2026-11-17; evaluatedAt: Not recorded
+
+definitionVersion: illness_anomaly-v1; sessionRef: Not recorded
+
+active: Not recorded; state: unavailable; reasonCode: flag_evaluations_source_unavailable
+
+threshold: Not recorded; baselineWindow: Not recorded
+
+| Field | Value | Unit | Source | State | Observed on |
+| --- | --- | --- | --- | --- | --- |
+
+### illness_risk_symptom
+
+observedOn: 2026-11-17; evaluatedAt: Not recorded
+
+definitionVersion: illness_risk_symptom-v1; sessionRef: Not recorded
+
+active: Not recorded; state: unavailable; reasonCode: flag_evaluations_source_unavailable
+
+threshold: Not recorded; baselineWindow: Not recorded
+
+| Field | Value | Unit | Source | State | Observed on |
+| --- | --- | --- | --- | --- | --- |
+
+### injury_constraint_touches_session
+
+observedOn: 2026-11-17; evaluatedAt: Not recorded
+
+definitionVersion: injury_constraint_touches_session-v1; sessionRef: Not recorded
+
+active: Not recorded; state: unavailable; reasonCode: flag_evaluations_source_unavailable
+
+threshold: Not recorded; baselineWindow: Not recorded
+
+| Field | Value | Unit | Source | State | Observed on |
+| --- | --- | --- | --- | --- | --- |
+
+### recovery_beyond_baseline
+
+observedOn: 2026-11-17; evaluatedAt: Not recorded
+
+definitionVersion: recovery_beyond_baseline-v1; sessionRef: Not recorded
+
+active: Not recorded; state: unavailable; reasonCode: flag_evaluations_source_unavailable
+
+threshold: Not recorded; baselineWindow: Not recorded
+
+| Field | Value | Unit | Source | State | Observed on |
+| --- | --- | --- | --- | --- | --- |
+
+### illness_anomaly
+
+observedOn: 2026-11-18; evaluatedAt: Not recorded
+
+definitionVersion: illness_anomaly-v1; sessionRef: Not recorded
+
+active: Not recorded; state: unavailable; reasonCode: flag_evaluations_source_unavailable
+
+threshold: Not recorded; baselineWindow: Not recorded
+
+| Field | Value | Unit | Source | State | Observed on |
+| --- | --- | --- | --- | --- | --- |
+
+### illness_risk_symptom
+
+observedOn: 2026-11-18; evaluatedAt: Not recorded
+
+definitionVersion: illness_risk_symptom-v1; sessionRef: Not recorded
+
+active: Not recorded; state: unavailable; reasonCode: flag_evaluations_source_unavailable
+
+threshold: Not recorded; baselineWindow: Not recorded
+
+| Field | Value | Unit | Source | State | Observed on |
+| --- | --- | --- | --- | --- | --- |
+
+### injury_constraint_touches_session
+
+observedOn: 2026-11-18; evaluatedAt: Not recorded
+
+definitionVersion: injury_constraint_touches_session-v1; sessionRef: Not recorded
+
+active: Not recorded; state: unavailable; reasonCode: flag_evaluations_source_unavailable
+
+threshold: Not recorded; baselineWindow: Not recorded
+
+| Field | Value | Unit | Source | State | Observed on |
+| --- | --- | --- | --- | --- | --- |
+
+### recovery_beyond_baseline
+
+observedOn: 2026-11-18; evaluatedAt: Not recorded
+
+definitionVersion: recovery_beyond_baseline-v1; sessionRef: Not recorded
+
+active: Not recorded; state: unavailable; reasonCode: flag_evaluations_source_unavailable
+
+threshold: Not recorded; baselineWindow: Not recorded
+
+| Field | Value | Unit | Source | State | Observed on |
+| --- | --- | --- | --- | --- | --- |
+
+### illness_anomaly
+
+observedOn: 2026-11-19; evaluatedAt: Not recorded
+
+definitionVersion: illness_anomaly-v1; sessionRef: Not recorded
+
+active: Not recorded; state: unavailable; reasonCode: flag_evaluations_source_unavailable
+
+threshold: Not recorded; baselineWindow: Not recorded
+
+| Field | Value | Unit | Source | State | Observed on |
+| --- | --- | --- | --- | --- | --- |
+
+### illness_risk_symptom
+
+observedOn: 2026-11-19; evaluatedAt: Not recorded
+
+definitionVersion: illness_risk_symptom-v1; sessionRef: Not recorded
+
+active: Not recorded; state: unavailable; reasonCode: flag_evaluations_source_unavailable
+
+threshold: Not recorded; baselineWindow: Not recorded
+
+| Field | Value | Unit | Source | State | Observed on |
+| --- | --- | --- | --- | --- | --- |
+
+### injury_constraint_touches_session
+
+observedOn: 2026-11-19; evaluatedAt: Not recorded
+
+definitionVersion: injury_constraint_touches_session-v1; sessionRef: Not recorded
+
+active: Not recorded; state: unavailable; reasonCode: flag_evaluations_source_unavailable
+
+threshold: Not recorded; baselineWindow: Not recorded
+
+| Field | Value | Unit | Source | State | Observed on |
+| --- | --- | --- | --- | --- | --- |
+
+### recovery_beyond_baseline
+
+observedOn: 2026-11-19; evaluatedAt: Not recorded
+
+definitionVersion: recovery_beyond_baseline-v1; sessionRef: Not recorded
+
+active: Not recorded; state: unavailable; reasonCode: flag_evaluations_source_unavailable
+
+threshold: Not recorded; baselineWindow: Not recorded
+
+| Field | Value | Unit | Source | State | Observed on |
+| --- | --- | --- | --- | --- | --- |
+
+### illness_anomaly
+
 observedOn: 2026-11-20; evaluatedAt: Not recorded
 
-definitionVersion: Not recorded; sessionRef: Not recorded
+definitionVersion: illness_anomaly-v1; sessionRef: Not recorded
 
-active: Not recorded; state: not_yet_supported
+active: Not recorded; state: unavailable; reasonCode: flag_evaluations_source_unavailable
 
 threshold: Not recorded; baselineWindow: Not recorded
 
@@ -334,9 +1055,9 @@ threshold: Not recorded; baselineWindow: Not recorded
 
 observedOn: 2026-11-20; evaluatedAt: Not recorded
 
-definitionVersion: Not recorded; sessionRef: Not recorded
+definitionVersion: illness_risk_symptom-v1; sessionRef: Not recorded
 
-active: Not recorded; state: not_yet_supported
+active: Not recorded; state: unavailable; reasonCode: flag_evaluations_source_unavailable
 
 threshold: Not recorded; baselineWindow: Not recorded
 
@@ -347,9 +1068,9 @@ threshold: Not recorded; baselineWindow: Not recorded
 
 observedOn: 2026-11-20; evaluatedAt: Not recorded
 
-definitionVersion: Not recorded; sessionRef: Not recorded
+definitionVersion: injury_constraint_touches_session-v1; sessionRef: Not recorded
 
-active: Not recorded; state: not_yet_supported
+active: Not recorded; state: unavailable; reasonCode: flag_evaluations_source_unavailable
 
 threshold: Not recorded; baselineWindow: Not recorded
 
@@ -360,9 +1081,9 @@ threshold: Not recorded; baselineWindow: Not recorded
 
 observedOn: 2026-11-20; evaluatedAt: Not recorded
 
-definitionVersion: Not recorded; sessionRef: Not recorded
+definitionVersion: recovery_beyond_baseline-v1; sessionRef: Not recorded
 
-active: Not recorded; state: not_yet_supported
+active: Not recorded; state: unavailable; reasonCode: flag_evaluations_source_unavailable
 
 threshold: Not recorded; baselineWindow: Not recorded
 

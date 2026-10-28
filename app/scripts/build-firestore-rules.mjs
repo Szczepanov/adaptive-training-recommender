@@ -15,6 +15,7 @@ export const RULES_MODULES = [
   '07-health-anomalies.rules',
   '08-outcomes-trials.rules',
   '09-nutrition-anthropometry.rules',
+  '10-ledger-flags.rules',
   '99-footer.rules',
 ];
 

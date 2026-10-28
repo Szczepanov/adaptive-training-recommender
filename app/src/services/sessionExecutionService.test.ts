@@ -23,6 +23,8 @@ const firestore = vi.hoisted(() => {
 
 vi.mock('firebase/firestore', () => firestore);
 vi.mock('../firebase', () => ({ getDb: vi.fn(() => ({})) }));
+vi.mock('./flagCaptureRuntime', () => ({ notifyFlagInputsChanged: vi.fn() }));
+import { notifyFlagInputsChanged } from './flagCaptureRuntime';
 
 import { SessionExecutionService } from './sessionExecutionService';
 import { readDiaryReceipts, removeDiaryReceipt, saveDiaryReceipt } from './sessionDiaryReceipts';
@@ -462,6 +464,7 @@ describe('SessionExecutionService', () => {
             });
 
             expect(exec.executionId).toBe('exec-new');
+            expect(notifyFlagInputsChanged).toHaveBeenCalledWith(USER_ID);
             // The execution doc and its session_execution_locks pointer, written atomically.
             expect(tx.set).toHaveBeenCalledTimes(2);
             expect(firestore.setDoc).not.toHaveBeenCalled();

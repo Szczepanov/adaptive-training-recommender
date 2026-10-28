@@ -39,6 +39,7 @@ export interface SourceState {
     state: LedgerState;
     readAt: string | null;
     newestObservedOn: string | null;
+    reason?: string;
 }
 
 export interface LedgerWindow {
@@ -97,10 +98,12 @@ export interface LedgerFlag {
     inputs: { name: string; value: LedgerValue<unknown> }[];
     threshold: string | null;
     baselineWindow?: string;
+    reasonCode?: string;
 }
 
 export const DERIVED_METRIC_IDS = [
     'biometric_baselines',
+    'subjective_baselines',
     'd_minus_1_step_normalization',
     'rolling_performed_training_load',
 ] as const;
@@ -112,6 +115,7 @@ export interface DerivedMetric {
     window: string;
     value: LedgerValue<number>;
     inputs: string[];
+    metrics?: Record<string, LedgerValue<number>>;
 }
 
 export const RECOVERY_FIELDS = [

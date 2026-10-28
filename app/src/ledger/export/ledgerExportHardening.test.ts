@@ -98,11 +98,11 @@ describe('flag evaluations are windowed (N4)', () => {
         threshold: 'band',
     });
 
-    it('drops an evaluation outside the window and falls back to not_yet_supported', () => {
+    it('drops an evaluation outside the window and reports uncaptured dates', () => {
         const result = buildLedgerExport(fullInput({ purpose: 'morning', flagEvaluations: [flag('2025-03-01')] }));
         const anomaly = result.flags.filter(candidate => candidate.id === 'illness_anomaly');
-        expect(anomaly).toHaveLength(1);
-        expect(anomaly[0]).toMatchObject({ state: 'not_yet_supported', observedOn: AS_OF });
+        expect(anomaly).toHaveLength(2);
+        expect(anomaly.every(flag => flag.state === 'not_recorded')).toBe(true);
     });
 
     it('keeps in-window evaluations only', () => {
@@ -205,7 +205,7 @@ describe('final review fixes', () => {
                 }],
             },
         }));
-        expect(result.flags.find(flag => flag.id === 'illness_anomaly')!.definitionVersion).toBe('healthAnomaly@2.1.0');
+        expect(result.flags.find(flag => flag.id === 'illness_anomaly' && flag.observedOn === AS_OF)!.definitionVersion).toBe('healthAnomaly@2.1.0');
         expect(result.coachingHistory.planRevisions.items[0].fields.schema.value)
             .toBe('adaptive-training-recommender/external-plan@6.1');
     });

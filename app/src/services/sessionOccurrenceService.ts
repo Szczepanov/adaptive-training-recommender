@@ -11,6 +11,7 @@ import {
     type Transaction,
 } from 'firebase/firestore';
 import { getDb } from '../firebase';
+import { notifyFlagInputsChanged } from './flagCaptureRuntime';
 import type { DataState } from '../engine/dataState';
 import {
     type OccurrenceState,
@@ -143,6 +144,7 @@ export class SessionOccurrenceService {
 
     async saveOccurrence(occurrence: SessionOccurrence): Promise<void> {
         await setDoc(this.occurrenceRef(occurrence.userId, occurrence.occurrenceId), occurrence);
+        notifyFlagInputsChanged(occurrence.userId);
     }
 
     async getOccurrence(userId: string, occurrenceId: string): Promise<DataState<SessionOccurrence>> {
@@ -528,6 +530,7 @@ export class SessionOccurrenceService {
             } as SessionOccurrence;
             transaction.set(ref, transitioned);
         });
+        notifyFlagInputsChanged(userId);
         return transitioned!;
     }
 
@@ -578,6 +581,7 @@ export class SessionOccurrenceService {
             released = { ...current, state: 'scheduled', updatedAt: now } as SessionOccurrence;
             transaction.set(ref, released);
         });
+        if (released) notifyFlagInputsChanged(userId);
         return released;
     }
 
@@ -619,6 +623,7 @@ export class SessionOccurrenceService {
             } as SessionOccurrence;
             transaction.set(ref, transitioned);
         });
+        notifyFlagInputsChanged(userId);
         return transitioned!;
     }
 }

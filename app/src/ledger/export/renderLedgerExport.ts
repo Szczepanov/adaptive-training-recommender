@@ -81,7 +81,7 @@ export function renderLedgerExport(ledger: LedgerExport): string {
             `definition: ${text(metric.definition)}`, '',
             `window: ${text(metric.window)}`, '',
             `inputs: ${text(metric.inputs)}`, '',
-            ...values([['value', metric.value]]),
+            ...values([['value', metric.value], ...Object.entries(metric.metrics ?? {})]),
         );
     }
 
@@ -92,7 +92,7 @@ export function renderLedgerExport(ledger: LedgerExport): string {
             `### ${text(flag.id)}`, '',
             `observedOn: ${text(flag.observedOn)}; evaluatedAt: ${text(flag.evaluatedAt)}`, '',
             `definitionVersion: ${text(flag.definitionVersion)}; sessionRef: ${text(flag.sessionRef)}`, '',
-            `active: ${text(flag.active)}; state: ${text(flag.state)}`, '',
+            `active: ${text(flag.active)}; state: ${text(flag.state)}; reasonCode: ${text(flag.reasonCode)}`, '',
             `threshold: ${text(flag.threshold)}; baselineWindow: ${text(flag.baselineWindow)}`, '',
             ...values(flag.inputs.map(input => [input.name, input.value])),
         );

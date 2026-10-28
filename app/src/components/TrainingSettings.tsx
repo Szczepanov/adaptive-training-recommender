@@ -3,6 +3,7 @@ import type { BodyRegion, GuardrailKey, InjuryConstraint, SessionTemplate, Train
 import { resolveInjuryRestrictions } from '../engine/injuryPolicy';
 import { trainingSettingsService, buildRevertUpdate, type TrainingSettingsUpdate } from '../services/trainingSettingsService';
 import { getLocalDateString } from '../utils/localDate';
+import { notifyFlagInputsChanged } from '../services/flagCaptureRuntime';
 import { SCREEN_LABELS, type Screen } from '../types/navigation';
 import { ProgressionBlockEditor } from './ProgressionBlockEditor';
 import { ProgressionReviewPanel } from './ProgressionReviewPanel';
@@ -82,6 +83,7 @@ export function TrainingSettings({ userId, onNavigate }: TrainingSettingsProps) 
         ? { ...update, injuryExpected: settings?.injuries ?? [], injuryHistoryExpected: settings?.injuryHistory ?? [] } : update);
       setSettings(updated);
       setError(null);
+      notifyFlagInputsChanged(userId);
       return updated;
     } catch (cause) {
       console.error('Unable to save training settings', cause);

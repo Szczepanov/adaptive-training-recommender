@@ -1,3 +1,4 @@
+import type { PersistedFlagEvaluation } from '../flagEvaluation.ts';
 import type { PlacementEvent } from '../placementHistory.ts';
 /**
  * Inputs to the pure ledger-export builder: already-read records, never IO handles.
@@ -149,11 +150,13 @@ export interface SourceReadInput {
     state?: LedgerState;
     readAt: string | null;
     newestObservedOn?: string | null;
+    reason?: string;
 }
 
 export const SOURCE_KEYS = [
     'daily_recovery_snapshots',
     'daily_subjective_checkins',
+    'flag_evaluations',
     'performed_training_occurrences',
     'session_responses',
     'assessment_attempts',
@@ -177,6 +180,7 @@ export const SOURCE_KEYS = [
 export type SourceKey = typeof SOURCE_KEYS[number];
 
 export interface LedgerExportRecords {
+    flagEvaluations?: readonly PersistedFlagEvaluation[];
     recovery?: readonly DailyRecoverySnapshot[];
     checkins?: readonly DailySubjectiveCheckin[];
     performedOccurrences?: readonly OccurrenceInput[];
@@ -216,9 +220,8 @@ export interface BuildLedgerExportInput {
     /** Injected; the builder never reads the clock. */
     exportedAt: string;
     /**
-     * Persisted flag evaluations (D-FLAGS), passed through unchanged: dates, session refs,
-     * definition versions and unevaluable states are never recomputed. A flag id with no
-     * supplied evaluation stays `not_yet_supported`.
+     * Optional direct evaluations for existing pure-builder callers. Dates, session refs,
+     * definition versions and states are preserved, subject to the HA7 release gate.
      */
     flagEvaluations?: readonly LedgerFlag[];
     /** OD4: omitted or `undefined` keeps `legacyEngine` null. Opaque, never inspected. */
