@@ -79,6 +79,7 @@ app/src/derived/           # ADR-0052 Phase 1: derived metrics and D-FLAGS evalu
       healthAnomalyReplay.ts   # Historical replay runner for health anomaly telemetry
       respirationElevation.ts # Respiration-elevation status/evidence evaluator feeding healthAnomalyModels
       illnessAnomalyFlag.ts  # D-FLAGS illness_anomaly: active only on possible_illness_or_systemic_stress
+    injuryConstraintTouchesSession.ts # D-FLAGS injury_constraint_touches_session (ADR-0013, #1144 PR1-6): active limit/exclude constraints (never monitor) vs session composition patterns and modalities via INJURY_SESSION_TOUCH_TABLE; duplicates the engine reviewBy rule and injuryRegionMappingFamily; incomplete pattern evidence gives null when a counted constraint reaches a pattern and no touch is established
     illnessRiskSymptom.ts # D-FLAGS illness_risk_symptom (ADR-0032, #1144 PR1-4): active on illness symptoms unless an explicit mild/moderate nasal allergy day; owns ALLERGY_COMPATIBLE_SYMPTOM_TYPES and isAllergyLikeSymptomDay, used by engine/adapters.ts
     recoveryBeyondBaseline.ts # D-FLAGS recovery_beyond_baseline (ADR-0024, #1144 PR1-5): per-metric HRV/RHR/sleep vs 7d baseline, active if any is adverse; owns RECOVERY_VARIABILITY_FLOORS, SLEEP_SCORE_ABSOLUTE_FLOOR, PHYSIOLOGICAL_BOUNDS
 
@@ -192,7 +193,7 @@ app/src/engine/
   tests/safety/        # Adversarial domain scenarios, safety invariants, wellness language audit
 
 app/src/sessions/
-  models.ts            # Source-neutral session definitions, prescriptions, occurrences, executions
+  models.ts            # Source-neutral session definitions, prescriptions, occurrences, executions; imports record types from ledger/models.ts, not engine/
   validation.ts        # Canonical schema validators for definitions, prescriptions, occurrences, entries
   sessionDefinitionResolver.ts # Pinned revision / occurrence resolution and hash verification
   sessionDefinitionHash.ts # Canonical SHA-256 content hashing of definition and prescription
@@ -254,7 +255,7 @@ app/src/knowledge/
   optimizerScoringKnowledge.ts # Product-policy claims for candidate selection and fatigue/stimulus weights (SKR3 W2a)
   stimulusHeuristicsKnowledge.ts # Product-policy claims for stimulus credit, fatigue fusion, and planning priors (SKR3 W2b)
   periodizationEventDemandKnowledge.ts # Scientific boundaries and product presets for periodization (SKR3 W1)
-  injuryPainKnowledge.ts # Tissue-response, severity scaling, and standing injury restriction claims (SEP)
+  injuryPainKnowledge.ts # Tissue-response, severity scaling, standing injury restriction and injury-constraint-touches-session flag claims (SEP, #1164)
   readinessCardiorespiratoryKnowledge.ts # RHR and respiration monitoring claims
   subjectiveReadinessKnowledge.ts # Subjective readiness claims + mode-threshold policy claims
   strengthConcurrentKnowledge.ts # Concurrent strength/endurance performance & sequencing claims

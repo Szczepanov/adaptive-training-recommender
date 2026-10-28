@@ -15,6 +15,7 @@ export const INJURY_PAIN_CLAIM_IDS = {
     genericClinicalEnvelopePolicy: 'policy.injury.contextual_clinical_envelope_v2',
     clinicalEscalationProtocol: 'policy.safety.clinical_escalation_protocol',
     tissueRecheckCarryPolicy: 'policy.injury.tissue_recheck_carry_v1',
+    constraintTouchesSessionFlagPolicy: 'policy.injury.constraint_touches_session_flag_v1',
 } as const;
 
 const IOC_PAIN_CONSENSUS_SOURCE = 'HAINLINE-2017-IOC-PAIN-CONSENSUS';
@@ -27,6 +28,7 @@ const TISSUE_RESPONSE_SEVERITY_PRODUCT_POLICY_V2_SOURCE = 'PRODUCT-TISSUE-RESPON
 const LUMBAR_LOADING_PRODUCT_POLICY_V2_SOURCE = 'PRODUCT-LUMBAR-LOADING-POLICY-V2';
 const CLINICAL_ESCALATION_PRODUCT_POLICY_SOURCE = 'PRODUCT-CLINICAL-ESCALATION-POLICY-V1';
 const TISSUE_RECHECK_CARRY_PRODUCT_POLICY_SOURCE = 'PRODUCT-TISSUE-RECHECK-CARRY-POLICY-V1';
+const CONSTRAINT_TOUCHES_SESSION_FLAG_PRODUCT_POLICY_SOURCE = 'PRODUCT-INJURY-CONSTRAINT-TOUCHES-SESSION-FLAG-V1';
 
 /**
  * Exact descriptor of the current injury and clinical-symptom product policy. It is
@@ -104,6 +106,37 @@ export const INJURY_PAIN_POLICY_DESCRIPTOR = {
         clearedBy: ['todays_own_response_for_the_region', 'standing_injury_already_covering_the_region'],
         appliesToStandingInjuries: false,
         classification: 'product_heuristic_not_evidence_derived',
+    },
+    // ADR-0052 D-FLAGS / #1164: derived/flags/injuryConstraintTouchesSession.ts. Advisory only;
+    // the family x severity table is proposed product policy pending owner approval. Patterns
+    // are dose-blind because session composition evidence carries no load.
+    constraintTouchesSessionFlag: {
+        countedSeverities: ['limit', 'exclude'],
+        monitorCounts: false,
+        activeRule: 'reviewBy_absent_or_on_or_after_date',
+        regionFamilySource: 'injuryRegionMappingFamily',
+        explicitRestrictedModalitiesTouch: true,
+        missingPatternEvidence: 'active_null_when_a_reachable_pattern_lacks_evidence',
+        degradedCompositionIsEvidence: false,
+        relaxedRequirementsCount: false,
+        familySeverityTouch: {
+            lower_limb_impact: {
+                limit: { patterns: ['knee_dominant_bilateral', 'unilateral_lower_body'], modalities: ['Running', 'Field'] },
+                exclude: { patterns: ['knee_dominant_bilateral', 'unilateral_lower_body'], modalities: ['Running', 'Field'] },
+            },
+            lower_limb_strength: {
+                limit: { patterns: ['knee_dominant_bilateral', 'hip_dominant_hinge', 'unilateral_lower_body'], modalities: ['Running', 'Field'] },
+                exclude: { patterns: ['knee_dominant_bilateral', 'hip_dominant_hinge', 'unilateral_lower_body'], modalities: ['Running', 'Field'] },
+            },
+            lumbar_loading: {
+                limit: { patterns: ['knee_dominant_bilateral', 'hip_dominant_hinge', 'unilateral_lower_body', 'trunk_tissue_capacity'], modalities: [] },
+                exclude: { patterns: ['knee_dominant_bilateral', 'hip_dominant_hinge', 'unilateral_lower_body', 'trunk_tissue_capacity'], modalities: ['Running', 'Field'] },
+            },
+            upper_limb_loading: {
+                limit: { patterns: ['upper_push', 'upper_pull', 'knee_dominant_bilateral', 'hip_dominant_hinge'], modalities: [] },
+                exclude: { patterns: ['upper_push', 'upper_pull', 'knee_dominant_bilateral', 'hip_dominant_hinge'], modalities: [] },
+            },
+        },
     },
 } as const;
 
@@ -190,6 +223,12 @@ export const INJURY_PAIN_SOURCES: readonly KnowledgeSource[] = [
         sourceType: 'product_policy',
         citation: 'Adaptive Training Recommender product policy: tissue-recheck-carry-v1 (issue #680).',
         notes: 'A today-only tissue-derived limit/exclude constraint (no standing InjuryConstraint) is carried one additional local day when the following day reports no response of its own for that region. This is a bounded product-policy uncertainty hold, not a validated clinical "settled evidence required" return-to-load rule -- see the tissueResponseTemporalMonitoring and returnToSportCriteriaBasedRiskManagement claims for why a universal elapsed-time threshold is not evidence-backed.',
+    },    {
+        id: CONSTRAINT_TOUCHES_SESSION_FLAG_PRODUCT_POLICY_SOURCE,
+        title: 'Injury constraint touches session advisory flag v1 (ADR-0052 D-FLAGS, issue #1164)',
+        sourceType: 'product_policy',
+        citation: 'Adaptive Training Recommender product policy: injury-constraint-touches-session-flag-v1 (ADR-0052 D-FLAGS, #1164).',
+        notes: 'Maps an active limit/exclude injury constraint region family and severity to the movement-composition patterns and session modalities it touches, mirroring the engine region restrictions where they imply a pattern or modality and choosing the cautious option where the engine is silent. Monitor never counts. The flag is advisory only and never blocks or re-doses a session; missing pattern evidence is reported as unknown when a counted constraint reaches a pattern and no touch is established.',
     },
 ];
 
@@ -366,5 +405,20 @@ export const INJURY_PAIN_CLAIMS: readonly KnowledgeClaim[] = [
             'It applies only to today-only derived constraints; a standing InjuryConstraint keeps its own independent review/expiry semantics, untouched by this policy.',
         ],
         reviewedOn: '2026-09-19', version: 1,
+    },    {
+        id: INJURY_PAIN_CLAIM_IDS.constraintTouchesSessionFlagPolicy,
+        statement: 'The advisory injury-constraint-touches-session flag counts only active (reviewBy absent or on/after the date) limit and exclude constraints, never monitor. A constraint touches a session when its region family and severity map to a movement-composition pattern the session records, or when its explicit restricted modalities or family modalities include the session modality. Lower-limb impact touches knee-dominant bilateral and unilateral lower-body patterns plus Running and Field; lower-limb strength touches all three lower-body patterns plus Running and Field; lumbar loading touches the three lower-body patterns and trunk tissue capacity, plus Running and Field at exclude; upper-limb loading touches upper push, upper pull, knee-dominant bilateral and hip-dominant hinge. When a counted constraint reaches a pattern, incomplete step or alternative evidence yields unknown unless a touch is established.',
+        claimType: 'heuristic', maturity: 'heuristic', status: 'active', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional', safetyImpact: 'high',
+        applicability: { contexts: ['derived_flags', 'injury_safety'], sports: ['all_supported_sports'], populations: ['product_users_with_matching_active_constraint'], outcomes: ['advisory_flag'], horizon: 'acute' },
+        evidence: [
+            { sourceId: CONSTRAINT_TOUCHES_SESSION_FLAG_PRODUCT_POLICY_SOURCE, directness: 'direct' },
+            { sourceId: RETURN_TO_SPORT_CONSENSUS_SOURCE, directness: 'indirect', note: 'Supports contextual, activity-specific risk management; does not validate a body-region to movement-pattern lookup.' },
+        ],
+        limitations: [
+            'A body region is not a diagnosis; the table is conservative product policy proposed for owner approval, not condition-specific rehabilitation authority.',
+            'Patterns are dose-blind: session composition evidence carries no load, so a pattern the engine restricts only when heavy still counts as touched.',
+            'The flag is advisory only. It never blocks, modifies or re-doses a session, and an untouched session is not a statement that the session is clinically safe.',
+        ],
+        reviewedOn: '2026-10-28', version: 1,
     },
 ];

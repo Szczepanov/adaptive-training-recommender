@@ -438,6 +438,14 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'The tendinopathy progression review supports pain/symptom-response monitoring as a load-management concept but reports insufficient comparative evidence for one universal criterion; the return-to-sport consensus supports contextual, criteria-based decisions and explicitly not a generic elapsed-time clearance rule. Neither validates this specific one-day carry window, which remains product-policy calibration and partial P0 debt.',
     },
     {
+        id: 'injury.constraint_touches_session_flag', domain: 'injury_safety', title: 'Injury constraint touches session advisory flag (ADR-0052 D-FLAGS)',
+        currentRule: 'Only active (reviewBy absent or on/after the date) limit/exclude constraints count; monitor never counts. A constraint touches a session when its region family x severity pattern set meets a recorded step, alternative or required composition pattern, or its explicit restrictedModalities or family modalities meet the session modality: lower-limb impact -> knee-dominant bilateral, unilateral lower body, Running, Field; lower-limb strength -> all three lower-body patterns, Running, Field; lumbar loading -> three lower-body patterns and trunk tissue capacity, plus Running and Field at exclude; upper-limb loading -> upper push, upper pull, knee-dominant bilateral and hip-dominant hinge. If a counted constraint reaches a pattern, incomplete step or alternative evidence gives active null unless a touch is established.',
+        classification: 'product_heuristic', coverage: 'partial', decisionImpact: 'moderate', safetyImpact: 'high', researchPriority: 'p1',
+        codeRefs: ['derived/flags/injuryConstraintTouchesSession.ts:INJURY_SESSION_TOUCH_TABLE', 'derived/flags/injuryConstraintTouchesSession.ts:evaluateInjuryConstraintTouchesSession'],
+        knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.returnToSportCriteriaBasedRiskManagement, KNOWLEDGE_CLAIM_IDS.constraintTouchesSessionFlagPolicy],
+        coverageRationale: 'The flag is advisory (D-FLAGS: it never blocks or re-doses), so its decision impact is moderate, but a missed touch hides a safety signal. The table mirrors the engine region restrictions where they imply a pattern or modality and is otherwise a cautious proposal pending owner approval (#1164); a body region is not a diagnosis, so no source validates the region-to-pattern mapping and it stays partial.',
+    },
+    {
         id: 'spacing.anchor_next_day', domain: 'session_spacing', title: 'Anchor/quality next-day spacing gate',
         currentRule: 'A candidate anchor is rejected when an anchor occurred one day earlier.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'none',
