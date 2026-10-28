@@ -1,5 +1,5 @@
 import type { WorkoutDefinition } from './models.ts';
-import type { AthleticCapabilityKey } from '../engine/models.ts';
+import type { AthleticCapabilityKey } from '../ledger/models.ts';
 import {
   mechanicalIdentityFor,
   type MechanicalDoseVariant,

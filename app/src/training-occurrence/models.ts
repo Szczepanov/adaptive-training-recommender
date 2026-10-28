@@ -14,7 +14,7 @@
  * are never destructively merged -- this module only links them.
  */
 
-import type { FitWorkoutFingerprintKind } from '../engine/models';
+import type { FitWorkoutFingerprintKind } from '../ledger/models';
 
 export const PERFORMED_OCCURRENCE_SCHEMA_VERSION = 1;
 export const RECONCILIATION_MATCHER_VERSION = 'matcher-v2';
