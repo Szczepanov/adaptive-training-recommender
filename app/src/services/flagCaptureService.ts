@@ -30,7 +30,12 @@ const defaultReads = {
             { failOnInvalidHeader: true });
     },
     occurrences: (userId: string, date: string) => sessionOccurrenceService.getOccurrencesInRangeState(userId, date, date),
-    executions: (userId: string, date: string) => sessionExecutionService.getExecutionsInRange(userId, date, addDaysToLocalDateString(date, 1)),
+    // Headers only: the flag needs each execution's pinned prescription, never its set diary.
+    executions: async (userId: string, date: string) => {
+        const read = await sessionExecutionService.getExecutionHeadersInRange(userId, date, addDaysToLocalDateString(date, 1));
+        if (read.truncated) throw new Error('Execution header read truncated');
+        return { executions: read.executions.map(execution => ({ execution })), invalidRecords: read.invalidRecords };
+    },
     resolve: resolveSessionDefinition,
     persist: flagEvaluationRepository.persistImmutable,
 };
@@ -100,7 +105,18 @@ export class FlagCaptureService {
         const executionFailure = executionRead.status === 'AVAILABLE'
             ? executionRead.data.invalidRecords > 0 ? 'invalid' : null : 'unavailable';
         const faults = [failure(settings), failure(plan), failure(occurrences), executionFailure].filter((s): s is 'invalid' | 'unavailable' => s !== null);
-        const source = { settings, plan, occurrences, executionRead };
+        // Bind only what the flag reads, so diary edits or unrelated settings saves do not mint revisions.
+        const source = {
+            injuries: settings.status === 'AVAILABLE' ? { status: settings.status, injuries: settings.data.injuries ?? null } : settings,
+            plan, occurrences,
+            executions: executionRead.status === 'AVAILABLE' ? {
+                invalidRecords: executionRead.data.invalidRecords,
+                bindings: executionRead.data.executions
+                    .map(({ execution }) => ({ occurrenceId: execution.occurrenceId ?? null, prescriptionHash: execution.prescriptionHash ?? null }))
+                    .sort((a, b) => String(a.occurrenceId).localeCompare(String(b.occurrenceId))
+                        || String(a.prescriptionHash).localeCompare(String(b.prescriptionHash))),
+            } : executionRead,
+        };
         if (faults.length > 0) {
             await save(failed(empty, 'planned_session_inputs', worstState(faults) as 'invalid' | 'unavailable'), source);
             return;

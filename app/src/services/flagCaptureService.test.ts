@@ -168,6 +168,21 @@ describe('dated flag capture', () => {
         expect(next.active).toBe(first.active);
         expect(next.revisionId).not.toBe(first.revisionId);
     });
+    it('does not mint a new revision for diary or unrelated settings changes', async () => {
+        const execution = { occurrenceId: manual.occurrenceId, prescriptionHash: 'hash', updatedAt: '2026-10-28T08:00:00.000Z' };
+        reads.occurrences.mockResolvedValue(ok([manual]));
+        reads.executions.mockResolvedValue({ executions: [{ execution, entries: [] }], invalidRecords: 0 });
+        await capture();
+        const first = saved.find(f => f.id === 'injury_constraint_touches_session')!;
+        saved = [];
+        reads.executions.mockResolvedValue({ executions: [{
+            execution: { ...execution, updatedAt: '2026-10-28T09:30:00.000Z' }, entries: [{ setIndex: 1 }],
+        }], invalidRecords: 0 });
+        reads.settings.mockResolvedValue({ status: 'AVAILABLE', revision: '2',
+            data: { injuries: [{ region: 'shoulder', severity: 'limit' }], weeklyHours: 6 } as unknown as TrainingSettings });
+        await capture();
+        expect(saved.find(f => f.id === 'injury_constraint_touches_session')!.revisionId).toBe(first.revisionId);
+    });
     it('never captures a historical date using current settings', async () => {
         await expect(service.captureForDate('alice', '2026-10-27', date)).rejects.toThrow();
         expect(reads.persist).not.toHaveBeenCalled();
