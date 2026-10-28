@@ -20,7 +20,7 @@ import { isValidDate } from '../engine/validation';
 import { getLocalDateString } from '../utils/localDate';
 import { declaredSessionReplacements, validateReplacementsAgainstPrevious } from '../sessions/externalPlanReplacements';
 import type { AnyExternalTrainingPlan } from '../sessions/externalPlanV2';
-import { supersedeDeclaredSessions } from './externalPlanSupersession';
+import { replacementReadRange, supersedeDeclaredSessions, type ReplacementContext } from './externalPlanSupersession';
 import {
     PLACEMENT_HISTORY_TRUNCATED_OPERATION,
     PLACEMENT_PREVIOUS_STATE_REASONS,
@@ -48,11 +48,6 @@ interface PreviousOverlay {
 }
 
 /**
- * A stored overlay that names another owner is a security signal, never repairable corruption.
- * The rule applies whether or not the rest of the document parses: a string `userId` that is
- * not the caller's. `getPlacementState` reports it as `owner-mismatch`; `savePlacement` refuses it.
- */
-/**
  * A placement write refused for a reason a caller can report as its own issue. Messages are
  * the ones `savePlacement` has always thrown; `code` lets a revision import map them (#1172).
  */
@@ -68,6 +63,11 @@ export class PlacementWriteError extends Error {
     }
 }
 
+/**
+ * A stored overlay that names another owner is a security signal, never repairable corruption.
+ * The rule applies whether or not the rest of the document parses: a string `userId` that is
+ * not the caller's. `getPlacementState` reports it as `owner-mismatch`; `savePlacement` refuses it.
+ */
 export function placementClaimsOtherOwner(raw: unknown, userId: string): boolean {
     const claimedOwner = raw && typeof raw === 'object' ? (raw as { userId?: unknown }).userId : undefined;
     return typeof claimedOwner === 'string' && claimedOwner !== userId;
@@ -201,6 +201,32 @@ function buildPlacementChange(userId: string, placement: Omit<ExternalPlanPlacem
         assignments: next.assignments, successors: retained,
         ...(prior.invalid ? { previousState: 'invalid' as const, previousStateReason: prior.invalid } : {}) };
     return { next, event };
+}
+
+/**
+ * #1172: the occurrences and fixed activities the replacement checks read, over the range
+ * preflight reads. A Firestore transaction cannot run these range queries, so they are plain
+ * reads made after the import transaction's own reads and before any write. The started or
+ * completed check is therefore best-effort against a session started between this read and
+ * the commit; the import preview runs the same check first. Lazily imported so storing a plan
+ * without declarations never loads the occurrence service. A failed read rejects the import.
+ */
+async function readReplacementContext(userId: string, plan: ImportResult['plan'],
+    previousPlan: AnyExternalTrainingPlan): Promise<ReplacementContext> {
+    const [{ sessionOccurrenceService }, { fixedActivityService }] = await Promise.all([
+        import('./sessionOccurrenceService'), import('./fixedActivityService')]);
+    const range = replacementReadRange(plan, previousPlan);
+    const [occurrences, fixed] = await Promise.all([
+        sessionOccurrenceService.getOccurrencesInRangeState(userId, range.start, range.end),
+        fixedActivityService.getActivitiesInRangeState(userId, range.start, range.end),
+    ]);
+    const valuesOf = <T>(state: DataState<T[]>): T[] | null =>
+        state.status === 'MISSING' ? [] : state.status === 'AVAILABLE' ? state.data : null;
+    const [occurrenceData, fixedData] = [valuesOf(occurrences), valuesOf(fixed)];
+    if (!occurrenceData || !fixedData) {
+        throw new Error('Could not read session occurrences or fixed activities to check the replaced sessions');
+    }
+    return { occurrences: occurrenceData, fixedActivities: fixedData };
 }
 
 /** User-scoped persistence for externally-authored plans. A stored revision is immutable:
@@ -679,8 +705,8 @@ export class ExternalPlanService {
      * #1172: reads and prepares, inside the import transaction, the previous revision's
      * placement change for each session the new revision declares it replaces. Returns the
      * change to stage after all reads, null when nothing is declared, or the issues that
-     * reject the import. Corrupt prior overlays follow `savePlacement`'s repair rules; an
-     * overlay that names another owner rejects the import.
+     * reject the import. An unreadable prior overlay rejects the import rather than being
+     * overwritten (the athlete resets those moves first); so does one naming another owner.
      */
     private async prepareDeclaredSupersession(transaction: Transaction, userId: string, plan: ImportResult['plan'],
         previousPlan: AnyExternalTrainingPlan | null, effectiveFrom: string, now: Date): Promise<PlacementChange | DataIssue[] | null> {
@@ -695,7 +721,9 @@ export class ExternalPlanService {
         const placementPath = `${planPath}/revisions/${previousPlan.revision}/placement/current`;
         try {
             const prior = await this.readPlacementPrior(transaction, userId, plan.planId, previousPlan.revision);
-            const superseded = supersedeDeclaredSessions(previousPlan, prior.overlay?.assignments ?? [], declarations, plan.revision, effectiveFrom);
+            if (prior.invalid) return [{ code: 'replaced-placement-unreadable', documentPath: placementPath }];
+            const context = await readReplacementContext(userId, plan, previousPlan);
+            const superseded = supersedeDeclaredSessions(previousPlan, prior.overlay, declarations, plan.revision, effectiveFrom, context);
             if (!superseded.ok) return [{ code: superseded.code, field: superseded.field, documentPath: placementPath }];
             const placement = { planId: plan.planId, revision: previousPlan.revision, assignments: superseded.assignments };
             validatedPlacement(userId, placement, now);

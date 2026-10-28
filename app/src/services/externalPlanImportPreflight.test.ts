@@ -8,6 +8,7 @@ const reads = vi.hoisted(() => ({
     occurrences: vi.fn(),
     activePlan: vi.fn(),
     activePlanRange: vi.fn(),
+    previousPlacement: vi.fn(),
 }));
 
 vi.mock('./fixedActivityService', () => ({ fixedActivityService: { getActivitiesInRangeState: reads.fixed } }));
@@ -17,6 +18,7 @@ vi.mock('./activeExternalPlanService', () => ({ activeExternalPlanService: {
     getActivePlanState: reads.activePlan,
     getActivePlanStatesInRange: reads.activePlanRange,
 } }));
+vi.mock('./externalPlanService', () => ({ externalPlanService: { getPlacementState: reads.previousPlacement } }));
 
 const plan = {
     schema: 'adaptive-training-recommender/external-plan@1',
@@ -35,6 +37,7 @@ describe('preflightExternalPlanImport', () => {
         reads.blocks.mockResolvedValue({ status: 'AVAILABLE', data: [] });
         reads.occurrences.mockResolvedValue({ status: 'AVAILABLE', data: [] });
         reads.activePlan.mockResolvedValue({ status: 'MISSING' });
+        reads.previousPlacement.mockResolvedValue({ status: 'MISSING' });
         reads.activePlanRange.mockImplementation(async (userId: string, start: string, end: string, fixed: unknown) => {
             const states = [];
             for (let date = start; date <= end; date = addDaysToLocalDateString(date, 1)) states.push(await reads.activePlan(userId, date, fixed));
@@ -164,6 +167,14 @@ describe('preflightExternalPlanImport', () => {
     describe('declared session replacements (#1172)', () => {
         const previous = { ...plan, revision: 1, sessions: [{ ...plan.sessions[0], id: 'old-ride', title: 'Old ride' }] };
         const next = { ...plan, revision: 2, sessions: [{ ...plan.sessions[0], id: 'new-ride', title: 'New ride', replacesSessionId: 'old-ride' }] };
+        const movedTo = (date: string) => ({ userId: 'u1', planId: 'new-plan', revision: 1, updatedAt: '2026-08-15T00:00:00.000Z',
+            assignments: [{ sessionId: 'old-ride', date, status: 'moved' }] });
+        const classOn = (date: string) => ({ id: 'fixed-1', userId: 'u1', title: 'Class', date, durationMin: 60,
+            fixed: true, isCompleted: false, environment: 'indoor', equipment: [] });
+        const occurrence = (state: string, ref: Record<string, unknown> = {}) => ({
+            occurrenceId: `occ-${state}`, authority: 'external_plan', date: '2026-08-18', state,
+            externalPlanRef: { planId: 'new-plan', revision: 1, sessionId: 'old-ride', contentHash: 'hash', ...ref },
+        });
 
         it('lists each declared replacement as a finding to acknowledge, on the earlier session’s default date', async () => {
             const result = await preflightExternalPlanImport('u1', next as never, plan.startDate, '2026-08-16', previous as never);
@@ -176,11 +187,25 @@ describe('preflightExternalPlanImport', () => {
             }
         });
 
-        it('uses the earlier session’s moved date from its current placement', async () => {
-            reads.activePlan.mockResolvedValue({ status: 'AVAILABLE', data: { plan: previous,
-                placement: { assignments: [{ sessionId: 'old-ride', date: '2026-08-20', status: 'moved' }] } } });
+        it('uses the earlier session’s moved date from the previous revision’s placement', async () => {
+            reads.previousPlacement.mockResolvedValue({ status: 'AVAILABLE', data: movedTo('2026-08-20') });
             const result = await preflightExternalPlanImport('u1', next as never, plan.startDate, '2026-08-16', previous as never);
+            expect(reads.previousPlacement).toHaveBeenCalledWith('u1', 'new-plan', 1);
             expect(result.status === 'ready' && result.findings.find(item => item.code === 'session_replacement_declared')?.date).toBe('2026-08-20');
+        });
+
+        it('uses the date the plan view resolves an unassigned session to, not its authored date', async () => {
+            reads.fixed.mockResolvedValue({ status: 'AVAILABLE', data: [classOn('2026-08-18')] });
+            const result = await preflightExternalPlanImport('u1', next as never, '2026-08-19', '2026-08-16', previous as never);
+            expect(result.status).toBe('ready');
+            expect(result.status === 'ready' && result.findings.find(item => item.code === 'session_replacement_declared')?.date).toBe('2026-08-19');
+        });
+
+        it('reads occurrences and fixed activities across both revisions’ horizons', async () => {
+            const earlier = { ...previous, startDate: '2026-08-10', weekCount: 2 };
+            await preflightExternalPlanImport('u1', next as never, plan.startDate, '2026-08-16', earlier as never);
+            expect(reads.fixed).toHaveBeenCalledWith('u1', '2026-08-10', '2026-08-23');
+            expect(reads.occurrences).toHaveBeenCalledWith('u1', '2026-08-10', '2026-08-23');
         });
 
         it('allows an identical same-revision retry without revalidating its old declarations', async () => {
@@ -200,12 +225,10 @@ describe('preflightExternalPlanImport', () => {
         });
 
         it('checks the moved date against the boundary instead of the authored date', async () => {
-            reads.activePlan.mockResolvedValue({ status: 'AVAILABLE', data: { plan: previous,
-                placement: { assignments: [{ sessionId: 'old-ride', date: '2026-08-17', status: 'moved' }] } } });
+            reads.previousPlacement.mockResolvedValue({ status: 'AVAILABLE', data: movedTo('2026-08-17') });
             const rejected = await preflightExternalPlanImport('u1', next as never, '2026-08-18', '2026-08-16', previous as never);
             expect(rejected).toMatchObject({ status: 'invalid_replacements', issues: [{ code: 'replaced-session-before-effective-date' }] });
-            reads.activePlan.mockResolvedValue({ status: 'AVAILABLE', data: { plan: previous,
-                placement: { assignments: [{ sessionId: 'old-ride', date: '2026-08-19', status: 'moved' }] } } });
+            reads.previousPlacement.mockResolvedValue({ status: 'AVAILABLE', data: movedTo('2026-08-19') });
             const accepted = await preflightExternalPlanImport('u1', next as never, '2026-08-19', '2026-08-16', previous as never);
             expect(accepted.status).toBe('ready');
         });
@@ -224,13 +247,57 @@ describe('preflightExternalPlanImport', () => {
             expect(result).toMatchObject({ status: 'invalid_replacements', issues: [{ code: 'replacement-previous-revision-missing' }] });
         });
 
-        it('blocks replacing a session the current placement records as completed', async () => {
-            reads.activePlan.mockResolvedValue({ status: 'AVAILABLE', data: { plan: previous,
-                placement: { assignments: [{ sessionId: 'old-ride', date: '2026-08-18', status: 'completed' }] } } });
+        it('blocks replacing a session the previous placement records as completed', async () => {
+            reads.previousPlacement.mockResolvedValue({ status: 'AVAILABLE', data: { ...movedTo('2026-08-18'),
+                assignments: [{ sessionId: 'old-ride', date: '2026-08-18', status: 'completed' }] } });
             const result = await preflightExternalPlanImport('u1', next as never, plan.startDate, '2026-08-16', previous as never);
             expect(result).toMatchObject({ status: 'invalid_replacements', issues: [{
                 code: 'replaced-session-completed', field: 'sessions[0].replacesSessionId', replacesSessionId: 'old-ride',
             }] });
+        });
+
+        it.each(['active', 'completed', 'abandoned'])('blocks replacing a session whose occurrence is %s', async state => {
+            reads.occurrences.mockResolvedValue({ status: 'AVAILABLE', data: [occurrence(state)] });
+            const result = await preflightExternalPlanImport('u1', next as never, plan.startDate, '2026-08-16', previous as never);
+            expect(result).toEqual({ status: 'invalid_replacements', issues: [{
+                code: 'replaced-session-completed', field: 'sessions[0].replacesSessionId', sessionId: 'new-ride', replacesSessionId: 'old-ride',
+            }] });
+        });
+
+        it.each([
+            ['a scheduled occurrence', { state: 'scheduled' }],
+            ['a missed occurrence', { state: 'missed' }],
+            ['an occurrence of another revision', { revision: 2 }],
+            ['an occurrence of another session', { sessionId: 'other' }],
+        ])('does not treat %s as performed work', async (_label, override) => {
+            const { state = 'completed', ...ref } = override as { state?: string } & Record<string, unknown>;
+            reads.occurrences.mockResolvedValue({ status: 'AVAILABLE', data: [occurrence(state, ref)] });
+            const result = await preflightExternalPlanImport('u1', next as never, plan.startDate, '2026-08-16', previous as never);
+            expect(result.status).toBe('ready');
+        });
+
+        it('blocks a replacement over an unreadable previous overlay instead of overwriting it', async () => {
+            reads.previousPlacement.mockResolvedValue({ status: 'INVALID', issues: [{ code: 'schema-validation-failed', field: 'assignments', documentPath: 'x' }] });
+            const result = await preflightExternalPlanImport('u1', next as never, plan.startDate, '2026-08-16', previous as never);
+            expect(result).toEqual({ status: 'invalid_replacements', issues: [{
+                code: 'replaced-placement-unreadable', field: 'sessions[0].replacesSessionId', sessionId: 'new-ride', replacesSessionId: 'old-ride',
+            }] });
+        });
+
+        it('fails closed when the previous overlay names another owner or cannot be read', async () => {
+            reads.previousPlacement.mockResolvedValue({ status: 'INVALID', issues: [{ code: 'owner-mismatch', documentPath: 'x' }] });
+            expect(await preflightExternalPlanImport('u1', next as never, plan.startDate, '2026-08-16', previous as never))
+                .toMatchObject({ status: 'unknown', unavailableSources: ['earlier revision’s saved moves'] });
+            reads.previousPlacement.mockResolvedValue({ status: 'UNAVAILABLE', operation: 'read', retryable: true });
+            expect(await preflightExternalPlanImport('u1', next as never, plan.startDate, '2026-08-16', previous as never))
+                .toMatchObject({ status: 'unknown', unavailableSources: ['earlier revision’s saved moves'] });
+        });
+
+        it('does not read the previous overlay for a revision without declarations', async () => {
+            const plain = { ...next, sessions: [{ ...plan.sessions[0], id: 'new-ride' }] };
+            await preflightExternalPlanImport('u1', plain as never, plan.startDate, '2026-08-16', previous as never);
+            expect(reads.previousPlacement).not.toHaveBeenCalled();
+            expect(reads.fixed).toHaveBeenCalledWith('u1', '2026-08-17', '2026-08-23');
         });
 
         it('adds nothing for a revision without declarations', async () => {

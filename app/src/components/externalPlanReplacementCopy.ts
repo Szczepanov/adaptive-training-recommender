@@ -9,6 +9,13 @@ import type { SessionReplacementIssue } from '../sessions/externalPlanReplacemen
 const titleOf = (plan: AnyExternalTrainingPlan | null | undefined, id: string): string =>
     plan?.sessions.find(session => session.id === id)?.title ?? id;
 
+const revisionName = (previousPlan: AnyExternalTrainingPlan | null | undefined): string =>
+    previousPlan ? `revision ${previousPlan.revision}` : 'the earlier revision';
+
+/** Not a pasted-JSON fix: the athlete clears the unreadable moves first, then retries. */
+const unreadableMoves = (previousPlan: AnyExternalTrainingPlan | null | undefined, stored: string): string =>
+    `The saved moves for ${revisionName(previousPlan)} could not be read, so its replaced sessions cannot be marked.${stored} Open the plan, use Reset moves on ${revisionName(previousPlan)} first, then import this revision again.`;
+
 export function describeReplacementIssue(issue: SessionReplacementIssue, plan: AnyExternalTrainingPlan,
     previousPlan: AnyExternalTrainingPlan | null | undefined): string {
     const title = titleOf(plan, issue.sessionId);
@@ -20,7 +27,9 @@ export function describeReplacementIssue(issue: SessionReplacementIssue, plan: A
         case 'replaced-session-before-effective-date':
             return `${title} would replace ${titleOf(previousPlan, issue.replacesSessionId)} before this revision takes effect. Choose an earlier effective date or remove replacesSessionId for ${title}.`;
         case 'replaced-session-completed':
-            return `${title} would replace ${titleOf(previousPlan, issue.replacesSessionId)}, which is already completed. A completed session cannot be replaced. Remove replacesSessionId for ${title}.`;
+            return `${title} would replace ${titleOf(previousPlan, issue.replacesSessionId)}, which you have already started or completed. A performed session cannot be replaced. Remove replacesSessionId for ${title}.`;
+        case 'replaced-placement-unreadable':
+            return unreadableMoves(previousPlan, '');
     }
 }
 
@@ -40,6 +49,7 @@ export function describeImportRejection(issues: readonly DataIssue[], plan: AnyE
         if (issue.code === 'replaced-placement-owner-mismatch') {
             return ['The earlier revision’s saved moves belong to another account, so its replaced sessions cannot be marked. Nothing was stored.'];
         }
+        if (issue.code === 'replaced-placement-unreadable') return [unreadableMoves(previousPlan, ' Nothing was stored.')];
         const declaration = declarationAt(plan, issue.field);
         if (!declaration) return [];
         if (issue.code === 'replaced-session-successor-conflict') {
