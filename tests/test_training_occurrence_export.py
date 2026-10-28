@@ -172,14 +172,23 @@ def _db() -> _FakeDb:
 def test_record_export_is_bounded_to_one_user_and_window() -> None:
     db = _db()
     db.users["u1"]["activities"]["edge"]["date"] = "2026-06-01"
+    db.users["u1"]["session_executions"]["e1"]["sessionSource"] = {
+        "kind": "manual",
+        "definitionId": "def1",
+        "revision": 1,
+    }
+    db.users["u1"]["_nested"]["session_definitions"] = {
+        "def1": {"revisions": {"1": {"definitionId": "def1", "revision": 1, "name": "Bench Press"}}}
+    }
     records = export_training_occurrence_records(db, "u1", "2026-08-01", "2026-08-08")
 
     assert set(db.touched_users) == {"u1"}
-    assert db.get_all_batches == [["e1"], ["edge"]]
+    assert db.get_all_batches == [["e1"], ["1"], ["edge"]]
     assert [doc["id"] for doc in records["performedTrainingOccurrences"]] == ["old", "p1"]
     assert [doc["id"] for doc in records["sessionExecutions"]] == ["e1"]
     assert [doc["id"] for doc in records["sessionEntries"]] == ["set-1"]
     assert [doc["id"] for doc in records["executionPrescriptions"]] == ["ph1"]
+    assert [doc["id"] for doc in records["sessionDefinitionRevisions"]] == ["1"]
     assert sorted(doc["id"] for doc in records["activities"]) == ["a1", "edge"]
     assert (
         records["performedTrainingOccurrences"][1]["data"]["createdAt"]

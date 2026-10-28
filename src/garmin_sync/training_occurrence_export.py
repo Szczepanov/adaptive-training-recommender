@@ -278,6 +278,7 @@ def export_training_occurrence_records(
     execution_entries: list[dict[str, Any]] = []
     execution_prescriptions: list[dict[str, Any]] = []
     session_definition_revisions: list[dict[str, Any]] = []
+    definition_revision_keys: set[tuple[str, int]] = set()
     sorted_execution_ids = sorted(execution_ids)
     if sorted_execution_ids:
         doc_refs = [
@@ -313,15 +314,22 @@ def export_training_occurrence_records(
                     definition_id = str(source.get("definitionId") or "")
                     revision = source.get("revision")
                     if _safe_id(definition_id) and isinstance(revision, int) and revision >= 0:
-                        definition = (
-                            user.collection("session_definitions")
-                            .document(definition_id)
-                            .collection("revisions")
-                            .document(str(revision))
-                            .get()
-                        )
-                        if definition.exists:
-                            session_definition_revisions.append(_document(definition))
+                        definition_revision_keys.add((definition_id, revision))
+
+        sorted_definition_revision_keys = sorted(definition_revision_keys)
+        definition_refs = [
+            user.collection("session_definitions")
+            .document(definition_id)
+            .collection("revisions")
+            .document(str(revision))
+            for definition_id, revision in sorted_definition_revision_keys
+        ]
+        if definition_refs:
+            definition_snaps = {snap.reference.path: snap for snap in db.get_all(definition_refs)}
+            for ref in definition_refs:
+                snap = definition_snaps[ref.path]
+                if snap.exists:
+                    session_definition_revisions.append(_document(snap))
 
     # An occurrence near the window edge may reference an activity whose provider date falls
     # just outside it; fetch those by ID so hydration does not report a false missing source.

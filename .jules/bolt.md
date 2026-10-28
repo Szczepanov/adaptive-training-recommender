@@ -115,3 +115,7 @@
 ## 2026-10-22 - Use pre-computed Maps for O(1) PlanBlock lookups
 **Learning:** In `buildPlanDefinition`, iterating over `objectives` and `coverageRequirements` while performing a `.find()` on the `blockSchedule` array (which has size M) for every element (N elements) causes an O(N * M) performance bottleneck.
 **Action:** When performing repeated `.find()` lookups on the same static array inside loops, always pre-compute a `Map` keyed by the target identifier (e.g., `block.id`) outside the loop to reduce the lookup time complexity to O(1) inside the loop, resulting in O(N + M) total time complexity.
+
+## 2026-10-28 - Batch fetch session definition revisions in export_training_occurrence_records
+**Learning:** `export_training_occurrence_records` was executing individual `.get()` calls in a `for` loop over session executions when manual sessions referenced session definition revisions. This created an N+1 Firestore query pattern with serial network latency. Collecting unique `(definition_id, revision)` tuple refs and batch fetching them via `db.get_all(definition_refs)` after the loop eliminates N+1 serial network round trips.
+**Action:** When manual session executions or child collections reference secondary documents inside an execution traversal loop, accumulate document references into a set and perform a single `db.get_all()` batch fetch outside the loop.
