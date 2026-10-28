@@ -426,7 +426,7 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         id: 'injury.pain_envelope_mapping', domain: 'injury_safety', title: 'Generic clinical-symptom envelope',
         currentRule: 'Pain/injury or non-allergy illness symptoms set painFlag; the flag adds Running to restricted modalities and caps the day at Mobility, or Rest when already trained.',
         classification: 'product_heuristic', coverage: 'partial', decisionImpact: 'high', safetyImpact: 'high', researchPriority: 'p0',
-        codeRefs: ['engine/adapters.ts:mapCheckinToSubjectiveInput', 'engine/rules.ts:evaluateEnvelopes'], knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.symptomsRequireContextualAssessment, KNOWLEDGE_CLAIM_IDS.genericClinicalEnvelopePolicy],
+        codeRefs: ['engine/adapters.ts:mapCheckinToSubjectiveInput', 'engine/rules.ts:evaluateEnvelopes', 'derived/flags/illnessRiskSymptom.ts:ALLERGY_COMPATIBLE_SYMPTOM_TYPES'], knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.symptomsRequireContextualAssessment, KNOWLEDGE_CLAIM_IDS.genericClinicalEnvelopePolicy],
         coverageRationale: 'SEP-B records a contextual symptom-assessment boundary and the exact combined clinical-symptom product policy. Neither source validates anatomy-agnostic Running restriction or Mobility ceiling as universal guidance, and illness/pain causes remain distinct; this stays partial P0 debt.',
     },
     {
@@ -804,6 +804,6 @@ export const REVIEWED_NON_AUTHORITY_SURFACES = [
     { ref: 'derived/flags/illnessAnomaly/healthAnomaly.ts', reason: 'Candidate health-anomaly thresholds are shadow/replay evidence pending explicit policy activation.' },
     { ref: 'engine/activityHrFidelity.ts', reason: 'HR use-authority policy is shadow-only until a live consumer is activated.' },
     { ref: 'engine/identityAttribution.ts', reason: 'Automatic physiological identity classifier thresholds are shadow/replay candidates; effective eligibility itself is inventoried separately.' },
-    { ref: 'engine/subjectiveBaseline.ts + subjectiveDriftAudit.ts', reason: 'Subjective drift contribution is production-default off and evaluated through simulation/audit before activation.' },
+    { ref: 'derived/baselines/subjectiveBaseline.ts + engine/subjectiveDriftAudit.ts', reason: 'Subjective drift contribution is production-default off and evaluated through simulation/audit before activation.' },
     { ref: 'engine/weeklyAllocation.ts search limits', reason: 'Bounded deterministic search resources are implementation constants; the one useful boundary is inventoried as not-applicable.' },
 ] as const;

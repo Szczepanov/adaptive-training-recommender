@@ -79,6 +79,7 @@ app/src/derived/           # ADR-0052 Phase 1: derived metrics and D-FLAGS evalu
       healthAnomalyReplay.ts   # Historical replay runner for health anomaly telemetry
       respirationElevation.ts # Respiration-elevation status/evidence evaluator feeding healthAnomalyModels
       illnessAnomalyFlag.ts  # D-FLAGS illness_anomaly: active only on possible_illness_or_systemic_stress
+    illnessRiskSymptom.ts # D-FLAGS illness_risk_symptom (ADR-0032, #1144 PR1-4): active on illness symptoms unless an explicit mild/moderate nasal allergy day; owns ALLERGY_COMPATIBLE_SYMPTOM_TYPES and isAllergyLikeSymptomDay, used by engine/adapters.ts
     recoveryBeyondBaseline.ts # D-FLAGS recovery_beyond_baseline (ADR-0024, #1144 PR1-5): per-metric HRV/RHR/sleep vs 7d baseline, active if any is adverse; owns RECOVERY_VARIABILITY_FLOORS, SLEEP_SCORE_ABSOLUTE_FLOOR, PHYSIOLOGICAL_BOUNDS
 
 app/src/engine/
@@ -168,7 +169,6 @@ app/src/engine/
   knowledgeLineage.ts   # Sports-knowledge-registry provenance lineage (ADR-0033)
   healthContextDefaults.ts # Canonical defaults for a newly reported health-context block
   healthContextValidation.ts # Health-context/symptom check-in raw-input validator
-  healthAnomalyModels.ts # Compatibility shim re-exporting derived/flags/illnessAnomaly/healthAnomalyModels.ts for adapters.ts (removed in #1144 PR1-4)
   garminTelemetryEvidence.ts # Power-zone feature extraction & direct-share stimulus candidate (measured, off by default)
   garminTelemetryComparison.ts # compareGarminZoneCredit -- TE-derived vs power-zone credit comparison report
   crossSourceTelemetry.ts # Cross-source sensor agreement/data-quality telemetry (MS13, ADR-0027)

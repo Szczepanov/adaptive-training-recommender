@@ -1,4 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { ALLERGY_COMPATIBLE_SYMPTOM_TYPES } from '../derived/flags/illnessRiskSymptom';
+import { resolveClinicalEnvelopeSources } from '../engine/adapters';
+import { HEALTH_SYMPTOM_SEVERITIES, HEALTH_SYMPTOM_TYPES } from '../engine/healthContextValidation';
+import type { DailySubjectiveCheckin, HealthSymptomsCheckin } from '../engine/models';
 import { deriveCarriedRegionRestrictions, deriveTissueSeverity, resolveEffectiveInjuryConstraintsWithRecheck, resolveInjuryRestrictions } from '../engine/injuryPolicy';
 import { evaluateEnvelopes, evaluateTraining } from '../engine/rules';
 import { INJURY_PAIN_POLICY_DESCRIPTOR } from './injuryPainKnowledge';
@@ -16,7 +20,32 @@ const REGION_ALIGNMENT_CASES = (
     descriptor.regions.map((region) => [family, region] as const),
 );
 
+function illnessCheckin(symptoms: HealthSymptomsCheckin): DailySubjectiveCheckin {
+    return {
+        userId: 'athlete', date: TODAY,
+        readiness: 8, sleepQuality: 8, fatigue: 3, soreness: 3, mentalStress: 3, motivation: 8,
+        painOrInjury: false, illnessSymptoms: true, unusuallyLimitedTime: false, alreadyTrainedToday: false,
+        availability: { timeAvailableMin: 60, preferredModalityToday: null, indoorOnly: false },
+        notes: null, submittedAt: `${TODAY}T07:00:00.000Z`,
+        dataQuality: { isComplete: true, missingFields: [] },
+        schemaVersion: 1, createdAt: `${TODAY}T07:00:00.000Z`, updatedAt: `${TODAY}T07:00:00.000Z`,
+        healthContext: { symptoms },
+    };
+}
+
 describe('injury and clinical-symptom policy alignment', () => {
+    it('pins the ADR-0032 allergy allow-list and eligible severities against the descriptor', () => {
+        const descriptor = INJURY_PAIN_POLICY_DESCRIPTOR.genericClinicalEnvelope;
+        expect([...ALLERGY_COMPATIBLE_SYMPTOM_TYPES]).toEqual([...descriptor.allergyCompatibleSymptomTypes]);
+        const softens = (type: (typeof HEALTH_SYMPTOM_TYPES)[number], severity: (typeof HEALTH_SYMPTOM_SEVERITIES)[number]) =>
+            !resolveClinicalEnvelopeSources(illnessCheckin({ present: true, suspectedCause: 'allergy', severity, types: [type] }))
+                .includes('non_allergy_illness');
+        const softeningTypes = HEALTH_SYMPTOM_TYPES.filter(type => softens(type, 'mild'));
+        const softeningSeverities = HEALTH_SYMPTOM_SEVERITIES.filter(severity => softens('congestion', severity));
+        expect(softeningTypes).toEqual([...descriptor.allergyCompatibleSymptomTypes]);
+        expect(softeningSeverities).toEqual([...descriptor.allergyEligibleSeverities]);
+    });
+
     it.each(REGION_ALIGNMENT_CASES)('pins %s (%s) restrictions for limit and exclude', (family, region) => {
         const descriptor = INJURY_PAIN_POLICY_DESCRIPTOR.regionMappings[family];
         const limit = resolveInjuryRestrictions([{ region, severity: 'limit' }], TODAY);

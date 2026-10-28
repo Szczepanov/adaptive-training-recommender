@@ -141,7 +141,8 @@ export default defineConfig({
             id.includes('/engine/dataConfidence') ||
             id.includes('/engine/multisourceFusion') ||
             id.includes('/derived/baselines/multisourceBaselines') ||
-            id.includes('/derived/flags/recoveryBeyondBaseline')
+            id.includes('/derived/flags/recoveryBeyondBaseline') ||
+            id.includes('/derived/flags/illnessRiskSymptom')
           ) {
             return 'engine-context';
           }
