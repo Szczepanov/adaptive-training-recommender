@@ -175,7 +175,7 @@ def test_record_export_is_bounded_to_one_user_and_window() -> None:
     records = export_training_occurrence_records(db, "u1", "2026-08-01", "2026-08-08")
 
     assert set(db.touched_users) == {"u1"}
-    assert db.get_all_batches == [["e1"], ["edge"]]
+    assert db.get_all_batches == [["e1"], ["ph1"], ["edge"]]
     assert [doc["id"] for doc in records["performedTrainingOccurrences"]] == ["old", "p1"]
     assert [doc["id"] for doc in records["sessionExecutions"]] == ["e1"]
     assert [doc["id"] for doc in records["sessionEntries"]] == ["set-1"]
@@ -603,3 +603,62 @@ def test_external_plan_batches_preserve_identity_when_results_are_reversed(
             ("plan-b", "plan-b"),
         ]
     assert [row["id"] for row in records["externalPlanHeaders"]] == ["plan-a", "plan-b"]
+
+
+def test_export_batches_execution_prescriptions_and_manual_definitions() -> None:
+    db = _FakeDb(
+        {
+            "u1": {
+                "performedTrainingOccurrences": {
+                    "p1": {
+                        "userId": "u1",
+                        "status": "active",
+                        "localDate": "2026-08-06",
+                        "sourceRefs": [
+                            {"kind": "structured_execution", "executionId": "e1"},
+                            {"kind": "structured_execution", "executionId": "e2"},
+                        ],
+                    }
+                },
+                "session_executions": {
+                    "e1": {
+                        "userId": "u1",
+                        "executionId": "e1",
+                        "prescriptionHash": "ph1",
+                        "sessionSource": {
+                            "kind": "manual",
+                            "definitionId": "def1",
+                            "revision": 1,
+                        },
+                    },
+                    "e2": {
+                        "userId": "u1",
+                        "executionId": "e2",
+                        "prescriptionHash": "ph2",
+                        "sessionSource": {
+                            "kind": "manual",
+                            "definitionId": "def2",
+                            "revision": 2,
+                        },
+                    },
+                },
+                "execution_prescriptions": {
+                    "ph1": {"prescriptionHash": "ph1", "title": "Prescription 1"},
+                    "ph2": {"prescriptionHash": "ph2", "title": "Prescription 2"},
+                },
+                "_nested": {
+                    "session_definitions": {
+                        "def1": {"revisions": {"1": {"revision": 1, "title": "Def 1"}}},
+                        "def2": {"revisions": {"2": {"revision": 2, "title": "Def 2"}}},
+                    }
+                },
+            }
+        }
+    )
+
+    records = export_training_occurrence_records(db, "u1", "2026-08-01", "2026-08-08")
+
+    assert [doc["id"] for doc in records["executionPrescriptions"]] == ["ph1", "ph2"]
+    assert [doc["id"] for doc in records["sessionDefinitionRevisions"]] == ["1", "2"]
+    # get_all_batches should show batch fetches for executions, prescriptions, and definitions
+    assert db.get_all_batches == [["e1", "e2"], ["ph1", "ph2"], ["1", "2"]]
