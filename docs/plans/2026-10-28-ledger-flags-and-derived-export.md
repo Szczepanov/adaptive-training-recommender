@@ -76,7 +76,7 @@ Combining `#1165` and `#1153` avoids building an export-only synthesis path that
   - `state: LedgerState`
   - `reasonCode?: string`
   - `definitionVersion: string`
-  - `baselineWindow?: string` (`'28d_vs_7d'` for `recovery_beyond_baseline`; omitted when a flag does not use a baseline window)
+  - `baselineWindow?: string` (`'7-day delta vs 28-day variability; excludes the 28-day chronic-drift term'` for `recovery_beyond_baseline`; omitted when a flag does not use a baseline window)
   - `inputs: FlagEvaluationInput[]`
   - `threshold: string | null`
 - Compute `idempotencyKey` and `revisionId` deterministically from a canonical JSON digest of `(userId, observedOn, id, sessionRef ?? null, active, state, reasonCode ?? null, definitionVersion, baselineWindow ?? null, inputs, threshold)` — intentionally **excluding** `evaluatedAt`.
@@ -117,7 +117,7 @@ Combining `#1165` and `#1153` avoids building an export-only synthesis path that
   - `allow read: if isOwner(userId);`
   - `allow create: if isOwner(userId) && hasValidFlagEvaluationRevision(userId, revisionId);`
   - `allow update, delete: if false;`
-- Keep `hasValidFlagEvaluationRevision` within Firestore's 1,000-expression budget by validating top-level key whitelist (`hasOnly`), `schemaVersion == 1`, `userId == request.auth.uid`, `revisionId == request.resource.data.revisionId`, `isValidActivityDate(data.observedOn)`, `isValidIsoTimestamp(data.evaluatedAt)`, `data.id in ['recovery_beyond_baseline', 'illness_risk_symptom', 'illness_anomaly', 'injury_constraint_touches_session']`, `data.state` in `LEDGER_STATES`, `data.active == null || data.active is bool`, bounded strings (`definitionVersion`, `rule`, optional `sessionRef`, `reasonCode`, `baselineWindow`), and shallow `data.inputs is list && data.inputs.size() <= 16`. Deep per-input `LedgerValue` validation is enforced at the TypeScript persistence parser boundary (matching `hasValidExternalPlanRevision` and `hasValidHealthAnomalyRevision`).
+- Keep `hasValidFlagEvaluationRevision` within Firestore's 1,000-expression budget by validating top-level key whitelist (`hasOnly`), `schemaVersion == 1`, `userId == request.auth.uid`, `revisionId == request.resource.data.revisionId`, `isValidActivityDate(data.observedOn)`, `isValidIsoTimestamp(data.evaluatedAt)`, `data.id in ['recovery_beyond_baseline', 'illness_risk_symptom', 'illness_anomaly', 'injury_constraint_touches_session']`, `data.state` in `LEDGER_STATES`, `data.active == null || data.active is bool`, bounded strings (`definitionVersion`, optional `sessionRef`, `reasonCode`, `baselineWindow`), and shallow `data.inputs is list && data.inputs.size() <= 16`. Deep per-input `LedgerValue` validation is enforced at the TypeScript persistence parser boundary (matching `hasValidExternalPlanRevision` and `hasValidHealthAnomalyRevision`).
 
 ## Release boundary (`illness_anomaly` / HA7 `#641`)
 - `#641` (`HA7`) is not released (`DEFAULT_HEALTH_ANOMALY_RUNTIME_MODE` remains `'shadow'`).
