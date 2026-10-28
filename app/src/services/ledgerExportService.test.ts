@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fullRecords, AS_OF } from '../ledger/export/ledgerExportFixtures.testSupport';
 import { computeContentHash } from '../engine/externalPlanHash';
 import { SOURCE_KEYS } from '../ledger/export/inputs';
+import { PLACEMENT_HISTORY_TRUNCATED_OPERATION } from '../ledger/placementHistory';
 const reads = vi.hoisted(() => Object.fromEntries([
 'recovery', 'checkins', 'activities', 'preferences', 'goals', 'fixed', 'blocks', 'anthropometry', 'constraints', 'schedule', 'responses', 'outcomes', 'intent', 'assessments', 'executions', 'occurrences', 'settings', 'plans', 'header', 'activations', 'revision', 'placement', 'history', 'performed',
 ].map(key => [key, vi.fn()])));
@@ -133,11 +134,19 @@ describe('LedgerExportService', () => {
         expect(output.coachingHistory.planRevisions.items[0].fields.authorRationale.value).toBe('Aerobic block');
         expect(output.coachingHistory.placements.items[0].fields.statusHistory.state).toBe('not_yet_supported');
         expect(output.coachingHistory.overrides.items[0].fields.reason.state).toBe('not_yet_supported');
-        // A placement history beyond the bounded scan is unavailable, never partial or complete (#1172).
-        reads.history.mockResolvedValueOnce({ status: 'UNAVAILABLE', operation: 'read external plan placement history', retryable: false });
+        // A failed history read still makes the whole placement source unavailable.
+        reads.history.mockResolvedValueOnce({ status: 'UNAVAILABLE', operation: 'read external plan placement history', retryable: true });
+        const failed = await new LedgerExportService().build('owner', request);
+        expect(failed.coachingHistory.placements.state).toBe('unavailable');
+        expect(failed.sources.find(s => s.source === 'external_plan_placements')?.state).toBe('unavailable');
+        // A history beyond the hard scan bound degrades only that revision (#1172): its current
+        // overlay stays exported, with statusHistory unavailable rather than partial or absent.
+        reads.history.mockResolvedValueOnce({ status: 'UNAVAILABLE', operation: PLACEMENT_HISTORY_TRUNCATED_OPERATION, retryable: false });
         const truncated = await new LedgerExportService().build('owner', request);
-        expect(truncated.coachingHistory.placements.state).toBe('unavailable');
-        expect(truncated.sources.find(s => s.source === 'external_plan_placements')?.state).toBe('unavailable');
+        expect(truncated.coachingHistory.placements.state).toBe('measured');
+        expect(truncated.sources.find(s => s.source === 'external_plan_placements')?.state).toBe('measured');
+        expect(truncated.coachingHistory.placements.items[0].fields.date.value).toBe(AS_OF);
+        expect(truncated.coachingHistory.placements.items[0].fields.statusHistory).toMatchObject({ value: null, state: 'unavailable' });
         reads.revision.mockResolvedValue(available({ ...plan, notes: 'tampered' }));
         const corrupt = await new LedgerExportService().build('owner', request);
         expect(corrupt.coachingHistory.planRevisions.state).toBe('invalid');

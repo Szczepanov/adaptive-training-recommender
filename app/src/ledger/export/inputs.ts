@@ -198,6 +198,8 @@ export interface LedgerExportRecords {
     planRevisions?: readonly PlanRevisionInput[];
     placements?: readonly PlacementInput[];
     placementHistory?: readonly PlacementEvent[];
+    /** Revisions whose history exceeded the bounded scan; only their statusHistory is unavailable. */
+    placementHistoryUnavailable?: readonly { planId: string; revision: number }[];
     plannedToPerformed?: readonly PlannedToPerformedInput[];
 }
 

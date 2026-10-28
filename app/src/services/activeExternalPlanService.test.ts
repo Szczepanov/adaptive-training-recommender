@@ -380,6 +380,40 @@ describe('ActiveExternalPlanService', () => {
         }]);
     });
 
+    describe('an unreadable placement overlay (#1172)', () => {
+        const invalidOverlay: DataState<never> = { status: 'INVALID', issues: [{ code: 'schema-validation-failed', documentPath: 'users/u1/external_plans/autumn-block/revisions/1/placement/current' }] };
+
+        it('still fails the whole plan by default, so engine-facing callers are unchanged', async () => {
+            const state = await new ActiveExternalPlanService(stubPlans({ placement: invalidOverlay })).getActivePlanState('u1', '2026-08-18');
+            expect(state).toEqual(invalidOverlay);
+            const range = await new ActiveExternalPlanService(stubPlans({ placement: invalidOverlay })).getActivePlanStatesInRange('u1', '2026-08-18', '2026-08-19');
+            expect(range.map(item => item.status)).toEqual(['INVALID', 'INVALID']);
+        });
+
+        it('degrades to the default placement with an explicit flag when the caller opts in', async () => {
+            const service = new ActiveExternalPlanService(stubPlans({ placement: invalidOverlay }));
+            const state = await service.getActivePlanState('u1', '2026-08-18', [], { degradeInvalidPlacement: true });
+            const clean = await new ActiveExternalPlanService(stubPlans()).getActivePlanState('u1', '2026-08-18');
+            expect(state.status).toBe('AVAILABLE');
+            if (state.status !== 'AVAILABLE' || clean.status !== 'AVAILABLE') throw new Error('unreachable');
+            expect(state.data.placement).toBeNull();
+            expect(state.data.placementOverlayInvalid).toBe(true);
+            expect(state.data.placed).toEqual(clean.data.placed);
+            expect(state.revision).toContain('invalid-overlay');
+            expect(clean.data.placementOverlayInvalid).toBeUndefined();
+            const range = await service.getActivePlanStatesInRange('u1', '2026-08-18', '2026-08-18', [], { degradeInvalidPlacement: true });
+            expect(range[0]).toMatchObject({ status: 'AVAILABLE', data: { placementOverlayInvalid: true } });
+        });
+
+        it('keeps an unavailable overlay and an invalid revision failing even when opted in', async () => {
+            const unavailable: DataState<never> = { status: 'UNAVAILABLE', operation: 'read external plan placement', retryable: true };
+            expect(await new ActiveExternalPlanService(stubPlans({ placement: unavailable }))
+                .getActivePlanState('u1', '2026-08-18', [], { degradeInvalidPlacement: true })).toEqual(unavailable);
+            const plans = stubPlans({ placement: invalidOverlay, revisions: { status: 'INVALID', issues: [{ code: 'schema-validation-failed', documentPath: 'x' }] } });
+            expect((await new ActiveExternalPlanService(plans).getActivePlanState('u1', '2026-08-18', [], { degradeInvalidPlacement: true })).status).toBe('INVALID');
+        });
+    });
+
     it('treats another revision overlay as no overlay, never as this revision placement', async () => {
         const plans = stubPlans({
             placement: {

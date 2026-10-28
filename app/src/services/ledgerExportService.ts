@@ -27,6 +27,7 @@ import { performedTrainingOccurrenceRepository } from '../training-occurrence/re
 import { sessionExecutionService } from './sessionExecutionService';
 import { externalPlanService } from './externalPlanService';
 import { computeContentHash } from '../engine/externalPlanHash';
+import { PLACEMENT_HISTORY_TRUNCATED_OPERATION } from '../ledger/placementHistory';
 
 interface Read<T> { data: T; state: LedgerState }
 function fromState<T>(result: DataState<T>, empty: T): Read<T> {
@@ -165,6 +166,7 @@ export class LedgerExportService {
         records.planRevisions = [];
         records.placements = [];
         records.placementHistory = [];
+        records.placementHistoryUnavailable = [];
         let revisionState: LedgerState = 'measured';
         let placementState: LedgerState = 'measured';
         try {
@@ -188,7 +190,10 @@ export class LedgerExportService {
                     const placement = await externalPlanService.getPlacementState(userId, planId, revision);
                     const history = await externalPlanService.getPlacementHistoryState(userId, planId, revision);
                     if (history.status === 'AVAILABLE') records.placementHistory = [...records.placementHistory, ...history.data];
-                    else placementState = worstState([placementState, history.status === 'INVALID' ? 'invalid' : 'unavailable']);
+                    // A history beyond the bounded scan degrades only this revision (#1172).
+                    else if (history.status === 'UNAVAILABLE' && history.operation === PLACEMENT_HISTORY_TRUNCATED_OPERATION) {
+                        records.placementHistoryUnavailable = [...records.placementHistoryUnavailable, { planId, revision }];
+                    } else placementState = worstState([placementState, history.status === 'INVALID' ? 'invalid' : 'unavailable']);
                     if (placement.status === 'AVAILABLE') records.placements = [...records.placements, placement.data];
                     else if (placement.status !== 'MISSING') placementState = worstState([placementState, placement.status === 'INVALID' ? 'invalid' : 'unavailable']);
                     if (plan.status !== 'AVAILABLE') { revisionState = worstState([revisionState, plan.status === 'INVALID' ? 'invalid' : 'unavailable']); continue; }

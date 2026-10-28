@@ -60,7 +60,10 @@ function buildPlacements(flat: FlatAssignment[] | undefined, records: LedgerExpo
                 sessionId: fact(row.sessionId, base),
                 status: fact(row.removed ? null : row.status, { ...base, absent: 'not_recorded' }),
                 date: fact(row.removed ? null : row.date, { ...base, absent: 'not_recorded' }),
-                statusHistory: history?.length ? fact(history, base) : notYetSupported(SOURCE),
+                // A revision whose history exceeded the bounded scan has unknown, not absent, history.
+                statusHistory: records.placementHistoryUnavailable?.some(item => item.planId === row.planId && item.revision === row.revision)
+                    ? fact(null, { ...base, absent: 'unavailable' })
+                    : history?.length ? fact(history, base) : notYetSupported(SOURCE),
             };
             return record(assignmentId(row), row.date, values);
         },

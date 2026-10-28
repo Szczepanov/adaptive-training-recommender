@@ -187,6 +187,20 @@ describe('buildLedgerExport real-model mapping (H1)', () => {
         expect(result.coachingHistory.overrides.state).toBe('invalid');
     });
 
+    it('marks only a revision with truncated history as having unavailable statusHistory (#1172)', () => {
+        const input = fullRecords();
+        input.placements = [...input.placements!, { planId: 'plan-2', revision: 1,
+            assignments: [{ sessionId: 'x1', date: '2026-11-19', status: 'moved' }] }];
+        input.placementHistoryUnavailable = [{ planId: 'plan-1', revision: 2 }];
+        const result = buildLedgerExport({ records: input, asOfDate: AS_OF, purpose: 'planning', exportedAt: '2026-11-21T12:00:00Z' });
+        const truncated = result.coachingHistory.placements.items.find(item => item.id === 'plan-1@2:s1');
+        expect(truncated?.fields.date.value).toBe('2026-11-19');
+        expect(truncated?.fields.statusHistory).toMatchObject({ value: null, state: 'unavailable' });
+        const other = result.coachingHistory.placements.items.find(item => item.id === 'plan-2@1:x1');
+        expect(other?.fields.statusHistory.state).toBe('not_yet_supported');
+        expect(result.coachingHistory.placements.state).toBe('measured');
+    });
+
     it('exports an unknown legacy successor without inventing a link', () => {
         const input = fullRecords();
         const old = { sessionId: 's1', date: '2026-11-20', status: 'superseded' as const };

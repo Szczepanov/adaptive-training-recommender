@@ -118,7 +118,9 @@ export async function preflightExternalPlanImport(
 
     const activeDates: string[] = [];
     for (let date = firstReviewDate; date <= lastPlanDate; date = addDaysToLocalDateString(date, 1)) activeDates.push(date);
-    const activeStates = await activeExternalPlanService.getActivePlanStatesInRange(userId, firstReviewDate, lastPlanDate, activeFixed);
+    // #1172: an unreadable placement overlay must not block importing a corrected revision.
+    const activeStates = await activeExternalPlanService.getActivePlanStatesInRange(userId, firstReviewDate, lastPlanDate, activeFixed,
+        { degradeInvalidPlacement: true });
     const missingAuthority = activeStates.some(state => state.status !== 'AVAILABLE' && state.status !== 'MISSING');
     if (missingAuthority) return { status: 'unknown', unavailableSources: ['active external-plan authority'], findings };
 
@@ -132,6 +134,10 @@ export async function preflightExternalPlanImport(
             && state.data.placement?.assignments.some(item => item.status === 'moved' || item.status === 'dropped')
             && !findings.some(item => item.kind === 'placement' && item.detail.includes('existing confirmed placement overlay'))) {
             findings.push({ kind: 'placement', date: activeDates[index], detail: 'Importing this revision resets an existing confirmed placement overlay.' });
+        }
+        if (state.data.plan.planId === plan.planId && state.data.placementOverlayInvalid
+            && !findings.some(item => item.kind === 'placement' && item.detail.includes('could not be read'))) {
+            findings.push({ kind: 'placement', date: activeDates[index], detail: 'Existing placement moves for this plan could not be read. This revision does not restore them.' });
         }
     }
 

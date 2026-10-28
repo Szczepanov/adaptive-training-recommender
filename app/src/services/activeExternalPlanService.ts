@@ -28,6 +28,21 @@ export interface ActiveExternalPlan {
     placement: ExternalPlanPlacement | null;
     /** Every session resolved to a date, overlay applied. */
     placed: readonly PlacedSession[];
+    /**
+     * #1172: set only for callers that opt in with `degradeInvalidPlacement`. The stored
+     * overlay is unreadable, so `placement` is null and `placed` uses the plan's own dates.
+     * That is an unknown placement, never "no moves".
+     */
+    placementOverlayInvalid?: true;
+}
+
+export interface ActivePlanReadOptions {
+    /**
+     * Resolve a valid plan whose placement overlay alone is INVALID at its default dates,
+     * flagged with `placementOverlayInvalid`, instead of failing the whole plan. Only the
+     * placement-repair surfaces opt in; engine-facing callers keep the fail-closed default.
+     */
+    degradeInvalidPlacement?: boolean;
 }
 
 type ActivePlanReadCache = {
@@ -377,8 +392,9 @@ export class ActiveExternalPlanService {
         userId: string,
         date: string,
         fixedActivities: readonly FixedActivity[] = [],
+        options: ActivePlanReadOptions = {},
     ): Promise<DataState<ActiveExternalPlan>> {
-        return this.resolveActivePlanState(userId, date, fixedActivities);
+        return this.resolveActivePlanState(userId, date, fixedActivities, options);
     }
 
     /** Resolves a contiguous date range while reusing immutable plan reads within this request. */
@@ -387,17 +403,19 @@ export class ActiveExternalPlanService {
         startDate: string,
         endDate: string,
         fixedActivities: readonly FixedActivity[] = [],
+        options: ActivePlanReadOptions = {},
     ): Promise<DataState<ActiveExternalPlan>[]> {
         const cache: ActivePlanReadCache = { headers: new Map(), activations: new Map(), revisions: new Map(), placements: new Map() };
         const dates: string[] = [];
         for (let date = startDate; date <= endDate; date = addDaysToLocalDateString(date, 1)) dates.push(date);
-        return Promise.all(dates.map(date => this.resolveActivePlanState(userId, date, fixedActivities, cache)));
+        return Promise.all(dates.map(date => this.resolveActivePlanState(userId, date, fixedActivities, options, cache)));
     }
 
     private async resolveActivePlanState(
         userId: string,
         date: string,
         fixedActivities: readonly FixedActivity[],
+        options: ActivePlanReadOptions,
         cache?: ActivePlanReadCache,
     ): Promise<DataState<ActiveExternalPlan>> {
         const read = <T>(map: Map<string, Promise<T>>, key: string, load: () => Promise<T>): Promise<T> => {
@@ -460,8 +478,10 @@ export class ActiveExternalPlanService {
                 const placementState = await (cache
                     ? read(cache.placements, revisionKey, () => this.plans.getPlacementState(userId, latestHeader.planId, activation.revision))
                     : this.plans.getPlacementState(userId, latestHeader.planId, activation.revision));
-                // An unreadable or malformed overlay is unknown, never a clean placement.
-                if (placementState.status === 'INVALID' || placementState.status === 'UNAVAILABLE') return placementState;
+                // An unreadable or malformed overlay is unknown, never a clean placement. An opted-in
+                // caller gets the default dates with an explicit flag instead of a failed plan.
+                const overlayInvalid = placementState.status === 'INVALID' && options.degradeInvalidPlacement === true;
+                if ((placementState.status === 'INVALID' && !overlayInvalid) || placementState.status === 'UNAVAILABLE') return placementState;
                 const placement = placementState.status === 'AVAILABLE' && placementState.data.revision === activation.revision
                     ? placementState.data
                     : null;
@@ -480,6 +500,7 @@ export class ActiveExternalPlanService {
                     plan: revision.data,
                     placement,
                     placed: resolvePlacement(revision.data, placement, { fixedActivities }),
+                    ...(overlayInvalid ? { placementOverlayInvalid: true as const } : {}),
                 });
                 break;
             }
@@ -491,7 +512,7 @@ export class ActiveExternalPlanService {
         return {
             status: 'AVAILABLE',
             data: active,
-            revision: `${active.header.contentHash}:${active.placement?.updatedAt ?? 'no-overlay'}`,
+            revision: `${active.header.contentHash}:${active.placementOverlayInvalid ? 'invalid-overlay' : active.placement?.updatedAt ?? 'no-overlay'}`,
         };
     }
 }

@@ -96,9 +96,14 @@ that revision, with a null `previous`. It never reads as "no assignment before".
 the last recorded snapshot but absent after the repair save are exported as removed. An export
 date before a first event whose prior state is invalid cannot be reconstructed. That
 revision's placements are omitted, and the placement and override collections report `invalid`.
-Each revision's placement history is a document-id-ordered scan of at most 200 events plus one
-truncation sentinel (`PLACEMENT_HISTORY_MAX_SCANNED_EVENTS`). A scan limit reports the placement
-source `unavailable`, never partial history; that revision falls back to its current overlay.
+Each revision's placement history is read in document-id-ordered pages of 200
+(`PLACEMENT_HISTORY_PAGE_SIZE`), up to a hard bound of 2,000 events
+(`PLACEMENT_HISTORY_MAX_SCANNED_EVENTS`) plus one truncation sentinel. A revision beyond that
+bound degrades alone. Its placements fall back to the current overlay, and their
+`statusHistory` is `unavailable`, never partial history. Other revisions, and the placement
+source state, are unaffected. A failed history read still reports the whole placement source
+`unavailable`. A repair event is recorded after the corrupt overlay's own canonical
+`updatedAt`, so it cannot sort before the last recorded change.
 Earlier legacy history and successors absent from legacy superseded assignments remain unknown; titles are never used to infer successors. Placements
 without history remain current overlays and are never claimed as immutable history.
 

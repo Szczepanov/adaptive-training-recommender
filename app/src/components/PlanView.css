@@ -265,3 +265,13 @@
   max-width: 540px;
   line-height: 1.4;
 }
+
+/* #1172: unreadable placement overlay. Reset is destructive, so its confirm action is distinct. */
+.plan-overlay-recovery-card {
+  margin-bottom: 16px;
+}
+
+.plan-reset-confirm-btn {
+  color: #f87171;
+  border-color: #f87171;
+}

@@ -79,7 +79,7 @@ describe('preflightExternalPlanImport', () => {
         } });
         const result = await preflightExternalPlanImport('u1', plan as never, plan.startDate, '2026-08-16');
         expect(result.status).toBe('ready');
-        expect(reads.activePlanRange).toHaveBeenCalledWith('u1', '2026-08-17', '2026-08-23', []);
+        expect(reads.activePlanRange).toHaveBeenCalledWith('u1', '2026-08-17', '2026-08-23', [], { degradeInvalidPlacement: true });
         expect(reads.activePlan).toHaveBeenCalledTimes(7);
         if (result.status === 'ready') expect(result.findings).toContainEqual(expect.objectContaining({ kind: 'external_plan', date: '2026-08-17' }));
     });
@@ -108,6 +108,16 @@ describe('preflightExternalPlanImport', () => {
         if (result.status === 'ready') {
             expect(result.findings.some(item => item.kind === 'rest_directive')).toBe(true);
             expect(result.findings.filter(item => item.kind === 'placement' && item.detail.includes('resets'))).toHaveLength(1);
+        }
+    });
+
+    it('does not block a corrected import over an unreadable placement overlay, but asks for acknowledgement (#1172)', async () => {
+        reads.activePlan.mockResolvedValue({ status: 'AVAILABLE', data: { plan, placement: null, placementOverlayInvalid: true } });
+        const result = await preflightExternalPlanImport('u1', plan as never, plan.startDate, '2026-08-16');
+        expect(reads.activePlanRange).toHaveBeenCalledWith('u1', expect.any(String), expect.any(String), [], { degradeInvalidPlacement: true });
+        expect(result.status).toBe('ready');
+        if (result.status === 'ready') {
+            expect(result.findings.filter(item => item.kind === 'placement' && item.detail.includes('could not be read'))).toHaveLength(1);
         }
     });
 

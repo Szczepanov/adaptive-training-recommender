@@ -410,6 +410,16 @@ When an imported plan exists, the screen presents both:
 Without an active imported plan, the evergreen/adaptive forecast remains available and the
 screen offers plan import/revision. The screen also renders schedule-overlay context.
 
+When only the stored placement overlay (the athlete's moves) is unreadable, `PlanView` still
+shows the coach plan, at the plan's own dates. `PlacementOverlayRecoveryCard` warns that
+earlier moves could not be read and that saving a move or resetting replaces them. **Reset
+moves** asks for confirmation, then saves an empty overlay. A normal move also saves over the
+unreadable overlay. Either save records the replaced state as invalid in placement history
+(#1172). While the overlay is unreadable, the coach-week critique and `PlanAuthorityBanner`
+are withheld, because today's coach session is not known. A plan or revision that is itself
+invalid still blocks the week and offers corrected-plan import. Home, the Context Brief and the
+recommendation engine still treat an unreadable overlay as an unreadable plan.
+
 Current verdict banner: `WeekAheadStrip` intentionally starts at tomorrow, so `PlanView`
 keeps the same-day ranked adaptive recommendation that seeds that forecast separately. When
 that today recommendation genuinely disagrees with an occupying coach session or an explicit

@@ -5,6 +5,12 @@ export interface PlacementAssignment {
     status: 'planned' | 'completed' | 'moved' | 'dropped' | 'superseded';
 }
 
+/**
+ * `DataState` UNAVAILABLE operation for a revision whose history exceeds the bounded scan.
+ * Unlike a failed read, it degrades only that revision's history in the ledger export.
+ */
+export const PLACEMENT_HISTORY_TRUNCATED_OPERATION = 'scan external plan placement history (limit reached)';
+
 /** Why the overlay a save replaced could not be read as its previous snapshot. */
 export const PLACEMENT_PREVIOUS_STATE_REASONS = [
     'current-schema-invalid',

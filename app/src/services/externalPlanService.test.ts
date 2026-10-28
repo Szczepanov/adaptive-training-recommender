@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EXTERNAL_PLAN_SCHEMA } from '../engine/models';
 import fixture01 from '../sessions/fixtures/01-full-body-maintenance.json';
 
@@ -20,8 +20,9 @@ const firestore = vi.hoisted(() => {
         })),
         getDocs: vi.fn(),
         query: vi.fn((ref: unknown) => ref),
+        startAfter: vi.fn((cursor: unknown) => ({ startAfter: cursor })),
         orderBy: vi.fn(),
-        limit: vi.fn(),
+        limit: vi.fn((count: number) => ({ limit: count })),
         documentId: vi.fn(),
         setDoc: vi.fn((ref: { path: string }, data: unknown) => {
             committedDocs.set(ref.path, data);
@@ -59,7 +60,13 @@ const firestore = vi.hoisted(() => {
 vi.mock('firebase/firestore', () => firestore);
 vi.mock('../firebase', () => ({ getDb: vi.fn(() => ({})) }));
 
-import { computeContentHash, ExternalPlanService, PLACEMENT_HISTORY_MAX_SCANNED_EVENTS } from './externalPlanService';
+import {
+    computeContentHash,
+    ExternalPlanService,
+    PLACEMENT_HISTORY_MAX_SCANNED_EVENTS,
+    PLACEMENT_HISTORY_PAGE_SIZE,
+    PLACEMENT_HISTORY_TRUNCATED_OPERATION,
+} from './externalPlanService';
 
 function plan(overrides: Record<string, unknown> = {}) {
     return {
@@ -544,6 +551,23 @@ describe('ExternalPlanService', () => {
             await expect(service.savePlacement('u1', superseded, { a: { revision: 4, sessionId: 'other' } })).rejects.toThrow(/Cannot replace/);
         });
 
+        it('floors a repair event after the corrupt overlay updatedAt so it cannot sort first', async () => {
+            vi.useFakeTimers();
+            try {
+                vi.setSystemTime(new Date('2026-08-18T21:30:00.000Z'));
+                firestore.committedDocs.set(scopedPath, { userId: 'u1', planId: 'autumn-block', revision: 1, assignments: 'nope',
+                    updatedAt: '2026-08-18T22:30:00.000Z' });
+                await new ExternalPlanService().savePlacement('u1', next);
+                expect(eventOf()).toMatchObject({ previousState: 'invalid', recordedAt: '2026-08-18T22:30:00.001Z', changedOn: '2026-08-19' });
+                firestore.committedDocs.set(scopedPath, { userId: 'u1', planId: 'autumn-block', revision: 1, assignments: 'nope',
+                    updatedAt: '2026-08-18T22:30:00Z' });
+                await new ExternalPlanService().savePlacement('u1', next);
+                expect(eventOf(1)).toMatchObject({ recordedAt: '2026-08-18T21:30:00.000Z' });
+            } finally {
+                vi.useRealTimers();
+            }
+        });
+
         it('accepts the marker on history reads and rejects a marker that carries previous assignments', async () => {
             firestore.committedDocs.set(scopedPath, 'garbage');
             const service = new ExternalPlanService();
@@ -569,21 +593,46 @@ describe('ExternalPlanService', () => {
         const event = (index: number) => ({ userId: 'u1', planId: 'autumn-block', revision: 1, changedOn: '2026-08-18',
             recordedAt: new Date(Date.UTC(2026, 7, 18, 10, 0, 0, index)).toISOString(), previous: [], assignments: [], successors: {} });
 
-        it('scans at most the cap plus one sentinel, ordered by document id', async () => {
-            firestore.getDocs.mockResolvedValue({ docs: Array.from({ length: PLACEMENT_HISTORY_MAX_SCANNED_EVENTS }, (_, i) => ({ data: () => event(i) })) });
+        /** Serves `total` stored events in document-id order, honouring each page's limit and cursor. */
+        function storeEvents(total: number) {
+            const docs = Array.from({ length: total }, (_, i) => ({ id: `e${String(i).padStart(5, '0')}`, data: () => event(i) }));
+            firestore.query.mockImplementation((ref: unknown, ...constraints: Array<{ limit?: number; startAfter?: { id: string } }>) => ({ ref, constraints: constraints.filter(Boolean) }));
+            firestore.getDocs.mockImplementation(async (request: { constraints: Array<{ limit?: number; startAfter?: { id: string } }> }) => {
+                const size = request.constraints.find(item => item.limit !== undefined)!.limit!;
+                const after = request.constraints.find(item => item.startAfter)?.startAfter;
+                const from = after ? docs.findIndex(item => item.id === after.id) + 1 : 0;
+                return { docs: docs.slice(from, from + size) };
+            });
+        }
+
+        afterEach(() => { firestore.query.mockImplementation((ref: unknown) => ref); });
+
+        it('pages through the whole history in document-id order', async () => {
+            const total = PLACEMENT_HISTORY_PAGE_SIZE * 2 + 50;
+            storeEvents(total);
+            const state = await new ExternalPlanService().getPlacementHistoryState('u1', 'autumn-block', 1);
+            expect(state).toMatchObject({ status: 'AVAILABLE' });
+            if (state.status !== 'AVAILABLE') throw new Error('unreachable');
+            expect(state.data).toHaveLength(total);
+            expect(state.data.map(item => item.recordedAt)).toEqual(Array.from({ length: total }, (_, i) => event(i).recordedAt));
+            expect(firestore.getDocs).toHaveBeenCalledTimes(3);
+            expect(firestore.limit).toHaveBeenCalledWith(PLACEMENT_HISTORY_PAGE_SIZE);
+            expect(firestore.documentId).toHaveBeenCalled();
+        });
+
+        it('reads exactly the hard bound as complete', async () => {
+            storeEvents(PLACEMENT_HISTORY_MAX_SCANNED_EVENTS);
             const state = await new ExternalPlanService().getPlacementHistoryState('u1', 'autumn-block', 1);
             expect(state).toMatchObject({ status: 'AVAILABLE' });
             if (state.status !== 'AVAILABLE') throw new Error('unreachable');
             expect(state.data).toHaveLength(PLACEMENT_HISTORY_MAX_SCANNED_EVENTS);
-            expect(firestore.limit).toHaveBeenCalledWith(PLACEMENT_HISTORY_MAX_SCANNED_EVENTS + 1);
-            expect(firestore.orderBy).toHaveBeenCalledTimes(1);
-            expect(firestore.documentId).toHaveBeenCalled();
         });
 
-        it('reports a truncated history as unavailable rather than partial data', async () => {
-            firestore.getDocs.mockResolvedValue({ docs: Array.from({ length: PLACEMENT_HISTORY_MAX_SCANNED_EVENTS + 1 }, (_, i) => ({ data: () => event(i) })) });
+        it('reports a history beyond the hard bound as truncated, never partial data', async () => {
+            expect(PLACEMENT_HISTORY_MAX_SCANNED_EVENTS).toBeGreaterThanOrEqual(PLACEMENT_HISTORY_PAGE_SIZE * 10);
+            storeEvents(PLACEMENT_HISTORY_MAX_SCANNED_EVENTS + 1);
             const state = await new ExternalPlanService().getPlacementHistoryState('u1', 'autumn-block', 1);
-            expect(state).toMatchObject({ status: 'UNAVAILABLE', retryable: false });
+            expect(state).toMatchObject({ status: 'UNAVAILABLE', retryable: false, operation: PLACEMENT_HISTORY_TRUNCATED_OPERATION });
             expect(state).not.toHaveProperty('data');
         });
     });
