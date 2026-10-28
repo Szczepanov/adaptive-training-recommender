@@ -410,6 +410,12 @@ When an imported plan exists, the screen presents both:
 Without an active imported plan, the evergreen/adaptive forecast remains available and the
 screen offers plan import/revision. The screen also renders schedule-overlay context.
 
+A revision may declare which earlier sessions its sessions replace (`replacesSessionId`). The
+import preview lists each declared replacement under the calendar and authority preflight, as a
+finding the athlete acknowledges before **Import this plan**. An invalid declaration blocks the
+import and says which session to correct. On import, each replaced session is marked as replaced
+on its existing date in the previous revision, with a link to its successor (#1172).
+
 When only the stored placement overlay (the athlete's moves) is unreadable, `PlanView` still
 shows the coach plan, at the plan's own dates. `PlacementOverlayRecoveryCard` warns that
 earlier moves could not be read and that saving a move or resetting replaces them. **Reset

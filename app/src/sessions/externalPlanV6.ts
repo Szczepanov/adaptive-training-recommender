@@ -6,11 +6,14 @@ import { validateExternalTrainingPlanV5, EXTERNAL_PLAN_SCHEMA_V5 } from './exter
 import type { ExternalPlanSessionV4 } from './externalPlanV4';
 import type { SessionDefinition } from './models';
 import { validateSessionDefinition } from './validation';
+import { validateReplacementDeclarations } from './externalPlanReplacements';
 
 export const EXTERNAL_PLAN_SCHEMA_V6 = 'adaptive-training-recommender/external-plan@6';
 
 export interface ExternalPlanSessionV6 extends Omit<ExternalPlanSessionV4, 'scaling'> {
     scaling?: ExternalSessionScaling & { reducedDefinition?: SessionDefinition };
+    /** #1172: the id of the session in the immediately previous revision that this one replaces. */
+    replacesSessionId?: string;
 }
 
 export interface ExternalTrainingPlanV6 extends Omit<import('./externalPlanV5').ExternalTrainingPlanV5, 'schema' | 'sessions'> {
@@ -22,16 +25,20 @@ export function isV6Plan(plan: { schema: string }): plan is ExternalTrainingPlan
     return plan.schema === EXTERNAL_PLAN_SCHEMA_V6;
 }
 
-function stripReducedDefinitions(raw: any): any {
+/** Removes the v6-only session fields so the inherited v5 allow-lists accept the rest. */
+function stripV6SessionFields(raw: any): any {
     if (!Array.isArray(raw?.sessions)) return { ...raw, schema: EXTERNAL_PLAN_SCHEMA_V5 };
     return {
         ...raw,
         schema: EXTERNAL_PLAN_SCHEMA_V5,
         sessions: raw.sessions.map((session: any) => {
-            if (!session || typeof session !== 'object' || !session.scaling || typeof session.scaling !== 'object' || Array.isArray(session.scaling)) return session;
-            const scaling = { ...session.scaling };
+            if (!session || typeof session !== 'object' || Array.isArray(session)) return session;
+            const { replacesSessionId: _replacesSessionId, ...rest } = session;
+            void _replacesSessionId;
+            if (!rest.scaling || typeof rest.scaling !== 'object' || Array.isArray(rest.scaling)) return rest;
+            const scaling = { ...rest.scaling };
             delete scaling.reducedDefinition;
-            return { ...session, scaling };
+            return { ...rest, scaling };
         }),
     };
 }
@@ -44,8 +51,9 @@ export function validateExternalTrainingPlanV6(raw: any): EngineValidationResult
     if (raw.schema !== EXTERNAL_PLAN_SCHEMA_V6) {
         errors.push({ field: 'schema', message: `Schema must be "${EXTERNAL_PLAN_SCHEMA_V6}"` });
     }
-    const inherited = validateExternalTrainingPlanV5(stripReducedDefinitions(raw));
+    const inherited = validateExternalTrainingPlanV5(stripV6SessionFields(raw));
     errors.push(...inherited.errors);
+    errors.push(...validateReplacementDeclarations(raw.sessions));
 
     if (Array.isArray(raw.sessions)) {
         raw.sessions.forEach((session: any, index: number) => {

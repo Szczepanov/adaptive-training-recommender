@@ -1,4 +1,4 @@
-import { collection, doc, documentId, getDoc, getDocs, limit, orderBy, query, runTransaction, startAfter, type DocumentData, type QueryDocumentSnapshot } from 'firebase/firestore';
+import { collection, doc, documentId, getDoc, getDocs, limit, orderBy, query, runTransaction, startAfter, type DocumentData, type QueryDocumentSnapshot, type Transaction } from 'firebase/firestore';
 import { getDb } from '../firebase';
 import type {
     ExternalPlanHeader,
@@ -18,6 +18,9 @@ import { EXTERNAL_PLAN_SCHEMA_V6, type ExternalTrainingPlanV6 } from '../session
 import { validateAnyExternalTrainingPlan, validateExternalPlanImport } from '../sessions/externalPlanValidation';
 import { isValidDate } from '../engine/validation';
 import { getLocalDateString } from '../utils/localDate';
+import { declaredSessionReplacements, validateReplacementsAgainstPrevious } from '../sessions/externalPlanReplacements';
+import type { AnyExternalTrainingPlan } from '../sessions/externalPlanV2';
+import { supersedeDeclaredSessions } from './externalPlanSupersession';
 import {
     PLACEMENT_HISTORY_TRUNCATED_OPERATION,
     PLACEMENT_PREVIOUS_STATE_REASONS,
@@ -49,6 +52,22 @@ interface PreviousOverlay {
  * The rule applies whether or not the rest of the document parses: a string `userId` that is
  * not the caller's. `getPlacementState` reports it as `owner-mismatch`; `savePlacement` refuses it.
  */
+/**
+ * A placement write refused for a reason a caller can report as its own issue. Messages are
+ * the ones `savePlacement` has always thrown; `code` lets a revision import map them (#1172).
+ */
+export class PlacementWriteError extends Error {
+    readonly code: 'owner-mismatch' | 'successor-conflict' | 'successor-required' | 'invalid-successor';
+    readonly sessionId?: string;
+
+    constructor(code: PlacementWriteError['code'], message: string, sessionId?: string) {
+        super(message);
+        this.name = 'PlacementWriteError';
+        this.code = code;
+        if (sessionId !== undefined) this.sessionId = sessionId;
+    }
+}
+
 export function placementClaimsOtherOwner(raw: unknown, userId: string): boolean {
     const claimedOwner = raw && typeof raw === 'object' ? (raw as { userId?: unknown }).userId : undefined;
     return typeof claimedOwner === 'string' && claimedOwner !== userId;
@@ -65,7 +84,7 @@ function readPreviousOverlay(source: 'current' | 'legacy' | null, raw: unknown, 
     planId: string, revision: number): PreviousOverlay {
     if (!source) return { overlay: null };
     if (placementClaimsOtherOwner(raw, userId)) {
-        throw new Error('Previous placement overlay belongs to another owner');
+        throw new PlacementWriteError('owner-mismatch', 'Previous placement overlay belongs to another owner');
     }
     const invalid = (reason: PlacementPreviousStateReason): PreviousOverlay => {
         const updatedAt = raw && typeof raw === 'object' ? canonicalInstant((raw as { updatedAt?: unknown }).updatedAt) : undefined;
@@ -130,6 +149,60 @@ function revisionNotNewer(userId: string, planId: string): DataState<ImportResul
     };
 }
 
+interface PlacementChange {
+    next: ExternalPlanPlacement;
+    event: PlacementEvent;
+}
+
+function validatedPlacement(userId: string, placement: Omit<ExternalPlanPlacement, 'userId' | 'updatedAt'>, now: Date): void {
+    const parsed = validateExternalPlanPlacement({ ...placement, userId, updatedAt: now.toISOString() });
+    if (!parsed.isValid) {
+        throw new Error(`Invalid placement overlay: ${parsed.errors.map(error => `${error.field}: ${error.message}`).join('; ')}`);
+    }
+}
+
+/**
+ * The new overlay and its immutable history event. Successor rules: a superseded assignment
+ * needs an explicit successor in a newer revision, a recorded successor is never replaced,
+ * and an unchanged earlier supersession without one stays as it was.
+ */
+function buildPlacementChange(userId: string, placement: Omit<ExternalPlanPlacement, 'userId' | 'updatedAt'>,
+    successors: PlacementEvent['successors'], now: Date, prior: PreviousOverlay): PlacementChange {
+    const applicable = prior.overlay;
+    const existing = applicable?.successors ?? {};
+    const retained: PlacementEvent['successors'] = {};
+    for (const assignment of placement.assignments) {
+        if (assignment.status !== 'superseded') continue;
+        const wasSuperseded = applicable?.assignments.some(item => item.sessionId === assignment.sessionId && item.status === 'superseded');
+        const priorSuccessor = wasSuperseded ? existing[assignment.sessionId] : undefined;
+        const supplied = successors[assignment.sessionId];
+        if (priorSuccessor && supplied && (priorSuccessor.revision !== supplied.revision || priorSuccessor.sessionId !== supplied.sessionId)) {
+            throw new PlacementWriteError('successor-conflict', 'Cannot replace an existing placement successor', assignment.sessionId);
+        }
+        const successor = supplied ?? priorSuccessor;
+        if (!successor && applicable?.assignments.some(item => item.sessionId === assignment.sessionId
+            && item.status === 'superseded' && item.date === assignment.date)) continue;
+        if (!successor || !Number.isSafeInteger(successor.revision) || successor.revision <= placement.revision
+            || typeof successor.sessionId !== 'string' || !successor.sessionId) {
+            throw new PlacementWriteError('successor-required', 'Superseded placement requires an explicit successor in a newer revision', assignment.sessionId);
+        }
+        retained[assignment.sessionId] = successor;
+    }
+    if (Object.keys(successors).some(id => !placement.assignments.some(item => item.sessionId === id && item.status === 'superseded'))) {
+        throw new PlacementWriteError('invalid-successor', 'Invalid placement successor');
+    }
+    // A repair event is floored after the corrupt overlay's own canonical instant too.
+    const previousTime = applicable ? Date.parse(applicable.updatedAt)
+        : prior.invalidUpdatedAt ? Date.parse(prior.invalidUpdatedAt) : NaN;
+    const recordedAt = new Date(Math.max(now.getTime(), Number.isFinite(previousTime) ? previousTime + 1 : 0)).toISOString();
+    const next: ExternalPlanPlacement = { ...placement, userId, successors: retained, updatedAt: recordedAt };
+    const event: PlacementEvent = { userId, planId: placement.planId, revision: placement.revision,
+        changedOn: getLocalDateString(new Date(recordedAt)), recordedAt, previous: applicable?.assignments ?? [],
+        assignments: next.assignments, successors: retained,
+        ...(prior.invalid ? { previousState: 'invalid' as const, previousStateReason: prior.invalid } : {}) };
+    return { next, event };
+}
+
 /** User-scoped persistence for externally-authored plans. A stored revision is immutable:
  * this service only ever creates one, never updates or deletes it. Rescheduling belongs to
  * the placement overlay, and an AI adjustment is a new revision. */
@@ -184,7 +257,8 @@ export class ExternalPlanService {
             return { status: 'INVALID', issues: [{ code: 'invalid-effective-date', field: 'effectiveFrom', documentPath: `users/${userId}/external_plans/${plan.planId}` }] };
         }
         try {
-            const now = new Date().toISOString();
+            const nowDate = new Date();
+            const now = nowDate.toISOString();
             const contentHash = await computeContentHash(plan);
             return await runTransaction(getDb(), async transaction => {
                 const headerRef = this.headerRef(userId, plan.planId);
@@ -197,6 +271,8 @@ export class ExternalPlanService {
                 ]);
                 const existingHeader = existing.exists() ? existing.data() as ExternalPlanHeader : null;
                 let predecessorActivationToWrite: ExternalPlanRevisionActivation | null = null;
+                // #1172: the stored revision a newer one may declare session replacements against.
+                let replacedRevision: AnyExternalTrainingPlan | null = null;
                 if (existingHeader) {
                 const storedRevision = existingHeader.revision;
                 if (typeof storedRevision === 'number' && plan.revision < storedRevision) {
@@ -293,6 +369,7 @@ export class ExternalPlanService {
                             return { status: 'INVALID', issues: supersessionIssues };
                         }
                     }
+                    replacedRevision = previousParsed.data;
                     if (!predecessorActivation.exists()) {
                         predecessorActivationToWrite = {
                             userId,
@@ -307,6 +384,11 @@ export class ExternalPlanService {
                 } else if (sameRevision.exists() || sameActivation.exists()) {
                     return { status: 'INVALID', issues: [{ code: 'orphaned-plan-revision', field: 'revision', documentPath: `users/${userId}/external_plans/${plan.planId}/revisions/${plan.revision}` }] };
                 }
+
+            // Same transaction as the activation: the successor links commit with it or not at all,
+            // and an identical retry returns above before reaching this point.
+            const supersession = await this.prepareDeclaredSupersession(transaction, userId, plan, replacedRevision, effectiveFrom, nowDate);
+            if (Array.isArray(supersession)) return { status: 'INVALID', issues: supersession };
 
             const header: ExternalPlanHeader = {
                 userId,
@@ -327,6 +409,7 @@ export class ExternalPlanService {
             if (predecessorActivationToWrite) {
                 transaction.set(this.activationRef(userId, plan.planId, predecessorActivationToWrite.revision), predecessorActivationToWrite as unknown as DocumentData);
             }
+            if (supersession) this.stagePlacementChange(transaction, userId, supersession);
             transaction.set(revisionRef, plan as unknown as DocumentData);
             transaction.set(activationRef, activation as unknown as DocumentData);
             transaction.set(headerRef, header as unknown as DocumentData);
@@ -568,56 +651,61 @@ export class ExternalPlanService {
     async savePlacement(userId: string, placement: Omit<ExternalPlanPlacement, 'userId' | 'updatedAt'>,
         successors: PlacementEvent['successors'] = {}): Promise<ExternalPlanPlacement> {
         const now = new Date();
-        const stored: ExternalPlanPlacement = { ...placement, userId, updatedAt: now.toISOString() };
-        const parsed = validateExternalPlanPlacement(stored);
-        if (!parsed.isValid) {
-            throw new Error(`Invalid placement overlay: ${parsed.errors.map(error => `${error.field}: ${error.message}`).join('; ')}`);
-        }
-        const currentRef = this.placementRef(userId, placement.planId, placement.revision);
-        const eventRef = doc(collection(getDb(), 'users', userId, 'external_plans', placement.planId,
-            'revisions', String(placement.revision), 'placement_history'));
+        validatedPlacement(userId, placement, now);
         return runTransaction(getDb(), async transaction => {
-            const current = await transaction.get(currentRef);
-            const legacy = current.exists() ? null : await transaction.get(this.legacyPlacementRef(userId, placement.planId));
-            const source = current.exists() ? 'current' : legacy?.exists() ? 'legacy' : null;
-            const prior = readPreviousOverlay(source, source === 'current' ? current.data() : legacy?.data(),
-                userId, placement.planId, placement.revision);
-            const applicable = prior.overlay;
-            const existing = applicable?.successors ?? {};
-            const retained: PlacementEvent['successors'] = {};
-            for (const assignment of placement.assignments) {
-                if (assignment.status !== 'superseded') continue;
-                const wasSuperseded = applicable?.assignments.some(item => item.sessionId === assignment.sessionId && item.status === 'superseded');
-                const priorSuccessor = wasSuperseded ? existing[assignment.sessionId] : undefined;
-                const supplied = successors[assignment.sessionId];
-                if (priorSuccessor && supplied && (priorSuccessor.revision !== supplied.revision || priorSuccessor.sessionId !== supplied.sessionId)) {
-                    throw new Error('Cannot replace an existing placement successor');
-                }
-                const successor = supplied ?? priorSuccessor;
-                if (!successor && applicable?.assignments.some(item => item.sessionId === assignment.sessionId
-                    && item.status === 'superseded' && item.date === assignment.date)) continue;
-                if (!successor || !Number.isSafeInteger(successor.revision) || successor.revision <= placement.revision
-                    || typeof successor.sessionId !== 'string' || !successor.sessionId) {
-                    throw new Error('Superseded placement requires an explicit successor in a newer revision');
-                }
-                retained[assignment.sessionId] = successor;
-            }
-            if (Object.keys(successors).some(id => !placement.assignments.some(item => item.sessionId === id && item.status === 'superseded'))) {
-                throw new Error('Invalid placement successor');
-            }
-            // A repair event is floored after the corrupt overlay's own canonical instant too.
-            const previousTime = applicable ? Date.parse(applicable.updatedAt)
-                : prior.invalidUpdatedAt ? Date.parse(prior.invalidUpdatedAt) : NaN;
-            const recordedAt = new Date(Math.max(now.getTime(), Number.isFinite(previousTime) ? previousTime + 1 : 0)).toISOString();
-            const next = { ...stored, successors: retained, updatedAt: recordedAt };
-            const event: PlacementEvent = { userId, planId: placement.planId, revision: placement.revision,
-                changedOn: getLocalDateString(new Date(recordedAt)), recordedAt, previous: applicable?.assignments ?? [],
-                assignments: next.assignments, successors: retained,
-                ...(prior.invalid ? { previousState: 'invalid' as const, previousStateReason: prior.invalid } : {}) };
-            transaction.set(currentRef, next as unknown as DocumentData);
-            transaction.set(eventRef, event as unknown as DocumentData);
-            return next;
+            const prior = await this.readPlacementPrior(transaction, userId, placement.planId, placement.revision);
+            const change = buildPlacementChange(userId, placement, successors, now, prior);
+            this.stagePlacementChange(transaction, userId, change);
+            return change.next;
         });
+    }
+
+    /** Reads the overlay a placement write replaces: the revision-scoped doc, else the legacy one. */
+    private async readPlacementPrior(transaction: Transaction, userId: string, planId: string, revision: number): Promise<PreviousOverlay> {
+        const current = await transaction.get(this.placementRef(userId, planId, revision));
+        const legacy = current.exists() ? null : await transaction.get(this.legacyPlacementRef(userId, planId));
+        const source = current.exists() ? 'current' : legacy?.exists() ? 'legacy' : null;
+        return readPreviousOverlay(source, source === 'current' ? current.data() : legacy?.data(), userId, planId, revision);
+    }
+
+    private stagePlacementChange(transaction: Transaction, userId: string, change: PlacementChange): void {
+        const eventRef = doc(collection(getDb(), 'users', userId, 'external_plans', change.next.planId,
+            'revisions', String(change.next.revision), 'placement_history'));
+        transaction.set(this.placementRef(userId, change.next.planId, change.next.revision), change.next as unknown as DocumentData);
+        transaction.set(eventRef, change.event as unknown as DocumentData);
+    }
+
+    /**
+     * #1172: reads and prepares, inside the import transaction, the previous revision's
+     * placement change for each session the new revision declares it replaces. Returns the
+     * change to stage after all reads, null when nothing is declared, or the issues that
+     * reject the import. Corrupt prior overlays follow `savePlacement`'s repair rules; an
+     * overlay that names another owner rejects the import.
+     */
+    private async prepareDeclaredSupersession(transaction: Transaction, userId: string, plan: ImportResult['plan'],
+        previousPlan: AnyExternalTrainingPlan | null, effectiveFrom: string, now: Date): Promise<PlacementChange | DataIssue[] | null> {
+        const planPath = `users/${userId}/external_plans/${plan.planId}`;
+        const issues = validateReplacementsAgainstPrevious(plan, previousPlan);
+        if (issues.length > 0) {
+            return issues.map(issue => ({ code: issue.code, field: issue.field,
+                documentPath: previousPlan ? `${planPath}/revisions/${previousPlan.revision}` : planPath }));
+        }
+        const declarations = declaredSessionReplacements(plan);
+        if (declarations.length === 0 || !previousPlan) return null;
+        const placementPath = `${planPath}/revisions/${previousPlan.revision}/placement/current`;
+        try {
+            const prior = await this.readPlacementPrior(transaction, userId, plan.planId, previousPlan.revision);
+            const superseded = supersedeDeclaredSessions(previousPlan, prior.overlay?.assignments ?? [], declarations, plan.revision, effectiveFrom);
+            if (!superseded.ok) return [{ code: superseded.code, field: superseded.field, documentPath: placementPath }];
+            const placement = { planId: plan.planId, revision: previousPlan.revision, assignments: superseded.assignments };
+            validatedPlacement(userId, placement, now);
+            return buildPlacementChange(userId, placement, superseded.successors, now, prior);
+        } catch (error: unknown) {
+            if (!(error instanceof PlacementWriteError)) throw error;
+            if (error.code === 'owner-mismatch') return [{ code: 'replaced-placement-owner-mismatch', documentPath: placementPath }];
+            const declaration = declarations.find(item => item.replacesSessionId === error.sessionId) ?? declarations[0];
+            return [{ code: 'replaced-session-successor-conflict', field: `sessions[${declaration.index}].replacesSessionId`, documentPath: placementPath }];
+        }
     }
 
 }
