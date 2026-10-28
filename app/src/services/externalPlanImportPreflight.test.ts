@@ -161,6 +161,58 @@ describe('preflightExternalPlanImport', () => {
         }
     });
 
+    describe('declared session replacements (#1172)', () => {
+        const previous = { ...plan, revision: 1, sessions: [{ ...plan.sessions[0], id: 'old-ride', title: 'Old ride' }] };
+        const next = { ...plan, revision: 2, sessions: [{ ...plan.sessions[0], id: 'new-ride', title: 'New ride', replacesSessionId: 'old-ride' }] };
+
+        it('lists each declared replacement as a finding to acknowledge, on the earlier session’s default date', async () => {
+            const result = await preflightExternalPlanImport('u1', next as never, plan.startDate, '2026-08-16', previous as never);
+            expect(result.status).toBe('ready');
+            if (result.status === 'ready') {
+                expect(result.findings.filter(item => item.code === 'session_replacement_declared')).toEqual([{
+                    kind: 'session_replacement', code: 'session_replacement_declared', date: '2026-08-18',
+                    detail: 'New ride replaces Old ride from revision 1. Old ride stays on its date and is marked as replaced.',
+                }]);
+            }
+        });
+
+        it('uses the earlier session’s moved date from its current placement', async () => {
+            reads.activePlan.mockResolvedValue({ status: 'AVAILABLE', data: { plan: previous,
+                placement: { assignments: [{ sessionId: 'old-ride', date: '2026-08-20', status: 'moved' }] } } });
+            const result = await preflightExternalPlanImport('u1', next as never, plan.startDate, '2026-08-16', previous as never);
+            expect(result.status === 'ready' && result.findings.find(item => item.code === 'session_replacement_declared')?.date).toBe('2026-08-20');
+        });
+
+        it('blocks a declaration that names a session missing from the previous revision', async () => {
+            const ghost = { ...next, sessions: [{ ...next.sessions[0], replacesSessionId: 'ghost' }] };
+            const result = await preflightExternalPlanImport('u1', ghost as never, plan.startDate, '2026-08-16', previous as never);
+            expect(result).toEqual({ status: 'invalid_replacements', issues: [{
+                code: 'replaced-session-not-found', field: 'sessions[0].replacesSessionId', sessionId: 'new-ride', replacesSessionId: 'ghost',
+            }] });
+            expect(reads.fixed).not.toHaveBeenCalled();
+        });
+
+        it('blocks a declaration when there is no previous revision', async () => {
+            const result = await preflightExternalPlanImport('u1', next as never, plan.startDate, '2026-08-16', null);
+            expect(result).toMatchObject({ status: 'invalid_replacements', issues: [{ code: 'replacement-previous-revision-missing' }] });
+        });
+
+        it('blocks replacing a session the current placement records as completed', async () => {
+            reads.activePlan.mockResolvedValue({ status: 'AVAILABLE', data: { plan: previous,
+                placement: { assignments: [{ sessionId: 'old-ride', date: '2026-08-18', status: 'completed' }] } } });
+            const result = await preflightExternalPlanImport('u1', next as never, plan.startDate, '2026-08-16', previous as never);
+            expect(result).toMatchObject({ status: 'invalid_replacements', issues: [{
+                code: 'replaced-session-completed', field: 'sessions[0].replacesSessionId', replacesSessionId: 'old-ride',
+            }] });
+        });
+
+        it('adds nothing for a revision without declarations', async () => {
+            const plain = { ...next, sessions: [{ ...plan.sessions[0], id: 'new-ride', title: 'Old ride' }] };
+            const result = await preflightExternalPlanImport('u1', plain as never, plan.startDate, '2026-08-16', previous as never);
+            expect(result.status === 'ready' && result.findings.some(item => item.kind === 'session_replacement')).toBe(false);
+        });
+    });
+
     it('rejects effective dates before today', async () => {
         expect(await preflightExternalPlanImport('u1', plan as never, '2026-08-15', '2026-08-16'))
             .toEqual({ status: 'invalid_date' });
