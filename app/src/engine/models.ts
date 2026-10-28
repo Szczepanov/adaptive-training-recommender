@@ -4,7 +4,6 @@ import type { IdentityDecisionProvenance } from '../observations/identityModels'
 import type { DataIssue, DataState, DataStateSummary } from './dataState';
 import type { SubjectiveBaseline } from '../derived/baselines/subjectiveBaseline';
 import type { DataConfidenceScore } from './dataConfidence';
-import type { GoalPerformanceTarget } from './performanceTargetPolicy';
 import type { PerformanceGoalDemand } from './performanceGoalDemand';
 import type {
     ActivitySessionCost,
@@ -15,6 +14,7 @@ import type {
     DailyRecoverySnapshot,
     DailySubjectiveCheckin,
     EvidenceTier,
+    GoalPerformanceTarget,
     GuardrailKey,
     LegacyEquipmentKey,
     Modality,
@@ -34,7 +34,6 @@ import type {
 // existing importers of engine/models keep working unchanged.
 export * from '../ledger/models.ts';
 
-export type { GoalPerformanceTarget, PerformanceSubjectRef, PerformanceGoalFamily } from './performanceTargetPolicy';
 export type { PerformanceGoalDemand, PerformanceGoalCoverageMissReason } from './performanceGoalDemand';
 
 export type SubjectiveDimensionKey =
