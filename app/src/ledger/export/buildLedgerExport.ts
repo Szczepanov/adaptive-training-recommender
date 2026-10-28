@@ -183,7 +183,7 @@ function buildFlags(input: BuildLedgerExportInput, window: LedgerWindow): Ledger
                 const withheld = id === 'illness_anomaly';
                 result.push({
                     id, observedOn: date, evaluatedAt: flag.evaluatedAt,
-                    definitionVersion: withheld ? FLAG_VERSIONS[id] : flag.definitionVersion,
+                    definitionVersion: flag.definitionVersion,
                     ...(flag.sessionRef ? { sessionRef: flag.sessionRef } : {}),
                     active: withheld ? null : flag.active,
                     state: withheld ? 'not_yet_supported' : flag.state,
