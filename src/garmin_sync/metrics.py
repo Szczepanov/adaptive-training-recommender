@@ -344,14 +344,115 @@ def _compute_circular_baselines(
     }
 
 
-def _compute_derived_deltas(
+def _compute_primary_deltas(
+    raw_current: dict[str, Any],
+    primary: dict[str, float | None],
+) -> dict[str, float | None]:
+    return {
+        "sleepScoreVs7d": _round(
+            calculate_delta(raw_current.get("sleepScore"), primary["sleep_7d"])
+        ),
+        "sleepScoreVs28d": _round(
+            calculate_delta(raw_current.get("sleepScore"), primary["sleep_28d"])
+        ),
+        "restingHrVs7d": _round(calculate_delta(raw_current.get("restingHr"), primary["rhr_7d"])),
+        "restingHrVs28d": _round(calculate_delta(raw_current.get("restingHr"), primary["rhr_28d"])),
+        "hrvVs7d": _round(calculate_delta(raw_current.get("hrvOvernightAvg"), primary["hrv_7d"])),
+        "hrvVs28d": _round(calculate_delta(raw_current.get("hrvOvernightAvg"), primary["hrv_28d"])),
+        "respirationVs7d": _round(
+            calculate_delta(raw_current.get("respirationAvg"), primary["resp_7d"])
+        ),
+        "respirationVs28d": _round(
+            calculate_delta(raw_current.get("respirationAvg"), primary["resp_28d"])
+        ),
+        "stepsVs7d": _round(calculate_delta(raw_current.get("totalSteps"), primary["steps_7d"])),
+        "stepsVs28d": _round(calculate_delta(raw_current.get("totalSteps"), primary["steps_28d"])),
+    }
+
+
+def _compute_observation_deltas(
+    raw_current: dict[str, Any],
+    obs: dict[str, float | None],
+) -> dict[str, float | None]:
+    current_stress = raw_current.get("stress") or {}
+    current_readiness = raw_current.get("trainingReadiness") or {}
+    return {
+        # v4: median-baseline deltas
+        "sleepScoreVs7dMedian": _round(
+            calculate_delta(raw_current.get("sleepScore"), obs["sleep_7d_median"])
+        ),
+        "sleepScoreVs28dMedian": _round(
+            calculate_delta(raw_current.get("sleepScore"), obs["sleep_28d_median"])
+        ),
+        "restingHrVs7dMedian": _round(
+            calculate_delta(raw_current.get("restingHr"), obs["rhr_7d_median"])
+        ),
+        "restingHrVs28dMedian": _round(
+            calculate_delta(raw_current.get("restingHr"), obs["rhr_28d_median"])
+        ),
+        "hrvVs7dMedian": _round(
+            calculate_delta(raw_current.get("hrvOvernightAvg"), obs["hrv_7d_median"])
+        ),
+        "hrvVs28dMedian": _round(
+            calculate_delta(raw_current.get("hrvOvernightAvg"), obs["hrv_28d_median"])
+        ),
+        "stepsVs7dMedian": _round(
+            calculate_delta(raw_current.get("totalSteps"), obs["steps_7d_median"])
+        ),
+        "stepsVs28dMedian": _round(
+            calculate_delta(raw_current.get("totalSteps"), obs["steps_28d_median"])
+        ),
+        # v5: median-baseline deltas
+        "bodyBatteryWakeVs7dMedian": _round(
+            calculate_delta(raw_current.get("bodyBatteryWake"), obs["bb_wake_7d_median"])
+        ),
+        "bodyBatteryWakeVs28dMedian": _round(
+            calculate_delta(raw_current.get("bodyBatteryWake"), obs["bb_wake_28d_median"])
+        ),
+        "stressAvgVs7dMedian": _round(
+            calculate_delta(current_stress.get("avg"), obs["stress_avg_7d_median"])
+        ),
+        "stressAvgVs28dMedian": _round(
+            calculate_delta(current_stress.get("avg"), obs["stress_avg_28d_median"])
+        ),
+        "stressMaxVs7dMedian": _round(
+            calculate_delta(current_stress.get("max"), obs["stress_max_7d_median"])
+        ),
+        "stressMaxVs28dMedian": _round(
+            calculate_delta(current_stress.get("max"), obs["stress_max_28d_median"])
+        ),
+        "trainingReadinessScoreVs7dMedian": _round(
+            calculate_delta(current_readiness.get("score"), obs["readiness_7d_median"])
+        ),
+        "trainingReadinessScoreVs28dMedian": _round(
+            calculate_delta(current_readiness.get("score"), obs["readiness_28d_median"])
+        ),
+    }
+
+
+def _compute_sleep_duration_deltas(
+    raw_current: dict[str, Any],
+    sleep_dur: dict[str, float | None],
+) -> dict[str, float | None]:
+    return {
+        "sleepDurationVs7dMedian": _round(
+            calculate_delta(
+                raw_current.get("sleepDurationSec"), sleep_dur["sleep_duration_7d_median"]
+            )
+        ),
+        "sleepDurationVs28dMedian": _round(
+            calculate_delta(
+                raw_current.get("sleepDurationSec"), sleep_dur["sleep_duration_28d_median"]
+            )
+        ),
+    }
+
+
+def _compute_circular_deltas(
     raw_current: dict[str, Any],
     timezone_name: str,
-    primary: dict[str, float | None],
-    obs: dict[str, float | None],
-    sleep_dur: dict[str, float | None],
     circ: dict[str, float | None],
-) -> DerivedDeltas:
+) -> dict[str, float | None]:
     current_bedtime_minutes = minutes_of_day_local(
         raw_current.get("sleepSessionStart"), timezone_name
     )
@@ -364,110 +465,50 @@ def _compute_derived_deltas(
         ),
         timezone_name,
     )
-
-    current_stress = raw_current.get("stress") or {}
-    current_readiness = raw_current.get("trainingReadiness") or {}
-
-    return DerivedDeltas(
-        sleepScoreVs7d=_round(calculate_delta(raw_current.get("sleepScore"), primary["sleep_7d"])),
-        sleepScoreVs28d=_round(
-            calculate_delta(raw_current.get("sleepScore"), primary["sleep_28d"])
-        ),
-        restingHrVs7d=_round(calculate_delta(raw_current.get("restingHr"), primary["rhr_7d"])),
-        restingHrVs28d=_round(calculate_delta(raw_current.get("restingHr"), primary["rhr_28d"])),
-        hrvVs7d=_round(calculate_delta(raw_current.get("hrvOvernightAvg"), primary["hrv_7d"])),
-        hrvVs28d=_round(calculate_delta(raw_current.get("hrvOvernightAvg"), primary["hrv_28d"])),
-        respirationVs7d=_round(
-            calculate_delta(raw_current.get("respirationAvg"), primary["resp_7d"])
-        ),
-        respirationVs28d=_round(
-            calculate_delta(raw_current.get("respirationAvg"), primary["resp_28d"])
-        ),
-        stepsVs7d=_round(calculate_delta(raw_current.get("totalSteps"), primary["steps_7d"])),
-        stepsVs28d=_round(calculate_delta(raw_current.get("totalSteps"), primary["steps_28d"])),
-        # v4: median-baseline deltas
-        sleepScoreVs7dMedian=_round(
-            calculate_delta(raw_current.get("sleepScore"), obs["sleep_7d_median"])
-        ),
-        sleepScoreVs28dMedian=_round(
-            calculate_delta(raw_current.get("sleepScore"), obs["sleep_28d_median"])
-        ),
-        restingHrVs7dMedian=_round(
-            calculate_delta(raw_current.get("restingHr"), obs["rhr_7d_median"])
-        ),
-        restingHrVs28dMedian=_round(
-            calculate_delta(raw_current.get("restingHr"), obs["rhr_28d_median"])
-        ),
-        hrvVs7dMedian=_round(
-            calculate_delta(raw_current.get("hrvOvernightAvg"), obs["hrv_7d_median"])
-        ),
-        hrvVs28dMedian=_round(
-            calculate_delta(raw_current.get("hrvOvernightAvg"), obs["hrv_28d_median"])
-        ),
-        stepsVs7dMedian=_round(
-            calculate_delta(raw_current.get("totalSteps"), obs["steps_7d_median"])
-        ),
-        stepsVs28dMedian=_round(
-            calculate_delta(raw_current.get("totalSteps"), obs["steps_28d_median"])
-        ),
-        # v5: median-baseline deltas
-        bodyBatteryWakeVs7dMedian=_round(
-            calculate_delta(raw_current.get("bodyBatteryWake"), obs["bb_wake_7d_median"])
-        ),
-        bodyBatteryWakeVs28dMedian=_round(
-            calculate_delta(raw_current.get("bodyBatteryWake"), obs["bb_wake_28d_median"])
-        ),
-        stressAvgVs7dMedian=_round(
-            calculate_delta(current_stress.get("avg"), obs["stress_avg_7d_median"])
-        ),
-        stressAvgVs28dMedian=_round(
-            calculate_delta(current_stress.get("avg"), obs["stress_avg_28d_median"])
-        ),
-        stressMaxVs7dMedian=_round(
-            calculate_delta(current_stress.get("max"), obs["stress_max_7d_median"])
-        ),
-        stressMaxVs28dMedian=_round(
-            calculate_delta(current_stress.get("max"), obs["stress_max_28d_median"])
-        ),
-        trainingReadinessScoreVs7dMedian=_round(
-            calculate_delta(current_readiness.get("score"), obs["readiness_7d_median"])
-        ),
-        trainingReadinessScoreVs28dMedian=_round(
-            calculate_delta(current_readiness.get("score"), obs["readiness_28d_median"])
-        ),
-        # v6: sleep-duration & circular time-of-day deviations
-        sleepDurationVs7dMedian=_round(
-            calculate_delta(
-                raw_current.get("sleepDurationSec"), sleep_dur["sleep_duration_7d_median"]
-            )
-        ),
-        sleepDurationVs28dMedian=_round(
-            calculate_delta(
-                raw_current.get("sleepDurationSec"), sleep_dur["sleep_duration_28d_median"]
-            )
-        ),
-        bedtimeDeviationVs7dMinutes=_round(
+    return {
+        "bedtimeDeviationVs7dMinutes": _round(
             calculate_circular_delta_minutes(current_bedtime_minutes, circ["bedtime_7d_mean"])
         ),
-        bedtimeDeviationVs28dMinutes=_round(
+        "bedtimeDeviationVs28dMinutes": _round(
             calculate_circular_delta_minutes(current_bedtime_minutes, circ["bedtime_28d_mean"])
         ),
-        wakeTimeDeviationVs7dMinutes=_round(
+        "wakeTimeDeviationVs7dMinutes": _round(
             calculate_circular_delta_minutes(current_wake_time_minutes, circ["wake_time_7d_mean"])
         ),
-        wakeTimeDeviationVs28dMinutes=_round(
+        "wakeTimeDeviationVs28dMinutes": _round(
             calculate_circular_delta_minutes(current_wake_time_minutes, circ["wake_time_28d_mean"])
         ),
-        sleepMidpointDeviationVs7dMinutes=_round(
+        "sleepMidpointDeviationVs7dMinutes": _round(
             calculate_circular_delta_minutes(
                 current_midpoint_minutes, circ["sleep_midpoint_7d_mean"]
             )
         ),
-        sleepMidpointDeviationVs28dMinutes=_round(
+        "sleepMidpointDeviationVs28dMinutes": _round(
             calculate_circular_delta_minutes(
                 current_midpoint_minutes, circ["sleep_midpoint_28d_mean"]
             )
         ),
+    }
+
+
+def _compute_derived_deltas(
+    raw_current: dict[str, Any],
+    timezone_name: str,
+    primary: dict[str, float | None],
+    obs: dict[str, float | None],
+    sleep_dur: dict[str, float | None],
+    circ: dict[str, float | None],
+) -> DerivedDeltas:
+    primary_deltas = _compute_primary_deltas(raw_current, primary)
+    obs_deltas = _compute_observation_deltas(raw_current, obs)
+    sleep_dur_deltas = _compute_sleep_duration_deltas(raw_current, sleep_dur)
+    circular_deltas = _compute_circular_deltas(raw_current, timezone_name, circ)
+
+    return DerivedDeltas(
+        **primary_deltas,
+        **obs_deltas,
+        **sleep_dur_deltas,
+        **circular_deltas,
     )
 
 
