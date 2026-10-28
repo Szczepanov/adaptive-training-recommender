@@ -85,6 +85,27 @@ current placement has moved outside the window. Placements with recorded history
 `statusHistory` contains the dated before/after events and explicit successor links. An export
 date before the first recorded event uses that event's previous snapshot, with `statusHistory`
 left `not_yet_supported`.
+A save over a corrupt current overlay, or a corrupt legacy fallback, still writes the new overlay.
+Its event records `previous: []` with `previousState: 'invalid'` and a `previousStateReason`
+code (`current-schema-invalid`, `current-identity-mismatch`, `legacy-schema-invalid` or
+`legacy-identity-mismatch`). It never fabricates previous assignments, and it retains no
+successor from the corrupt overlay. An overlay that claims another owner is never overwritten.
+Each `statusHistory` entry carries `previousState` (`recorded` or `invalid`) and
+`previousStateReason`. An invalid-prior event appears in the history of every placement of
+that revision, with a null `previous`. It never reads as "no assignment before". Sessions in
+the last recorded snapshot but absent after the repair save are exported as removed. An export
+date before a first event whose prior state is invalid cannot be reconstructed. That
+revision's placements are omitted, and the placement and override collections report `invalid`.
+Each revision's placement history is read in document-id-ordered pages of 200
+(`PLACEMENT_HISTORY_PAGE_SIZE`), up to a hard bound of 2,000 events
+(`PLACEMENT_HISTORY_MAX_SCANNED_EVENTS`) plus one truncation sentinel. A revision beyond that
+bound degrades alone. Its placements fall back to the current overlay, and their
+`statusHistory` is `unavailable`, never partial history. Other revisions, and the placement
+source state, are unaffected. The current overlay stands for the as-of state only if its
+`updatedAt` falls, as a Warsaw date, on or before the export date. A later or unreadable
+`updatedAt` omits that revision's placements, and the placement and override collections report
+`unavailable`. A failed history read still reports the whole placement source `unavailable`. A repair event is recorded after the corrupt overlay's own canonical
+`updatedAt`, so it cannot sort before the last recorded change.
 Earlier legacy history and successors absent from legacy superseded assignments remain unknown; titles are never used to infer successors. Placements
 without history remain current overlays and are never claimed as immutable history.
 

@@ -265,3 +265,25 @@
   max-width: 540px;
   line-height: 1.4;
 }
+
+/* #1172: unreadable placement overlay. Reset is destructive, so its confirm action is distinct. */
+.plan-overlay-recovery-card {
+  margin-bottom: 16px;
+}
+
+/* The schedule modals' danger pair. On the #1e293b card: text 6.74:1 at rest and 5.99:1 on
+ * hover; the #ef4444 boundary is 3.89:1. */
+.plan-reset-confirm-btn {
+  color: #fca5a5;
+  background: rgba(239, 68, 68, 0.15);
+  border-color: var(--danger, #ef4444);
+}
+
+.plan-reset-confirm-btn:hover {
+  background: rgba(239, 68, 68, 0.25);
+}
+
+.plan-reset-confirm-btn[aria-disabled='true'],
+.plan-overlay-recovery-card .plan-retry-btn[aria-disabled='true'] {
+  cursor: progress;
+}

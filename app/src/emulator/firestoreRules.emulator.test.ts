@@ -1053,6 +1053,26 @@ emulatorDescribe('Firestore security rules', () => {
         await assertFails(deleteDoc(doc(ownerDb, path)));
     });
 
+    it('accepts an invalid-prior marker on placement history only with empty previous assignments (#1172)', async () => {
+        await testEnvironment.withSecurityRulesDisabled(async context => {
+            await setDoc(doc(context.firestore(), externalRevisionPath), validExternalPlanRevision());
+        });
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        const path = (id: string) => `${externalPlanPath}/revisions/1/placement_history/${id}`;
+        const event = { userId: ownerId, planId: 'autumn-block', revision: 1, changedOn: '2026-08-18',
+            recordedAt: '2026-08-18T12:00:00.000Z', previous: [], assignments: [], successors: {},
+            previousState: 'invalid', previousStateReason: 'current-schema-invalid' };
+        const assignment = { sessionId: 'a', date: '2026-08-18', status: 'planned' };
+        await assertFails(setDoc(doc(ownerDb, path('fabricated')), { ...event, previous: [assignment] }));
+        await assertFails(setDoc(doc(ownerDb, path('bad-state')), { ...event, previousState: 'valid' }));
+        await assertFails(setDoc(doc(ownerDb, path('bad-reason')), { ...event, previousStateReason: 'made-up' }));
+        const unmarked = { userId: ownerId, planId: 'autumn-block', revision: 1, changedOn: '2026-08-18',
+            recordedAt: '2026-08-18T12:00:00.000Z', previous: [], assignments: [], successors: {} };
+        await assertFails(setDoc(doc(ownerDb, path('no-reason')), { ...unmarked, previousState: 'invalid' }));
+        await assertFails(setDoc(doc(ownerDb, path('reason-only')), { ...unmarked, previousStateReason: 'current-schema-invalid' }));
+        await assertSucceeds(setDoc(doc(ownerDb, path('marked')), event));
+    });
+
     it('denies cross-user and revision-mismatched revision-scoped placement writes', async () => {
         await testEnvironment.withSecurityRulesDisabled(async context => {
             const admin = context.firestore();

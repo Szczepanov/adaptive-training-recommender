@@ -1,8 +1,9 @@
 /** Layer 5: bounded coaching records and recorded placement history. */
-import { placementAsOf, placementBeforeHistory } from '../placementHistory.ts';
-import { collect, type BuildContext } from './buildContext.ts';
+import { hasRecordedPrevious, placementAsOf, placementBeforeHistory, type PlacementAssignment } from '../placementHistory.ts';
+import { collect, sourceState, type BuildContext } from './buildContext.ts';
 import type { LedgerExportRecords, PlacementInput } from './inputs.ts';
-import { fact, notYetSupported, record } from './ledgerValue.ts';
+import { fact, notYetSupported, record, worstState } from './ledgerValue.ts';
+import type { LedgerState } from './schema.ts';
 import type {
     LedgerCoachingHistory,
     LedgerValue,
@@ -43,10 +44,14 @@ function buildPlacements(flat: FlatAssignment[] | undefined, records: LedgerExpo
         toItem: row => {
             const base = { source: SOURCE, observedOn: row.date };
             const history = records.placementHistory?.filter(event => event.planId === row.planId && event.revision === row.revision
-                && event.changedOn <= context.asOfDate && (event.previous.some(item => item.sessionId === row.sessionId)
+                && event.changedOn <= context.asOfDate && (!hasRecordedPrevious(event)
+                    || event.previous.some(item => item.sessionId === row.sessionId)
                     || event.assignments.some(item => item.sessionId === row.sessionId)))
                 .sort((a, b) => a.changedOn.localeCompare(b.changedOn) || a.recordedAt.localeCompare(b.recordedAt))
+                // A change over a corrupt overlay says the prior state is unknown, not that it was empty.
                 .map(event => ({ changedOn: event.changedOn, recordedAt: event.recordedAt,
+                    previousState: hasRecordedPrevious(event) ? 'recorded' : 'invalid',
+                    previousStateReason: event.previousStateReason ?? null,
                     previous: event.previous.find(item => item.sessionId === row.sessionId) ?? null,
                     assignment: event.assignments.find(item => item.sessionId === row.sessionId) ?? null,
                     successor: event.successors[row.sessionId] ?? null }));
@@ -56,7 +61,10 @@ function buildPlacements(flat: FlatAssignment[] | undefined, records: LedgerExpo
                 sessionId: fact(row.sessionId, base),
                 status: fact(row.removed ? null : row.status, { ...base, absent: 'not_recorded' }),
                 date: fact(row.removed ? null : row.date, { ...base, absent: 'not_recorded' }),
-                statusHistory: history?.length ? fact(history, base) : notYetSupported(SOURCE),
+                // A revision whose history exceeded the bounded scan has unknown, not absent, history.
+                statusHistory: records.placementHistoryUnavailable?.some(item => item.planId === row.planId && item.revision === row.revision)
+                    ? fact(null, { ...base, absent: 'unavailable' })
+                    : history?.length ? fact(history, base) : notYetSupported(SOURCE),
             };
             return record(assignmentId(row), row.date, values);
         },
@@ -137,6 +145,14 @@ function buildPlanRevisions(
     });
 }
 
+/** Degrades the placement collections when a revision's as-of state cannot be reconstructed. */
+function withPlacementState(context: BuildContext, state: LedgerState): BuildContext {
+    const key = 'external_plan_placements';
+    const current = context.sources[key];
+    return { ...context, sources: { ...context.sources,
+        [key]: { readAt: current?.readAt ?? null, ...current, state: worstState([sourceState(context, key, true), state]) } } };
+}
+
 export function buildCoachingHistory(records: LedgerExportRecords, context: BuildContext): LedgerCoachingHistory {
     const placements = [...(records.placements ?? [])];
     const groups = new Map<string, NonNullable<LedgerExportRecords['placementHistory']>[number][]>();
@@ -144,34 +160,54 @@ export function buildCoachingHistory(records: LedgerExportRecords, context: Buil
         const key = `${event.planId}@${event.revision}`;
         groups.set(key, [...(groups.get(key) ?? []), event]);
     }
+    let unknownBeforeHistory = false;
     for (const events of groups.values()) {
         const { planId, revision } = events[0];
         const index = placements.findIndex(row => row.planId === planId && row.revision === revision);
         // An as-of date before the first recorded change falls back to that change's `previous`
         // snapshot rather than dropping the revision's placements.
+        // That snapshot is unknown when the first change replaced a corrupt overlay.
         const assignments = placementAsOf(events, context.asOfDate) ?? placementBeforeHistory(events);
+        if (!assignments) unknownBeforeHistory = true;
         if (index >= 0) placements.splice(index, 1);
         if (assignments) placements.push({ planId, revision, assignments });
+    }
+    // A revision whose history exceeded the bounded scan can only show its current overlay. That
+    // overlay is the as-of state only if it was last written on or before the as-of date.
+    let unknownTruncatedOverlay = false;
+    for (const truncated of records.placementHistoryUnavailable ?? []) {
+        const index = placements.findIndex(row => row.planId === truncated.planId && row.revision === truncated.revision);
+        if (index < 0) continue;
+        const writtenOn = warsawDateOf(placements[index].updatedAt ?? '');
+        if (writtenOn && writtenOn <= context.asOfDate) continue;
+        placements.splice(index, 1);
+        unknownTruncatedOverlay = true;
     }
     const flat = records.placements === undefined && records.placementHistory === undefined ? undefined : flatten(placements);
     for (const events of groups.values()) {
         const ordered = events.filter(event => event.changedOn <= context.asOfDate)
             .sort((a, b) => a.changedOn.localeCompare(b.changedOn) || a.recordedAt.localeCompare(b.recordedAt));
         const removed = new Map<string, FlatAssignment>();
+        let known: readonly PlacementAssignment[] = [];
         for (const event of ordered) {
-            for (const previous of event.previous) {
+            // Over a corrupt overlay, removals are judged against the last recorded snapshot.
+            for (const previous of hasRecordedPrevious(event) ? event.previous : known) {
                 if (!event.assignments.some(item => item.sessionId === previous.sessionId)) {
                     removed.set(previous.sessionId, { planId: event.planId, revision: event.revision, ...previous, removed: true });
                 }
             }
             for (const assignment of event.assignments) removed.delete(assignment.sessionId);
+            known = event.assignments;
         }
         flat?.push(...removed.values());
     }
+    const placementState: LedgerState = worstState([unknownBeforeHistory ? 'invalid' : 'measured',
+        unknownTruncatedOverlay ? 'unavailable' : 'measured']);
+    const placementContext = placementState === 'measured' ? context : withPlacementState(context, placementState);
     return {
         planRevisions: buildPlanRevisions(records, flat, context),
-        placements: buildPlacements(flat, records, context),
-        overrides: buildOverrides(flat, context),
+        placements: buildPlacements(flat, records, placementContext),
+        overrides: buildOverrides(flat, placementContext),
         plannedToPerformed: buildPlannedToPerformed(records, context),
     };
 }

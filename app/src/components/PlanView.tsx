@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   activeExternalPlanService,
   externalRestContextForDate,
@@ -54,6 +54,7 @@ import {
 import { ScheduleOverlayCard } from './schedule/ScheduleOverlayCard';
 import { ScheduleWindowsCard } from './schedule/ScheduleWindowsCard';
 import { PlanAuthorityBanner } from './PlanAuthorityBanner';
+import { PlacementOverlayRecoveryCard } from './PlacementOverlayRecoveryCard';
 import type { AuthorityBannerInput } from './planAuthorityBannerRule';
 import './PlanView.css';
 import type { CapabilityMaintenanceResult } from '../engine/capabilityMaintenance';
@@ -205,7 +206,9 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
 
       // P0: Fail closed on activeExternalPlanState errors. INVALID or UNAVAILABLE must never
       // silently decay to MISSING / no plan, as that could discard athlete placements.
-      const activePlanState = await activeExternalPlanService.getActivePlanState(userId, today, acts);
+      // #1172: an unreadable placement overlay alone degrades to the plan's own dates with an
+      // explicit flag, so the athlete can see the warning and repair it here.
+      const activePlanState = await activeExternalPlanService.getActivePlanState(userId, today, acts, { degradeInvalidPlacement: true });
       if (activePlanState.status === 'INVALID' || activePlanState.status === 'UNAVAILABLE') {
         if (activePlanState.status === 'INVALID') setPlanImportRepairOffered(true);
         setForecastUnavailable(
@@ -248,7 +251,8 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
         );
         const preparedSnapshot = await prepareTrainingHistorySnapshot(userId, today);
 
-        if (currentPlan) {
+        // The coach-week critique would judge a placement that is not known; withhold it.
+        if (currentPlan && !currentPlan.placementOverlayInvalid) {
           const intent = await resolveTrainingIntent(
             userId,
             events,
@@ -388,8 +392,12 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
     }, [activePlan, fixedActivities, today],
   );
 
+  // The reset card unmounts once the repaired plan reloads; focus lands on the screen heading
+  // instead of falling back to the document body (docs/standards/ui-ux.md §3.2).
+  const headingRef = useRef<HTMLHeadingElement>(null);
+
   const persistAssignments = useCallback(
-    async (assignments: ExternalPlacementAssignment[]) => {
+    async (assignments: ExternalPlacementAssignment[], { reportError = true }: { reportError?: boolean } = {}) => {
       if (!activePlan) return;
       setWriteError(null);
       try {
@@ -400,7 +408,8 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
         });
       } catch (err) {
         console.error('Failed to save external plan placement:', err);
-        setWriteError('That change could not be saved. Check your connection and try again.');
+        // A caller with its own error surface (the overlay reset card) reports the failure once.
+        if (reportError) setWriteError('That change could not be saved. Check your connection and try again.');
         throw err;
       }
       await loadPlanData();
@@ -460,7 +469,8 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
   // recommendation that seeds the tomorrow-forward forecast. Do not search
   // `weekAheadPlan.days` for today: that collection intentionally starts tomorrow.
   const authorityBanner = useMemo((): AuthorityBannerInput | null => {
-    if (!activePlan || !adaptiveTodayRecommendation) return null;
+    // An unreadable overlay means today's coach session is not known; do not compare it.
+    if (!activePlan || activePlan.placementOverlayInvalid || !adaptiveTodayRecommendation) return null;
     const coachToday = activePlan.placed.find(
       (item) => item.date === today && occupiesDate(item.status),
     );
@@ -479,7 +489,7 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
       <div className="plan-view-header">
         <div className="plan-view-title-group">
           <span className="plan-view-badge">Week Architecture</span>
-          <h2 className="plan-view-heading">{SCREEN_LABELS.plan}</h2>
+          <h2 className="plan-view-heading" ref={headingRef} tabIndex={-1}>{SCREEN_LABELS.plan}</h2>
           <p className="plan-week-range">Next 7 days · {formatWeekRange(today)}</p>
         </div>
         <div className="plan-header-actions">
@@ -578,6 +588,15 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
         </div>
       ) : activePlan && viewMode === 'imported' ? (
         <div className="plan-active-content">
+          {activePlan.placementOverlayInvalid && (
+            <PlacementOverlayRecoveryCard
+              onReset={async () => {
+                await persistAssignments([], { reportError: false });
+                headingRef.current?.focus();
+              }}
+              disabled={clinicalEscalationRequired}
+            />
+          )}
           <ExternalPlanWeek
             userId={userId}
             planTitle={activePlan.plan.title}
