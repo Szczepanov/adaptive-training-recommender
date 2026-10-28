@@ -17,6 +17,8 @@ export function describeReplacementIssue(issue: SessionReplacementIssue, plan: A
             return `${title} says it replaces session “${issue.replacesSessionId}”, but revision ${previousPlan?.revision ?? 'the previous revision'} has no session with that id. Correct or remove replacesSessionId for ${title}.`;
         case 'replacement-previous-revision-missing':
             return `${title} says it replaces session “${issue.replacesSessionId}”, but this plan has no earlier revision to replace from. Remove replacesSessionId for ${title}.`;
+        case 'replaced-session-before-effective-date':
+            return `${title} would replace ${titleOf(previousPlan, issue.replacesSessionId)} before this revision takes effect. Choose an earlier effective date or remove replacesSessionId for ${title}.`;
         case 'replaced-session-completed':
             return `${title} would replace ${titleOf(previousPlan, issue.replacesSessionId)}, which is already completed. A completed session cannot be replaced. Remove replacesSessionId for ${title}.`;
     }
@@ -29,7 +31,7 @@ function declarationAt(plan: AnyExternalTrainingPlan, field: string | undefined)
     return session?.replacesSessionId ? { sessionId: session.id, replacesSessionId: session.replacesSessionId } : null;
 }
 
-const REPLACEMENT_CODES: readonly string[] = ['replacement-previous-revision-missing', 'replaced-session-not-found', 'replaced-session-completed'];
+const REPLACEMENT_CODES: readonly string[] = ['replacement-previous-revision-missing', 'replaced-session-not-found', 'replaced-session-completed', 'replaced-session-before-effective-date'];
 
 /** Copy for the replacement issues an import rejected; other issue codes are left to the caller. */
 export function describeImportRejection(issues: readonly DataIssue[], plan: AnyExternalTrainingPlan,

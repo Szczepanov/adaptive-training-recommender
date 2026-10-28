@@ -237,6 +237,7 @@ without the field replaces nothing.
 | It may name its own id, but not a different session the new revision also keeps. This also rules out swap cycles. | Schema. |
 | The previous revision of the plan exists and contains that session id. | Import (`ExternalPlanService.import`) and preflight. |
 | The earlier session is not recorded as `completed`. | Import, and preflight when the previous overlay is readable. |
+| Its existing overlay date (or authored date without an assignment) is on or after the new revision’s effective date. | Import, and preflight when the previous overlay is readable. |
 
 Activation records the link in the same Firestore transaction that stores the revision and its
 activation. On the previous revision's revision-scoped placement overlay, each replaced session

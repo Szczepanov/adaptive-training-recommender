@@ -12,7 +12,7 @@ import type { AnyExternalTrainingPlan } from '../sessions/externalPlanV2';
 import type { SessionReplacement } from '../sessions/externalPlanReplacements';
 import type { PlacementEvent } from '../ledger/placementHistory';
 
-export type SupersessionIssueCode = 'replaced-session-completed';
+export type SupersessionIssueCode = 'replaced-session-completed' | 'replaced-session-before-effective-date';
 
 export type SupersessionChange =
     | { ok: true; assignments: ExternalPlacementAssignment[]; successors: PlacementEvent['successors'] }
@@ -23,11 +23,19 @@ export function supersedeDeclaredSessions(
     previousAssignments: readonly ExternalPlacementAssignment[],
     declarations: readonly SessionReplacement[],
     newRevision: number,
+    effectiveFrom: string,
 ): SupersessionChange {
     const byId = new Map(previousAssignments.map(item => [item.sessionId, item]));
     // A completed session is performed history; superseding it would overwrite that record.
     const completed = declarations.find(item => byId.get(item.replacesSessionId)?.status === 'completed');
     if (completed) return { ok: false, code: 'replaced-session-completed', field: `sessions[${completed.index}].replacesSessionId` };
+
+    const beforeBoundary = declarations.find(item => {
+        const session = previousPlan.sessions.find(candidate => candidate.id === item.replacesSessionId);
+        const date = byId.get(item.replacesSessionId)?.date ?? (session && impliedDate(previousPlan, session));
+        return date !== undefined && date < effectiveFrom;
+    });
+    if (beforeBoundary) return { ok: false, code: 'replaced-session-before-effective-date', field: `sessions[${beforeBoundary.index}].replacesSessionId` };
 
     const replaced = new Set(declarations.map(item => item.replacesSessionId));
     const kept = previousAssignments.map(item => replaced.has(item.sessionId) ? { ...item, status: 'superseded' as const } : item);

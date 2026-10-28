@@ -141,6 +141,34 @@ describe('ExternalPlanService import records declared session replacements (#117
         await expect(service.getPlacementHistoryState('u1', 'v6-block', 1)).resolves.toMatchObject({ status: 'AVAILABLE' });
     });
 
+    it('rejects replacing a session before the activation date without writing', async () => {
+        await expect(service.import('u1', revision2(), '2026-11-16')).resolves.toMatchObject({
+            status: 'INVALID', issues: [{ code: 'replaced-session-before-effective-date' }],
+        });
+        expect(writesOf(0)).toEqual([]);
+        expect(firestore.committedDocs.has(REV1_PLACEMENT)).toBe(false);
+    });
+
+    it('rejects a moved session before the activation date even when its authored date is later', async () => {
+        await service.savePlacement('u1', { planId: 'v6-block', revision: 1, assignments: [
+            { sessionId: 'old-b', date: '2026-11-10', status: 'moved' },
+        ] });
+        firestore.transactions.length = 0;
+        await expect(service.import('u1', v6Plan(2, [session('new-b', 'wednesday', { replacesSessionId: 'old-b' })]), '2026-11-11'))
+            .resolves.toMatchObject({ status: 'INVALID', issues: [{ code: 'replaced-session-before-effective-date' }] });
+        expect(writesOf(0)).toEqual([]);
+    });
+
+    it('uses the moved date when checking the activation boundary', async () => {
+        await service.savePlacement('u1', { planId: 'v6-block', revision: 1, assignments: [
+            { sessionId: 'old-a', date: '2026-11-16', status: 'moved' },
+        ] });
+        await expect(service.import('u1', revision2(), '2026-11-16')).resolves.toMatchObject({ status: 'AVAILABLE' });
+        expect(firestore.committedDocs.get(REV1_PLACEMENT)).toMatchObject({ assignments: [
+            { sessionId: 'old-a', date: '2026-11-16', status: 'superseded' },
+        ] });
+    });
+
     it('keeps the moved date and leaves other assignments unchanged', async () => {
         await service.savePlacement('u1', { planId: 'v6-block', revision: 1, assignments: [
             { sessionId: 'old-a', date: '2026-11-11', status: 'moved' },

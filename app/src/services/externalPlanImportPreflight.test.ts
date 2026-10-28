@@ -183,6 +183,33 @@ describe('preflightExternalPlanImport', () => {
             expect(result.status === 'ready' && result.findings.find(item => item.code === 'session_replacement_declared')?.date).toBe('2026-08-20');
         });
 
+        it('allows an identical same-revision retry without revalidating its old declarations', async () => {
+            const result = await preflightExternalPlanImport('u1', next as never, plan.startDate, '2026-08-16', next as never);
+            expect(result.status).toBe('ready');
+        });
+
+        it('does not treat changed content in the same revision as an identical retry', async () => {
+            const changed = { ...next, title: 'Changed' };
+            const result = await preflightExternalPlanImport('u1', changed as never, plan.startDate, '2026-08-16', next as never);
+            expect(result.status).toBe('invalid_replacements');
+        });
+
+        it('blocks replacing a session before the activation boundary', async () => {
+            const result = await preflightExternalPlanImport('u1', next as never, '2026-08-19', '2026-08-16', previous as never);
+            expect(result).toMatchObject({ status: 'invalid_replacements', issues: [{ code: 'replaced-session-before-effective-date' }] });
+        });
+
+        it('checks the moved date against the boundary instead of the authored date', async () => {
+            reads.activePlan.mockResolvedValue({ status: 'AVAILABLE', data: { plan: previous,
+                placement: { assignments: [{ sessionId: 'old-ride', date: '2026-08-17', status: 'moved' }] } } });
+            const rejected = await preflightExternalPlanImport('u1', next as never, '2026-08-18', '2026-08-16', previous as never);
+            expect(rejected).toMatchObject({ status: 'invalid_replacements', issues: [{ code: 'replaced-session-before-effective-date' }] });
+            reads.activePlan.mockResolvedValue({ status: 'AVAILABLE', data: { plan: previous,
+                placement: { assignments: [{ sessionId: 'old-ride', date: '2026-08-19', status: 'moved' }] } } });
+            const accepted = await preflightExternalPlanImport('u1', next as never, '2026-08-19', '2026-08-16', previous as never);
+            expect(accepted.status).toBe('ready');
+        });
+
         it('blocks a declaration that names a session missing from the previous revision', async () => {
             const ghost = { ...next, sessions: [{ ...next.sessions[0], replacesSessionId: 'ghost' }] };
             const result = await preflightExternalPlanImport('u1', ghost as never, plan.startDate, '2026-08-16', previous as never);

@@ -18,7 +18,7 @@ function plan(): ExternalTrainingPlan {
 }
 
 const previous = { ...plan(), revision: 1, sessions: [{ ...plan().sessions[0], id: 'old-ride', title: 'Old ride' }] };
-const issue = (code: 'replacement-previous-revision-missing' | 'replaced-session-not-found' | 'replaced-session-completed', replacesSessionId = 'old-ride') => ({
+const issue = (code: 'replacement-previous-revision-missing' | 'replaced-session-not-found' | 'replaced-session-completed' | 'replaced-session-before-effective-date', replacesSessionId = 'old-ride') => ({
     code, field: 'sessions[0].replacesSessionId', sessionId: 'new-ride', replacesSessionId,
 });
 
@@ -28,6 +28,8 @@ describe('session replacement copy (#1172)', () => {
             'New ride says it replaces session “ghost”, but revision 1 has no session with that id. Correct or remove replacesSessionId for New ride.');
         expect(describeReplacementIssue(issue('replacement-previous-revision-missing'), plan(), null)).toBe(
             'New ride says it replaces session “old-ride”, but this plan has no earlier revision to replace from. Remove replacesSessionId for New ride.');
+        expect(describeReplacementIssue(issue('replaced-session-before-effective-date'), plan(), previous)).toBe(
+            'New ride would replace Old ride before this revision takes effect. Choose an earlier effective date or remove replacesSessionId for New ride.');
         expect(describeReplacementIssue(issue('replaced-session-completed'), plan(), previous)).toBe(
             'New ride would replace Old ride, which is already completed. A completed session cannot be replaced. Remove replacesSessionId for New ride.');
     });
@@ -36,6 +38,8 @@ describe('session replacement copy (#1172)', () => {
         const documentPath = 'users/u1/external_plans/block/revisions/1/placement/current';
         const declaring = { ...plan().sessions[0], replacesSessionId: 'old-ride' };
         const next: ExternalTrainingPlan = { ...plan(), sessions: [declaring] };
+        expect(describeImportRejection([{ code: 'replaced-session-before-effective-date', field: 'sessions[0].replacesSessionId', documentPath }], next, previous))
+            .toEqual(['New ride would replace Old ride before this revision takes effect. Choose an earlier effective date or remove replacesSessionId for New ride.']);
         expect(describeImportRejection([{ code: 'replaced-session-completed', field: 'sessions[0].replacesSessionId', documentPath }], next, previous))
             .toEqual(['New ride would replace Old ride, which is already completed. A completed session cannot be replaced. Remove replacesSessionId for New ride.']);
         expect(describeImportRejection([{ code: 'replaced-placement-owner-mismatch', documentPath }], next, previous))

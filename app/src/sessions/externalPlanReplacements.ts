@@ -20,9 +20,9 @@ export interface SessionReplacement {
     index: number;
 }
 
-/** `replaced-session-completed` needs the previous revision's placement, so only import and
- * preflight raise it; the other two need only the previous revision itself. */
-export type SessionReplacementIssueCode = 'replacement-previous-revision-missing' | 'replaced-session-not-found' | 'replaced-session-completed';
+/** Completion and activation-boundary checks need the previous revision’s placement;
+ * the other checks need only the previous revision itself. */
+export type SessionReplacementIssueCode = 'replacement-previous-revision-missing' | 'replaced-session-not-found' | 'replaced-session-completed' | 'replaced-session-before-effective-date';
 
 export interface SessionReplacementIssue {
     code: SessionReplacementIssueCode;
