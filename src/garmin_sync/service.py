@@ -859,6 +859,139 @@ class GarminSyncService:
         target_dates = get_date_range(start_d, end_d)
         return start_d, end_d, target_dates
 
+    def _filter_qualifying_activities_for_response(
+        self,
+        activities: list[dict[str, Any]],
+        force: bool,
+        start_iso: str,
+        end_iso: str,
+    ) -> tuple[list[dict[str, Any]], int]:
+        """Filter activities that qualify for activity response derivation."""
+        qualifying: list[dict[str, Any]] = []
+        malformed_count = 0
+        for activity in activities:
+            activity_type = str(activity.get("type", ""))
+            if not supports_activity_response(activity_type):
+                continue
+            if not force and activity.get("activityResponse") is not None:
+                continue
+            activity_id = activity.get("activityId")
+            if activity_id is None or not str(activity_id).strip():
+                malformed_count += 1
+                logger.warning(
+                    "Skipping malformed cycling activity without activityId in %s -> %s range.",
+                    start_iso,
+                    end_iso,
+                )
+                continue
+            qualifying.append(activity)
+
+        return qualifying, malformed_count
+
+    def _process_single_activity_response_backfill(
+        self,
+        activity: dict[str, Any],
+        fetch_fidelity: Any,
+        index: int,
+        total: int,
+        dry_run: bool,
+    ) -> str:
+        """Process a single activity for activity response derivation and optional persistence.
+
+        Returns one of: 'derived', 'skipped', or 'failed'.
+        Raises GarminConnectTooManyRequestsError on rate limits or
+        GarminConnectAuthenticationError on authentication failure.
+        """
+        activity_id = str(activity["activityId"])
+        activity_type = str(activity.get("type", ""))
+        logger.info(
+            "[%d/%d] Deriving bounded activity-response telemetry.",
+            index,
+            total,
+        )
+        try:
+            evidence = fetch_fidelity(activity_id)
+        except (GarminConnectTooManyRequestsError, GarminConnectAuthenticationError):
+            raise
+        except Exception as error:
+            logger.warning(
+                "Activity FIT evidence fetch failed for item %d/%d (%s).",
+                index,
+                total,
+                type(error).__name__,
+            )
+            return "failed"
+
+        if evidence is None:
+            logger.info(
+                "Original FIT unavailable for item %d/%d; leaving enrichment absent.",
+                index,
+                total,
+            )
+            return "skipped"
+
+        try:
+            response = derive_activity_response(activity_type, evidence)
+            if response is None:
+                logger.info(
+                    "No bounded activity response derivable for item %d/%d.",
+                    index,
+                    total,
+                )
+                return "skipped"
+
+            activity_response_payload = serialize_activity_response(response)
+            merged_updates: dict[str, Any] = {}
+
+            if activity.get("hrMeasurement") is None and evidence.records:
+                try:
+                    fidelity = assess_activity_hr_fidelity(
+                        activity_type,
+                        evidence,
+                        _source_evidence_from_fit_devices(evidence.devices),
+                    )
+                    merged_updates["hrMeasurement"] = serialize_hr_measurement(fidelity.quality)
+                except Exception as error:
+                    logger.debug(
+                        "Optional HR-fidelity enrichment failed for item %d/%d (%s).",
+                        index,
+                        total,
+                        type(error).__name__,
+                    )
+
+            if activity.get("fitWorkoutFingerprint") is None:
+                try:
+                    identity = compute_fit_workout_identity(
+                        evidence.workout_name,
+                        evidence.workout_step_indices,
+                    )
+                    if identity is not None:
+                        merged_updates["fitWorkoutFingerprint"] = identity.fingerprint
+                        merged_updates["fitWorkoutFingerprintKind"] = identity.kind
+                except Exception as error:
+                    logger.debug(
+                        "Optional FIT workout fingerprint failed for item %d/%d (%s).",
+                        index,
+                        total,
+                        type(error).__name__,
+                    )
+
+            if not dry_run:
+                self.repository.update_activity_enrichment(
+                    activity_id,
+                    activity_response=activity_response_payload,
+                    merged_fields=merged_updates,
+                )
+            return "derived"
+        except Exception as error:
+            logger.warning(
+                "Activity-response derivation/persistence failed for item %d/%d (%s).",
+                index,
+                total,
+                type(error).__name__,
+            )
+            return "failed"
+
     def backfill_activity_response(
         self,
         days: int | None = 20,
@@ -894,24 +1027,9 @@ class GarminSyncService:
         )
         activities = self.repository.get_activities_in_range(start_iso, end_iso)
 
-        qualifying: list[dict[str, Any]] = []
-        malformed_count = 0
-        for activity in activities:
-            activity_type = str(activity.get("type", ""))
-            if not supports_activity_response(activity_type):
-                continue
-            if not force and activity.get("activityResponse") is not None:
-                continue
-            activity_id = activity.get("activityId")
-            if activity_id is None or not str(activity_id).strip():
-                malformed_count += 1
-                logger.warning(
-                    "Skipping malformed cycling activity without activityId in %s -> %s range.",
-                    start_iso,
-                    end_iso,
-                )
-                continue
-            qualifying.append(activity)
+        qualifying, malformed_count = self._filter_qualifying_activities_for_response(
+            activities, force, start_iso, end_iso
+        )
 
         logger.info(
             "Activity-response backfill found %d qualifying activities (%d already/non-cycling omitted).",
@@ -945,15 +1063,20 @@ class GarminSyncService:
         failed_count = malformed_count
         try:
             for index, activity in enumerate(qualifying, start=1):
-                activity_id = str(activity["activityId"])
-                activity_type = str(activity.get("type", ""))
-                logger.info(
-                    "[%d/%d] Deriving bounded activity-response telemetry.",
-                    index,
-                    len(qualifying),
-                )
                 try:
-                    evidence = fetch_fidelity(activity_id)
+                    outcome = self._process_single_activity_response_backfill(
+                        activity,
+                        fetch_fidelity,
+                        index,
+                        len(qualifying),
+                        dry_run,
+                    )
+                    if outcome == "derived":
+                        derived_count += 1
+                    elif outcome == "skipped":
+                        skipped_count += 1
+                    else:
+                        failed_count += 1
                 except GarminConnectTooManyRequestsError as error:
                     logger.error(
                         "Garmin rate limit stopped activity-response backfill after %d/%d items (%s).",
@@ -963,91 +1086,6 @@ class GarminSyncService:
                     )
                     failed_count += 1
                     break
-                except GarminConnectAuthenticationError:
-                    raise
-                except Exception as error:
-                    logger.warning(
-                        "Activity FIT evidence fetch failed for item %d/%d (%s).",
-                        index,
-                        len(qualifying),
-                        type(error).__name__,
-                    )
-                    failed_count += 1
-                    continue
-
-                if evidence is None:
-                    logger.info(
-                        "Original FIT unavailable for item %d/%d; leaving enrichment absent.",
-                        index,
-                        len(qualifying),
-                    )
-                    skipped_count += 1
-                    continue
-
-                try:
-                    response = derive_activity_response(activity_type, evidence)
-                    if response is None:
-                        logger.info(
-                            "No bounded activity response derivable for item %d/%d.",
-                            index,
-                            len(qualifying),
-                        )
-                        skipped_count += 1
-                        continue
-
-                    activity_response_payload = serialize_activity_response(response)
-                    merged_updates: dict[str, Any] = {}
-
-                    if activity.get("hrMeasurement") is None and evidence.records:
-                        try:
-                            fidelity = assess_activity_hr_fidelity(
-                                activity_type,
-                                evidence,
-                                _source_evidence_from_fit_devices(evidence.devices),
-                            )
-                            merged_updates["hrMeasurement"] = serialize_hr_measurement(
-                                fidelity.quality
-                            )
-                        except Exception as error:
-                            logger.debug(
-                                "Optional HR-fidelity enrichment failed for item %d/%d (%s).",
-                                index,
-                                len(qualifying),
-                                type(error).__name__,
-                            )
-
-                    if activity.get("fitWorkoutFingerprint") is None:
-                        try:
-                            identity = compute_fit_workout_identity(
-                                evidence.workout_name,
-                                evidence.workout_step_indices,
-                            )
-                            if identity is not None:
-                                merged_updates["fitWorkoutFingerprint"] = identity.fingerprint
-                                merged_updates["fitWorkoutFingerprintKind"] = identity.kind
-                        except Exception as error:
-                            logger.debug(
-                                "Optional FIT workout fingerprint failed for item %d/%d (%s).",
-                                index,
-                                len(qualifying),
-                                type(error).__name__,
-                            )
-
-                    if not dry_run:
-                        self.repository.update_activity_enrichment(
-                            activity_id,
-                            activity_response=activity_response_payload,
-                            merged_fields=merged_updates,
-                        )
-                    derived_count += 1
-                except Exception as error:
-                    logger.warning(
-                        "Activity-response derivation/persistence failed for item %d/%d (%s).",
-                        index,
-                        len(qualifying),
-                        type(error).__name__,
-                    )
-                    failed_count += 1
 
             logger.info(
                 "Activity-response backfill finished: derived=%d skipped=%d failed=%d qualifying=%d dry_run=%s.",
