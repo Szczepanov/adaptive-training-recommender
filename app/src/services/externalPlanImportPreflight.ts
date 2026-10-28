@@ -1,4 +1,4 @@
-import type { AuthoredPlanBlock, FixedActivity } from '../engine/models';
+import type { AuthoredPlanBlock, ExternalPlanPlacement, FixedActivity } from '../engine/models';
 import { computeContentHash } from '../engine/externalPlanHash';
 import { impliedDate, resolvePlacement, resolveRestDatesByDate } from '../engine/externalPlacement';
 import { addDaysToLocalDateString } from '../utils/localDate';
@@ -9,7 +9,10 @@ import {
     validateReplacementsAgainstPrevious,
     type SessionReplacementIssue,
 } from '../sessions/externalPlanReplacements';
+import type { SessionOccurrence } from '../sessions/models';
 import { activeExternalPlanService } from './activeExternalPlanService';
+import { externalPlanService } from './externalPlanService';
+import { performedSessionIds, planViewFixedActivityWindow, previousSessionDates, replacementReadRange, type ReplacementContext } from './externalPlanSupersession';
 import { fixedActivityService } from './fixedActivityService';
 import { planBlockService } from './planBlockService';
 import { sessionOccurrenceService } from './sessionOccurrenceService';
@@ -51,17 +54,25 @@ export async function preflightExternalPlanImport(
         && await computeContentHash(previousPlan) === await computeContentHash(plan);
     const replacementIssues = identicalRetry ? [] : validateReplacementsAgainstPrevious(plan, previousPlan ?? null);
     if (replacementIssues.length > 0) return { status: 'invalid_replacements', issues: replacementIssues };
-    const [fixedState, blockState, occurrenceState] = await Promise.all([
+    // #1172: replacement checks read occurrences over both revisions' horizons, and resolve the
+    // previous revision with the plan view's fixed-activity week.
+    const replacing = previousPlan && !identicalRetry && declaredSessionReplacements(plan).length > 0 ? previousPlan : null;
+    const occurrenceRange = replacing ? replacementReadRange(plan, replacing) : { start: plan.startDate, end: lastPlanDate };
+    const planViewWindow = planViewFixedActivityWindow(today);
+    const [fixedState, blockState, occurrenceState, planViewFixedState] = await Promise.all([
         fixedActivityService.getActivitiesInRangeState(userId, plan.startDate, lastPlanDate),
         planBlockService.getBlocksInRangeState(userId, plan.startDate, lastPlanDate),
-        sessionOccurrenceService.getOccurrencesInRangeState(userId, plan.startDate, lastPlanDate),
+        sessionOccurrenceService.getOccurrencesInRangeState(userId, occurrenceRange.start, occurrenceRange.end),
+        replacing ? fixedActivityService.getActivitiesInRangeState(userId, planViewWindow.start, planViewWindow.end)
+            : Promise.resolve({ status: 'MISSING' as const }),
     ]);
     const fixedActivities = valuesOrEmpty(fixedState);
+    const planViewFixed = valuesOrEmpty(planViewFixedState);
     const blocks = valuesOrEmpty(blockState);
     const occurrences = occurrenceState.status === 'MISSING' ? []
         : occurrenceState.status === 'AVAILABLE' ? occurrenceState.data : null;
     const unavailableSources = [
-        fixedActivities === null && 'fixed activities',
+        (fixedActivities === null || planViewFixed === null) && 'fixed activities',
         blocks === null && 'travel / plan blocks',
         occurrences === null && 'authored session occurrences',
     ].filter((item): item is string => Boolean(item));
@@ -156,34 +167,50 @@ export async function preflightExternalPlanImport(
         }
     }
 
-    const replacements = previousPlan && !identicalRetry ? replacementFindings(plan, previousPlan, activeStates, effectiveFrom) : { findings: [] };
+    const replacements = replacing
+        ? await replacementFindings(userId, plan, replacing, effectiveFrom, { fixedActivities: planViewFixed ?? [], occurrences: occurrences as SessionOccurrence[] })
+        : { findings: [] };
+    if ('unavailable' in replacements) return { status: 'unknown', unavailableSources: [replacements.unavailable], findings };
     if ('issues' in replacements) return { status: 'invalid_replacements', issues: replacements.issues };
     return { status: 'ready', findings: [...findings, ...replacements.findings] };
 }
 
-type ActivePlanStates = Awaited<ReturnType<typeof activeExternalPlanService.getActivePlanStatesInRange>>;
+/** Reads the previous revision's own overlay; null when it has none. */
+async function readPreviousOverlay(userId: string, previousPlan: AnyExternalTrainingPlan):
+    Promise<{ overlay: ExternalPlanPlacement | null } | { unreadable: true } | { unavailable: string }> {
+    const state = await externalPlanService.getPlacementState(userId, previousPlan.planId, previousPlan.revision);
+    if (state.status === 'AVAILABLE') return { overlay: state.data };
+    if (state.status === 'MISSING') return { overlay: null };
+    // Another owner stays fail-closed, as for the active plan; other corruption gets a recovery path.
+    if (state.status === 'INVALID' && !state.issues.some(issue => issue.code === 'owner-mismatch')) return { unreadable: true };
+    return { unavailable: 'earlier revision’s saved moves' };
+}
 
 /**
- * #1172: one acknowledgement finding per declared replacement, dated where the earlier session
- * currently sits: its placement in the previous revision's overlay when readable, else its
- * authored date. A session the overlay records as completed cannot be replaced.
+ * #1172: one acknowledgement finding per declared replacement, dated where the plan view shows
+ * the earlier session (`previousSessionDates`). Import applies the same checks: a started or
+ * completed session cannot be replaced, and an unreadable previous overlay blocks the import.
  */
-function replacementFindings(plan: AnyExternalTrainingPlan, previousPlan: AnyExternalTrainingPlan, activeStates: ActivePlanStates, effectiveFrom: string):
-    { findings: ImportPreflightFinding[] } | { issues: SessionReplacementIssue[] } {
+async function replacementFindings(userId: string, plan: AnyExternalTrainingPlan, previousPlan: AnyExternalTrainingPlan,
+    effectiveFrom: string, context: ReplacementContext):
+    Promise<{ findings: ImportPreflightFinding[] } | { issues: SessionReplacementIssue[] } | { unavailable: string }> {
     const declarations = declaredSessionReplacements(plan);
-    if (declarations.length === 0) return { findings: [] };
-    const overlay = activeStates.flatMap(state => state.status === 'AVAILABLE'
-        && state.data.plan.planId === previousPlan.planId && state.data.plan.revision === previousPlan.revision
-        && state.data.placement ? [state.data.placement] : [])[0];
-    const assigned = new Map((overlay?.assignments ?? []).map(item => [item.sessionId, item]));
-    const completed = declarations.filter(item => assigned.get(item.replacesSessionId)?.status === 'completed');
+    const read = await readPreviousOverlay(userId, previousPlan);
+    if ('unavailable' in read) return read;
+    if ('unreadable' in read) {
+        const first = declarations[0];
+        return { issues: [{ code: 'replaced-placement-unreadable', field: `sessions[${first.index}].replacesSessionId`,
+            sessionId: first.sessionId, replacesSessionId: first.replacesSessionId }] };
+    }
+    const performed = performedSessionIds(previousPlan, read.overlay, context.occurrences);
+    const completed = declarations.filter(item => performed.has(item.replacesSessionId));
     if (completed.length > 0) {
         return { issues: completed.map(item => ({ code: 'replaced-session-completed' as const,
             field: `sessions[${item.index}].replacesSessionId`, sessionId: item.sessionId, replacesSessionId: item.replacesSessionId })) };
     }
+    const dates = previousSessionDates(previousPlan, read.overlay, context.fixedActivities);
     const beforeBoundary = declarations.filter(item => {
-        const replaced = previousPlan.sessions.find(session => session.id === item.replacesSessionId);
-        const date = assigned.get(item.replacesSessionId)?.date ?? (replaced && impliedDate(previousPlan, replaced));
+        const date = dates.get(item.replacesSessionId);
         return date !== undefined && date < effectiveFrom;
     });
     if (beforeBoundary.length > 0) {
@@ -192,12 +219,11 @@ function replacementFindings(plan: AnyExternalTrainingPlan, previousPlan: AnyExt
     }
     const titleOf = (sessions: AnyExternalTrainingPlan['sessions'], id: string) => sessions.find(item => item.id === id)?.title ?? id;
     return { findings: declarations.map(item => {
-        const replaced = previousPlan.sessions.find(session => session.id === item.replacesSessionId);
         const oldTitle = titleOf(previousPlan.sessions, item.replacesSessionId);
         return {
             kind: 'session_replacement' as const,
             code: 'session_replacement_declared' as const,
-            date: assigned.get(item.replacesSessionId)?.date ?? (replaced ? impliedDate(previousPlan, replaced) : previousPlan.startDate),
+            date: dates.get(item.replacesSessionId) ?? previousPlan.startDate,
             detail: `${titleOf(plan.sessions, item.sessionId)} replaces ${oldTitle} from revision ${previousPlan.revision}. ${oldTitle} stays on its date and is marked as replaced.`,
         };
     }) };

@@ -77,7 +77,7 @@ travel dates, and a travel change does not require re-importing the plan.
 
 | Field | Required | Rules |
 |---|---|---|
-| `schema` | yes | Exact literal. The version tag is how a future schema change stays detectable. |
+| `schema` | yes | Exact literal. The version tag is how a future schema change stays detectable. A new optional field may stay inside an existing literal only when every older validator rejects it as an unknown key and no behaviour is switched on the literal; otherwise the literal must be bumped. |
 | `planId` | yes | Slug, 1–64 chars, `[a-z0-9-]`. Stable across revisions — this is what makes supersession work. |
 | `revision` | yes | Integer ≥ 1. Must exceed the stored revision for the same `planId`. |
 | `startDate` | yes | `YYYY-MM-DD`, must be a Monday, Warsaw-local. Monday gives the imported artifact deterministic conventional training weeks; it is not the engine's rolling microcycle boundary. Placement/critique code translates between them. |
@@ -236,16 +236,20 @@ without the field replaces nothing.
 | No two sessions replace the same earlier session. | Schema. |
 | It may name its own id, but not a different session the new revision also keeps. This also rules out swap cycles. | Schema. |
 | The previous revision of the plan exists and contains that session id. | Import (`ExternalPlanService.import`) and preflight. |
-| The earlier session is not recorded as `completed`. | Import, and preflight when the previous overlay is readable. |
-| Its existing overlay date (or authored date without an assignment) is on or after the new revision’s effective date. | Import, and preflight when the previous overlay is readable. |
+| The earlier session was not started or completed: no session occurrence of that plan, previous revision and session id is `active`, `completed` or `abandoned`, and its overlay assignment is not `completed`. `abandoned` counts because it is a terminal record of an attempt. | Preflight, from the occurrences it already reads. Import repeats it with plain reads outside the transaction (a transaction cannot run the range query), so the import-side check is best-effort against a session started in between; preflight is the gate. |
+| The date the plan view shows it on is on or after the new revision’s effective date. That is its overlay date, else the date `resolvePlacement` gives it with the previous overlay and the fixed activities from today through today + 6 (Warsaw), the window the plan view uses. Its authored date is used only when the resolver leaves it unplaced. | Import and preflight. |
+| The previous revision’s placement overlay is readable. An unreadable one rejects with `replaced-placement-unreadable` and nothing is written; the athlete uses Reset moves on that revision first, then imports again. An overlay that names another owner also rejects. | Import and preflight. |
 
 Activation records the link in the same Firestore transaction that stores the revision and its
 activation. On the previous revision's revision-scoped placement overlay, each replaced session
-becomes `superseded` on the date it already held: its overlay date, or its authored date when it
-had no assignment. Other assignments are unchanged. The appended `placement_history` event
+becomes `superseded` on the date the plan view showed it: its overlay date, or its resolved date
+when it had no assignment. Other assignments are unchanged. The appended `placement_history` event
 records `successors: { <oldSessionId>: { revision, sessionId } }` under the same rules as
-`savePlacement`. A corrupt previous overlay is repaired with an invalid-prior event, as for any
-save; an overlay that names another owner rejects the import. An identical retry of the same
+`savePlacement`. An unreadable previous overlay, or one that names another owner, rejects the
+import instead of being overwritten. Preflight and import resolve these dates exactly as the plan
+view does, with the fixed activities from Warsaw today through today + 6; at import, today is the
+Warsaw date of the import's own timestamp. Occurrences are read over both revisions' horizons.
+An identical retry of the same
 revision returns before this step and writes nothing. The import preview lists each declared
 replacement as a finding to acknowledge, and blocks the import when a declaration is invalid.
 
