@@ -1,7 +1,29 @@
 // Canonical lexical tokens and helper names; string literals retain their exact spelling.
 export function minifyRules(source) {
+  return minifyPieces(source).pieces.join('');
+}
+
+// Same output as minifyRules, additionally attributing every emitted byte (a token plus the
+// separator before it) to the boundary containing the token's source start offset.
+// boundaries: [{ name, start, end }] over source offsets; returns per-boundary UTF-8 bytes.
+export function minifyRulesWithOrigins(source, boundaries) {
+  const { pieces, starts } = minifyPieces(source);
+  const bytes = boundaries.map(() => 0);
+  pieces.forEach((piece, position) => {
+    const owner = boundaries.findIndex((boundary) => starts[position] >= boundary.start && starts[position] < boundary.end);
+    if (owner === -1) throw new RangeError(`Token at ${starts[position]} is outside every module boundary.`);
+    bytes[owner] += Buffer.byteLength(piece, 'utf8');
+  });
+  return {
+    minified: pieces.join(''),
+    modules: boundaries.map((boundary, position) => ({ name: boundary.name, bytes: bytes[position] })),
+  };
+}
+
+function minifyPieces(source) {
   if (typeof source !== 'string') throw new TypeError('Rules source must be a string.');
   const tokens = [];
+  const starts = [];
   const word = /[A-Za-z_][A-Za-z_0-9]*/y;
   const number = /[0-9]+(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?/y;
   let index = 0;
@@ -41,6 +63,7 @@ export function minifyRules(source) {
       }
       if (!closed) throw new SyntaxError(`Unterminated string at ${start}.`);
       tokens.push(source.slice(start, index));
+      starts.push(start);
       continue;
     }
     const pattern = /[A-Za-z_]/.test(char) ? word : /[0-9]/.test(char) ? number : undefined;
@@ -48,12 +71,15 @@ export function minifyRules(source) {
       pattern.lastIndex = index;
       const [token] = pattern.exec(source);
       tokens.push(token);
+      starts.push(index);
       index += token.length;
     } else if (['&&', '||', '==', '!=', '<=', '>=', '**', '$('].includes(pair)) {
       tokens.push(pair);
+      starts.push(index);
       index += 2;
     } else if (/[{}()[\];:,.\/+*%\-=!<>&|?$]/.test(char)) {
       tokens.push(char);
+      starts.push(index);
       index += 1;
     } else {
       throw new SyntaxError(`Unexpected rules character at ${index}.`);
@@ -61,7 +87,7 @@ export function minifyRules(source) {
   }
   const renamed = compactBindings(tokens);
   let previous = '';
-  const compact = renamed.map((token) => {
+  const pieces = renamed.map((token) => {
     const boundary = previous.slice(-1) + token[0];
     const separate = (/^[A-Za-z_0-9'"]/.test(previous) && /^[A-Za-z_0-9'"]/.test(token))
       || (/^[0-9]/.test(previous) && token === '.')
@@ -71,7 +97,7 @@ export function minifyRules(source) {
     return separate ? ` ${token}` : token;
   });
   // Rules paths and service names require compact punctuation; separate only merging tokens.
-  return compact.join('');
+  return { pieces, starts };
 }
 
 // Only declared bindings change: fields, static paths, builtins and free variables stay intact.

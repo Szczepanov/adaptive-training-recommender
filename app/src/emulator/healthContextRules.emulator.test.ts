@@ -80,14 +80,6 @@ emulatorDescribe('Daily subjective check-in health-context rules (HA1)', () => {
         }));
     });
 
-    it('rejects an unrecognized suspectedCause value', async () => {
-        const db = testEnvironment.authenticatedContext(ownerId).firestore();
-        await assertFails(setDoc(doc(db, checkinPath), {
-            ...contextOnlyCheckin(),
-            healthContext: { symptoms: { present: true, suspectedCause: 'viral' } },
-        }));
-    });
-
     it('allows a shape-valid conflicting legacy value because app/parser precedence is authoritative', async () => {
         const db = testEnvironment.authenticatedContext(ownerId).firestore();
         await assertSucceeds(setDoc(doc(db, checkinPath), {
@@ -97,64 +89,22 @@ emulatorDescribe('Daily subjective check-in health-context rules (HA1)', () => {
         }));
     });
 
-    it('accepts a true to false clear only when stale symptom details are removed or null', async () => {
+    // Issue #1201 rules scope: every health-context VALUE (enums, ranges, symptom/presence
+    // coupling) is validated by engine/validation.ts validateCheckin (validateHealthContext)
+    // in checkinService.upsertCheckin before every write -- see healthContextContract.test.ts.
+    // The rules keep the key allow-lists, size caps and the merged-document illness answer.
+    it.each([
+        ['an unrecognized suspectedCause', { symptoms: { present: true, suspectedCause: 'viral' } }],
+        ['an out-of-range timezoneShiftHours', { travelDisruption: 'timezone_shift', timezoneShiftHours: 14.1 }],
+        ['stale onset on cleared symptoms', { symptoms: { present: false, onset: 'today' } }],
+        ['an out-of-range alcoholDrinksLast24h', { alcoholDrinksLast24h: 4 }],
+        ['a non-boolean closeSickContact beside valid symptoms', { symptoms: { present: true, onset: 'today' }, closeSickContact: 'yes' }],
+    ])('accepts %s at the rules boundary (validateCheckin owns it)', async (_label, healthContext) => {
         const db = testEnvironment.authenticatedContext(ownerId).firestore();
-        await assertSucceeds(setDoc(doc(db, checkinPath), {
-            ...baseCheckin(),
-            illnessSymptoms: true,
-            healthContext: {
-                symptoms: {
-                    present: true,
-                    onset: 'yesterday',
-                    severity: 'moderate',
-                    types: ['cough', 'unusual_fatigue'],
-                },
-            },
-        }));
-
-        await assertFails(updateDoc(doc(db, checkinPath), {
-            illnessSymptoms: false,
-            'healthContext.symptoms.present': false,
-        }));
-
-        await assertSucceeds(updateDoc(doc(db, checkinPath), {
-            illnessSymptoms: false,
-            healthContext: { symptoms: { present: false, onset: null, severity: null, types: null } },
-            updatedAt: '2026-08-21T07:00:00.000Z',
-        }));
+        await assertSucceeds(setDoc(doc(db, checkinPath), { ...baseCheckin(), healthContext }));
     });
 
-    it('rejects timezoneShiftHours outside the real-world offset range', async () => {
-        const db = testEnvironment.authenticatedContext(ownerId).firestore();
-        await assertFails(setDoc(doc(db, checkinPath), {
-            ...baseCheckin(),
-            healthContext: { travelDisruption: 'timezone_shift', timezoneShiftHours: 14.1 },
-        }));
-        await assertFails(setDoc(doc(db, checkinPath), {
-            ...baseCheckin(),
-            healthContext: { travelDisruption: 'timezone_shift', timezoneShiftHours: -14.1 },
-        }));
-        await assertSucceeds(setDoc(doc(db, checkinPath), {
-            ...baseCheckin(),
-            healthContext: { travelDisruption: 'timezone_shift', timezoneShiftHours: 14 },
-        }));
-    });
-
-    it('rejects onset, severity, types, or suspectedCause when symptoms are false', async () => {
-        const db = testEnvironment.authenticatedContext(ownerId).firestore();
-        for (const symptoms of [
-            { present: false, onset: 'today' },
-            { present: false, severity: 'mild' },
-            { present: false, types: ['cough'] },
-            { present: false, suspectedCause: 'allergy' },
-        ]) {
-            await assertFails(setDoc(doc(db, checkinPath), {
-                ...baseCheckin(),
-                healthContext: { symptoms },
-            }));
-        }
-    });
-
+    // upsertCheckin merges, so the required illness answer is checked on the merged document.
     it('rejects a write with neither the legacy illness flag nor a rich symptoms block', async () => {
         const db = testEnvironment.authenticatedContext(ownerId).firestore();
         await assertFails(setDoc(doc(db, checkinPath), contextOnlyCheckin()));
@@ -162,38 +112,19 @@ emulatorDescribe('Daily subjective check-in health-context rules (HA1)', () => {
             ...contextOnlyCheckin(),
             healthContext: { travelDisruption: 'none' },
         }));
+        await assertSucceeds(setDoc(doc(db, checkinPath), {
+            ...contextOnlyCheckin(),
+            healthContext: { symptoms: { present: false } },
+        }));
     });
 
-    it('rejects malformed supplied context fields while keeping every context field optional', async () => {
+    it('rejects unknown health-context and symptom keys, including beside a valid symptoms block', async () => {
         const db = testEnvironment.authenticatedContext(ownerId).firestore();
         await assertSucceeds(setDoc(doc(db, checkinPath), baseCheckin()));
         await testEnvironment.clearFirestore();
-
-        await assertFails(setDoc(doc(db, checkinPath), {
-            ...baseCheckin(),
-            healthContext: { alcoholDrinksLast24h: 4 },
-        }));
-        await assertFails(setDoc(doc(db, checkinPath), {
-            ...baseCheckin(),
-            healthContext: { closeSickContact: 'yes' },
-        }));
         await assertFails(setDoc(doc(db, checkinPath), {
             ...baseCheckin(),
             healthContext: { unknownHealthField: true },
-        }));
-    });
-
-    it('rejects an invalid sibling field even when symptoms alone is valid', async () => {
-        // hasValidSubjectiveHealthFields must require the whole healthContext map to be
-        // valid, not just a valid symptoms sub-object -- otherwise a valid symptoms block
-        // could carry an arbitrary/malformed sibling field past the check.
-        const db = testEnvironment.authenticatedContext(ownerId).firestore();
-        await assertFails(setDoc(doc(db, checkinPath), {
-            ...contextOnlyCheckin(),
-            healthContext: {
-                symptoms: { present: true, onset: 'today', severity: 'mild' },
-                closeSickContact: 'yes',
-            },
         }));
         await assertFails(setDoc(doc(db, checkinPath), {
             ...contextOnlyCheckin(),
@@ -202,5 +133,41 @@ emulatorDescribe('Daily subjective check-in health-context rules (HA1)', () => {
                 unknownHealthField: true,
             },
         }));
+        await assertFails(setDoc(doc(db, checkinPath), {
+            ...baseCheckin(),
+            healthContext: { symptoms: { present: true, unknownSymptomField: 'x' } },
+        }));
+    });
+
+    it('rejects an oversized otherDisruption or symptom type list', async () => {
+        const db = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertFails(setDoc(doc(db, checkinPath), { ...baseCheckin(), healthContext: { otherDisruption: 'x'.repeat(501) } }));
+        await assertFails(setDoc(doc(db, checkinPath), {
+            ...baseCheckin(),
+            healthContext: { symptoms: { present: true, types: Array.from({ length: 11 }, () => 'cough') } },
+        }));
+        await assertSucceeds(setDoc(doc(db, checkinPath), {
+            ...baseCheckin(),
+            healthContext: { otherDisruption: 'x'.repeat(500), symptoms: { present: true, types: Array.from({ length: 10 }, () => 'cough') } },
+        }));
+    });
+
+    it.each([
+        ['a list in otherDisruption', { otherDisruption: ['x'.repeat(501)] }],
+        ['a map in otherDisruption', { otherDisruption: { text: 'x'.repeat(501) } }],
+        ['a string in symptom types', { symptoms: { present: true, types: 'x'.repeat(501) } }],
+        ['a map in symptom types', { symptoms: { present: true, types: { text: 'x'.repeat(501) } } }],
+    ])('rejects a size-cap bypass using %s on create and update', async (_label, healthContext) => {
+        const db = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertFails(setDoc(doc(db, checkinPath), { ...baseCheckin(), healthContext }));
+        await assertSucceeds(setDoc(doc(db, checkinPath), baseCheckin()));
+        await assertFails(updateDoc(doc(db, checkinPath), { healthContext }));
+    });
+
+    it('applies the caps to the merged document on update', async () => {
+        const db = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertSucceeds(setDoc(doc(db, checkinPath), { ...baseCheckin(), healthContext: { symptoms: { present: true } } }));
+        await assertFails(updateDoc(doc(db, checkinPath), { 'healthContext.otherDisruption': 'x'.repeat(501) }));
+        await assertSucceeds(updateDoc(doc(db, checkinPath), { 'healthContext.symptoms.present': false, updatedAt: '2026-08-21T07:00:00.000Z' }));
     });
 });

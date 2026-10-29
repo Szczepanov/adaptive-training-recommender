@@ -3131,7 +3131,7 @@ emulatorDescribe('Firestore security rules', () => {
     });
 
     // --- ADR-0039: Hunger 1-10 on check-in ---
-    it('allows valid check-in with hunger and timing, and rejects malformed hunger', async () => {
+    it('allows check-in hunger values, leaving hunger validation to validateCheckin', async () => {
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
         // Valid hunger endpoints 1 and 10 with timing
         await expect(assertSucceeds(setDoc(doc(ownerDb, checkinPath), {
@@ -3153,38 +3153,38 @@ emulatorDescribe('Firestore security rules', () => {
             hungerTiming: null,
         }))).resolves.toBeUndefined();
 
-        // Out of bounds: 0, 11, non-integer
-        await assertFails(setDoc(doc(ownerDb, checkinPath), {
-            ...validCheckinWithSessionResponse(),
-            hunger1To10: 0,
-            hungerTiming: 'morning_pre_breakfast',
-        }));
-        await assertFails(setDoc(doc(ownerDb, checkinPath), {
-            ...validCheckinWithSessionResponse(),
-            hunger1To10: 11,
-            hungerTiming: 'morning_pre_breakfast',
-        }));
-        await assertFails(setDoc(doc(ownerDb, checkinPath), {
-            ...validCheckinWithSessionResponse(),
-            hunger1To10: 5.5,
-            hungerTiming: 'morning_pre_breakfast',
-        }));
+        // Issue #1201: the hunger range/integer check is owned by engine/validation.ts
+        // validateCheckin (checkinService.upsertCheckin); see validation.hunger.test.ts.
+        // The rules accept these values.
+        for (const malformed of [
+            { hunger1To10: 0, hungerTiming: 'morning_pre_breakfast' },
+            { hunger1To10: 5.5, hungerTiming: 'morning_pre_breakfast' },
+        ]) {
+            await assertSucceeds(setDoc(doc(ownerDb, checkinPath), { ...validCheckinWithSessionResponse(), ...malformed }));
+        }
 
-        // Hunger without timing
+        // The hunger/timing coupling stays in the rules: upsertCheckin merges, so only the
+        // rules see the merged document.
         await assertFails(setDoc(doc(ownerDb, checkinPath), {
             ...validCheckinWithSessionResponse(),
             hunger1To10: 5,
         }));
-
-        // Timing without hunger
         await assertFails(setDoc(doc(ownerDb, checkinPath), {
             ...validCheckinWithSessionResponse(),
             hungerTiming: 'morning_pre_breakfast',
         }));
+        await assertSucceeds(setDoc(doc(ownerDb, checkinPath), {
+            ...validCheckinWithSessionResponse(),
+            hunger1To10: 5,
+            hungerTiming: 'morning_pre_breakfast',
+        }));
+        // A merge payload that is coupled on its own can still decouple the merged document.
+        await assertSucceeds(setDoc(doc(ownerDb, checkinPath), { hunger1To10: 6 }, { merge: true }));
+        await assertFails(setDoc(doc(ownerDb, checkinPath), { hungerTiming: null }, { merge: true }));
     });
 
     // --- ADR-0042: Nutrition tracking adherence on check-in ---
-    it('allows valid check-in with nutritionAdherenceYesterday, and rejects invalid values', async () => {
+    it('allows check-in nutritionAdherenceYesterday values, leaving the enum to validateCheckin', async () => {
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
         const validValues = ['fully_tracked', 'mostly_tracked', 'minimal', 'untracked', 'fasted'] as const;
 
@@ -3201,16 +3201,11 @@ emulatorDescribe('Firestore security rules', () => {
             nutritionAdherenceYesterday: null,
         }))).resolves.toBeUndefined();
 
-        // Invalid string
-        await assertFails(setDoc(doc(ownerDb, checkinPath), {
+        // Issue #1201: the adherence enum is owned by validateCheckin
+        // (validation.nutritionAdherence.test.ts); the rules accept other values.
+        await assertSucceeds(setDoc(doc(ownerDb, checkinPath), {
             ...validCheckinWithSessionResponse(),
             nutritionAdherenceYesterday: 'partially_tracked',
-        }));
-
-        // Invalid type (number)
-        await assertFails(setDoc(doc(ownerDb, checkinPath), {
-            ...validCheckinWithSessionResponse(),
-            nutritionAdherenceYesterday: 1,
         }));
     });
 

@@ -10,6 +10,7 @@ import { CONCENTRIC_SEGMENTATION_V2 } from './concentricSegmentation';
 import { proposeOpenBarTrial, velocityMeasurementMethodId } from './openBarAnalysisImport';
 import type { AssessmentTrial, ComparisonContext, ObservationContext } from './models';
 import { getPerformanceTestDefinition } from './performanceTestingCatalog';
+import { assertFixedLoadObservation, assertFixedLoadObservationEvidence } from './fixedLoadVelocity';
 import { BACK_SQUAT_FIXED_LOAD_VELOCITY_PROTOCOL, BENCH_PRESS_FIXED_LOAD_VELOCITY_PROTOCOL, BENCH_PRESS_1RM_PROTOCOL, PHYSICAL_CAPITAL_PROTOCOL_REVISIONS } from './physicalCapitalProtocols';
 import { assertValidMeasurementProtocol, getComparisonDimensionDefinition } from './protocols';
 import { getMetricDefinition } from './registry';
@@ -147,5 +148,44 @@ describe('ADR-0047 fixed-load velocity', () => {
         const base = await buildComparisonSeries('strength_fixed_load_mean_velocity_mps', 'm/s', protocol, context);
         const other = await buildComparisonSeries('strength_fixed_load_mean_velocity_mps', 'm/s', protocol, changed);
         expect(other.key).not.toBe(base.key);
+    });
+});
+
+// Issue #1201: Firestore rules no longer re-validate fixed-load trial context, method identity,
+// value bounds or the observation/trial value binding; these TypeScript guards own them on the
+// write path (assessmentTrialService / metricObservationService).
+describe('fixed-load write-path guards owned by TypeScript (issue #1201)', () => {
+    it.each([-0.1, 5.1])('rejects a fixed-load trial velocity outside 0-5 m/s: %s', velocity => {
+        expect(() => assertValidAssessmentTrial(trial(1, velocity), protocol)).toThrow(/within 0-5 m\/s/);
+    });
+
+    it.each(['test_load_kg', 'measurement_method_id', 'equipment_setup_id'] as const)('rejects a fixed-load trial missing context %s', dimension => {
+        const partial: ObservationContext = Object.fromEntries(Object.entries(context).filter(([key]) => key !== dimension));
+        expect(() => assertValidAssessmentTrial(trial(1, 0.8, { context: partial }), protocol)).toThrow(new RegExp(dimension));
+    });
+
+    it('rejects observation revisions that are not one valid trial-derived benchmark', async () => {
+        const revision = (await derive([trial(1, 0.8)])).observations[0];
+        expect(() => assertFixedLoadObservation(revision)).not.toThrow();
+        for (const change of [
+            { value: 5.5 }, { value: -1 }, { validity: 'practice' as const }, { algorithmVersion: 'other-v1' },
+            { protocolRef: { id: protocol.id, revision: 2 } }, { protocolRef: { id: 'other-protocol', revision: 1 } },
+            { derivedFromEvidenceRefs: [...revision.derivedFromEvidenceRefs!, { ...revision.derivedFromEvidenceRefs![0], trialId: 'trial-2' }] },
+            { derivedFromObservationIds: ['obs-1'] },
+        ]) {
+            expect(() => assertFixedLoadObservation({ ...revision, ...change })).toThrow(/dedicated trial-derived benchmark/);
+        }
+    });
+
+    it('rejects observation evidence that does not match its source trial', async () => {
+        const source = trial(1, 0.8);
+        const revision = (await derive([source])).observations[0];
+        expect(() => assertFixedLoadObservationEvidence(revision, source)).not.toThrow();
+        expect(() => assertFixedLoadObservationEvidence({ ...revision, value: 0.9 }, source)).toThrow(/eligible source trial/);
+        expect(() => assertFixedLoadObservationEvidence(revision, { ...source, id: 'trial-2' })).toThrow(/eligible source trial/);
+        expect(() => assertFixedLoadObservationEvidence(revision, { ...source, validity: 'practice' })).toThrow(/eligible source trial/);
+        expect(() => assertFixedLoadObservationEvidence(revision, { ...source, values: { ...source.values, successful: false } })).toThrow(/eligible source trial/);
+        expect(() => assertFixedLoadObservationEvidence(revision, { ...source, values: { ...source.values, load_kg: 70 } })).toThrow(/eligible source trial/);
+        expect(() => assertFixedLoadObservationEvidence(revision, { ...source, context: { ...context, equipment_setup_id: 'bench-b' } })).toThrow(/context equipment_setup_id/);
     });
 });

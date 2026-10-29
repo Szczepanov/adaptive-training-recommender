@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { OutcomeEvaluationSpecRevision, OutcomeMetricBinding } from './evaluationSpec';
 import {
     assertValidBaselineSelection,
+    assertValidOutcomeEvaluationRevision,
     assertValidOutcomeEvaluationSnapshot,
     assertValidOutcomeMetricBinding,
 } from './evaluationSpec';
@@ -31,6 +32,20 @@ const primary: OutcomeMetricBinding = {
 };
 
 describe('OutcomeEvaluationSpec OV5.1', () => {
+    // Issue #1201: Firestore rules no longer re-check revision dates, the status enum or the
+    // sourceRef kind; assertValidOutcomeEvaluationRevision owns them on every
+    // outcomeEvaluationService write (via assertValidOutcomeEvaluationSnapshot).
+    it('rejects malformed or reversed dates, unsupported status and unsupported source kind', () => {
+        const binding = [primary];
+        expect(() => assertValidOutcomeEvaluationRevision({ ...revision, startDate: '2026-02-30' })).toThrow(/startDate must be a real date/);
+        expect(() => assertValidOutcomeEvaluationRevision({ ...revision, endDate: '04-10-2026' })).toThrow(/endDate must be YYYY-MM-DD/);
+        expect(() => assertValidOutcomeEvaluationRevision({ ...revision, startDate: '2026-10-05' })).toThrow(/startDate cannot exceed endDate/);
+        expect(() => assertValidOutcomeEvaluationRevision({ ...revision, status: 'paused' as never })).toThrow(/Unsupported evaluation status/);
+        expect(() => assertValidOutcomeEvaluationRevision({ ...revision, sourceRef: { kind: 'race' as never, id: 'x' } })).toThrow(/Unsupported evaluation source/);
+        expect(() => assertValidOutcomeEvaluationSnapshot({ revision: { ...revision, startDate: '2026-10-05' }, bindings: binding }))
+            .toThrow(/startDate cannot exceed endDate/);
+    });
+
     it('requires mechanically complete baseline selection', () => {
         expect(() => assertValidBaselineSelection({ kind: 'declared_observation', observationId: '' })).toThrow(/observationId/);
         expect(() => assertValidBaselineSelection({

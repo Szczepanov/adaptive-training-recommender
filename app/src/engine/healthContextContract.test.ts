@@ -172,6 +172,32 @@ describe('HA1 validateCheckin migration contract', () => {
         });
     });
 
+    // Issue #1201: Firestore rules keep only the health-context key allow-lists and caps;
+    // validateCheckin (validateHealthContext) owns these values on checkinService.upsertCheckin.
+    it('always persists a boolean illness answer and rejects a non-boolean one', () => {
+        expect(validateCheckin(writePayload({ illnessSymptoms: 'no' })).isValid).toBe(false);
+        const withoutAnswer = writePayload();
+        delete withoutAnswer.illnessSymptoms;
+        expect(validateCheckin(withoutAnswer).data?.illnessSymptoms).toBe(false);
+    });
+
+    it.each([
+        ['alcoholDrinksLast24h', { alcoholDrinksLast24h: 4 }],
+        ['alcoholDrinksLast24h', { alcoholDrinksLast24h: 1.5 }],
+        ['travelDisruption', { travelDisruption: 'long_haul' }],
+        ['unusualHeatOrSauna', { unusualHeatOrSauna: 'yes' }],
+        ['closeSickContact', { closeSickContact: 1 }],
+        ['otherDisruption', { otherDisruption: 'x'.repeat(501) }],
+        ['healthContext.symptoms.onset', { symptoms: { present: true, onset: 'last_month' } }],
+        ['healthContext.symptoms.severity', { symptoms: { present: true, severity: 'extreme' } }],
+        ['healthContext.symptoms.types', { symptoms: { present: true, types: ['sore_throat', 'rash'] } }],
+        ['healthContext.symptoms.present', { symptoms: { present: 'yes' } }],
+    ])('rejects an invalid health-context value for %s', (field, healthContext) => {
+        const result = validateCheckin(writePayload({ healthContext }));
+        expect(result.isValid).toBe(false);
+        expect(result.errors.some(error => error.field.endsWith(field))).toBe(true);
+    });
+
     it('rejects an unrecognized suspectedCause and a stale one on a cleared symptom', () => {
         expect(validateCheckin(writePayload({
             healthContext: { symptoms: { present: true, suspectedCause: 'viral' } },

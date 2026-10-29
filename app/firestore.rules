@@ -2222,95 +2222,58 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
     match /daily_subjective_checkin/{document=**} { allow read, write: if false; }
 
     match /users/{userId}/daily_subjective_checkins/{date} {
-      function hasValidHealthSymptoms(symptoms) {
-        return symptoms is map
+      // Issue #1201 rules scope: hunger, nutrition adherence and illness-answer values and
+      // every health-context value (enums, ranges, symptom/presence coupling) are validated by
+      // engine/validation.ts validateCheckin (validateHealthContext) in
+      // checkinService.upsertCheckin before every write. Rules keep the key allow-lists and caps.
+      function hasBoundedHealthContext(data) {
+        let context = data.get('healthContext', {});
+        let symptoms = context.get('symptoms', {});
+        return context.keys().hasOnly(['alcoholDrinksLast24h', 'travelDisruption', 'timezoneShiftHours', 'unusualHeatOrSauna', 'dehydrationOrFluidLoss', 'recentVaccination', 'medicationChange', 'closeSickContact', 'otherDisruption', 'symptoms'])
+          && (context.get('otherDisruption', null) == null || (context.otherDisruption is string && context.otherDisruption.size() <= 500))
           && symptoms.keys().hasOnly(['present', 'onset', 'severity', 'types', 'suspectedCause'])
-          && symptoms.keys().hasAll(['present'])
-          && symptoms.present is bool
-          && (!('onset' in symptoms)
-            || (symptoms.present && (symptoms.onset == null || symptoms.onset in ['today', 'yesterday', '2_3_days', 'earlier']))
-            || (!symptoms.present && symptoms.onset == null))
-          && (!('severity' in symptoms)
-            || (symptoms.present && (symptoms.severity == null || symptoms.severity in ['mild', 'moderate', 'severe']))
-            || (!symptoms.present && symptoms.severity == null))
-          && (!('suspectedCause' in symptoms)
-            || (symptoms.present && (symptoms.suspectedCause == null || symptoms.suspectedCause in ['infectious', 'allergy', 'unsure']))
-            || (!symptoms.present && symptoms.suspectedCause == null))
-          && (!('types' in symptoms)
-            || (symptoms.present && (symptoms.types == null || (
-              symptoms.types is list
-              && symptoms.types.size() <= 10
-              && symptoms.types.hasOnly(['sore_throat', 'congestion', 'runny_nose', 'sneezing', 'cough', 'fever_or_chills', 'headache_or_body_aches', 'gastrointestinal', 'unusual_fatigue', 'other'])
-            )))
-            || (!symptoms.present && symptoms.types == null));
+          && (symptoms.get('types', null) == null || (symptoms.types is list && symptoms.types.size() <= 10));
       }
 
-      function hasValidHealthContext(context) {
-        return context is map
-          && context.keys().hasOnly(['alcoholDrinksLast24h', 'travelDisruption', 'timezoneShiftHours', 'unusualHeatOrSauna', 'dehydrationOrFluidLoss', 'recentVaccination', 'medicationChange', 'closeSickContact', 'otherDisruption', 'symptoms'])
-          && (!('alcoholDrinksLast24h' in context) || (context.alcoholDrinksLast24h is int && context.alcoholDrinksLast24h >= 0 && context.alcoholDrinksLast24h <= 3))
-          && (!('travelDisruption' in context) || context.travelDisruption in ['none', 'local_or_no_timezone', 'timezone_shift', 'late_arrival_or_disrupted_sleep'])
-          && (!('timezoneShiftHours' in context) || context.timezoneShiftHours == null || (context.timezoneShiftHours is number && context.timezoneShiftHours >= -14 && context.timezoneShiftHours <= 14))
-          && (!('unusualHeatOrSauna' in context) || context.unusualHeatOrSauna == null || context.unusualHeatOrSauna is bool)
-          && (!('dehydrationOrFluidLoss' in context) || context.dehydrationOrFluidLoss == null || context.dehydrationOrFluidLoss is bool)
-          && (!('recentVaccination' in context) || context.recentVaccination == null || context.recentVaccination is bool)
-          && (!('medicationChange' in context) || context.medicationChange == null || context.medicationChange is bool)
-          && (!('closeSickContact' in context) || context.closeSickContact == null || context.closeSickContact is bool)
-          && (!('otherDisruption' in context) || context.otherDisruption == null || (context.otherDisruption is string && context.otherDisruption.size() <= 500))
-          && (!('symptoms' in context) || hasValidHealthSymptoms(context.symptoms));
-      }
-
-      function hasValidSubjectiveHealthFields(data) {
-        return (('illnessSymptoms' in data)
-            ? data.illnessSymptoms is bool
-            : (('healthContext' in data) && (data.healthContext is map) && ('symptoms' in data.healthContext)))
-          && (!('healthContext' in data) || hasValidHealthContext(data.healthContext));
-      }
-
-      function hasValidHunger(data) {
+      // upsertCheckin writes with setDoc(..., {merge: true}), so validateCheckin sees only the
+      // payload. These cross-field couplings are checked on the merged document instead: an
+      // illness answer is present, and hunger and its timing are recorded together.
+      function hasMergedCheckinCouplings(data) {
         let hasHunger = 'hunger1To10' in data && data.hunger1To10 != null;
         let hasTiming = 'hungerTiming' in data && data.hungerTiming != null;
-        return (!('hunger1To10' in data) || data.hunger1To10 == null || (isPositiveInt(data.hunger1To10) && data.hunger1To10 <= 10))
-          && (!('hungerTiming' in data) || data.hungerTiming == null || data.hungerTiming in ['morning_pre_breakfast', 'other'])
-          && (hasHunger == hasTiming);
-      }
-
-      function hasValidNutritionAdherence(data) {
-        return !('nutritionAdherenceYesterday' in data)
-          || data.nutritionAdherenceYesterday == null
-          || data.nutritionAdherenceYesterday in ['fully_tracked', 'mostly_tracked', 'minimal', 'untracked', 'fasted'];
+        return (('illnessSymptoms' in data) || ('symptoms' in data.get('healthContext', {})))
+          && hasHunger == hasTiming;
       }
 
       allow read: if isOwner(userId);
       allow create: if hasOwnedUserId(userId) && isDateDocument(date)
-        && hasValidSubjectiveHealthFields(request.resource.data)
-        && hasValidHunger(request.resource.data)
-        && hasValidNutritionAdherence(request.resource.data);
+        && hasBoundedHealthContext(request.resource.data)
+        && hasMergedCheckinCouplings(request.resource.data);
       allow update: if keepsOwnership(userId) && isDateDocument(date) && keepsCreatedAt()
-        && hasValidSubjectiveHealthFields(request.resource.data)
-        && hasValidHunger(request.resource.data)
-        && hasValidNutritionAdherence(request.resource.data);
+        && hasBoundedHealthContext(request.resource.data)
+        && hasMergedCheckinCouplings(request.resource.data);
       allow delete: if isOwner(userId);
     }
 
     match /users/{userId}/health_anomaly_assessments/{date}/revisions/{revisionId} {
+      // Issue #1201 rules scope: lower bounds, ordering, integer types and estimator enums are
+      // owned by isHealthAnomalyThresholdPolicy, and the assessment state/evidence enums, source
+      // revision types/timezone, version/mode equalities, revisionId format, computedAt, mode,
+      // schemaVersion and integer/lower-bound checks by parseHealthAnomalyAssessmentRevision, both
+      // run in HealthAnomalyAssessmentRepository.persistImmutable before the write. Upper bounds
+      // that the TypeScript guard does not enforce stay here (a non-number fails them).
       function hasValidHealthAnomalyThresholdPolicy(policy) {
         return policy is map
           && policy.keys().hasOnly(['policyVersion', 'moderateDeviation', 'strongDeviation', 'minimumCoreSignalsForMultiSignal', 'persistenceDaysForEscalation', 'minimumHistoryCount', 'minimumRecentDayCoverage', 'maxBaselineAgeDays', 'estimatorBySignal'])
           && isBoundedString(policy.policyVersion, 128)
-          && policy.moderateDeviation is number && policy.moderateDeviation > 0 && policy.moderateDeviation <= 20
-          && policy.strongDeviation is number && policy.strongDeviation > policy.moderateDeviation && policy.strongDeviation <= 20
-          && policy.minimumCoreSignalsForMultiSignal is int && policy.minimumCoreSignalsForMultiSignal >= 2 && policy.minimumCoreSignalsForMultiSignal <= 3
-          && isPositiveInt(policy.persistenceDaysForEscalation) && policy.persistenceDaysForEscalation <= 30
-          && isPositiveInt(policy.minimumHistoryCount) && policy.minimumHistoryCount <= 28
-          && policy.minimumRecentDayCoverage is number && policy.minimumRecentDayCoverage >= 0 && policy.minimumRecentDayCoverage <= 1
-          && policy.maxBaselineAgeDays is int && policy.maxBaselineAgeDays >= 0 && policy.maxBaselineAgeDays <= 30
+          && policy.moderateDeviation <= 20
+          && policy.strongDeviation <= 20
+          && policy.persistenceDaysForEscalation <= 30
+          && policy.minimumHistoryCount <= 28
+          && policy.maxBaselineAgeDays <= 30
           && policy.estimatorBySignal is map
           && policy.estimatorBySignal.keys().hasOnly(['rhr', 'respiration', 'hrv'])
-          && policy.estimatorBySignal.keys().hasAll(['rhr', 'respiration', 'hrv'])
-          && policy.estimatorBySignal.rhr in ['mean-stdev-28d', 'median-mad-28d', 'log-mean-stdev-28d']
-          && policy.estimatorBySignal.respiration in ['mean-stdev-28d', 'median-mad-28d', 'log-mean-stdev-28d']
-          && policy.estimatorBySignal.hrv in ['mean-stdev-28d', 'median-mad-28d', 'log-mean-stdev-28d'];
+          && policy.estimatorBySignal.keys().hasAll(['rhr', 'respiration', 'hrv']);
       }
 
       function hasValidHealthAnomalyRevision(userId, date, revisionId) {
@@ -2323,45 +2286,31 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
           && data.date == date
           && isValidActivityDate(data.date)
           && data.revisionId == revisionId
-          && data.revisionId is string && data.revisionId.matches('^ha-[0-9a-f]{16}$')
           && isBoundedString(data.idempotencyKey, 160)
-          && data.computedAt is string && data.computedAt.size() > 0
           && isBoundedString(data.policyVersion, 128)
-          && data.mode in ['shadow-v1', 'visible-v1', 'tighten-v1']
-          && data.schemaVersion == 1
           && hasValidHealthAnomalyThresholdPolicy(data.thresholdPolicy)
           && source is map
           && source.keys().hasOnly(['timezone', 'recoverySnapshotRevision', 'checkinRevision', 'historyWindowStart', 'historyWindowEndExclusive', 'historySnapshotRevisions', 'travelContextRevision', 'persistenceLookbackStart'])
           && source.keys().hasAll(['timezone', 'recoverySnapshotRevision', 'checkinRevision', 'historyWindowStart', 'historyWindowEndExclusive', 'historySnapshotRevisions', 'travelContextRevision', 'persistenceLookbackStart'])
-          && source.timezone == 'Europe/Warsaw'
-          && (source.recoverySnapshotRevision == null || source.recoverySnapshotRevision is string)
-          && (source.checkinRevision == null || source.checkinRevision is string)
           && isValidActivityDate(source.historyWindowStart)
           && source.historyWindowEndExclusive == date
           && source.historySnapshotRevisions is list && source.historySnapshotRevisions.size() <= 28
-          && (source.travelContextRevision == null || source.travelContextRevision is string)
           && isValidActivityDate(source.persistenceLookbackStart)
           && assessment is map
           && assessment.keys().hasOnly(['state', 'evidenceLevel', 'coreSignals', 'supportingSignals', 'explanations', 'unexplainedEvidence', 'persistenceDays', 'episodeId', 'episodeDay', 'dataQuality', 'rationale', 'respirationElevation', 'policyVersion', 'thresholdPolicyVersion', 'mode'])
           && assessment.keys().hasAll(['state', 'evidenceLevel', 'coreSignals', 'supportingSignals', 'explanations', 'unexplainedEvidence', 'persistenceDays', 'episodeId', 'episodeDay', 'dataQuality', 'rationale', 'policyVersion', 'thresholdPolicyVersion', 'mode'])
-          && assessment.state in ['normal', 'explained_recovery_strain', 'watch_unexplained', 'possible_illness_or_systemic_stress', 'symptoms_reported']
-          && assessment.evidenceLevel in ['none', 'low', 'moderate', 'high']
           && assessment.coreSignals is list && assessment.coreSignals.size() == 3
           && assessment.supportingSignals is list && assessment.supportingSignals.size() <= 32
           && assessment.explanations is list && assessment.explanations.size() <= 32
           && assessment.unexplainedEvidence is list && assessment.unexplainedEvidence.size() <= 3
-          && assessment.persistenceDays is int && assessment.persistenceDays >= 0 && assessment.persistenceDays <= 365
+          && assessment.persistenceDays <= 365
           && (assessment.episodeId == null || (assessment.episodeId is string && assessment.episodeId.size() <= 160))
-          && (assessment.episodeDay == null || (isPositiveInt(assessment.episodeDay) && assessment.episodeDay <= 365))
+          && (assessment.episodeDay == null || assessment.episodeDay <= 365)
           && assessment.dataQuality is list && assessment.dataQuality.size() <= 3
           && assessment.rationale is map
-          // The parent assessment rule is close to Firestore's 1,000-expression ceiling.
           // Keep the server boundary bounded; the application parser validates every scalar.
           && (!('respirationElevation' in assessment)
-            || (assessment.respirationElevation is map && assessment.respirationElevation.size() <= 11))
-          && assessment.policyVersion == data.policyVersion
-          && assessment.thresholdPolicyVersion == data.thresholdPolicy.policyVersion
-          && assessment.mode == data.mode;
+            || (assessment.respirationElevation is map && assessment.respirationElevation.size() <= 11));
       }
 
       allow read: if isOwner(userId);
@@ -2451,11 +2400,8 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
           && data.recordedAt == request.time
           && data.source == 'user_ui'
           && exists(assessmentPath)
-          && (
-            (data.label == 'USER' && data.occupancyAttestation == 'EXCLUSIVE')
-            || (data.label == 'NOT_USER' && data.occupancyAttestation == 'UNKNOWN')
-            || (data.label == 'UNCERTAIN' && data.occupancyAttestation in ['MIXED', 'UNKNOWN'])
-          )
+          // Label/occupancy pairing is owned by identityPersistence.ts assertUserReviewSemantics
+          // (IdentityPersistenceService.submitUserReview) -- issue #1201 rules scope.
           && (
             data.supersedesReviewEventId == null
             || (
@@ -2637,26 +2583,11 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
       allow delete: if isOwner(userId);
     }
 
-    // Single rules-side source for the OV metric registry (app/src/observations/registry.ts).
-    // Metric ids and units must stay in lockstep with it; firestoreRulesParity.test.ts
-    // compares the two so application validation and persistence cannot drift again.
-    function outcomeMetricUnits() {
-      return {
-        'cycling_tt_20m_mean_power_w': 'W',
-        'cycling_tt_4m_mean_power_w': 'W',
-        'cycling_submax_mean_hr_bpm': 'bpm',
-        'cycling_submax_rpe': 'rpe',
-        'strength_1rm_kg': 'kg',
-        'strength_fixed_load_mean_velocity_mps': 'm/s',
-        'sprint_elapsed_time_s': 's',
-        'cycling_5s_peak_power_w': 'W',
-        'standing_broad_jump_distance_cm': 'cm',
-        'wall_touch_cmj_height_cm': 'cm',
-        'seated_medball_throw_distance_m': 'm',
-        'cycling_sprint_1s_peak_power_w': 'W',
-        'cycling_sprint_5s_mean_power_w': 'W'
-      };
-    }
+    // Issue #1201 rules scope: metric ids, units, values, sources, validity and derivation
+    // provenance are validated by observations/validation.ts (assertValidMetricObservationRevision,
+    // backed by registry.ts) before every write. These rules keep ownership, key allow-lists,
+    // size caps, observation identity and the head/revision/protocol/trial integrity that cannot
+    // be repaired after an immutable revision lands.
 
     function hasValidProtocolRef(userId, protocolRef) {
       let protocolPath = /databases/$(database)/documents/users/$(userId)/measurement_protocols/$(protocolRef.id)/revisions/$(string(protocolRef.revision));
@@ -2669,14 +2600,10 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
     }
 
     match /users/{userId}/measurement_protocols/{protocolId}/revisions/{revisionId} {
-      // Mirrors ComparisonDimension / protocols.ts DIMENSIONS; checked by firestoreRulesParity.test.ts.
-      function comparisonDimensionIds() {
-        return ['power_source_id', 'bike_setup_id', 'test_environment', 'course_or_trainer_id', 'duration_seconds', 'start_mode', 'warmup_revision', 'feedback_rule', 'weather_note', 'timing_method', 'measurement_method_id', 'equipment_setup_id', 'test_load_kg'];
-      }
-
       // ADR-0046 D-AT-PROTOCOL: the bounded multi-trial capture contract persisted on the
-      // immutable protocol revision. Field/reducer semantics are validated by
-      // assessmentCapture.ts; the rules bound shape, sizes and the replayable reducer version.
+      // immutable protocol revision. Field/reducer semantics and the supported reducer version
+      // are validated by assessmentCapture.ts (assertValidAssessmentCapture); the rules bound
+      // shape and sizes. Observation rules bind algorithmVersion to the stored reducerVersion.
       function hasValidAssessmentCapture(capture) {
         return capture is map
           && capture.keys().hasOnly(['plannedTrials', 'maxTrials', 'fields', 'reducers', 'reducerVersion'])
@@ -2684,15 +2611,16 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
           && isPositiveInt(capture.maxTrials) && capture.maxTrials <= 30
           && isPositiveInt(capture.plannedTrials) && capture.plannedTrials <= capture.maxTrials
           && capture.fields is list && capture.fields.size() >= 1 && capture.fields.size() <= 16
-          && capture.reducers is list && capture.reducers.size() >= 1 && capture.reducers.size() <= 8
-          && capture.reducerVersion == 'assessment-reducer-v1';
+          && capture.reducers is list && capture.reducers.size() >= 1 && capture.reducers.size() <= 8;
       }
 
+      // Intent, metric registry membership, comparison-dimension registry and partition logic,
+      // and familiarization coupling are owned by protocols.ts assertValidMeasurementProtocol
+      // (measurementProtocolService.createRevision) -- issue #1201 rules scope.
       function hasValidMeasurementProtocol(userId, protocolId, revisionId) {
         let data = request.resource.data;
         let comparison = data.comparisonContext;
         let familiarization = data.familiarization;
-        let dimensions = comparisonDimensionIds();
         return isOwner(userId)
           && data.keys().hasOnly(['id', 'revision', 'title', 'intent', 'metricIds', 'instructions', 'warmupRef', 'comparisonContext', 'familiarization', 'burden', 'expectedRecoveryHours', 'invalidationRules', 'capture', 'createdAt'])
           && data.keys().hasAll(['id', 'revision', 'title', 'intent', 'metricIds', 'instructions', 'comparisonContext', 'familiarization', 'burden', 'invalidationRules', 'createdAt'])
@@ -2700,26 +2628,21 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
           && isBoundedString(data.id, 128)
           && isPositiveInt(data.revision) && string(data.revision) == revisionId
           && isBoundedString(data.title, 200)
-          && data.intent == 'testing'
           && data.metricIds is list && data.metricIds.size() >= 1 && data.metricIds.size() <= 8
-          && data.metricIds.hasOnly(outcomeMetricUnits().keys())
           && data.instructions is list && data.instructions.size() <= 64
           && (!('warmupRef' in data) || (isBoundedString(data.warmupRef, 128)))
           && comparison is map
           && comparison.keys().hasOnly(['required', 'seriesDefining', 'contextOnly', 'canonicalizationVersion'])
           && comparison.keys().hasAll(['required', 'seriesDefining', 'contextOnly', 'canonicalizationVersion'])
-          && comparison.required is list && comparison.required.size() <= 16 && comparison.required.hasOnly(dimensions)
-          && comparison.seriesDefining is list && comparison.seriesDefining.size() <= 16 && comparison.seriesDefining.hasOnly(comparison.required)
-          && comparison.contextOnly is list && comparison.contextOnly.size() <= 16 && comparison.contextOnly.hasOnly(comparison.required)
-          && !comparison.seriesDefining.hasAny(comparison.contextOnly)
-          && comparison.required.size() <= comparison.seriesDefining.size() + comparison.contextOnly.size()
+          && comparison.required is list && comparison.required.size() <= 16
+          && comparison.seriesDefining is list && comparison.seriesDefining.size() <= 16
+          && comparison.contextOnly is list && comparison.contextOnly.size() <= 16
           && isBoundedString(comparison.canonicalizationVersion, 64)
           && familiarization is map
           && familiarization.keys().hasOnly(['required', 'minimumExposures'])
           && familiarization.keys().hasAll(['required', 'minimumExposures'])
           && familiarization.required is bool
-          && familiarization.minimumExposures is int && familiarization.minimumExposures >= 0 && familiarization.minimumExposures <= 20
-          && (!familiarization.required || familiarization.minimumExposures >= 1)
+          && familiarization.minimumExposures is int && familiarization.minimumExposures <= 20
           && data.burden in ['low', 'moderate', 'high']
           && (!('expectedRecoveryHours' in data) || (data.expectedRecoveryHours is number && data.expectedRecoveryHours >= 0 && data.expectedRecoveryHours <= 336))
           && data.invalidationRules is list && data.invalidationRules.size() <= 32
@@ -2732,6 +2655,10 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
     }
 
     match /users/{userId}/assessment_attempts/{attemptId} {
+      // State/purpose enums, scheduledDate and timestamp formats are
+      // owned by observations/validation.ts assertValidAssessmentAttempt
+      // (AssessmentAttemptService.createAttempt/transitionAttempt) -- issue #1201 rules scope.
+      // Rules keep identity, protocol binding, caps and the append-only lifecycle transition.
       function hasValidAssessmentAttempt(userId, attemptId) {
         let data = request.resource.data;
         return isOwner(userId)
@@ -2740,13 +2667,10 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
           && data.id == attemptId
           && isBoundedString(data.id, 160)
           && hasValidProtocolRef(userId, data.protocolRef)
-          && data.state in ['scheduled', 'in_progress', 'completed', 'abandoned']
-          && data.purpose in ['familiarization', 'baseline', 'checkpoint', 'post_block']
-          && (!('scheduledDate' in data) || isValidActivityDate(data.scheduledDate))
-          && (!('startedAt' in data) || (data.startedAt is string && data.startedAt.size() > 0))
-          && (!('completedAt' in data) || (data.completedAt is string && data.completedAt.size() > 0))
           && (!('sourceSessionRef' in data) || (isBoundedString(data.sourceSessionRef, 256)))
           && (!('notes' in data) || (data.notes is string && data.notes.size() <= 4000))
+          // State/timestamp presence is checked here so the transition rule locks each
+          // timestamp at the write that enters its state (ADR-0053 I).
           && (data.state != 'scheduled' || (!('startedAt' in data) && !('completedAt' in data)))
           && (data.state != 'in_progress' || (('startedAt' in data) && !('completedAt' in data)))
           && (data.state != 'completed' || (('startedAt' in data) && ('completedAt' in data)))
@@ -2793,10 +2717,6 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
     }
 
     match /users/{userId}/metric_observations/{observationKey} {
-      function hasKnownOutcomeMetric(metricId) {
-        return metricId is string && metricId in outcomeMetricUnits();
-      }
-
       function observationHeadAfterRevision(userId, observationKey, revision) {
         let headPath = /databases/$(database)/documents/users/$(userId)/metric_observations/$(observationKey);
         let head = getAfter(headPath).data;
@@ -2816,11 +2736,9 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
           && data.keys().hasAll(['observationKey', 'assessmentAttemptId', 'metricId', 'headRevision', 'createdAt', 'updatedAt'])
           && data.observationKey == observationKey
           && isBoundedString(data.assessmentAttemptId, 160)
-          && hasKnownOutcomeMetric(data.metricId)
           && data.observationKey == data.assessmentAttemptId + ':' + data.metricId
-          && isPositiveInt(data.headRevision)
-          && data.createdAt is string && data.createdAt.size() > 0
-          && data.updatedAt is string && data.updatedAt.size() > 0;
+          // createdAt/updatedAt shape: assertValidMetricObservationHead before the write (ADR-0053).
+          && isPositiveInt(data.headRevision);
       }
 
       function hasValidObservationProtocolBinding(userId, data) {
@@ -2837,19 +2755,21 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
           && (data.metricId != 'strength_fixed_load_mean_velocity_mps' || hasFixedLoadObservationBinding(userId, data));
       }
 
+      // A fixed-load benchmark is bound (ADR-0053 X) to its immutable source trial, which must
+      // still head its correction chain after this write: fixed-load protocol, valid successful
+      // trial, equal value, actual load and series context, and a context unchanged from the
+      // previous revision. Reference shape is checked in the write transaction by
+      // fixedLoadVelocity.ts assertFixedLoadObservationEvidence.
       function hasFixedLoadObservationBinding(userId, data) {
-        let refs = data.derivedFromEvidenceRefs;
-        let ref = refs[0];
-        let trialPath = /databases/$(database)/documents/users/$(userId)/assessment_attempts/$(data.assessmentAttemptId)/trials/$(ref.trialId);
+        let trialPath = /databases/$(database)/documents/users/$(userId)/assessment_attempts/$(data.assessmentAttemptId)/trials/$(data.derivedFromEvidenceRefs[0].trialId);
         let trial = getAfter(trialPath).data;
         let nextId = assessmentTrialIdFor(trial.ordinal, trial.correctionIndex + 1);
-        let nextPath = /databases/$(database)/documents/users/$(userId)/assessment_attempts/$(data.assessmentAttemptId)/trials/$(nextId);
-        return isFixedLoadProtocol(data.protocolRef) && data.source == 'derived' && data.validity == 'valid'
-          && !('derivedFromObservationIds' in data) && refs.size() == 1
-          && ref.keys().hasOnly(['kind', 'assessmentAttemptId', 'trialId']) && ref.kind == 'assessment_trial'
-          && ref.assessmentAttemptId == data.assessmentAttemptId && !existsAfter(nextPath)
-          && trial.validity == 'valid' && trial.values.successful == true && trial.values.load_kg == data.context.test_load_kg
-          && sameFixedLoadContext(data.context, trial.context) && data.value == trial.values.mean_concentric_velocity_mps
+        return isFixedLoadProtocol(data.protocolRef)
+          && !existsAfter(/databases/$(database)/documents/users/$(userId)/assessment_attempts/$(data.assessmentAttemptId)/trials/$(nextId))
+          && trial.validity == 'valid' && trial.values.successful == true
+          && trial.values.load_kg == data.context.test_load_kg
+          && data.value == trial.values.mean_concentric_velocity_mps
+          && sameFixedLoadContext(data.context, trial.context)
           && (data.revision == 1 || sameFixedLoadContext(data.context,
             get(/databases/$(database)/documents/users/$(userId)/metric_observations/$(data.observationKey)/revisions/$(string(data.revision - 1))).data.context));
       }
@@ -2868,7 +2788,6 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
 
       function hasValidMetricObservationRevision(userId, observationKey, revisionId) {
         let data = request.resource.data;
-        let units = outcomeMetricUnits();
         return isOwner(userId)
           && data.keys().hasOnly(['observationKey', 'revision', 'supersedesRevision', 'metricId', 'value', 'unit', 'observedAt', 'source', 'sourceRef', 'device', 'protocolRef', 'comparisonSeriesKey', 'comparisonCanonicalizationVersion', 'assessmentAttemptId', 'validity', 'invalidReason', 'context', 'derivedFromObservationIds', 'derivedFromEvidenceRefs', 'algorithmVersion', 'correctionReason', 'createdAt'])
           && data.keys().hasAll(['observationKey', 'revision', 'metricId', 'value', 'unit', 'observedAt', 'source', 'protocolRef', 'comparisonSeriesKey', 'comparisonCanonicalizationVersion', 'assessmentAttemptId', 'validity', 'context', 'createdAt'])
@@ -2880,38 +2799,16 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
             || (data.revision > 1
               && data.supersedesRevision is int && data.supersedesRevision == data.revision - 1
               && isBoundedString(data.correctionReason, 2000)))
-          && data.metricId is string && data.metricId in units
-          && data.value is number
-          && data.unit == units[data.metricId]
-          && data.observedAt is string && data.observedAt.size() > 0
-          && data.source in ['manual', 'garmin_activity', 'garmin_lap', 'derived']
           && (!('sourceRef' in data) || (isBoundedString(data.sourceRef, 512)))
           && (!('device' in data) || hasValidObservationDevice(data.device))
           && isBoundedString(data.comparisonSeriesKey, 128)
           && isBoundedString(data.comparisonCanonicalizationVersion, 64)
-          && data.validity in ['valid', 'invalid', 'practice', 'questionable']
-          && (data.validity != 'invalid' || ('invalidReason' in data))
           && (!('invalidReason' in data) || (isBoundedString(data.invalidReason, 2000)))
           && data.context is map && data.context.size() <= 64
-          && hasValidDerivationProvenance(data)
-          && data.createdAt is string && data.createdAt.size() > 0
+          && (!('derivedFromObservationIds' in data) || (data.derivedFromObservationIds is list && data.derivedFromObservationIds.size() <= 32))
+          && (!('derivedFromEvidenceRefs' in data) || (data.derivedFromEvidenceRefs is list && data.derivedFromEvidenceRefs.size() <= 32))
+          && (!('algorithmVersion' in data) || isBoundedString(data.algorithmVersion, 128))
           && hasValidObservationProtocolBinding(userId, data);
-      }
-
-      // ADR-0046 D-AT-REDUCE: a derived revision names its sources as observation IDs
-      // (observation-to-observation derivation), typed trial evidence references (trial-only
-      // derivation) or both. Non-derived revisions carry neither. Per-reference shape and
-      // same-attempt binding are validated fail-closed by validation.ts before any write.
-      function hasValidDerivationProvenance(data) {
-        return (data.source == 'derived'
-            && (('derivedFromObservationIds' in data) || ('derivedFromEvidenceRefs' in data))
-            && (!('derivedFromObservationIds' in data) || (data.derivedFromObservationIds is list && data.derivedFromObservationIds.size() >= 1 && data.derivedFromObservationIds.size() <= 32))
-            && (!('derivedFromEvidenceRefs' in data) || (data.derivedFromEvidenceRefs is list && data.derivedFromEvidenceRefs.size() >= 1 && data.derivedFromEvidenceRefs.size() <= 32))
-            && ('algorithmVersion' in data) && isBoundedString(data.algorithmVersion, 128))
-          || (data.source != 'derived'
-            && !('derivedFromObservationIds' in data)
-            && !('derivedFromEvidenceRefs' in data)
-            && !('algorithmVersion' in data));
       }
 
       allow read: if isOwner(userId);
@@ -2942,89 +2839,21 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
     }
 
     match /users/{userId}/assessment_attempts/{attemptId}/trials/{trialId} {
-      function hasFixedLoadContext(context) {
-        return context.keys().hasAll(['test_load_kg', 'measurement_method_id', 'equipment_setup_id'])
-          && context.test_load_kg is number && context.test_load_kg >= 1 && context.test_load_kg <= 500
-          && context.measurement_method_id is string && context.measurement_method_id.size() > 0
-          && context.equipment_setup_id is string && context.equipment_setup_id.size() > 0;
-      }
-
-      function hasFixedLoadVelocityMethod(data) {
-        let c = data.context;
-        let wl = 'wl_parser_version' in c;
-        return wl ? (data.device.provider == 'WL Analysis'
-            && c.wl_parser_version in ['wl-analysis-csv-v1', 'wl-analysis-csv-v2']
-            && c.measurement_method_id == c.wl_parser_version)
-          : 'openbar_parser_version' in c ? (data.device.provider == 'OpenBar' && hasFixedLoadOpenBarMethod(c))
-          : c.measurement_method_id == 'manual';
-      }
-
-      function hasFixedLoadSourceProvenance(data) {
-        let wl = 'wl_parser_version' in data.context;
-        let openbar = 'openbar_parser_version' in data.context;
-        let source = data.get('sourceRef', '');
-        return wl ? (!openbar && source.matches('^wl-analysis-csv:sha256:[a-f0-9]{64}$'))
-          : openbar ? source.matches('^openbar-analysis:sha256:[a-f0-9]{64}$')
-          : !source.matches('^(wl-analysis-csv|openbar-analysis):.*');
-      }
-
-      function hasOpenBarParameterSignature(value) {
-        return value is string && value.matches('^[^=&\\[\\];\\s]+=[nbs]%3A[^&\\[\\];\\s]*(&[^=&\\[\\];\\s]+=[nbs]%3A[^&\\[\\];\\s]*)*$');
-      }
-
-      // Fixed-load OpenBar uses URI-unreserved ASCII identifiers so Rules can reconstruct
-      // the entire method. Numeric suffixes are parsed, avoiding JS/Rules formatting differences.
-      function hasFixedLoadOpenBarMethod(c) {
-        let parts = c.measurement_method_id.split('/');
-        let limits = parts[5].split(';max-gap=')[1].split(';min-confidence=');
-        let confidence = limits[1].replace('\\]$', '');
-        let tracker = c.openbar_tracker_implementation.trim().lower() + '@' + c.openbar_tracker_version.trim().lower();
-        let kinematics = c.openbar_kinematics_implementation.trim().lower() + '@' + c.openbar_kinematics_version.trim().lower();
-        let filtered = c.openbar_kinematics_input == 'filtered';
-        let filter = filtered ? c.openbar_filter_implementation.trim().lower() + '@' + c.openbar_filter_version.trim().lower() : '';
-        let identities = tracker + '/' + kinematics + (filtered ? '/' + filter : '');
-        let calibration = c.openbar_calibration_method.trim().lower();
-        return c.openbar_parser_version in ['openbar-analysis-v1', 'openbar-analysis-v2']
-          && (c.openbar_parser_version == 'openbar-analysis-v2'
-            ? (c.openbar_tracker_method_parameters_sha256 is string && c.openbar_tracker_method_parameters_sha256.matches('^[a-f0-9]{64}$'))
-            : !('openbar_tracker_method_parameters_sha256' in c))
-          && c.openbar_segmentation_rule in ['concentric-segmentation-v1', 'concentric-segmentation-v2']
-          && c.openbar_kinematics_input in ['calibrated', 'filtered']
-          && identities.matches("^[a-z0-9_.!~*'()-]+@[a-z0-9_.!~*'()-]+(/[a-z0-9_.!~*'()-]+@[a-z0-9_.!~*'()-]+){1,2}$")
-          && calibration.matches("^[a-z0-9_.!~*'()-]+@-?[0-9]+([.][0-9]+)?(e[+-]?[0-9]+)?$")
-          && hasOpenBarParameterSignature(c.openbar_kinematics_parameters)
-          && (filtered ? (c.openbar_filter_parameters == null || hasOpenBarParameterSignature(c.openbar_filter_parameters))
-            : (c.openbar_filter_implementation == null && c.openbar_filter_version == null && c.openbar_filter_parameters == null))
-          && c.openbar_kinematics_max_gap_s is number && c.openbar_kinematics_max_gap_s > 0
-          && c.openbar_kinematics_max_gap_s - c.openbar_kinematics_max_gap_s == 0
-          && c.openbar_kinematics_min_confidence is number && c.openbar_kinematics_min_confidence >= 0 && c.openbar_kinematics_min_confidence <= 1
-          && parts.size() == 7 && limits.size() == 2
-          && float(limits[0]) == c.openbar_kinematics_max_gap_s && float(confidence) == c.openbar_kinematics_min_confidence
-          && c.measurement_method_id == c.openbar_parser_version + '/' + c.openbar_segmentation_rule + '/' + tracker
-            + (c.openbar_parser_version == 'openbar-analysis-v2' ? '[sha256:' + c.openbar_tracker_method_parameters_sha256 + ']' : '') + '/'
-            + (filtered ? filter + '[' + (c.openbar_filter_parameters == null ? 'default' : c.openbar_filter_parameters.trim()) + ']' : 'raw')
-            + '/' + c.openbar_kinematics_input + '/' + kinematics + '[' + c.openbar_kinematics_parameters.trim()
-            + ';max-gap=' + limits[0] + ';min-confidence=' + confidence + ']/' + calibration.replace('@', '%40').replace('[+]', '%2B');
-      }
-
-      function hasEligibleFixedLoadTrial(data, old) {
-        return hasFixedLoadContext(data.context) && hasFixedLoadSourceProvenance(data)
-          && (data.validity != 'valid' || (data.values.load_kg == data.context.test_load_kg && data.values.successful == true
-            && data.values.mean_concentric_velocity_mps is number && data.values.mean_concentric_velocity_mps >= 0
-            && data.values.mean_concentric_velocity_mps <= 5
-            // Immutable valid source trials already passed full method validation. A correction
-            // can reuse it only when every context and device field is unchanged.
-            && (data.correctionIndex > 0 && old.validity == 'valid'
-              ? (data.context == old.context && data.get('device', null) == old.get('device', null))
-              : hasFixedLoadVelocityMethod(data))));
-      }
-
+      // Fixed-load context, imported-parser provenance, the OpenBar/WL method identity and the
+      // benchmark value/load/success checks are owned by fixedLoadVelocity.ts
+      // assertFixedLoadTrialEligibility, run by assessmentTrials.ts assertValidAssessmentTrial in
+      // assessmentTrialService before every trial write (issue #1201 rules scope). The rules keep
+      // the correction-chain integrity below, which cannot be repaired once a trial is immutable.
+      // A valid correction of a valid (already method-validated) trial must keep its whole
+      // context and device unchanged (ADR-0053 X: binding to an immutable predecessor).
       function hasFixedLoadCorrectionIntegrity(userId, attempt, data) {
         let oldPath = /databases/$(database)/documents/users/$(userId)/assessment_attempts/$(data.assessmentAttemptId)/trials/$(data.supersedesTrialId);
         let old = get(oldPath).data;
         let key = data.assessmentAttemptId + ':strength_fixed_load_mean_velocity_mps';
         let headPath = /databases/$(database)/documents/users/$(userId)/metric_observations/$(key);
         return sameFixedLoadContext(data.context, old.context)
+          && (data.validity != 'valid' || old.validity != 'valid'
+            || (data.context == old.context && data.get('device', null) == old.get('device', null)))
           && (('sourceRef' in data) == ('sourceRef' in old)) && (!('sourceRef' in old) || data.sourceRef == old.sourceRef)
           && (attempt.state != 'completed' || !exists(headPath)
             || hasFixedLoadCorrectionHead(userId, key, headPath, data.supersedesTrialId));
@@ -3034,7 +2863,8 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
         let head = get(headPath).data;
         let current = get(/databases/$(database)/documents/users/$(userId)/metric_observations/$(key)/revisions/$(string(head.headRevision))).data;
         // Advancing a winner's head requires a sibling immutable revision; that revision's own
-        // create rule checks full eligible source/value/context binding. Avoid evaluating it twice.
+        // create rule checks the source-trial chain head, and the write transaction checks the
+        // value/context binding (assertFixedLoadObservationEvidence). Avoid evaluating it twice.
         return current.derivedFromEvidenceRefs[0].trialId != supersedesTrialId
           || getAfter(headPath).data.headRevision == head.headRevision + 1;
       }
@@ -3044,40 +2874,37 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
       // ordinal collide on one immutable document instead of forking. New ordinals are admitted
       // only while the attempt is in progress; a completed attempt admits supersessions only;
       // scheduled/abandoned attempts admit nothing. Field-level conformance to the protocol
-      // capture schema is enforced by assessmentTrials.ts before any write.
+      // capture schema and validity/invalidReason coupling are enforced by assessmentTrials.ts
+      // assertValidAssessmentTrial before any write.
       function hasValidAssessmentTrial(userId, attemptId, trialId) {
         let data = request.resource.data;
         let attemptPath = /databases/$(database)/documents/users/$(userId)/assessment_attempts/$(attemptId);
         let attempt = get(attemptPath).data;
         let protocolPath = /databases/$(database)/documents/users/$(userId)/measurement_protocols/$(attempt.protocolRef.id)/revisions/$(string(attempt.protocolRef.revision));
-        let old = data.correctionIndex > 0
-          ? get(/databases/$(database)/documents/users/$(userId)/assessment_attempts/$(attemptId)/trials/$(data.supersedesTrialId)).data : null;
         return isOwner(userId)
           && data.keys().hasOnly(['id', 'assessmentAttemptId', 'ordinal', 'correctionIndex', 'supersedesTrialId', 'correctionReason', 'performedAt', 'validity', 'invalidReason', 'values', 'context', 'sourceRef', 'device', 'notes', 'createdAt'])
           && data.keys().hasAll(['id', 'assessmentAttemptId', 'ordinal', 'correctionIndex', 'validity', 'values', 'context', 'createdAt'])
           && data.id == trialId
           && data.assessmentAttemptId == attemptId
           && isPositiveInt(data.ordinal)
-          && data.correctionIndex is int && data.correctionIndex >= 0 && data.correctionIndex <= 20
+          && data.correctionIndex is int && data.correctionIndex <= 20
           && data.id == assessmentTrialIdFor(data.ordinal, data.correctionIndex)
           && exists(attemptPath)
           && (attempt.state == 'in_progress' || (attempt.state == 'completed' && data.correctionIndex > 0))
           && exists(protocolPath)
-          && ('capture' in get(protocolPath).data)
+          // Dereferencing capture.maxTrials denies a summary-only (capture-less) protocol.
           && data.ordinal <= get(protocolPath).data.capture.maxTrials
           && ((data.correctionIndex == 0 && !('supersedesTrialId' in data) && !('correctionReason' in data))
             || (data.correctionIndex > 0
               && data.supersedesTrialId == assessmentTrialIdFor(data.ordinal, data.correctionIndex - 1)
               && existsAfter(/databases/$(database)/documents/users/$(userId)/assessment_attempts/$(attemptId)/trials/$(data.supersedesTrialId))
               && isBoundedString(data.correctionReason, 2000)))
-          && data.validity in ['valid', 'invalid', 'practice', 'questionable']
-          && (data.validity != 'invalid' || ('invalidReason' in data))
           && (!('invalidReason' in data) || (isBoundedString(data.invalidReason, 2000)))
           && (!('performedAt' in data) || (isBoundedString(data.performedAt, 64)))
           && data.values is map && data.values.size() <= 16
           && data.context is map && data.context.size() <= 32
-          && (!isFixedLoadProtocol(attempt.protocolRef) || (hasEligibleFixedLoadTrial(data, old)
-            && (data.correctionIndex == 0 || hasFixedLoadCorrectionIntegrity(userId, attempt, data))))
+          && (!isFixedLoadProtocol(attempt.protocolRef) || data.correctionIndex == 0
+            || hasFixedLoadCorrectionIntegrity(userId, attempt, data))
           && (!('sourceRef' in data) || (isBoundedString(data.sourceRef, 512)))
           && (!('device' in data) || hasValidObservationDevice(data.device))
           && (!('notes' in data) || (data.notes is string && data.notes.size() <= 4000))
@@ -3119,6 +2946,10 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
           && data.updatedAt is string && data.updatedAt.size() > 0;
       }
 
+      // Date validity/order and the status enum are owned by
+      // outcomes/evaluationSpec.ts assertValidOutcomeEvaluationRevision, run by
+      // outcomeEvaluationService before every revision write (issue #1201 rules scope). The
+      // create rule pins status to 'draft' and the update rule enumerates every transition.
       function hasValidOutcomeEvaluationSourceRef(sourceRef) {
         return sourceRef is map
           && sourceRef.keys().hasOnly(['kind', 'id'])
@@ -3136,13 +2967,8 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
           && isBoundedString(data.id, 160)
           && isPositiveInt(data.revision) && string(data.revision) == revisionId
           && isBoundedString(data.title, 200)
-          && isValidActivityDate(data.startDate)
-          && isValidActivityDate(data.endDate)
-          && data.startDate <= data.endDate
           && (!('sourceRef' in data) || hasValidOutcomeEvaluationSourceRef(data.sourceRef))
-          && data.status in ['draft', 'active', 'completed', 'archived']
           && data.bindings is list && data.bindings.size() >= 1 && data.bindings.size() <= 16
-          && data.createdAt is string && data.createdAt.size() > 0
           && (
             (data.status == 'draft'
               && !('activatedAt' in data)

@@ -111,13 +111,18 @@ emulatorDescribe('Physiological identity persistence rules (PI6)', () => {
         })));
     });
 
-    it('rejects forged fields, invalid semantics, malformed timestamps and missing assessments', async () => {
+    it('rejects forged fields, unknown enums, malformed timestamps and missing assessments', async () => {
         const db = testEnvironment.authenticatedContext(ownerId).firestore();
         const path = (id: string) => `users/${ownerId}/health_identity_review_events/${id}`;
         await assertFails(setDoc(doc(db, path('bad-path')), review()));
         await assertFails(setDoc(doc(db, path('bad-label')), review({ id: 'bad-label', label: 'MAYBE' })));
+        // Issue #1201: label/occupancy pairing is owned by identityPersistence.ts
+        // assertUserReviewSemantics (submitUserReview); the rules keep only the enums.
+        await assertSucceeds(setDoc(doc(db, path('unpaired-attestation')), review({
+            id: 'unpaired-attestation', occupancyAttestation: 'MIXED',
+        })));
         await assertFails(setDoc(doc(db, path('bad-attestation')), review({
-            id: 'bad-attestation', occupancyAttestation: 'MIXED',
+            id: 'bad-attestation', occupancyAttestation: 'SHARED',
         })));
         await assertFails(setDoc(doc(db, path('bad-time')), review({
             id: 'bad-time', recordedAt: Timestamp.fromDate(new Date('2026-08-27T08:00:00.000Z')),

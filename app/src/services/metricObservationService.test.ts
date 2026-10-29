@@ -394,6 +394,45 @@ describe('MetricObservationService', () => {
                 /Observation revision 2 already exists/,
             );
         });
+
+        it('rejects a fixed-load correction that changes equipment_setup_id against the current head', async () => {
+            const metricId = 'strength_fixed_load_mean_velocity_mps';
+            const observationKey = `attempt-1:${metricId}`;
+            const fixedLoad = (context: MetricObservationRevision['context'], overrides: Partial<MetricObservationRevision> = {}) => makeRevision({
+                metricId, observationKey, unit: 'm/s', value: 0.8, source: 'derived',
+                protocolRef: { id: 'strength-bench-press-fixed-load-velocity', revision: 1 }, context,
+                derivedFromEvidenceRefs: [{ kind: 'assessment_trial', assessmentAttemptId: 'attempt-1', trialId: 'trial-1' }],
+                algorithmVersion: 'assessment-reducer-v1', ...overrides,
+            });
+            const original = { test_load_kg: 60, measurement_method_id: 'manual', equipment_setup_id: 'bench-a' };
+            const relabelled = { ...original, equipment_setup_id: 'bench-b' };
+            const current = fixedLoad(original);
+            const correction = fixedLoad(relabelled, {
+                revision: 2, supersedesRevision: 1, value: 0.7, correctionReason: 'Corrected velocity',
+                createdAt: '2026-08-21T07:00:00.000Z',
+                derivedFromEvidenceRefs: [{ kind: 'assessment_trial', assessmentAttemptId: 'attempt-1', trialId: 'trial-1-c1' }],
+            });
+            // The source trial matches the correction, so only the series-identity check can reject it.
+            const sourceTrial = { id: 'trial-1-c1', assessmentAttemptId: 'attempt-1', validity: 'valid', context: relabelled,
+                values: { load_kg: 60, successful: true, mean_concentric_velocity_mps: 0.7 } };
+            const docs: Record<string, unknown> = {
+                [`users/user-1/metric_observations/${observationKey}`]: makeHead({ metricId, observationKey, headRevision: 1 }),
+                [`users/user-1/metric_observations/${observationKey}/revisions/1`]: current,
+                'users/user-1/assessment_attempts/attempt-1/trials/trial-1-c1': sourceTrial,
+            };
+            firestore.transaction.get.mockImplementation(async (ref: { path: string }) => snapshot(docs[ref.path] ?? null));
+
+            await expect(new MetricObservationService({} as never).appendCorrection('user-1', correction)).rejects.toThrow(
+                'Correction cannot change fixed-load series identity',
+            );
+            expect(firestore.transaction.set).not.toHaveBeenCalled();
+            expect(firestore.transaction.update).not.toHaveBeenCalled();
+
+            // Control: the same correction keeping the head's series identity is appended.
+            const sameSeries = { ...correction, context: original };
+            docs['users/user-1/assessment_attempts/attempt-1/trials/trial-1-c1'] = { ...sourceTrial, context: original };
+            await expect(new MetricObservationService({} as never).appendCorrection('user-1', sameSeries)).resolves.toEqual(sameSeries);
+        });
     });
 
     describe('getHead', () => {
