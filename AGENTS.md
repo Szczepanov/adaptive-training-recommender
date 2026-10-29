@@ -32,7 +32,7 @@ Full statements, with rationale and the checks that enforce them, are in
 
 1. **User isolation** — write to `users/{APP_USER_ID}/daily_recovery_snapshots/{YYYY-MM-DD}`; never `daily_recovery_snapshot/{date}`, never `"default_user"` (ADR-0002).
 2. **Timezone semantics** — `Europe/Warsaw` for every calendar date, via `local_today()` / `getLocalDateString()`; never UTC `toISOString().split('T')[0]` (ADR-0003).
-3. **`D - 1` step semantics** — `totalSteps` is the previous completed day; baselines normalize ambient surges and `fatigue.ts` deducts estimated activity steps (ADR-0003).
+3. **`D - 1` step semantics** — `totalSteps` is the previous completed day; baselines normalize ambient surges and estimated activity steps are deducted in `derived/steps/activitySteps.ts`, consumed by `fatigue.ts` (ADR-0003).
 4. **Knowledge lineage** — decision-authority constants are owned by registered claims with alignment tests; check `app/src/knowledge/` before changing one (ADR-0033).
 5. **Policy version** — bump `POLICY_VERSION` when a change can alter a recommendation (ADR-0010).
 6. **No credential leaks** — never commit `.env`, `.garth/`, service-account files, or raw health JSON.
@@ -282,7 +282,7 @@ stay compact enough to survive conservative client instruction budgets.
 | Python ingestion, providers, Firestore persistence | `src/garmin_sync/` |
 | Adaptive recommendation engine (frozen, ADR-0052) | `app/src/engine/` |
 | Ledger record types (snapshots, check-ins, injuries, activities, strength logs, settings), shared training, capability, goal-target and session vocabulary; must not import `engine/` | `app/src/ledger/` |
-| Derived metrics and D-FLAGS evaluators extracted from the engine (health anomaly, illness-risk symptom, recovery-beyond-baseline and injury-constraint-touches-session flags; source-specific and subjective baselines; performed-training facts and provider-evidence classifiers; capability-exposure fact derivation; goal progress, metric math, feasibility and performance-target policy); must not import `engine/` | `app/src/derived/` |
+| Derived metrics and D-FLAGS evaluators extracted from the engine (health anomaly, illness-risk symptom, recovery-beyond-baseline and injury-constraint-touches-session flags; source-specific and subjective baselines; performed-training facts and provider-evidence classifiers; capability-exposure fact derivation; D−1 activity-step and ambient-step deduction; goal progress, metric math, feasibility and performance-target policy); must not import `engine/` | `app/src/derived/` |
 | Source-neutral sessions / execution | `app/src/sessions/` |
 | Session responses and outcome interpretation | `app/src/responses/`, `app/src/outcomes/` |
 | Canonical observations / testing | `app/src/observations/` |

@@ -16,9 +16,12 @@ import {
     STIMULUS_CREDIT_COVERAGE_THRESHOLD,
 } from '../engine/microcycle';
 import {
+    deriveAmbientSteps,
+    estimateActivitySteps,
+} from '../derived/steps/activitySteps';
+import {
     combineFatigue,
     computeInternalResponseStrain,
-    estimateActivitySteps,
 } from '../engine/fatigue';
 import {
     DEFAULT_TRAINING_INTENT_PROFILE,
@@ -229,6 +232,34 @@ describe('stimulus credit & heuristics product-claim alignment (SKR3 W2b)', () =
 
         expect(estimateActivitySteps({ type: 'running', duration_min: 30 })).toBe(30 * 155);
         expect(estimateActivitySteps({ type: 'walking', duration_min: 40 })).toBe(40 * 110);
+        expect(deriveAmbientSteps(10_000, { type: 'running', duration_min: 30 })).toEqual({
+            activitySteps: 30 * 155,
+            ambientSteps: 10_000 - 30 * 155,
+        });
+        expect(deriveAmbientSteps(3_000, { type: 'running', duration_min: 30 })).toEqual({
+            activitySteps: 30 * 155,
+            ambientSteps: 0,
+        });
+        expect(deriveAmbientSteps(null, { type: 'running', duration_min: 30 })).toEqual({
+            activitySteps: 30 * 155,
+            ambientSteps: null,
+        });
+        expect(deriveAmbientSteps(undefined, { type: 'walking', duration_min: 40 })).toEqual({
+            activitySteps: 40 * 110,
+            ambientSteps: null,
+        });
+        expect(deriveAmbientSteps(8_000, { type: 'cycling', duration_min: 60 })).toEqual({
+            activitySteps: 0,
+            ambientSteps: 8_000,
+        });
+        expect(deriveAmbientSteps(8_000, { type: 'swimming', duration_min: 45 })).toEqual({
+            activitySteps: 0,
+            ambientSteps: 8_000,
+        });
+        expect(deriveAmbientSteps(8_000, { type: 'strength', duration_min: 50 })).toEqual({
+            activitySteps: 0,
+            ambientSteps: 8_000,
+        });
 
         const belowRatio = computeInternalResponseStrain(ambientLoadReadiness({
             total_steps: 17_999,

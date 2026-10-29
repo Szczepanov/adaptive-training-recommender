@@ -6,6 +6,7 @@ import type {
 } from './models';
 import type { CompletedExposure } from './microcycleHistory';
 import { getDayDiff } from '../utils/localDate';
+import { deriveAmbientSteps } from '../derived/steps/activitySteps';
 import { resolveOccupationalLoadContext } from './occupationalLoad';
 
 export const DECAY_HALF_LIVES_HOURS: Record<keyof DimensionalFatigue, number> = {
@@ -16,9 +17,6 @@ export const DECAY_HALF_LIVES_HOURS: Record<keyof DimensionalFatigue, number> = 
     impactTissue: 48,
     neuromuscular: 36,
 };
-
-const RUN_OR_FIELD_SPORT_REGEX = /run|soccer|football|trail/i;
-const WALK_OR_HIKE_REGEX = /walk|hike/i;
 
 /** Production remains on `max`. The additive option is accepted only by the simulation
  * harness so a fatigue-policy experiment cannot reach a live recommendation by accident. */
@@ -86,26 +84,6 @@ export function decayFatigue(
 }
 
 /**
- * Estimates the step contribution from a logged Garmin activity so structured sessions
- * (runs, soccer, hikes) are not double-counted as unlogged ambient walking surge.
- */
-export function estimateActivitySteps(training: { type?: string; duration_min?: number } | null | undefined): number {
-    if (!training || !training.duration_min || training.duration_min <= 0) return 0;
-    const type = training.type || '';
-
-    // Running and high-cadence field sports: ~155 steps/min
-    if (RUN_OR_FIELD_SPORT_REGEX.test(type)) {
-        return Math.round(training.duration_min * 155);
-    }
-    // Dedicated walking or hiking activities: ~110 steps/min
-    if (WALK_OR_HIKE_REGEX.test(type)) {
-        return Math.round(training.duration_min * 110);
-    }
-    // Other sports (cycling, swimming, gym strength) do not produce primary ambulatory impact steps
-    return 0;
-}
-
-/**
  * Computes internal response strain vector from subjective check-in and objective Garmin deltas.
  */
 export function computeInternalResponseStrain(readiness: DailyReadiness): DimensionalFatigue {
@@ -125,11 +103,7 @@ export function computeInternalResponseStrain(readiness: DailyReadiness): Dimens
     // Triggers when ambient steps >= 1.8x baseline AND excess >= +6,000 steps above baseline.
     let ambulatoryTissueStrain = 0;
     const steps7dAvg = objective.steps_7d_avg;
-    const totalSteps = objective.total_steps;
-    const activitySteps = estimateActivitySteps(objective.yesterday_training);
-    const ambientSteps = totalSteps !== null && totalSteps !== undefined
-        ? Math.max(0, totalSteps - activitySteps)
-        : null;
+    const { ambientSteps } = deriveAmbientSteps(objective.total_steps, objective.yesterday_training);
     if (
         ambientSteps !== null &&
         steps7dAvg !== null &&
