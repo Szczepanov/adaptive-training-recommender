@@ -106,6 +106,30 @@ describe('health anomaly immutable persistence identity', () => {
             .toThrow('identity mismatch');
     });
 
+    // Issue #1201: Firestore rules no longer re-check these nested values; this parser (run by
+    // HealthAnomalyAssessmentRepository.persistImmutable before transaction.set) owns them.
+    it.each([
+        ['assessment state', (r: ReturnType<typeof revision>) => ({ ...r, assessment: { ...r.assessment, state: 'sick' } }), 'assessment state'],
+        ['evidence level', (r: ReturnType<typeof revision>) => ({ ...r, assessment: { ...r.assessment, evidenceLevel: 'extreme' } }), 'evidence level'],
+        ['assessment policy version', (r: ReturnType<typeof revision>) => ({ ...r, assessment: { ...r.assessment, policyVersion: 'other' } }), 'policy version mismatch'],
+        ['threshold version', (r: ReturnType<typeof revision>) => ({ ...r, assessment: { ...r.assessment, thresholdPolicyVersion: 'other' } }), 'threshold version mismatch'],
+        ['assessment mode', (r: ReturnType<typeof revision>) => ({ ...r, assessment: { ...r.assessment, mode: 'visible-v1' } }), 'mode mismatch'],
+        ['source timezone', (r: ReturnType<typeof revision>) => ({ ...r, source: { ...r.source, timezone: 'UTC' } }), 'source identity'],
+        ['source revision type', (r: ReturnType<typeof revision>) => ({ ...r, source: { ...r.source, checkinRevision: 5 } }), 'source identity'],
+        ['threshold ordering', (r: ReturnType<typeof revision>) => ({ ...r, thresholdPolicy: { ...r.thresholdPolicy, strongDeviation: r.thresholdPolicy.moderateDeviation } }), 'threshold policy'],
+        ['threshold core-signal minimum', (r: ReturnType<typeof revision>) => ({ ...r, thresholdPolicy: { ...r.thresholdPolicy, minimumCoreSignalsForMultiSignal: 1 } }), 'threshold policy'],
+        ['threshold coverage', (r: ReturnType<typeof revision>) => ({ ...r, thresholdPolicy: { ...r.thresholdPolicy, minimumRecentDayCoverage: 1.5 } }), 'threshold policy'],
+        ['threshold estimator', (r: ReturnType<typeof revision>) => ({ ...r, thresholdPolicy: { ...r.thresholdPolicy, estimatorBySignal: { ...r.thresholdPolicy.estimatorBySignal, hrv: 'ewma' } } }), 'threshold policy'],
+        ['schema version', (r: ReturnType<typeof revision>) => ({ ...r, schemaVersion: 2 }), 'schemaVersion'],
+        ['revision id format', (r: ReturnType<typeof revision>) => ({ ...r, revisionId: 'ha-other' }), 'revisionId'],
+        ['computedAt', (r: ReturnType<typeof revision>) => ({ ...r, computedAt: '' }), 'computedAt'],
+        ['mode', (r: ReturnType<typeof revision>) => ({ ...r, mode: 'off' }), 'mode'],
+        ['persistence days', (r: ReturnType<typeof revision>) => ({ ...r, assessment: { ...r.assessment, persistenceDays: -1 } }), 'persistenceDays'],
+        ['episode day', (r: ReturnType<typeof revision>) => ({ ...r, assessment: { ...r.assessment, episodeDay: 0 } }), 'episodeDay'],
+    ])('rejects an invalid %s before persistence', (_label, mutate, message) => {
+        expect(() => parseHealthAnomalyAssessmentRevision(mutate(revision()), 'u1', '2026-08-21')).toThrow(message);
+    });
+
     it('accepts valid optional respiration elevation evidence and rejects malformed evidence', () => {
         const record = buildHealthAnomalyAssessmentRevision({
             userId: 'u1',

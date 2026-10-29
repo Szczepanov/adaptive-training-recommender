@@ -128,15 +128,10 @@ emulatorDescribe('Health anomaly assessment revision rules (HA4)', () => {
         await assertFails(deleteDoc(doc(db, revisionPath)));
     });
 
-    it('rejects malformed mode, state, threshold policy, path identity and oversized source history', async () => {
+    it('rejects oversized evidence, threshold upper bounds, path identity and oversized source history', async () => {
         const db = testEnvironment.authenticatedContext(ownerId).firestore();
         const base = revision();
 
-        await assertFails(setDoc(doc(db, revisionPath), { ...base, mode: 'off' }));
-        await assertFails(setDoc(doc(db, revisionPath), {
-            ...base,
-            assessment: { ...base.assessment, state: 'diagnosed_flu' },
-        }));
         await assertFails(setDoc(doc(db, revisionPath), {
             ...base,
             assessment: {
@@ -146,7 +141,7 @@ emulatorDescribe('Health anomaly assessment revision rules (HA4)', () => {
         }));
         await assertFails(setDoc(doc(db, revisionPath), {
             ...base,
-            thresholdPolicy: { ...base.thresholdPolicy, strongDeviation: 1 },
+            thresholdPolicy: { ...base.thresholdPolicy, strongDeviation: 21 },
         }));
         await assertFails(setDoc(doc(db, revisionPath), { ...base, revisionId: 'ha-other' }));
         await assertFails(setDoc(doc(db, revisionPath), {
@@ -159,5 +154,21 @@ emulatorDescribe('Health anomaly assessment revision rules (HA4)', () => {
                 })),
             },
         }));
+    });
+
+    // Issue #1201 rules scope: nested assessment enums, threshold lower bounds/ordering/enums and
+    // version/mode equalities, the top-level mode enum and integer lower bounds are validated by
+    // parseHealthAnomalyAssessmentRevision (isHealthAnomalyThresholdPolicy) in
+    // HealthAnomalyAssessmentRepository.persistImmutable before transaction.set -- see
+    // healthAnomalyPersistence.test.ts.
+    it.each([
+        ['an off mode', (base: ReturnType<typeof revision>) => ({ ...base, mode: 'off' })],
+        ['an unknown assessment state', (base: ReturnType<typeof revision>) => ({ ...base, assessment: { ...base.assessment, state: 'diagnosed_flu' } })],
+        ['inverted threshold deviations', (base: ReturnType<typeof revision>) => ({ ...base, thresholdPolicy: { ...base.thresholdPolicy, strongDeviation: 1 } })],
+        ['an unknown estimator', (base: ReturnType<typeof revision>) => ({ ...base, thresholdPolicy: { ...base.thresholdPolicy, estimatorBySignal: { ...base.thresholdPolicy.estimatorBySignal, hrv: 'ewma' } } })],
+        ['a mismatched assessment mode', (base: ReturnType<typeof revision>) => ({ ...base, assessment: { ...base.assessment, mode: 'visible-v1' } })],
+    ])('accepts %s at the rules boundary (parseHealthAnomalyAssessmentRevision owns it)', async (_label, mutate) => {
+        const db = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertSucceeds(setDoc(doc(db, revisionPath), mutate(revision())));
     });
 });

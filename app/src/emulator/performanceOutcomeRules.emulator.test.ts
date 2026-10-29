@@ -193,8 +193,18 @@ emulatorDescribe('Performance outcome Firestore rules (OV2.4)', () => {
         ));
     });
 
-    it('rejects a protocol comparisonContext that double-classifies or drops a required dimension', async () => {
+    // Issue #1201: comparison-partition logic is owned by protocols.ts
+    // assertValidMeasurementProtocol (measurementProtocolService); see comparability.test.ts.
+    // The rules keep the key allow-lists and the per-list size caps.
+    it('accepts a malformed comparison partition at the rules boundary but caps list sizes', async () => {
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        const oversized = validProtocol();
+        oversized.comparisonContext = {
+            ...oversized.comparisonContext,
+            required: Array.from({ length: 17 }, () => 'power_source_id'),
+        };
+        await assertFails(setDoc(doc(ownerDb, protocolRevisionPath), oversized));
+
         const overlapping = validProtocol();
         overlapping.comparisonContext = {
             ...overlapping.comparisonContext,
@@ -202,16 +212,7 @@ emulatorDescribe('Performance outcome Firestore rules (OV2.4)', () => {
             seriesDefining: ['power_source_id', 'duration_seconds'],
             contextOnly: ['duration_seconds', 'warmup_revision'],
         };
-        await assertFails(setDoc(doc(ownerDb, protocolRevisionPath), overlapping));
-
-        const uncovered = validProtocol();
-        uncovered.comparisonContext = {
-            ...uncovered.comparisonContext,
-            required: ['power_source_id', 'duration_seconds', 'warmup_revision'],
-            seriesDefining: ['power_source_id'],
-            contextOnly: ['duration_seconds'],
-        };
-        await assertFails(setDoc(doc(ownerDb, protocolRevisionPath), uncovered));
+        await assertSucceeds(setDoc(doc(ownerDb, protocolRevisionPath), overlapping));
     });
 
     it('allows a valid manual observation only when revision 1 and the head are created atomically', async () => {
@@ -233,17 +234,19 @@ emulatorDescribe('Performance outcome Firestore rules (OV2.4)', () => {
         await assertFails(batch.commit());
     });
 
-    it('rejects malformed observation units and unknown fields', async () => {
+    it('rejects unknown observation fields but leaves units to TypeScript', async () => {
         const ownerDb = await seedProtocolAndAttempt();
-        for (const malformed of [
-            { ...validRevision(1), unit: 'kW' },
-            { ...validRevision(1), unsupportedField: true },
-        ]) {
-            const batch = writeBatch(ownerDb);
-            batch.set(doc(ownerDb, revision1Path), malformed);
-            batch.set(doc(ownerDb, observationPath), validHead(1));
-            await assertFails(batch.commit());
-        }
+        const unknownField = writeBatch(ownerDb);
+        unknownField.set(doc(ownerDb, revision1Path), { ...validRevision(1), unsupportedField: true });
+        unknownField.set(doc(ownerDb, observationPath), validHead(1));
+        await assertFails(unknownField.commit());
+
+        // Issue #1201: the registry unit is owned by registry.ts assertMetricUnit via
+        // assertValidMetricObservationRevision (metricObservationService); see validation.test.ts.
+        const wrongUnit = writeBatch(ownerDb);
+        wrongUnit.set(doc(ownerDb, revision1Path), { ...validRevision(1), unit: 'kW' });
+        wrongUnit.set(doc(ownerDb, observationPath), validHead(1));
+        await assertSucceeds(wrongUnit.commit());
     });
 
     it('allows a correction chain only when immutable revision N+1 and head N+1 advance together', async () => {
@@ -302,10 +305,39 @@ emulatorDescribe('Performance outcome Firestore rules (OV2.4)', () => {
         await assertFails(updateDoc(doc(ownerDb, attemptPath), {
             state: 'completed', startedAt: '1999-01-01T00:00:00.000Z', completedAt: '2026-08-21T06:25:00.000Z',
         }));
+        // Completing without completedAt would let a later write choose it; the timestamp is
+        // locked at the transition into the completed state.
+        await assertFails(updateDoc(doc(ownerDb, attemptPath), { state: 'completed' }));
         await assertSucceeds(updateDoc(doc(ownerDb, attemptPath), {
             state: 'completed', completedAt: '2026-08-21T06:25:00.000Z',
         }));
         await assertFails(updateDoc(doc(ownerDb, attemptPath), { completedAt: '1999-01-01T00:00:00.000Z' }));
+    });
+
+    it('couples assessment attempt state to the presence of its lifecycle timestamps', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertSucceeds(setDoc(doc(ownerDb, protocolRevisionPath), validProtocol()));
+        const scheduled = { id: attemptId, protocolRef: { id: protocolId, revision: 1 }, state: 'scheduled', purpose: 'baseline' };
+        await assertFails(setDoc(doc(ownerDb, attemptPath), { ...scheduled, startedAt: '2026-08-21T06:00:00.000Z' }));
+        await assertFails(setDoc(doc(ownerDb, attemptPath), { ...scheduled, state: 'in_progress' }));
+        await assertFails(setDoc(doc(ownerDb, attemptPath), {
+            ...scheduled, state: 'abandoned', completedAt: '2026-08-21T06:25:00.000Z',
+        }));
+        await assertSucceeds(setDoc(doc(ownerDb, attemptPath), scheduled));
+        await assertFails(updateDoc(doc(ownerDb, attemptPath), { state: 'in_progress' }));
+        await assertSucceeds(updateDoc(doc(ownerDb, attemptPath), { state: 'in_progress', startedAt: '2026-08-21T06:00:00.000Z' }));
+    });
+
+    it('rejects an outcome evaluation sourceRef kind outside the supported set', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        const batch = writeBatch(ownerDb);
+        batch.set(doc(ownerDb, evaluationPath), validOutcomeEvaluationHead());
+        batch.set(doc(ownerDb, evaluationRevisionPath), { ...validOutcomeEvaluationRevision(), sourceRef: { kind: 'race', id: 'event-1' } });
+        await assertFails(batch.commit());
+        const valid = writeBatch(ownerDb);
+        valid.set(doc(ownerDb, evaluationPath), validOutcomeEvaluationHead());
+        valid.set(doc(ownerDb, evaluationRevisionPath), { ...validOutcomeEvaluationRevision(), sourceRef: { kind: 'manual_block', id: 'block-1' } });
+        await assertSucceeds(valid.commit());
     });
 
     it('stores ecological competition evidence without protocol-only benchmark fields', async () => {

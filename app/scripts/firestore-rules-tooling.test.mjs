@@ -2,9 +2,10 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { minifyRules } from './minify-firestore-rules.mjs';
+import { minifyRules, minifyRulesWithOrigins } from './minify-firestore-rules.mjs';
 import {
-  assertMinifiedRulesBudget, buildRules, MAX_MINIFIED_RULES_BYTES, RULES_MODULES,
+  assertMinifiedRulesBudget, buildRules, formatRulesSizeReport, MAX_MINIFIED_RULES_BYTES, RULES_MODULES,
+  rulesSizeReport, rulesSizeReportFor,
 } from './build-firestore-rules.mjs';
 import { normalizeRulesSource, rulesApiRequest } from './check-firestore-rules-drift.mjs';
 import { deployFirestoreRules } from './deploy-firestore-rules.mjs';
@@ -157,7 +158,7 @@ describe('readable rules assembly', () => {
       'hasValidEquipmentList', 'hasValidExpectedCost', 'hasValidObservationDevice',
       'hasValidProtocolRef', 'hasValidSessionSource', 'isBoundedString', 'isDateDocument',
       'isFixedLoadProtocol', 'isOwner', 'isPositiveInt', 'isRealCalendarDate', 'isValidActivityDate',
-      'isValidEquipmentItem', 'keepsCreatedAt', 'keepsOwnership', 'outcomeMetricUnits', 'sameFixedLoadContext',
+      'isValidEquipmentItem', 'keepsCreatedAt', 'keepsOwnership', 'sameFixedLoadContext',
     ].sort());
   });
 
@@ -333,5 +334,65 @@ describe('Rules API deployment', () => {
     expect(console.warn.mock.calls.map(([message]) => message)).toEqual(expect.arrayContaining([
       expect.stringContaining('15s'), expect.stringContaining('30s'), expect.stringContaining('60s'), expect.stringContaining('120s'),
     ]));
+  });
+});
+
+describe('per-module minified size report', () => {
+  const synthetic = {
+    '00-header.rules': "// header comment\nfunction isOwnerOfDocument(userIdentifier) { return request.auth.uid == userIdentifier; }\n",
+    '01-comments.rules': '// only a comment\n/* and a block */\n',
+    '02-body.rules': "match /users/{userId} { allow read: if isOwnerOfDocument(userId) && 'a//b' != ''; } // trailing\n",
+    '99-footer.rules': 'allow write: if false;',
+  };
+  function assemble(modules) {
+    let offset = 0;
+    const boundaries = [];
+    const source = Object.entries(modules).map(([name, text]) => {
+      const normalized = text.endsWith('\n') ? text : `${text}\n`;
+      boundaries.push({ name, start: offset, end: offset + normalized.length });
+      offset += normalized.length;
+      return normalized;
+    }).join('');
+    return { source, boundaries };
+  }
+
+  it('attributes every byte of a synthetic multi-module fixture and keeps output identical', () => {
+    const { source, boundaries } = assemble(synthetic);
+    const { minified, modules } = minifyRulesWithOrigins(source, boundaries);
+    expect(minified).toBe(minifyRules(source));
+    expect(minified).toContain('_f0(');
+    expect(modules.map((module) => module.name)).toEqual(Object.keys(synthetic));
+    expect(modules.reduce((sum, module) => sum + module.bytes, 0)).toBe(Buffer.byteLength(minified, 'utf8'));
+    expect(modules.find((module) => module.name === '01-comments.rules').bytes).toBe(0);
+    // The renamed helper call in 02 is attributed to 02, not to the declaring module.
+    expect(modules.find((module) => module.name === '00-header.rules').bytes).toBeGreaterThan(0);
+    expect(modules.find((module) => module.name === '02-body.rules').bytes).toBeGreaterThan(0);
+  });
+
+  it('rejects tokens outside every boundary', () => {
+    expect(() => minifyRulesWithOrigins('allow read: if true;', [{ name: 'x', start: 0, end: 3 }])).toThrow(/outside/);
+  });
+
+  it('formats the report as aligned lines for the synthetic fixture', () => {
+    const { source, boundaries } = assemble(synthetic);
+    const report = rulesSizeReportFor(source, boundaries);
+    const lines = formatRulesSizeReport(report).split('\n');
+    const format = new Intl.NumberFormat('en-US');
+    expect(lines[0]).toBe(`Minified Firestore rules: ${format.format(report.total)} bytes (budget ${format.format(MAX_MINIFIED_RULES_BYTES)}; headroom ${format.format(MAX_MINIFIED_RULES_BYTES - report.total)})`);
+    expect(lines).toHaveLength(1 + Object.keys(synthetic).length);
+    expect(lines[2]).toMatch(/^ {2}01-comments\.rules\s+0\s+0\.0%$/);
+    expect(lines.slice(1).map((line) => line.trim().split(/\s+/)[0])).toEqual(Object.keys(synthetic));
+    const shares = report.modules.reduce((sum, module) => sum + module.share, 0);
+    expect(shares).toBeCloseTo(1, 10);
+  });
+
+  it('covers every module of the repository and sums to the minified total', async () => {
+    const report = await rulesSizeReport();
+    const source = await buildRules({ check: true });
+    const names = report.modules.map((module) => module.name);
+    for (const name of RULES_MODULES) expect(names).toContain(name);
+    expect(report.modules.reduce((sum, module) => sum + module.bytes, 0)).toBe(report.total);
+    expect(report.total).toBe(Buffer.byteLength(minifyRules(source), 'utf8'));
+    expect(report.headroom).toBe(MAX_MINIFIED_RULES_BYTES - report.total);
   });
 });

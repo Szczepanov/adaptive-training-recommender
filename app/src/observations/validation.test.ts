@@ -161,6 +161,32 @@ describe('OV2 evidence validation', () => {
         expect(() => assertValidAssessmentAttempt({ ...scheduled, state: 'completed', completedAt: '2026-08-22T07:00:00Z' })).toThrow(/requires startedAt and completedAt/);
     });
 
+    // Issue #1201: Firestore rules no longer re-check these values; this validator owns them
+    // before every metric_observations / assessment_attempts write.
+    it('rejects unknown metrics, unsupported sources/validity and malformed observedAt', () => {
+        expect(() => assertValidMetricObservationRevision(observation({
+            metricId: 'unknown_metric', observationKey: 'attempt-1:unknown_metric',
+        }))).toThrow(/unknown_metric/);
+        expect(() => assertValidMetricObservationRevision(observation({ source: 'strava' as never }))).toThrow(/Unsupported observation source/);
+        expect(() => assertValidMetricObservationRevision(observation({ validity: 'maybe' as never }))).toThrow(/Unsupported observation validity/);
+        expect(() => assertValidMetricObservationRevision(observation({ observedAt: '' }))).toThrow(/observedAt is required/);
+        expect(() => assertValidMetricObservationRevision(observation({ observedAt: 'not-a-date' }))).toThrow(/observedAt must be a valid timestamp/);
+    });
+
+    it('rejects unsupported assessment states/purposes and malformed dates or timestamps', () => {
+        const scheduled: AssessmentAttempt = {
+            id: 'attempt-1', protocolRef: { id: 'cycling-20m-tt', revision: 1 }, state: 'scheduled', purpose: 'baseline', scheduledDate: '2026-08-22',
+        };
+        expect(() => assertValidAssessmentAttempt({ ...scheduled, state: 'paused' as never })).toThrow(/Unsupported assessment state/);
+        expect(() => assertValidAssessmentAttempt({ ...scheduled, purpose: 'race' as never })).toThrow(/Unsupported assessment purpose/);
+        expect(() => assertValidAssessmentAttempt({ ...scheduled, scheduledDate: '2026-02-30' })).toThrow(/scheduledDate must be a real calendar date/);
+        expect(() => assertValidAssessmentAttempt({ ...scheduled, scheduledDate: '22-08-2026' })).toThrow(/scheduledDate must be YYYY-MM-DD/);
+        expect(() => assertValidAssessmentAttempt({ ...scheduled, state: 'in_progress', startedAt: 'soon' })).toThrow(/startedAt must be a valid timestamp/);
+        expect(() => assertValidAssessmentAttempt({
+            ...scheduled, state: 'completed', startedAt: '2026-08-22T06:00:00Z', completedAt: '',
+        })).toThrow(/completedAt is required/);
+    });
+
     it('keeps competition evidence ecological and validates result bounds', () => {
         expect(() => assertValidCompetitionOutcome(competition())).not.toThrow();
         expect(() => assertValidCompetitionOutcome(competition({ result: { completed: true, placing: 101, fieldSize: 100 } })))

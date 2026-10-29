@@ -187,7 +187,7 @@ For bar velocity, `mean concentric velocity` remains the preferred future longit
 
 **Persistence parity requirement:** the current Firestore rules keep their own hard-coded outcome-metric/unit allowlists and measurement-protocol metric allowlist. WP1.1 must update those allowlists and emulator fixtures in the same delivery as the TypeScript registry. In particular, `strength_1rm_kg` being present in `registry.ts` is not sufficient by itself for #897 persistence.
 
-**Pre-existing rules/registry drift fix:** prior to Issue #897 / ADR-0046, `strength_1rm_kg`, `sprint_elapsed_time_s`, `cycling_5s_peak_power_w` and dimension `timing_method` existed in TypeScript but were omitted from the production `firestore.rules` allowlist, preventing bundled persistence of those metrics. The rules and TypeScript registry now share strict parity via `firestore.rules` `outcomeMetricUnits()` and `comparisonDimensionIds()`, verified by `firestoreRulesParity.test.ts`.
+**Pre-existing rules/registry drift fix:** prior to Issue #897 / ADR-0046, `strength_1rm_kg`, `sprint_elapsed_time_s`, `cycling_5s_peak_power_w` and dimension `timing_method` existed in TypeScript but were omitted from the production `firestore.rules` allowlist, preventing bundled persistence of those metrics. ~~The rules and TypeScript registry now share strict parity via `firestore.rules` `outcomeMetricUnits()` and `comparisonDimensionIds()`, verified by `firestoreRulesParity.test.ts`.~~ Superseded by [ADR-0053](../adr/0053-firestore-rules-scope.md) (#1201): those rules helpers were removed and the TypeScript registry is the sole owner of metric, unit and dimension membership.
 
 ## WP1.2 Add only required comparison dimensions
 

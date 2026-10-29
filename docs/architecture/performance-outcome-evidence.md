@@ -126,7 +126,7 @@ The outcome metric registry is bounded and strongly typed:
 
 Raw 20-minute mean power is stored as the raw metric. It is not named or persisted as FTP. Context-only metrics cannot be promoted to primary/secondary outcome bindings by the registry contract.
 
-**Pre-existing rules/registry drift fix:** prior to Issue #897 / ADR-0046, `strength_1rm_kg`, `sprint_elapsed_time_s`, `cycling_5s_peak_power_w`, and dimension `timing_method` existed in TypeScript but were omitted from the production `firestore.rules` allowlist, preventing bundled persistence of those metrics. The rules and TypeScript registry now share strict parity via `firestore.rules` `outcomeMetricUnits()` and `comparisonDimensionIds()`, verified by `firestoreRulesParity.test.ts`.
+**Registry ownership:** metric ids, units and comparison dimensions are validated only by the TypeScript registry (`assertValidMetricObservationRevision`, backed by `registry.ts`) before every write. Firestore rules no longer carry a metric/unit or dimension allow-list (`outcomeMetricUnits()` and `comparisonDimensionIds()` were removed under [ADR-0053](../adr/0053-firestore-rules-scope.md)), so a registry change does not need a rules change. This ends the earlier Issue #897 / ADR-0046 failure mode in which a metric existed in TypeScript but was missing from the rules allowlist.
 
 ## Measurement protocols and comparison series
 
@@ -241,7 +241,7 @@ Multi-trial protocols retain repeated attempts and load/velocity evidence as imm
   * includes full observation revision chains (not just latest heads);
   * computes longitudinal progress via `deriveProgress()` across comparable attempts;
   * formats keys with canonical recursive code-unit sorting (`canonicalJson.ts`).
-* **Rules parity and immutability:** rules deny trial `update` and `delete` (no update/delete allow; denied by default). Parity between rules allowlists/bounds and domain constants is verified by `firestoreRulesParity.test.ts` and `assessmentTrialRules.emulator.test.ts`.
+* **Rules scope and immutability:** rules deny trial `update` and `delete` (no update/delete allow; denied by default) and keep identity, attempt-state gating, correction-chain integrity and bounds. Trial value and method/provenance validation is owned by `assertFixedLoadTrialEligibility` and `assertFixedLoadObservationEvidence` (ADR-0053). Key allow-lists and bounds are exercised by `firestoreRulesParity.test.ts` and `assessmentTrialRules.emulator.test.ts`.
 
 ### Metric observations
 
@@ -297,22 +297,43 @@ is the OV3 slice, implemented in `app/src/observations/protocols.ts` and
 
 ## Security rules
 
-Firestore rules enforce the persistence invariants independently of client validation:
+Firestore rules enforce authorization, bounded storage, immutability and cross-document
+integrity. Nested value validation is owned by the shared TypeScript validators, which run on
+the client write path before the write ([ADR-0053](../adr/0053-firestore-rules-scope.md)).
+
+Rules enforce:
 
 * authenticated user-path isolation;
-* known top-level keys and enum/value shapes;
-* known metric/unit pairs;
+* known top-level keys (`hasOnly` / `hasAll`) and caps on string, list and map sizes;
 * immutable protocol and observation-revision documents;
-* protocol and assessment-attempt identity for protocol observations;
+* protocol and assessment-attempt identity for protocol observations, including the protocol
+  binding and the `burden` enum;
+* the assessment-attempt state gates and transitions;
 * atomic initial head + revision-1 creation;
 * atomic `N -> N+1` head advance plus matching immutable correction revision;
 * predecessor/supersession consistency and stale-writer rejection;
-* required source IDs + algorithm version for derived observations;
+* the trial-capture binding for trial-capture protocols (`hasValidTrialCaptureBinding`); derived
+  provenance (source IDs, algorithm version) is owned by `assertValidMetricObservationRevision`;
+* the observation-side reducer invariant: `algorithmVersion == protocol.capture.reducerVersion`
+  (the protocol itself no longer pins `reducerVersion`);
 * ecological competition records cannot add protocol-only fields.
 
+TypeScript validators own the values:
+
+| Validator | Owns |
+|---|---|
+| `assertValidMetricObservationRevision` (`observations/validation.ts`) | metric ids, units, values, sources, validity, derivation provenance |
+| `assertValidMeasurementProtocol` (`observations/protocols.ts`) | protocol value checks (except `burden`, kept in rules) |
+| `assertValidAssessmentCapture` (`observations/assessmentCapture.ts`) | capture fields, reducers, reducer version |
+| `assertFixedLoadTrialEligibility`, `assertFixedLoadObservationEvidence` (`observations/fixedLoadVelocity.ts`) | fixed-load trial method/provenance and observation value binding |
+| `assertValidAssessmentAttempt` (`observations/validation.ts`) | assessment-attempt enums and state/timestamp shape (called in `AssessmentAttemptService`) |
+| `assertValidOutcomeEvaluationRevision` (`outcomes/evaluationSpec.ts`) | outcome-evaluation date, status and `sourceRef` enums |
+
 The dedicated Firestore emulator suite covers valid initial/manual writes, valid correction
-chains, stale/skipped correction rejection, malformed units/shapes, protocol immutability,
-cross-user denial, assessment lifecycle provenance and competition-outcome isolation.
+chains, stale/skipped correction rejection, protocol immutability, cross-user denial,
+assessment lifecycle provenance and competition-outcome isolation. Checks that moved to
+TypeScript are asserted as accepted at the rules boundary, and the corresponding rejection is
+covered by the validator unit tests.
 
 ## Reliability provenance
 
@@ -350,7 +371,7 @@ users/{userId}/assessment_attempts/{attemptId}/trials/{trialId}
 
 * **Contract:** Capture schemas and deterministic reducers are declared on the immutable `MeasurementProtocol`
   revision document itself (`D-AT-PROTOCOL`).
-* **Immutability & Correction:** Trials are write-once in `firestore.rules`. Corrections are append-only
+* **Immutability & Correction:** Trials are write-once in `firestore.rules` (source: `app/rules/08-outcomes-trials.rules`). Corrections are append-only
   with supersession pointers (`supersedesTrialId`), re-deriving the canonical benchmark as revision $N+1$
   without mutating historical evidence.
 
@@ -358,7 +379,7 @@ users/{userId}/assessment_attempts/{attemptId}/trials/{trialId}
 
 `physicalCapitalProtocols.ts` registers immutable revision-1 `strength-bench-press-fixed-load-velocity` and `strength-back-squat-fixed-load-velocity` protocols. Each captures 2–3 maximal-intent single repetitions and emits `strength_fixed_load_mean_velocity_mps` (`m/s`, higher is better) through the existing `max_valid` reducer and one `${attemptId}:${metricId}` observation identity. Exact absolute `test_load_kg`, actual `measurement_method_id` and `equipment_setup_id` define the comparison series; technique is fixed by protocol revision.
 
-`fixedLoadVelocity.ts` validates successful valid repetitions at the locked load, reuses `velocityMeasurementMethodId` for parser/configuration identity, and rejects missing imported provenance, mixed methods or relabeled setup. Parser-tagged fixed-load rows require their matching `wl-analysis-csv:sha256:<64 lowercase hex>` or `openbar-analysis:sha256:<64 lowercase hex>` source reference; imported source references cannot be relabeled as manual. These gates apply before raw persistence, during reduction, and on correction/direct observation-service paths. Failed, practice, questionable and invalid repetitions cannot supply benchmarks. Raw 1RM velocities remain raw evidence. Rules enforce exact source trial/value/load/method/setup binding and preserve series identity across atomic winner corrections. Fixed-load OpenBar evidence accepts trimmed URI-unreserved ASCII implementation/version identifiers and an ASCII calibration method name with a numeric version. Unsupported encoded component forms fail closed before persistence; the historical 1RM importer and general method resolver retain their existing identities. Rules bind every accepted component, including calibration separator encoding, raw/filtered configuration and scalar parameter strings, to the complete method identity. Both numeric suffixes must parse to their corresponding finite context values; no JavaScript-versus-Rules number formatting assumption is needed. Services additionally require equality with the complete reconstructed method. Direct SDK numeric, calibration or implementation/version relabeling is rejected.
+`fixedLoadVelocity.ts` validates successful valid repetitions at the locked load, reuses `velocityMeasurementMethodId` for parser/configuration identity, and rejects missing imported provenance, mixed methods or relabeled setup. Parser-tagged fixed-load rows require their matching `wl-analysis-csv:sha256:<64 lowercase hex>` or `openbar-analysis:sha256:<64 lowercase hex>` source reference; imported source references cannot be relabeled as manual. These gates apply before raw persistence, during reduction, and on correction/direct observation-service paths. Failed, practice, questionable and invalid repetitions cannot supply benchmarks. Raw 1RM velocities remain raw evidence. Rules and TypeScript split this evidence as follows. Rules (`hasFixedLoadObservationBinding`, `hasFixedLoadCorrectionIntegrity`) keep only the binding core: `isFixedLoadProtocol(protocolRef)`, a valid trial, a value equal to the trial's `mean_concentric_velocity_mps`, `sameFixedLoadContext` with the trial and with the previous revision; trial corrections keep `context`/`device` equal to the predecessor, `sourceRef` equality, the chain head, and the three-key correction context. TypeScript owns the rest: method, provenance, calibration and relabeling validation (`assertFixedLoadTrialEligibility`, `fixedLoadTrialMethod`), full observation evidence (`assertFixedLoadObservationEvidence`), and series identity across atomic winner corrections (`MetricObservationService.appendCorrection`). Fixed-load OpenBar evidence accepts trimmed URI-unreserved ASCII implementation/version identifiers and an ASCII calibration method name with a numeric version. Unsupported encoded component forms fail closed before persistence in the TypeScript validators; the historical 1RM importer and general method resolver retain their existing identities. Rules no longer validate calibration separator encoding, configuration strings or numeric suffixes ([ADR-0053](../adr/0053-firestore-rules-scope.md)).
 
 Both tests reuse the Testing catalog, SessionRunner, history/progress and export services. A changed load, method/parser, setup or incompatible revision remains a separate/non-comparable series; no reliability thresholds are invented.
 

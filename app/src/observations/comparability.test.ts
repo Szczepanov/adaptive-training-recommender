@@ -111,6 +111,36 @@ describe('OV1 protocol validation and comparable series', () => {
             .rejects.toThrow(/Missing required comparison dimension: power_source_id/);
     });
 
+    // Issue #1201: Firestore rules no longer re-check protocol intent, metric/dimension registry
+    // membership, partition subsets or familiarization coupling; assertValidMeasurementProtocol
+    // owns them before measurementProtocolService writes a revision.
+    it('rejects non-testing intent, unknown metrics/dimensions, unrequired partitions and empty required familiarization', () => {
+        expect(() => assertValidMeasurementProtocol(protocol({ intent: 'training' as never }))).toThrow(/intent must be testing/);
+        expect(() => assertValidMeasurementProtocol(protocol({ metricIds: ['unknown_metric'] }))).toThrow(/Unsupported metric id: unknown_metric/);
+        expect(() => assertValidMeasurementProtocol(protocol({
+            comparisonContext: {
+                required: ['unknown_dimension' as never], seriesDefining: ['unknown_dimension' as never], contextOnly: [],
+                canonicalizationVersion: COMPARISON_CANONICALIZATION_V1,
+            },
+        }))).toThrow(/Unsupported comparison dimension: unknown_dimension/);
+        expect(() => assertValidMeasurementProtocol(protocol({
+            comparisonContext: {
+                required: ['power_source_id'], seriesDefining: ['power_source_id', 'bike_setup_id'], contextOnly: [],
+                canonicalizationVersion: COMPARISON_CANONICALIZATION_V1,
+            },
+        }))).toThrow(/Series-defining dimension bike_setup_id must also be required/);
+        expect(() => assertValidMeasurementProtocol(protocol({
+            comparisonContext: {
+                required: ['power_source_id'], seriesDefining: ['power_source_id'], contextOnly: ['weather_note'],
+                canonicalizationVersion: COMPARISON_CANONICALIZATION_V1,
+            },
+        }))).toThrow(/Context-only dimension weather_note must also be required/);
+        expect(() => assertValidMeasurementProtocol(protocol({ familiarization: { required: true, minimumExposures: 0 } })))
+            .toThrow(/required familiarization needs at least one minimum exposure/);
+        expect(() => assertValidMeasurementProtocol(protocol({ familiarization: { required: false, minimumExposures: -1 } })))
+            .toThrow(/minimumExposures must be a non-negative integer/);
+    });
+
     it('rejects malformed comparison partitions', () => {
         const overlap = protocol({
             comparisonContext: {

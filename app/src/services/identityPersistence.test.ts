@@ -215,6 +215,15 @@ describe('identity persistence validation (PI6)', () => {
             userId: 'u1', id: 'bad-1', assessmentId: 'assessment-1', label: 'USER',
             occupancyAttestation: 'MIXED', supersedesReviewEventId: null,
         })).rejects.toThrow('requires exclusive');
+        // Issue #1201: label/occupancy pairing is owned here, not by Firestore rules.
+        await expect(service.submitUserReview({
+            userId: 'u1', id: 'bad-2', assessmentId: 'assessment-1', label: 'NOT_USER',
+            occupancyAttestation: 'EXCLUSIVE', supersedesReviewEventId: null,
+        })).rejects.toThrow('must use UNKNOWN occupancy');
+        await expect(service.submitUserReview({
+            userId: 'u1', id: 'bad-3', assessmentId: 'assessment-1', label: 'UNCERTAIN',
+            occupancyAttestation: 'EXCLUSIVE', supersedesReviewEventId: null,
+        })).rejects.toThrow('cannot claim exclusive');
         expect(() => parseIdentityReviewEvent(review({ recordedAt: 'not-a-date' })))
             .toThrow();
         expect(parseIdentityReviewEvent({
