@@ -1,12 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
     deriveFactsFromOccurrence,
-    compareCanonicalVsLegacyFacts,
     normalizeModality,
-    templateIdForWorkoutId,
-    type PerformedExposureFact,
     type HydratedOccurrenceContext,
 } from './performedTrainingFacts';
+import {
+    ENGINE_PERFORMED_TRAINING_CATALOG,
+    templateIdForWorkoutId,
+} from './performedTrainingCatalog';
 import {
     getTemplateIdsForWorkoutId,
     getUniqueTemplateIdForWorkoutId,
@@ -18,7 +19,7 @@ import { activityService } from '../services/activityService';
 import { sessionExecutionService } from '../services/sessionExecutionService';
 import { recommendationService } from '../services/recommendationService';
 import { activityOverrideService } from '../services/activityOverrideService';
-import type { NormalizedGarminActivity, CompletedTrainingEvent, DailyRecommendation } from './models';
+import type { NormalizedGarminActivity, DailyRecommendation } from './models';
 
 vi.mock('../training-occurrence/repository', () => ({
     performedTrainingOccurrenceRepository: {
@@ -67,36 +68,6 @@ function mockOccurrence(overrides: Partial<PerformedTrainingOccurrence> = {}): P
         createdAt: '2026-09-01T10:00:00Z',
         updatedAt: '2026-09-01T10:00:00Z',
         ...overrides,
-    };
-}
-
-function legacyEvent(
-    id: string,
-    date: string,
-    modality: 'Strength' | 'Cycling' | 'Running',
-): CompletedTrainingEvent {
-    return {
-        id,
-        date,
-        durationMin: 60,
-        modality,
-        intensity: 'easy',
-        evidenceTier: 'durationIntensity',
-    } as unknown as CompletedTrainingEvent;
-}
-
-function canonicalExposure(
-    id: string,
-    localDate: string,
-    modality: PerformedExposureFact['modality'],
-): PerformedExposureFact {
-    return {
-        performedOccurrenceId: id,
-        localDate,
-        modality,
-        confidence: 'inferred',
-        sourceKinds: ['provider_activity'],
-        evidenceTier: 'durationIntensity',
     };
 }
 
@@ -167,7 +138,11 @@ describe('performedTrainingFacts', () => {
                 },
             };
 
-            const { exposure, coverageCredits } = deriveFactsFromOccurrence(occurrence, hydrated);
+            const { exposure, coverageCredits } = deriveFactsFromOccurrence(
+                occurrence,
+                hydrated,
+                ENGINE_PERFORMED_TRAINING_CATALOG,
+            );
 
             expect(exposure.modality).toBe('Strength');
             expect(exposure.category).toBeUndefined();
@@ -197,7 +172,7 @@ describe('performedTrainingFacts', () => {
                     modality: 'Cycling',
                     durationMin: 45,
                 },
-            });
+            }, ENGINE_PERFORMED_TRAINING_CATALOG);
 
             expect(exposure.modality).toBe('Cycling');
             expect(exposure.category).toBeUndefined();
@@ -212,7 +187,7 @@ describe('performedTrainingFacts', () => {
                     modality: 'Cycling',
                     durationMin: 45,
                 },
-            });
+            }, ENGINE_PERFORMED_TRAINING_CATALOG);
 
             expect(exposure.modality).toBe('Cycling');
         });
@@ -247,7 +222,7 @@ describe('performedTrainingFacts', () => {
                     durationMin: 45,
                     garminActivity,
                 },
-            });
+            }, ENGINE_PERFORMED_TRAINING_CATALOG);
 
             expect(exposure.localDate).toBe('2026-09-01');
             expect(exposure.startedAt).toBe('2026-09-02T00:05:00Z');
@@ -259,7 +234,7 @@ describe('performedTrainingFacts', () => {
                 startedAt: '2026-09-01T23:30:00Z',
             });
 
-            const { exposure } = deriveFactsFromOccurrence(occurrence, {});
+            const { exposure } = deriveFactsFromOccurrence(occurrence, {}, ENGINE_PERFORMED_TRAINING_CATALOG);
 
             expect(exposure.localDate).toBe('2026-09-02');
         });
@@ -267,7 +242,7 @@ describe('performedTrainingFacts', () => {
         it('rejects an impossible canonical local calendar date', () => {
             const occurrence = mockOccurrence({ localDate: '2026-02-30' });
 
-            expect(() => deriveFactsFromOccurrence(occurrence, {})).toThrow(
+            expect(() => deriveFactsFromOccurrence(occurrence, {}, ENGINE_PERFORMED_TRAINING_CATALOG)).toThrow(
                 'invalid performed local date: 2026-02-30',
             );
         });
@@ -278,7 +253,7 @@ describe('performedTrainingFacts', () => {
                 startedAt: 'not-a-timestamp',
             });
 
-            expect(() => deriveFactsFromOccurrence(occurrence, {})).toThrow(
+            expect(() => deriveFactsFromOccurrence(occurrence, {}, ENGINE_PERFORMED_TRAINING_CATALOG)).toThrow(
                 'invalid start time: not-a-timestamp',
             );
         });
@@ -307,7 +282,11 @@ describe('performedTrainingFacts', () => {
                 },
             };
 
-            const { exposure, coverageCredits } = deriveFactsFromOccurrence(occurrence, hydrated);
+            const { exposure, coverageCredits } = deriveFactsFromOccurrence(
+                occurrence,
+                hydrated,
+                ENGINE_PERFORMED_TRAINING_CATALOG,
+            );
 
             expect(exposure.modality).toBe('Strength');
             expect(exposure.category).toBe('Full-body Strength');
@@ -337,7 +316,7 @@ describe('performedTrainingFacts', () => {
                     workoutVariantId: 'reduced',
                     isReadinessModifiedDose: true,
                 },
-            });
+            }, ENGINE_PERFORMED_TRAINING_CATALOG);
             expect(coverageCredits.map(credit => credit.coverageKey)).toEqual(['primary_strength']);
         });
 
@@ -354,7 +333,7 @@ describe('performedTrainingFacts', () => {
                     durationMin: 20,
                     workoutVariantId: 'return_to_training',
                 },
-            });
+            }, ENGINE_PERFORMED_TRAINING_CATALOG);
             const unknown = deriveFactsFromOccurrence(occurrence, {
                 structured: {
                     executionId: 'exec-return',
@@ -363,7 +342,7 @@ describe('performedTrainingFacts', () => {
                     modality: 'Strength',
                     durationMin: 20,
                 },
-            });
+            }, ENGINE_PERFORMED_TRAINING_CATALOG);
             expect(returned.coverageCredits.map(credit => credit.coverageKey)).toEqual(['primary_strength']);
             expect(unknown.coverageCredits.map(credit => credit.coverageKey)).toEqual(['primary_strength']);
         });
@@ -377,7 +356,7 @@ describe('performedTrainingFacts', () => {
                     modality: 'Strength',
                     durationMin: 45,
                 },
-            });
+            }, ENGINE_PERFORMED_TRAINING_CATALOG);
 
             expect(exposure.category).toBe('Full-body Strength');
             expect(exposure.templateId).toBeUndefined();
@@ -396,7 +375,11 @@ describe('performedTrainingFacts', () => {
                 },
             };
 
-            const { exposure, coverageCredits } = deriveFactsFromOccurrence(occurrence, hydrated);
+            const { exposure, coverageCredits } = deriveFactsFromOccurrence(
+                occurrence,
+                hydrated,
+                ENGINE_PERFORMED_TRAINING_CATALOG,
+            );
 
             expect(exposure.modality).toBe('Strength');
             expect(exposure.category).toBeUndefined();
@@ -421,7 +404,11 @@ describe('performedTrainingFacts', () => {
                 },
             };
 
-            const { exposure } = deriveFactsFromOccurrence(occurrence, hydrated);
+            const { exposure } = deriveFactsFromOccurrence(
+                occurrence,
+                hydrated,
+                ENGINE_PERFORMED_TRAINING_CATALOG,
+            );
             expect(exposure.stimulusDomain).toBe('tempo');
             expect(exposure.confidence).toBe('exact');
         });
@@ -456,7 +443,11 @@ describe('performedTrainingFacts', () => {
                 },
             };
 
-            const { exposure } = deriveFactsFromOccurrence(occurrence, hydrated);
+            const { exposure } = deriveFactsFromOccurrence(
+                occurrence,
+                hydrated,
+                ENGINE_PERFORMED_TRAINING_CATALOG,
+            );
             // Structured execution says tempo; provider said endurance. Structured domain strictly wins.
             expect(exposure.stimulusDomain).toBe('tempo');
         });
@@ -496,7 +487,11 @@ describe('performedTrainingFacts', () => {
                 },
             };
 
-            const { exposure } = deriveFactsFromOccurrence(occurrence, hydrated);
+            const { exposure } = deriveFactsFromOccurrence(
+                occurrence,
+                hydrated,
+                ENGINE_PERFORMED_TRAINING_CATALOG,
+            );
             // Provider domain 'tempo' is suppressed by the override; fact has undefined stimulusDomain
             expect(exposure.stimulusDomain).toBeUndefined();
             expect(exposure.modality).toBe('Running');
@@ -507,7 +502,7 @@ describe('performedTrainingFacts', () => {
         it('fails visibly rather than fabricating a 1970 date when no performed date exists', () => {
             const occurrence = mockOccurrence({ localDate: undefined, startedAt: undefined });
 
-            expect(() => deriveFactsFromOccurrence(occurrence, {})).toThrow(
+            expect(() => deriveFactsFromOccurrence(occurrence, {}, ENGINE_PERFORMED_TRAINING_CATALOG)).toThrow(
                 'has no performed local date or start time',
             );
         });
@@ -607,77 +602,6 @@ describe('performedTrainingFacts', () => {
             const snapshot = await getPerformedTrainingFactsInRange('user-1', '2026-08-31', '2026-09-02');
             expect(snapshot.overridesDegraded).toBe(true);
             expect(snapshot.exposures).toHaveLength(1);
-        });
-    });
-
-    describe('compareCanonicalVsLegacyFacts', () => {
-        it('reports parity when date, modality and multiplicity match', () => {
-            const result = compareCanonicalVsLegacyFacts(
-                [canonicalExposure('pto-1', '2026-09-01', 'Strength')],
-                [legacyEvent('evt-1', '2026-09-01', 'Strength')],
-            );
-
-            expect(result.exposureCountDelta).toBe(0);
-            expect(result.mismatchCount).toBe(0);
-            expect(result.mismatches).toEqual([]);
-        });
-
-        it('detects modality drift even when row counts match', () => {
-            const result = compareCanonicalVsLegacyFacts(
-                [canonicalExposure('pto-1', '2026-09-01', 'Strength')],
-                [legacyEvent('evt-1', '2026-09-01', 'Cycling')],
-            );
-
-            expect(result.exposureCountDelta).toBe(0);
-            expect(result.mismatchCount).toBe(1);
-            expect(result.mismatches).toEqual([
-                expect.objectContaining({ type: 'modality_mismatch' }),
-            ]);
-        });
-
-        it('detects date drift even when row counts match', () => {
-            const result = compareCanonicalVsLegacyFacts(
-                [canonicalExposure('pto-1', '2026-09-02', 'Strength')],
-                [legacyEvent('evt-1', '2026-09-01', 'Strength')],
-            );
-
-            expect(result.exposureCountDelta).toBe(0);
-            expect(result.mismatchCount).toBe(1);
-            expect(result.mismatches).toEqual([
-                expect.objectContaining({ type: 'date_mismatch' }),
-            ]);
-        });
-
-        it('is multiset-aware and detects a legacy duplicate split after consuming an exact match', () => {
-            const result = compareCanonicalVsLegacyFacts(
-                [canonicalExposure('pto-1', '2026-09-01', 'Strength')],
-                [
-                    legacyEvent('evt-1', '2026-09-01', 'Strength'),
-                    legacyEvent('evt-2', '2026-09-01', 'Strength'),
-                ],
-            );
-
-            expect(result.exposureCountDelta).toBe(-1);
-            expect(result.mismatchCount).toBe(1);
-            expect(result.mismatches).toEqual([
-                expect.objectContaining({ type: 'legacy_duplicate' }),
-            ]);
-        });
-
-        it('detects canonical occurrences that have no legacy counterpart', () => {
-            const result = compareCanonicalVsLegacyFacts(
-                [
-                    canonicalExposure('pto-1', '2026-09-01', 'Strength'),
-                    canonicalExposure('pto-2', '2026-09-02', 'Cycling'),
-                ],
-                [legacyEvent('evt-1', '2026-09-01', 'Strength')],
-            );
-
-            expect(result.exposureCountDelta).toBe(1);
-            expect(result.mismatchCount).toBe(1);
-            expect(result.mismatches).toEqual([
-                expect.objectContaining({ type: 'legacy_unmatched' }),
-            ]);
         });
     });
 });

@@ -27,6 +27,10 @@
       "path": "app/src/engine/completedTraining.ts",
       "reason": "Completed evidence changes future objective state and fatigue replay. A selectable estimator here is policy even though it sits upstream of the ranking modules."
     },
+    {
+      "path": "app/src/derived/training/providerEvidence.ts",
+      "reason": "Completed evidence changes future objective state and fatigue replay. A selectable estimator here is policy even though it sits upstream of the ranking modules."
+    },
     { "path": "app/src/engine/garminTelemetryEvidence.ts" },
     {
       "path": "app/src/engine/adapters.ts",

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { rankCandidates } from '../optimizer';
 import { ENRICHED_TEMPLATES_BY_ID } from '../templates';
 import { deriveFactsFromOccurrence, type PerformedExposureFact } from '../performedTrainingFacts';
+import { ENGINE_PERFORMED_TRAINING_CATALOG } from '../performedTrainingCatalog';
 import type {
     ActivityOverride,
     FatigueState,
@@ -175,7 +176,7 @@ describe('performed stimulus-domain recency in sequencing decisions (#931)', () 
             },
         };
 
-        const { exposure } = deriveFactsFromOccurrence(occurrence, hydrated);
+        const { exposure } = deriveFactsFromOccurrence(occurrence, hydrated, ENGINE_PERFORMED_TRAINING_CATALOG);
 
         // Fact authoritatively inherits 'tempo' from structured catalog workout cycling_tempo_surges_01
         expect(exposure.stimulusDomain).toBe('tempo');
@@ -238,7 +239,7 @@ describe('performed stimulus-domain recency in sequencing decisions (#931)', () 
             },
         };
 
-        const { exposure } = deriveFactsFromOccurrence(occurrence, hydrated);
+        const { exposure } = deriveFactsFromOccurrence(occurrence, hydrated, ENGINE_PERFORMED_TRAINING_CATALOG);
         expect(exposure.stimulusDomain).toBe('threshold');
         expect(exposure.sourceKinds).toEqual(['structured_execution', 'provider_activity']);
 
@@ -307,7 +308,7 @@ describe('performed stimulus-domain recency in sequencing decisions (#931)', () 
             },
         };
 
-        const { exposure } = deriveFactsFromOccurrence(occurrence, hydrated);
+        const { exposure } = deriveFactsFromOccurrence(occurrence, hydrated, ENGINE_PERFORMED_TRAINING_CATALOG);
 
         // Override suppresses provider's stimulus domain
         expect(exposure.stimulusDomain).toBeUndefined();

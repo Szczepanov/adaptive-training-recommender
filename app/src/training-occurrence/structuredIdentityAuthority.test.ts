@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { ENGINE_PERFORMED_TRAINING_CATALOG } from '../engine/performedTrainingCatalog';
 import { deriveFactsFromOccurrence, type HydratedOccurrenceContext } from '../engine/performedTrainingFacts';
 import { buildCoverageState, resolveCoverageHistory } from '../engine/coverage';
 import { EVERGREEN_GENERAL_COVERAGE_SET } from '../workouts/event-plan';
-import type { ActivityOverride, NormalizedGarminActivity } from '../engine/models';
+import type { ActivityOverride, NormalizedGarminActivity } from '../ledger/models';
 import type { PlanDefinition } from '../engine/planSchedule';
 import type { PerformedTrainingOccurrence } from './models';
 
@@ -87,13 +88,13 @@ const planDef: PlanDefinition = {
 };
 
 describe('structured identity over conflicting provider recognition (#895)', () => {
-    const structuredOnly = deriveFactsFromOccurrence(occurrence, { structured }, descriptor);
+    const structuredOnly = deriveFactsFromOccurrence(occurrence, { structured }, ENGINE_PERFORMED_TRAINING_CATALOG, descriptor);
 
     it.each([
         ['conflicting Garmin type and exercise sets', provider()],
         ['conflicting provider override to another modality', provider({ override: conflictingOverride })],
     ])('keeps structured identity and modality with %s', (_label, conflicting) => {
-        const facts = deriveFactsFromOccurrence(occurrence, { structured, provider: conflicting }, descriptor);
+        const facts = deriveFactsFromOccurrence(occurrence, { structured, provider: conflicting }, ENGINE_PERFORMED_TRAINING_CATALOG, descriptor);
 
         expect(facts.exposure.modality).toBe('Strength');
         expect(facts.exposure.workoutId).toBe('strength_full_body_maintenance_01');
@@ -102,7 +103,7 @@ describe('structured identity over conflicting provider recognition (#895)', () 
     });
 
     it('the whole exposure is identical to the structured-only exposure apart from source provenance', () => {
-        const withProvider = deriveFactsFromOccurrence(occurrence, { structured, provider: provider({ override: conflictingOverride }) }, descriptor);
+        const withProvider = deriveFactsFromOccurrence(occurrence, { structured, provider: provider({ override: conflictingOverride }) }, ENGINE_PERFORMED_TRAINING_CATALOG, descriptor);
         const withoutProvenance = (exposure: typeof withProvider.exposure) => ({ ...exposure, sourceKinds: undefined, providerActivityIds: undefined });
         expect(withProvider.exposure.sourceKinds).toEqual(['structured_execution', 'provider_activity']);
         expect(structuredOnly.exposure.sourceKinds).toEqual(['structured_execution']);
@@ -110,7 +111,7 @@ describe('structured identity over conflicting provider recognition (#895)', () 
     });
 
     it('weekly-role credits are identical with and without the conflicting provider evidence', () => {
-        const withProvider = deriveFactsFromOccurrence(occurrence, { structured, provider: provider({ override: conflictingOverride }) }, descriptor);
+        const withProvider = deriveFactsFromOccurrence(occurrence, { structured, provider: provider({ override: conflictingOverride }) }, ENGINE_PERFORMED_TRAINING_CATALOG, descriptor);
         const strip = (credits: typeof withProvider.coverageCredits) => credits.map(({ coverageKey, workoutId, creditKind, reasonCode }) => ({ coverageKey, workoutId, creditKind, reasonCode }));
 
         expect(strip(withProvider.coverageCredits)).toEqual(strip(structuredOnly.coverageCredits));
@@ -127,6 +128,7 @@ describe('structured identity over conflicting provider recognition (#895)', () 
         const providerOnly = deriveFactsFromOccurrence(
             { ...occurrence, sourceRefs: [occurrence.sourceRefs[1]], modality: undefined },
             { provider: provider() },
+            ENGINE_PERFORMED_TRAINING_CATALOG,
             descriptor,
         );
         expect(providerOnly.exposure.modality).toBe('Running');

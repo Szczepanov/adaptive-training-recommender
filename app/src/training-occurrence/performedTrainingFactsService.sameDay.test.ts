@@ -7,7 +7,7 @@ import { performedTrainingOccurrenceRepository as repository } from './repositor
 import type { PerformedTrainingOccurrence } from './models';
 import { activityService } from '../services/activityService';
 import { sessionExecutionService } from '../services/sessionExecutionService';
-import type { NormalizedGarminActivity } from '../engine/models';
+import type { NormalizedGarminActivity } from '../ledger/models';
 import type { SessionExecution } from '../sessions/models';
 
 // ADR-0036 (H4) D-LEDGER/D-REASSESS need today's own already-completed work. This file

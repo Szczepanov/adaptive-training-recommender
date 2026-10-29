@@ -29,11 +29,11 @@ import type {
     RecommendationAudit,
     SessionTemplate,
 } from './models';
-import {
-    templateIdForWorkoutId,
-    type CoverageCreditFact,
-    type HydratedOccurrenceContext,
-    type PerformedExposureFact,
+import { templateIdForWorkoutId } from './performedTrainingCatalog';
+import type {
+    CoverageCreditFact,
+    HydratedOccurrenceContext,
+    PerformedExposureFact,
 } from './performedTrainingFacts';
 import type { PerformedTrainingOccurrence, PerformedOccurrenceStatus } from '../training-occurrence/models';
 import { getLocalDateString } from '../utils/localDate';

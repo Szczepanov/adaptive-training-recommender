@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { deriveFactsFromOccurrence, type HydratedOccurrenceContext } from '../performedTrainingFacts';
+import { ENGINE_PERFORMED_TRAINING_CATALOG } from '../performedTrainingCatalog';
 import { buildCoverageState, resolveCoverageHistory } from '../coverage';
 import { buildContextBrief, type ContextBriefInput } from '../contextBrief';
 import { deriveKeySessionSummaries } from '../contextBriefResponseSummary';
@@ -100,6 +101,7 @@ function hydrated(executionId: string, activityId: string, date = DATE): Hydrate
 const shared = deriveFactsFromOccurrence(
     occurrence('occ-shared', 'exec-shared', 'garmin-shared'),
     hydrated('exec-shared', 'garmin-shared'),
+    ENGINE_PERFORMED_TRAINING_CATALOG,
     descriptor,
 );
 
@@ -132,6 +134,7 @@ describe('#895 WP6 per-consumer double-count inventory', () => {
             const structuredOnly = deriveFactsFromOccurrence(
                 { ...occurrence('occ-shared', 'exec-shared', 'garmin-shared'), sourceRefs: [{ kind: 'structured_execution', executionId: 'exec-shared' }] },
                 { structured: hydrated('exec-shared', 'garmin-shared').structured },
+                ENGINE_PERFORMED_TRAINING_CATALOG,
                 descriptor,
             );
             const snapshot = (revision: string, facts: typeof shared) => resolveCoverageHistory({
@@ -154,6 +157,7 @@ describe('#895 WP6 per-consumer double-count inventory', () => {
             const second = deriveFactsFromOccurrence(
                 occurrence('occ-second', 'exec-second', 'garmin-second'),
                 hydrated('exec-second', 'garmin-second'),
+                ENGINE_PERFORMED_TRAINING_CATALOG,
                 descriptor,
             );
             const state = buildCoverageState(planDef, AS_OF, history([shared, second]), descriptor);
@@ -190,6 +194,7 @@ describe('#895 WP6 per-consumer double-count inventory', () => {
             const second = deriveFactsFromOccurrence(
                 occurrence('occ-second', 'exec-second', 'garmin-second'),
                 hydrated('exec-second', 'garmin-second'),
+                ENGINE_PERFORMED_TRAINING_CATALOG,
                 descriptor,
             );
             const text = buildContextBrief(briefInput(

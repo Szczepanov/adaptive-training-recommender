@@ -1,4 +1,4 @@
-import type { FitWorkoutFingerprintKind } from '../engine/models';
+import type { FitWorkoutFingerprintKind } from '../ledger/models';
 import type { CanonicalWorkoutExport, CanonicalExportBlock, CanonicalExportStep } from '../utils/workoutJsonExport';
 
 export const FIT_WORKOUT_FINGERPRINT_VERSION = 'fit-workout-v2';
