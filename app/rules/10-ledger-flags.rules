@@ -19,14 +19,13 @@
           && d.state in ['measured', 'missing', 'unavailable', 'invalid', 'not_collected',
             'not_applicable', 'stale', 'not_recorded', 'not_yet_supported']
           && (d.active == null || d.state == 'measured' || (d.active == false && d.state == 'not_applicable'))
-          && d.definitionVersion is string && d.definitionVersion.size() > 0 && d.definitionVersion.size() <= 160
-          && d.reasonCode is string && d.reasonCode.size() > 0 && d.reasonCode.size() <= 160
-          && (d.threshold == null || (d.threshold is string && d.threshold.size() > 0 && d.threshold.size() <= 8192))
-          && (!('sessionRef' in d) || (d.sessionRef is string && d.sessionRef.size() > 0 && d.sessionRef.size() <= 256))
-          && (!('baselineWindow' in d) || (d.baselineWindow is string && d.baselineWindow.size() > 0 && d.baselineWindow.size() <= 512))
+          && isBoundedString(d.definitionVersion, 160)
+          && isBoundedString(d.reasonCode, 160)
+          && (d.threshold == null || (isBoundedString(d.threshold, 8192)))
+          && (!('sessionRef' in d) || (isBoundedString(d.sessionRef, 256)))
+          && (!('baselineWindow' in d) || (isBoundedString(d.baselineWindow, 512)))
           && d.inputs is list && d.inputs.size() <= 16;
       }
       allow read: if isOwner(userId);
       allow create: if hasValidFlagRevision();
-      allow update, delete: if false;
     }

@@ -19,12 +19,11 @@
       allow create: if hasValidDecisionJournalEntry(userId, date);
       allow update: if keepsOwnership(userId)
         && hasValidDecisionJournalEntry(userId, date)
-        && request.resource.data.createdAt == resource.data.createdAt
+        && keepsCreatedAt()
         && request.resource.data.sawEngineVerdictFirst == resource.data.sawEngineVerdictFirst
         && request.resource.data.externalVerdict == resource.data.externalVerdict
         && (('externalNote' in request.resource.data) == ('externalNote' in resource.data))
         && (!('externalNote' in resource.data) || request.resource.data.externalNote == resource.data.externalNote);
-      allow delete: if false;
     }
 
     match /users/{userId}/goals/{goalId} {
@@ -66,7 +65,7 @@
 
       allow read: if isOwner(userId);
       allow create: if hasOwnedUserId(userId) && hasValidGoalTaper() && hasValidGoalPerformanceTarget();
-      allow update: if keepsOwnership(userId) && request.resource.data.createdAt == resource.data.createdAt && hasValidGoalTaper() && hasValidGoalPerformanceTarget();
+      allow update: if keepsOwnership(userId) && keepsCreatedAt() && hasValidGoalTaper() && hasValidGoalPerformanceTarget();
       allow delete: if isOwner(userId);
     }
 
@@ -156,7 +155,7 @@
       allow create: if hasValidFixedActivity(userId);
       allow update: if hasValidFixedActivity(userId)
         && keepsOwnership(userId)
-        && request.resource.data.createdAt == resource.data.createdAt;
+        && keepsCreatedAt();
       allow delete: if isOwner(userId);
     }
 
@@ -187,25 +186,25 @@
           && data.weeklyCommitment is map
           && commitment.keys().hasOnly(['minSessions', 'targetSessions', 'maxSessions'])
           && commitment.keys().hasAll(['minSessions', 'targetSessions', 'maxSessions'])
-          && commitment.minSessions is int && commitment.minSessions >= 1 && commitment.minSessions <= 14
+          && isPositiveInt(commitment.minSessions) && commitment.minSessions <= 14
           && commitment.targetSessions is int && commitment.targetSessions >= commitment.minSessions && commitment.targetSessions <= 14
           && commitment.maxSessions is int && commitment.maxSessions >= commitment.targetSessions && commitment.maxSessions <= 14
           && data.organizationPreference == 'auto'
-          && data.schemaVersion is int && data.schemaVersion >= 1
-          && data.createdAt is string && data.updatedAt is string;
+          && isPositiveInt(data.schemaVersion)
+          && hasStringTimestamps(data);
       }
 
       allow read: if isOwner(userId);
       allow create: if hasValidTrainingIntentProfile(userId);
       allow update: if hasValidTrainingIntentProfile(userId)
         && keepsOwnership(userId)
-        && request.resource.data.createdAt == resource.data.createdAt;
+        && keepsCreatedAt();
       allow delete: if isOwner(userId);
     }
 
     match /users/{userId}/constraints/{constraintId} {
       allow read: if isOwner(userId);
-      allow write: if false;
+      // Server-managed: client writes denied by default.
     }
 
     match /users/{userId}/preferences/profile {
@@ -218,9 +217,8 @@
 
       allow read: if isOwner(userId);
       allow create: if hasOwnedUserId(userId) && hasValidUnavailableModalities(request.resource.data);
-      allow update: if keepsOwnership(userId) && request.resource.data.createdAt == resource.data.createdAt
+      allow update: if keepsOwnership(userId) && keepsCreatedAt()
         && hasValidUnavailableModalities(request.resource.data);
-      allow delete: if false;
     }
 
     match /users/{userId}/trainingSettings/profile {
@@ -234,21 +232,20 @@
         && (!('injuries' in request.resource.data) || hasValidInjuryList(request.resource.data.injuries))
         && (!('injuryHistory' in request.resource.data) || request.resource.data.injuryHistory is list);
       allow update: if keepsOwnership(userId)
-        && request.resource.data.createdAt == resource.data.createdAt
+        && keepsCreatedAt()
         && request.resource.data.schemaVersion in [2, 3]
         && (!('injuries' in request.resource.data) || hasValidInjuryList(request.resource.data.injuries))
         && (!('injuryHistory' in request.resource.data) || request.resource.data.injuryHistory is list);
-      allow delete: if false;
     }
 
     match /users/{userId}/daily_recovery_snapshots/{date} {
       allow read: if isOwner(userId);
-      allow write: if false;
+      // Server-managed: client writes denied by default.
     }
 
     match /users/{userId}/activities/{activityId} {
       allow read: if isOwner(userId);
-      allow write: if false;
+      // Server-managed: client writes denied by default.
     }
 
     match /users/{userId}/activity_annotations/{activityId} {
@@ -295,7 +292,7 @@
           && isValidActivityDate(data.date)
           && data.keys().hasOnly(['activityId', 'userId', 'date', 'originalType', 'originalIntensityTag', 'overriddenModality', 'overriddenIntensity', 'rpe', 'stimulusFocus', 'notes', 'createdAt', 'updatedAt'])
           && data.keys().hasAll(['activityId', 'userId', 'date', 'originalType', 'originalIntensityTag', 'overriddenModality', 'overriddenIntensity', 'createdAt', 'updatedAt'])
-          && data.originalType is string && data.originalType.size() > 0 && data.originalType.size() <= 128
+          && isBoundedString(data.originalType, 128)
           && data.originalIntensityTag is string && data.originalIntensityTag.size() <= 64
           && data.overriddenModality in ['Running', 'Cycling', 'Swimming', 'Strength', 'Mobility', 'Field', 'Cross Training', 'Unknown']
           && data.overriddenIntensity in ['easy', 'moderate', 'hard', 'unknown']
@@ -312,13 +309,13 @@
         && keepsOwnership(userId)
         && request.resource.data.activityId == resource.data.activityId
         && request.resource.data.date == resource.data.date
-        && request.resource.data.createdAt == resource.data.createdAt;
+        && keepsCreatedAt();
       allow delete: if isOwner(userId);
     }
 
     match /users/{userId}/gear/{gearId} {
       allow read: if isOwner(userId);
-      allow write: if false;
+      // Server-managed: client writes denied by default.
     }
 
     match /users/{userId}/strength_sessions/{sessionId} {
@@ -332,7 +329,7 @@
           && isStrengthSessionDocument(sessionId)
           && data.keys().hasOnly(['userId', 'sessionId', 'date', 'startedAt', 'completedAt', 'updatedAt', 'state', 'sourceRecommendationDate', 'exercises', 'sessionRpe', 'notes', 'completionEvidence', 'schemaVersion'])
           && data.keys().hasAll(['userId', 'sessionId', 'date', 'startedAt', 'updatedAt', 'state', 'exercises', 'schemaVersion'])
-          && data.sessionId is string && data.sessionId.size() > 0 && data.sessionId.size() <= 128
+          && isBoundedString(data.sessionId, 128)
           && isValidActivityDate(data.date)
           && data.startedAt is string && data.startedAt.size() > 0
           && data.updatedAt is string && data.updatedAt.size() > 0
@@ -404,7 +401,7 @@
               && !(data.activityId in ['.', '..'])
               && exists(/databases/$(database)/documents/users/$(userId)/activities/$(data.activityId)))
             : !('activityId' in data))
-          && (!('days' in data) || (data.days is int && data.days >= 1 && data.days <= 365))
+          && (!('days' in data) || (isPositiveInt(data.days) && data.days <= 365))
           && (!('completedAt' in data) || data.completedAt == null)
           && (!('error' in data) || data.error == null);
       }
@@ -417,5 +414,5 @@
     // --- MS4/ADR-0027: server-owned integration connection metadata.
     match /users/{userId}/connections/{connectionId} {
       allow read: if isOwner(userId);
-      allow write: if false; // Server-managed only
+      // Server-managed only: client writes denied by default.
     }

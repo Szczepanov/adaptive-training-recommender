@@ -19,6 +19,23 @@ export const RULES_MODULES = [
   '99-footer.rules',
 ];
 
+// Firebase rejects a release whose *compiled* ruleset exceeds 256,000 bytes; compiled size
+// counts logic and string literals and measured ~1.95-1.98x the minified source. This budget
+// keeps headroom below that deploy-time limit (124,000 * 1.98 = 245,520 bytes).
+export const MAX_MINIFIED_RULES_BYTES = 124000;
+
+export function assertMinifiedRulesBudget(minified) {
+  const bytes = Buffer.byteLength(minified, 'utf8');
+  if (bytes > MAX_MINIFIED_RULES_BYTES) {
+    throw new Error(
+      `Minified Firestore rules are ${bytes} bytes, over the ${MAX_MINIFIED_RULES_BYTES}-byte budget. `
+      + 'Firebase rejects deploys whose compiled ruleset exceeds 256,000 bytes, measured at ~1.95-1.98x '
+      + 'the minified source. Factor repeated expressions into helpers in rules/00-header.rules.',
+    );
+  }
+  return bytes;
+}
+
 export async function buildRules({ directory = appDirectory, check = false } = {}) {
   const modulesDirectory = path.join(directory, 'rules');
   const names = (await readdir(modulesDirectory)).filter((name) => /^\d+-[a-z0-9-]+\.rules$/.test(name)).sort();
@@ -29,7 +46,7 @@ export async function buildRules({ directory = appDirectory, check = false } = {
     const normalized = module.replace(/\r\n/g, '\n');
     return normalized.endsWith('\n') ? normalized : `${normalized}\n`;
   }).join('');
-  minifyRules(source);
+  assertMinifiedRulesBudget(minifyRules(source));
   const outputPath = path.join(directory, 'firestore.rules');
   if (check) {
     let existing;

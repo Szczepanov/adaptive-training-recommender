@@ -33,7 +33,6 @@
 
       allow read: if isOwner(userId);
       allow create: if hasValidExecutionPrescription(userId, prescriptionHash);
-      allow update, delete: if false;
     }
 
     function hasValidSessionSource(source) {
@@ -190,8 +189,7 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
         && sessionExecutionLockTargetsInProgress(userId, request.resource.data);
       allow update: if canUpdateSessionExecutionLock(userId);
       // The pointer is a durable concurrency anchor. Deleting it would reopen the exact
-      // check-then-create race this collection exists to close.
-      allow delete: if false;
+      // check-then-create race this collection exists to close. Deletes denied by default.
     }
 
     match /users/{userId}/session_executions/{executionId} {
@@ -237,7 +235,7 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
           ])
           && data.id == entryId
           && data.executionId == executionId
-          && data.completedAt is string && data.createdAt is string && data.updatedAt is string
+          && data.completedAt is string && hasStringTimestamps(data)
           && (!('diaryMutationId' in data) || (data.diaryMutationId is string && data.diaryMutationId.size() > 0))
           && (!('deletedAt' in data) || data.deletedAt == null || data.deletedAt is string)
           && (!('stepId' in data) || data.stepId is string)
@@ -260,8 +258,8 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
           && (
             (payload.kind == 'repetition'
               && payload.keys().hasOnly(['kind', 'setIndex', 'reps', 'weightKg', 'isWarmup', 'gauge'])
-              && payload.setIndex is int && payload.setIndex >= 1
-              && payload.reps is int && payload.reps >= 1
+              && isPositiveInt(payload.setIndex)
+              && isPositiveInt(payload.reps)
               && (!('weightKg' in payload) || (payload.weightKg is number && payload.weightKg >= 0))
               && (!('isWarmup' in payload) || payload.isWarmup is bool))
             || (payload.kind == 'duration'
@@ -278,13 +276,13 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
               && payload.splitSeconds is number && payload.splitSeconds > 0)
             || (payload.kind == 'jump_attempt'
               && payload.keys().hasOnly(['kind', 'attemptIndex', 'heightInches', 'distanceMeters'])
-              && payload.attemptIndex is int && payload.attemptIndex >= 1
+              && isPositiveInt(payload.attemptIndex)
               && (('heightInches' in payload && payload.heightInches is number && payload.heightInches > 0)
                 || ('distanceMeters' in payload && payload.distanceMeters is number && payload.distanceMeters > 0)))
             || (payload.kind == 'checkoff'
               && payload.keys().hasOnly(['kind', 'roundIndex', 'completed'])
               && payload.completed is bool
-              && (!('roundIndex' in payload) || (payload.roundIndex is int && payload.roundIndex >= 1)))
+              && (!('roundIndex' in payload) || (isPositiveInt(payload.roundIndex))))
             || (payload.kind == 'choice'
               && payload.keys().hasOnly(['kind', 'choiceId', 'optionId', 'reason'])
               && payload.choiceId is string && payload.choiceId.size() > 0
@@ -440,7 +438,6 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
         allow create: if validDiaryMutation(userId, executionId, mutationId);
         // Idempotent replay may resend the same immutable marker, never replace history.
         allow update: if isOwner(userId) && request.resource.data == resource.data;
-        allow delete: if false;
       }
 
       // A session-ending rest event must be written before the execution's own
@@ -462,8 +459,7 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
           && request.resource.data.afterEntryId == resource.data.afterEntryId
           && request.resource.data.startedAt == resource.data.startedAt
           && request.resource.data.endReason == resource.data.endReason
-          && request.resource.data.createdAt == resource.data.createdAt
+          && keepsCreatedAt()
           && restKeepsDiaryAudit(userId, executionId, restEventId);
-        allow delete: if false;
       }
     }

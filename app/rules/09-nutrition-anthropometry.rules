@@ -5,11 +5,11 @@
       // Nested protocol validation now runs in the token-authenticated Cloud Run service.
       // Keeping client writes closed eliminates Firestore's per-request rule-expression
       // ceiling for the ten-measurement payload and prevents direct SDK bypasses.
-      allow write: if false;
+      // Client writes denied by default.
     }
 
     // --- ADR-0042: server-owned daily nutrition observation day bundles.
     match /users/{userId}/nutrition_days/{daySourceId} {
       allow read: if isOwner(userId);
-      allow write: if false; // Server-managed only
+      // Server-managed only: client writes denied by default.
     }

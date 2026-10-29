@@ -3,7 +3,7 @@
  * against the emulator, for behavior that a rules-only or a mocked-transaction unit test
  * cannot prove -- specifically, that `getOrCreateExternalPlanOccurrence`'s multi-document
  * transaction actually commits under the real security rules. A prior version of
- * `session_occurrence_windows`'s rules (`allow update: if false`) made the same-window
+ * `session_occurrence_windows`'s rules (no update allow; denied by default) made the same-window
  * re-import supersession path fail with permission-denied in production while every
  * mocked unit test still passed, because the mock never evaluates real rules.
  */

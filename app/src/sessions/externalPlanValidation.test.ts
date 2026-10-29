@@ -50,6 +50,6 @@ describe('validateExternalPlanImport session id bound (#945)', () => {
         const rules = [resolve(process.cwd(), 'firestore.rules'), resolve(__dirname, '../../firestore.rules')]
             .map(path => { try { return readFileSync(path, 'utf8'); } catch { return ''; } })
             .find(text => text.length > 0) ?? '';
-        expect(rules).toContain(`data.externalPlanRef.sessionId.size() <= ${EXTERNAL_PLAN_SESSION_ID_MAX_CHARS}`);
+        expect(rules).toContain(`isBoundedString(data.externalPlanRef.sessionId, ${EXTERNAL_PLAN_SESSION_ID_MAX_CHARS})`);
     });
 });
