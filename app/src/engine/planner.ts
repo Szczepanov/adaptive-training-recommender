@@ -699,9 +699,9 @@ export function resolveWeeklyAnchors(
         pool.reduce((best, d) => (d.availability.maxTimeMinutes > best.availability.maxTimeMinutes ? d : best), pool[0]);
 
     if (!eventSpecificAnchorDate && dayInfo.length > 0) {
+        const qualityOffset = qualityAnchorDate === tomorrowDate ? 1 : (qualityAnchorDate ? dayInfo.find(di => di.date === qualityAnchorDate)?.offset ?? 0 : 0);
         const farEnoughFromQuality = (d: AnchorDayInfo) => {
             if (!qualityAnchorDate) return true;
-            const qualityOffset = qualityAnchorDate === tomorrowDate ? 1 : (dayInfo.find(di => di.date === qualityAnchorDate)?.offset ?? 0);
             return Math.abs(d.offset - qualityOffset) >= QUALITY_ANCHOR_MIN_GAP_DAYS;
         };
         const eventSpecificPool = dayInfo.filter(d =>
@@ -715,9 +715,9 @@ export function resolveWeeklyAnchors(
 
     if (!qualityAnchorDate && dayInfo.length > 0) {
         const remaining = dayInfo.filter(d => d.date !== eventSpecificAnchorDate);
+        const anchorOffset = eventSpecificAnchorDate === tomorrowDate ? 1 : (eventSpecificAnchorDate ? dayInfo.find(di => di.date === eventSpecificAnchorDate)?.offset ?? 0 : 0);
         const farEnough = (d: AnchorDayInfo) => {
             if (!eventSpecificAnchorDate) return true;
-            const anchorOffset = eventSpecificAnchorDate === tomorrowDate ? 1 : (dayInfo.find(di => di.date === eventSpecificAnchorDate)?.offset ?? 0);
             return Math.abs(d.offset - anchorOffset) >= QUALITY_ANCHOR_MIN_GAP_DAYS;
         };
         const fitsQuality = (d: AnchorDayInfo) => eligibleTemplates(qualityTemplates, context, d.availability.maxTimeMinutes, d.date)
