@@ -144,17 +144,18 @@ implementation covers one target per family:
 - **Power:** `cycling_5s_peak_power_w` + `performance_test: cycling_5s_peak_power-r1`.
 
 Delivered in Stage 1: `app/src/observations/registry.ts` and
-`performanceTestingCatalog.ts` extensions, `app/src/engine/performanceTargetPolicy.ts`
-(pure target-eligibility policy, no observations/workouts imports) and
+`performanceTestingCatalog.ts` extensions, `app/src/derived/assessments/performanceTargetPolicy.ts`
+(pure target-eligibility policy, no observations/workouts imports; relocated from `engine/` in
+ADR-0052 Phase 1, #1144 PR1-11) and
 `app/src/engine/performanceTargetValidation.ts` (semantic validators, split out in
 Stage 2/PG5.1 so the policy module stays reachable from production selection/ranking
 modules without violating the OV1.4 observations-isolation boundary), typed `UserGoal.performanceTarget`
 persistence and validation, `speed`/`power` `GoalDomain` values, fail-closed semantic
 validation on both goal-service reads and writes, athlete-facing target UX in
 `Goals.tsx`, honest current-evidence/progress projection
-(`app/src/engine/goalProgress.ts`) with current speed/power observation revisions loaded
+(`app/src/derived/assessments/goalProgress.ts` and `app/src/derived/assessments/goalMetricMath.ts`) with current speed/power observation revisions loaded
 through `metricObservationService`, and an advisory feasibility assessor
-(`app/src/engine/goalFeasibility.ts`) that consumes the existing weekly-commitment
+(`app/src/derived/assessments/goalFeasibility.ts`) that consumes the existing weekly-commitment
 capacity bound. The strength bands are a versioned, low-certainty Sports Knowledge
 Registry heuristic; v2 uses <=1.3%/week as plausible and <=2.0%/week as stretch at the
 2+/week reference-capacity ceiling, while speed/power remain

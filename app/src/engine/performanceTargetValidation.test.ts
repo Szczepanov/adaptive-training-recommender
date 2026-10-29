@@ -3,7 +3,7 @@ import {
     validatePerformanceTarget,
     validatePerformanceTargetForDomain,
 } from './performanceTargetValidation';
-import type { GoalPerformanceTarget } from './performanceTargetPolicy';
+import type { GoalPerformanceTarget } from '../derived/assessments/performanceTargetPolicy';
 
 function target(overrides: Partial<GoalPerformanceTarget> = {}): GoalPerformanceTarget {
     return {

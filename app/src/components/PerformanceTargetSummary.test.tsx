@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { PerformanceTargetSummary } from './Goals';
-import type { GoalPerformanceTarget } from '../engine/performanceTargetPolicy';
+import type { GoalPerformanceTarget } from '../derived/assessments/performanceTargetPolicy';
 import type { AthletePerformanceProfile } from '../workouts/models';
 import type { AssessmentAttempt, MetricObservationRevision } from '../observations/models';
 

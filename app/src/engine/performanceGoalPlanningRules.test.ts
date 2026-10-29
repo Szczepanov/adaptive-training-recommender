@@ -6,7 +6,7 @@ import {
     workoutProvidesDirectCoverage,
     type PerformanceGoalPlanningRule,
 } from './performanceGoalPlanningRules';
-import { PERFORMANCE_TARGET_POLICIES } from './performanceTargetPolicy';
+import { PERFORMANCE_TARGET_POLICIES } from '../derived/assessments/performanceTargetPolicy';
 import { getPerformanceTestDefinition } from '../observations/performanceTestingCatalog';
 import { WORKOUTS, WORKOUTS_BY_ID } from '../workouts/catalog';
 import { EXERCISES_BY_ID } from '../workouts/exercises';

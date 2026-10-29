@@ -66,6 +66,11 @@ app/src/ledger/            # ADR-0052 Phase 1: ledger record types; must never i
 
 app/src/derived/           # ADR-0052 Phase 1: derived metrics and D-FLAGS evaluators; engine may import it, never the reverse
   derived.architecture.test.ts # Fails if anything under derived/ reaches engine/, directly or transitively
+  assessments/
+    goalProgress.ts        # PG4/ADR-0041: pure current-evidence/progress resolver (`resolveGoalProgress`, `goalProgressEvidenceQuery`, #1144 PR1-11)
+    goalMetricMath.ts      # PG4.5.3/ADR-0041: shared direction-aware required-change math (`computeRequiredChange`, `improvementSignForDirection`, #1144 PR1-11)
+    goalFeasibility.ts     # PG4.5/ADR-0041: advisory goal feasibility evaluator (`assessGoalFeasibility`, `strengthPlausibility`, #1144 PR1-11)
+    performanceTargetPolicy.ts # PG1.3/ADR-0041: pure performance-target eligibility policy (`getPerformanceTargetPolicy`, `PERFORMANCE_TARGET_POLICIES`, #1144 PR1-11)
   baselines/
     multisourceBaselines.ts # Source-specific robust 7d/28d median+MAD baseline calculator (MS12, ADR-0024/0027)
     identityEligibility.ts # Pre-baseline effective-identity eligibility boundary (PI5, D-PID-PREBASE)

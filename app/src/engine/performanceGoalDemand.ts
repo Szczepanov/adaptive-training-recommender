@@ -1,9 +1,9 @@
 import type { UserGoal } from './models';
-import { getPerformanceTargetPolicy, type PerformanceGoalFamily, type PerformanceSubjectRef } from './performanceTargetPolicy';
+import { getPerformanceTargetPolicy, type PerformanceGoalFamily, type PerformanceSubjectRef } from '../derived/assessments/performanceTargetPolicy';
 
 /**
  * Stage 2/PG5.1: the typed bridge from a stored goal to a planning-facing projection.
- * Deliberately imports ONLY from the pure engine/performanceTargetPolicy.ts (never
+ * Deliberately imports ONLY from the pure derived/assessments/performanceTargetPolicy.ts (never
  * engine/performanceTargetValidation.ts or anything else reaching observations/*) --
  * this module is consumed by engine/adapters.ts, which is reachable from every
  * production selection/ranking module (optimizer.ts, planner.ts, rules.ts,

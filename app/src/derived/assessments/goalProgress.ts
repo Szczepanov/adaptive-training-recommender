@@ -1,9 +1,9 @@
-import type { AssessmentAttempt, MetricDefinition, MetricObservationRevision } from '../observations/models';
-import { benchmarkEligibleAttemptIds } from '../observations/assessmentEvidenceEligibility';
-import { getAssessmentProtocolForExercise } from '../observations/exerciseAssessmentBridge';
-import { getMetricDefinition } from '../observations/registry';
-import { getPerformanceTestDefinition } from '../observations/performanceTestingCatalog';
-import type { AthletePerformanceProfile, TargetSource } from '../workouts/models';
+import type { AssessmentAttempt, MetricDefinition, MetricObservationRevision } from '../../observations/models';
+import { benchmarkEligibleAttemptIds } from '../../observations/assessmentEvidenceEligibility';
+import { getAssessmentProtocolForExercise } from '../../observations/exerciseAssessmentBridge';
+import { getMetricDefinition } from '../../observations/registry';
+import { getPerformanceTestDefinition } from '../../observations/performanceTestingCatalog';
+import type { AthletePerformanceProfile, TargetSource } from '../../workouts/models';
 import type { GoalPerformanceTarget } from './performanceTargetPolicy';
 import { computeRequiredChange } from './goalMetricMath';
 

@@ -1,4 +1,4 @@
-import type { MetricDirection } from '../observations/models';
+import type { MetricDirection } from '../../observations/models';
 
 /**
  * PG4.5.3/ADR-0041: the one shared sign convention for "how much change does this target

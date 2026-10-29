@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { assessGoalFeasibility } from './goalFeasibility';
 import { resolveGoalProgress } from './goalProgress';
 import type { GoalPerformanceTarget } from './performanceTargetPolicy';
-import type { AthletePerformanceProfile } from '../workouts/models';
+import type { AthletePerformanceProfile } from '../../workouts/models';
 
 function benchTarget(targetValue = 200): GoalPerformanceTarget {
     return {

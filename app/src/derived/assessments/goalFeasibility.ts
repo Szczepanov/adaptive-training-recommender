@@ -1,9 +1,9 @@
-import { getMetricDefinition } from '../observations/registry';
+import { getMetricDefinition } from '../../observations/registry';
 import type { GoalPerformanceTarget, PerformanceGoalFamily } from './performanceTargetPolicy';
 import { getPerformanceTargetPolicy } from './performanceTargetPolicy';
 import { computeRequiredChange } from './goalMetricMath';
 import type { GoalProgressResult } from './goalProgress';
-import { getLocalDateString } from '../utils/localDate';
+import { getLocalDateString } from '../../utils/localDate';
 
 /**
  * PG4.5/ADR-0041: goal feasibility is derived advisory state, never athlete-authored

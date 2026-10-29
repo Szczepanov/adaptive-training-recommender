@@ -1,6 +1,6 @@
 import type { UserPreferences } from '../../engine/models';
 import { SettingsDisclosure } from '../SettingsDisclosure';
-import { PERFORMANCE_TARGET_POLICIES } from '../../engine/performanceTargetPolicy';
+import { PERFORMANCE_TARGET_POLICIES } from '../../derived/assessments/performanceTargetPolicy';
 import { EXERCISES_BY_ID } from '../../workouts/exercises';
 import './PerformanceSections.css';
 

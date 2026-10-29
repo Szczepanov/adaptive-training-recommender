@@ -3,7 +3,7 @@ import {
     getPerformanceTargetPolicy,
     type PerformanceGoalFamily,
     type PerformanceSubjectRef,
-} from './performanceTargetPolicy';
+} from '../derived/assessments/performanceTargetPolicy';
 import type { WorkoutDefinition } from '../workouts/models';
 
 /**
@@ -48,7 +48,7 @@ type DirectCoverageRule =
     };
 
 export interface PerformanceGoalPlanningRule {
-    /** Same identity as PerformanceTargetPolicy.metricId (engine/performanceTargetPolicy.ts). */
+    /** Same identity as PerformanceTargetPolicy.metricId (derived/assessments/performanceTargetPolicy.ts). */
     metricId: string;
     family: PerformanceGoalFamily;
     /** Existing evergreen dose channel this target's broad demand should refine (PG5.3), never a

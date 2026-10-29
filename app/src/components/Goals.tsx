@@ -15,19 +15,19 @@ import {
     type GoalPerformanceTarget,
     type PerformanceGoalFamily,
     type PerformanceSubjectRef,
-} from '../engine/performanceTargetPolicy';
+} from '../derived/assessments/performanceTargetPolicy';
 import { validatePerformanceTargetForDomain } from '../engine/performanceTargetValidation';
 import { getMetricDefinition } from '../observations/registry';
 import type { AssessmentAttempt, MetricObservationRevision } from '../observations/models';
 import { PERFORMANCE_TEST_DEFINITIONS } from '../observations/performanceTestingCatalog';
 import { getAssessmentProtocolForExercise } from '../observations/exerciseAssessmentBridge';
 import { EXERCISES_BY_ID } from '../workouts/exercises';
-import { goalProgressEvidenceQuery, resolveGoalProgress, type GoalProgressResult } from '../engine/goalProgress';
+import { goalProgressEvidenceQuery, resolveGoalProgress, type GoalProgressResult } from '../derived/assessments/goalProgress';
 import {
   assessGoalFeasibility,
   type GoalFeasibilityAssessment,
   type GoalFeasibilityCapacityInput,
-} from '../engine/goalFeasibility';
+} from '../derived/assessments/goalFeasibility';
 import type { AthletePerformanceProfile } from '../workouts/models';
 import { useOverlayDialog } from './useOverlayDialog';
 import './overlayContract.css';
