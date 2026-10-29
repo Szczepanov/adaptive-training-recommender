@@ -9,7 +9,7 @@ import {
 } from './contextBriefExposureLedger';
 import { reconcileCompletedTrainingEvents } from './completedTraining';
 import { buildContextBrief } from './contextBrief';
-import type { PerformedExposureFact } from './performedTrainingFacts';
+import type { PerformedExposureFact } from '../derived/training/performedTrainingFacts';
 
 const AS_OF = '2026-09-24';
 const START = '2026-09-11';

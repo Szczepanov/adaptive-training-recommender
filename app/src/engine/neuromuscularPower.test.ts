@@ -9,7 +9,7 @@ import { generateWeeklyObjectives } from './microcycle';
 import { evaluatePeriodizationPhase } from './periodization';
 import { ENRICHED_TEMPLATES_BY_ID } from './templates';
 import { deriveExposureLedger, type ExposureLedgerInput } from './contextBriefExposureLedger';
-import type { PerformedExposureFact } from './performedTrainingFacts';
+import type { PerformedExposureFact } from '../derived/training/performedTrainingFacts';
 import type { TrainingSettings } from './models';
 import { EVERGREEN_GENERAL_COVERAGE_SET } from '../workouts/event-plan';
 import { WORKOUTS } from '../workouts/catalog';

@@ -3,7 +3,7 @@ import type { DataState, DataStateSummary } from './dataState';
 import { summarizeDataState } from './dataState';
 import { completedEventToExposure, reconcileCompletedTrainingEvents } from './completedTraining';
 import type { CompletedExposure } from './trainingHistory';
-import type { PerformedTrainingFactsSnapshot } from './performedTrainingFacts';
+import type { PerformedTrainingFactsSnapshot } from '../derived/training/performedTrainingFacts';
 import { workoutForTemplate } from '../workouts/prescription';
 import { deriveStrengthExposure } from '../workouts/strengthExposure';
 

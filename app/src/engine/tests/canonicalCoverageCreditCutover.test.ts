@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
     deriveFactsFromOccurrence,
     type HydratedOccurrenceContext,
-} from '../performedTrainingFacts';
+} from '../../derived/training/performedTrainingFacts';
 import { ENGINE_PERFORMED_TRAINING_CATALOG } from '../performedTrainingCatalog';
 import {
     buildCoverageState,

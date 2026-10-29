@@ -1,7 +1,7 @@
 import type { ActivityLapSummary, ActivityPrescribedTarget, ActivityStimulusDomain, ActivityZoneBucket, NormalizedGarminActivity } from './models';
 import { findSectionHeading, SECTION_TITLE } from './contextBrief';
 import { hrEvidence } from './contextBriefResponseFeatures';
-import { normalizeModality } from './performedTrainingFacts';
+import { normalizeModality } from '../derived/training/performedTrainingFacts';
 import {
     deriveKeySessionSummaries,
     hasAvailableFeature,

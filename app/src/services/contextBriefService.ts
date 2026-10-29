@@ -59,7 +59,7 @@ import {
     assertRenderedBriefContract,
     CONTEXT_BRIEF_CONTRACT_VERSION,
 } from '../engine/contextBriefContract';
-import type { PerformedExposureFact } from '../engine/performedTrainingFacts';
+import type { PerformedExposureFact } from '../derived/training/performedTrainingFacts';
 import type { CapabilityMaintenanceResult } from '../engine/capabilityMaintenance';
 import { activityService } from './activityService';
 import { anthropometryService } from './anthropometryService';

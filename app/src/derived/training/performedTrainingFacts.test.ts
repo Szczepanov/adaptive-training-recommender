@@ -7,51 +7,51 @@ import {
 import {
     ENGINE_PERFORMED_TRAINING_CATALOG,
     templateIdForWorkoutId,
-} from './performedTrainingCatalog';
+} from '../../engine/performedTrainingCatalog';
 import {
     getTemplateIdsForWorkoutId,
     getUniqueTemplateIdForWorkoutId,
-} from './workoutTemplateIndex';
-import { getPerformedTrainingFactsInRange } from '../training-occurrence/performedTrainingFactsService';
-import type { PerformedTrainingOccurrence } from '../training-occurrence/models';
-import { performedTrainingOccurrenceRepository as repository } from '../training-occurrence/repository';
-import { activityService } from '../services/activityService';
-import { sessionExecutionService } from '../services/sessionExecutionService';
-import { recommendationService } from '../services/recommendationService';
-import { activityOverrideService } from '../services/activityOverrideService';
-import type { NormalizedGarminActivity, DailyRecommendation } from './models';
+} from '../../engine/workoutTemplateIndex';
+import { getPerformedTrainingFactsInRange } from '../../training-occurrence/performedTrainingFactsService';
+import type { PerformedTrainingOccurrence } from '../../training-occurrence/models';
+import { performedTrainingOccurrenceRepository as repository } from '../../training-occurrence/repository';
+import { activityService } from '../../services/activityService';
+import { sessionExecutionService } from '../../services/sessionExecutionService';
+import { recommendationService } from '../../services/recommendationService';
+import { activityOverrideService } from '../../services/activityOverrideService';
+import type { NormalizedGarminActivity, DailyRecommendation } from '../../engine/models';
 
-vi.mock('../training-occurrence/repository', () => ({
+vi.mock('../../training-occurrence/repository', () => ({
     performedTrainingOccurrenceRepository: {
         queryActiveInDateWindow: vi.fn(),
     },
 }));
 
-vi.mock('../services/sessionExecutionService', () => ({
+vi.mock('../../services/sessionExecutionService', () => ({
     sessionExecutionService: {
         getExecution: vi.fn(),
     },
 }));
 
-vi.mock('../services/activityService', () => ({
+vi.mock('../../services/activityService', () => ({
     activityService: {
         getActivitiesInRange: vi.fn(),
     },
 }));
 
-vi.mock('../services/recommendationService', () => ({
+vi.mock('../../services/recommendationService', () => ({
     recommendationService: {
         getRecommendationsInRange: vi.fn(),
     },
 }));
 
-vi.mock('../services/activityOverrideService', () => ({
+vi.mock('../../services/activityOverrideService', () => ({
     activityOverrideService: {
         getOverridesSinceState: vi.fn().mockResolvedValue({ status: 'AVAILABLE', data: {} }),
     },
 }));
 
-vi.mock('../sessions/sessionDefinitionResolver', () => ({
+vi.mock('../../sessions/sessionDefinitionResolver', () => ({
     resolveSessionDefinition: vi.fn().mockResolvedValue({ status: 'MISSING' }),
 }));
 

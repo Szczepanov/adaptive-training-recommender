@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { CompletedTrainingEvent } from './models';
-import type { PerformedExposureFact } from './performedTrainingFacts';
+import type { PerformedExposureFact } from '../derived/training/performedTrainingFacts';
 import { compareCanonicalVsLegacyFacts } from './performedTrainingFactsComparison';
 
 function legacyEvent(

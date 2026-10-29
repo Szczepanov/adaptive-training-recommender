@@ -1,5 +1,5 @@
 import type { NormalizedGarminActivity } from '../engine/models';
-import { normalizeModality } from '../engine/performedTrainingFacts';
+import { normalizeModality } from '../derived/training/performedTrainingFacts';
 import { sessionExecutionService } from '../services/sessionExecutionService';
 import { resolveSessionDefinition } from '../sessions/sessionDefinitionResolver';
 import type { SessionSourceRef } from '../sessions/models';

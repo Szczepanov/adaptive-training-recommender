@@ -9,7 +9,7 @@ import {
     type FactConfidence,
     type HydratedOccurrenceContext,
     type PerformedExposureFact,
-} from '../performedTrainingFacts';
+} from '../../derived/training/performedTrainingFacts';
 import { ENGINE_PERFORMED_TRAINING_CATALOG } from '../performedTrainingCatalog';
 import {
     GARMIN_CYCLING_ACTIVITY_TYPES,
@@ -45,7 +45,7 @@ import type { WorkoutVariant } from '../../workouts/models';
 
 /**
  * Frozen pre-#1183 implementation of `deriveFactsFromOccurrence` and its helpers,
- * copied verbatim from `app/src/engine/performedTrainingFacts.ts` before catalog
+ * copied verbatim from `performedTrainingFacts.ts` before catalog
  * port injection. Used to prove parity with `deriveFactsFromOccurrence` called
  * with `ENGINE_PERFORMED_TRAINING_CATALOG`.
  */
@@ -651,7 +651,7 @@ describe('performedTrainingFacts frozen-oracle parity (#1183)', () => {
         const thisDir = dirname(fileURLToPath(import.meta.url));
         const srcRoot = resolve(thisDir, '../..');
         const engineDir = resolve(srcRoot, 'engine');
-        const entryFile = resolve(engineDir, 'performedTrainingFacts.ts');
+        const entryFile = resolve(srcRoot, 'derived/training/performedTrainingFacts.ts');
 
         const resolveSpec = (fromFile: string, spec: string): string => {
             const base = resolve(dirname(fromFile), spec);

@@ -16,7 +16,7 @@ import type {
     ProgressionPrescriptionMatch,
     ProgressionReviewInput,
 } from '../engine/progressionReview';
-import type { PerformedExposureFact, CoverageCreditFact } from '../engine/performedTrainingFacts';
+import type { PerformedExposureFact, CoverageCreditFact } from '../derived/training/performedTrainingFacts';
 import { getPerformedTrainingFactsInRange } from '../training-occurrence/performedTrainingFactsService';
 import { performedTrainingOccurrenceRepository } from '../training-occurrence/repository';
 import { isStructuredExecutionRef } from '../training-occurrence/models';

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { rankCandidates } from '../optimizer';
 import { ENRICHED_TEMPLATES_BY_ID } from '../templates';
-import { deriveFactsFromOccurrence, type PerformedExposureFact } from '../performedTrainingFacts';
+import { deriveFactsFromOccurrence, type PerformedExposureFact } from '../../derived/training/performedTrainingFacts';
 import { ENGINE_PERFORMED_TRAINING_CATALOG } from '../performedTrainingCatalog';
 import type {
     ActivityOverride,
@@ -11,7 +11,7 @@ import type {
 } from '../models';
 import type { ResolvedAvailability } from '../schedule';
 import type { PerformedTrainingOccurrence } from '../../training-occurrence/models';
-import type { HydratedOccurrenceContext } from '../performedTrainingFacts';
+import type { HydratedOccurrenceContext } from '../../derived/training/performedTrainingFacts';
 import type { CoverageState } from '../coverage';
 import { EVERGREEN_GENERAL_COVERAGE_SET } from '../../workouts/event-plan';
 

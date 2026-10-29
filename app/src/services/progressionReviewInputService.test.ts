@@ -24,7 +24,7 @@ vi.mock('./trainingSettingsService', () => settings);
 import { assembleProgressionReviewInput } from './progressionReviewInputService';
 import { evaluateProgressionReview } from '../engine/progressionReview';
 import type { IntentBlock } from '../engine/blockIntent';
-import type { PerformedExposureFact, CoverageCreditFact } from '../engine/performedTrainingFacts';
+import type { PerformedExposureFact, CoverageCreditFact } from '../derived/training/performedTrainingFacts';
 
 const USER_ID = 'u1';
 

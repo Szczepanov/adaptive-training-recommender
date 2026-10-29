@@ -8,7 +8,7 @@
 
 import type { ProgressResult } from '../observations/progress';
 import type { SessionOutcome } from '../responses/outcome';
-import type { CoverageCreditFact, PerformedExposureFact } from './performedTrainingFacts';
+import type { CoverageCreditFact, PerformedExposureFact } from '../derived/training/performedTrainingFacts';
 import type {
     BlockObjectiveDefinition,
     BlockProgressionContract,

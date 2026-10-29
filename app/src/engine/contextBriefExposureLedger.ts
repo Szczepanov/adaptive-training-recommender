@@ -34,7 +34,7 @@ import {
     stimulusConfidenceForTier,
 } from './completedTraining';
 import { resolveInjuryRestrictions } from './injuryPolicy';
-import type { PerformedExposureFact } from './performedTrainingFacts';
+import type { PerformedExposureFact } from '../derived/training/performedTrainingFacts';
 import type {
     ActivityOverride,
     ActivityStimulusDomain,
@@ -47,7 +47,7 @@ import type {
     TrainingSettings,
     UserPreferences,
 } from './models';
-import { normalizeModality } from './performedTrainingFacts';
+import { normalizeModality } from '../derived/training/performedTrainingFacts';
 import type { StimulusConfidence } from './stimulus';
 import { grantsPowerExposureCredit } from '../workouts/powerExposure';
 import { grantsMechanicalExposureCredit, type MechanicalDoseVariant } from '../workouts/mechanicalExposure';

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ProgressResult } from '../observations/progress';
 import type { SessionOutcome } from '../responses/outcome';
-import type { CoverageCreditFact, PerformedExposureFact } from './performedTrainingFacts';
+import type { CoverageCreditFact, PerformedExposureFact } from '../derived/training/performedTrainingFacts';
 import type { IntentBlock } from './blockIntent';
 import {
     evaluateProgressionReview,

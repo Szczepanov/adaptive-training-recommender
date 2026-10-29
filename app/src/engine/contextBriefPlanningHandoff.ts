@@ -42,7 +42,7 @@ import {
 import { renderSensorEvidence } from './contextBriefSensorEvidence';
 import { synthesizeRecoveryEvidence } from './contextBriefRecoverySynthesis';
 import { briefContractHeaderLines } from './contextBriefContract';
-import type { PerformedExposureFact } from './performedTrainingFacts';
+import type { PerformedExposureFact } from '../derived/training/performedTrainingFacts';
 import { renderAssessmentBrief, type AssessmentBriefInput } from '../observations/contextBriefAssessments';
 
 export const UPCOMING_CONTEXT_DAYS = 7;

@@ -17,7 +17,7 @@ import { SECTION_TITLE, type BriefPurpose, type BriefWindowPreset } from './cont
 import { renderRecoveryEvidenceSynthesis, synthesizeRecoveryEvidence } from './contextBriefRecoverySynthesis';
 import { deriveExposureLedger, renderExposureLedger, type ExposureLedgerInput } from './contextBriefExposureLedger';
 import { briefContractHeaderLines } from './contextBriefContract';
-import type { PerformedExposureFact } from './performedTrainingFacts';
+import type { PerformedExposureFact } from '../derived/training/performedTrainingFacts';
 import { SENSOR_OBSERVATION_HORIZON_DAYS } from './contextBriefSensorEvidence';
 import { renderPlannedExecutionStatuses, type PlannedExecutionStatus } from '../training-occurrence/plannedExecutionStatus';
 import { renderAssessmentBrief, type AssessmentBriefInput } from '../observations/contextBriefAssessments';

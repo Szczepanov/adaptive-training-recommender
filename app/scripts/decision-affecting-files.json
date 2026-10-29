@@ -99,6 +99,7 @@
     }
   ],
   "relocations": [
-    { "from": "app/src/engine/subjectiveBaseline.ts", "to": "app/src/derived/baselines/subjectiveBaseline.ts", "reason": "ADR-0052 #1144 PR1-3: behaviour-identical relocation into derived/baselines." }
+    { "from": "app/src/engine/subjectiveBaseline.ts", "to": "app/src/derived/baselines/subjectiveBaseline.ts", "reason": "ADR-0052 #1144 PR1-3: behaviour-identical relocation into derived/baselines." },
+    { "from": "app/src/engine/performedTrainingFacts.ts", "to": "app/src/derived/training/performedTrainingFacts.ts", "reason": "ADR-0052 #1144 PR1-9: behaviour-identical relocation into derived/training." }
   ]
 }

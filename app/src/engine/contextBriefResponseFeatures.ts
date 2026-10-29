@@ -1,5 +1,5 @@
 import type { ActivityLapSummary, ActivityPrescribedTarget, ActivitySegmentSummary, ActivityStimulusDomain, NormalizedGarminActivity } from './models';
-import { normalizeModality } from './performedTrainingFacts';
+import { normalizeModality } from '../derived/training/performedTrainingFacts';
 import { getHrUseAuthority, type HrAuthorityReason, type HrUseCase } from './activityHrFidelity';
 import {
     decideSessionComparability,

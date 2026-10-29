@@ -41,7 +41,7 @@ import { resolveEventTaper } from './taperPolicy';
 import { olympicTriathlonTaperBenefitBoost, olympicTriathlonTaperCandidateCap, olympicTriathlonTaperExclusion, resolveOlympicTriathlonTaperBudget, resolvePriorityAOlympicTriathlonTaper, type OlympicTriathlonTaperBudget } from './taperPlanBudget';
 import { resolveInjuryRestrictions } from './injuryPolicy';
 import { classifyCandidateStrength, classifyPriorStrength, evaluateStrengthSpacingStatus, type StrengthExposureLike } from './strengthSpacingPolicy';
-import type { PerformedExposureFact } from './performedTrainingFacts';
+import type { PerformedExposureFact } from '../derived/training/performedTrainingFacts';
 import {
     buildPerformedStimulusRecency,
     evaluateCandidateStimulusRecency,

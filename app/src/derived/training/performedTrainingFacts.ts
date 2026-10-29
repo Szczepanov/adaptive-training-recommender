@@ -17,16 +17,16 @@ import type {
     Modality,
     NormalizedGarminActivity,
     SessionCategory,
-} from '../ledger/models';
-import type { SessionExecutionState } from '../sessions/models';
-import type { CoverageSetId, PlanCoverageKey, CoverageSetDescriptor } from '../workouts/event-plan';
-import { EVERGREEN_GENERAL_COVERAGE_SET } from '../workouts/event-plan';
-import { grantsPowerExposureCredit } from '../workouts/powerExposure';
-import { grantsMechanicalExposureCredit, type MechanicalDoseVariant } from '../workouts/mechanicalExposure';
-import type { WorkoutVariant } from '../workouts/models';
-import type { PerformedTrainingOccurrence } from '../training-occurrence/models';
-import { getLocalDateString } from '../utils/localDate';
-import { classifyGarminTier, isGarminCyclingActivityType } from '../derived/training/providerEvidence';
+} from '../../ledger/models';
+import type { SessionExecutionState } from '../../sessions/models';
+import type { CoverageSetId, PlanCoverageKey, CoverageSetDescriptor } from '../../workouts/event-plan';
+import { EVERGREEN_GENERAL_COVERAGE_SET } from '../../workouts/event-plan';
+import { grantsPowerExposureCredit } from '../../workouts/powerExposure';
+import { grantsMechanicalExposureCredit, type MechanicalDoseVariant } from '../../workouts/mechanicalExposure';
+import type { WorkoutVariant } from '../../workouts/models';
+import type { PerformedTrainingOccurrence } from '../../training-occurrence/models';
+import { getLocalDateString } from '../../utils/localDate';
+import { classifyGarminTier, isGarminCyclingActivityType } from './providerEvidence';
 
 export type FactConfidence = 'exact' | 'high' | 'inferred' | 'unknown';
 

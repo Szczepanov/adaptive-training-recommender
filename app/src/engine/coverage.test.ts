@@ -17,7 +17,7 @@ import {
 import type { SessionTemplate, UserEvent } from './models';
 import { addDaysToLocalDateString } from '../utils/localDate';
 import { EVERGREEN_GENERAL_COVERAGE_SET, SEPTEMBER_CYCLING_EVENT_COVERAGE_SET, type EventPlanCoverageKey, type EventPlanPhase } from '../workouts/event-plan';
-import { deriveExactCoverageCredits, type PerformedExposureFact } from './performedTrainingFacts';
+import { deriveExactCoverageCredits, type PerformedExposureFact } from '../derived/training/performedTrainingFacts';
 import { workoutForTemplate } from '../workouts/prescription';
 import { resolveAerobicVolumeFloor, type AerobicVolumeFloor } from './aerobicVolumeFloor';
 

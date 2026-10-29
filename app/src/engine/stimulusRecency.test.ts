@@ -3,7 +3,7 @@ import { WORKOUTS } from '../workouts/catalog';
 import { workoutForTemplate } from '../workouts/prescription';
 import { ENRICHED_TEMPLATES } from './templates';
 import type { SessionTemplate } from './models';
-import type { PerformedExposureFact } from './performedTrainingFacts';
+import type { PerformedExposureFact } from '../derived/training/performedTrainingFacts';
 import {
     buildPerformedStimulusRecency,
     evaluateCandidateStimulusRecency,

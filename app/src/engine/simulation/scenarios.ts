@@ -48,7 +48,7 @@ export interface AthleteScenario {
      * 6.3 needs this to reproduce failures that depend on yesterday's real training rather
      * than only on a synthetic readiness counter. */
     initialHistory?: CompletedExposure[];
-    initialPerformedExposures?: import('../performedTrainingFacts').PerformedExposureFact[];
+    initialPerformedExposures?: import('../../derived/training/performedTrainingFacts').PerformedExposureFact[];
     /** User-authored commitments passed through every day-0/day-1/week-ahead decision. */
     fixedActivities?: FixedActivity[];
     /** Structured tissue check-ins (#804) passed through every day-0/day-1/week-ahead
