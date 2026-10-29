@@ -10,6 +10,8 @@
  * - Canonical performed-training facts (`getPerformedTrainingFactsInRange`, ADR-0034), which
  *   drive live weekly coverage credit, confirm capabilities with their own provenance —
  *   including in-app structured executions that have no Garmin record or adherence answer.
+ *   Fact-based capability confirmation and planned-session matching live in
+ *   `derived/exposure/capabilityExposure.ts` (`deriveCapabilityFactEvidence`, #1144 PR1-10).
  *
  * Deferred, not modelled here: the #806 long aerobic anchor and the tissue-specific families are
  * reported `unknown` until a canonical model reaches this export; taper/event-specific
@@ -34,6 +36,15 @@ import {
     stimulusConfidenceForTier,
 } from './completedTraining';
 import { resolveInjuryRestrictions } from './injuryPolicy';
+import {
+    AEROBIC_EXPOSURE_MODALITIES,
+    CAPABILITY_FACT_SPECS,
+    deriveCapabilityFactEvidence,
+    factProvenance,
+    type CapabilityFactEvidence,
+    type CapabilityFactSpec,
+    type ExposurePlannedSession,
+} from '../derived/exposure/capabilityExposure';
 import type { PerformedExposureFact } from '../derived/training/performedTrainingFacts';
 import type {
     ActivityOverride,
@@ -47,28 +58,13 @@ import type {
     TrainingSettings,
     UserPreferences,
 } from './models';
-import { normalizeModality } from '../derived/training/performedTrainingFacts';
 import type { StimulusConfidence } from './stimulus';
-import { grantsPowerExposureCredit } from '../workouts/powerExposure';
-import { grantsMechanicalExposureCredit, type MechanicalDoseVariant } from '../workouts/mechanicalExposure';
-import {
-    ATHLETIC_CAPABILITY_WORKOUT_IDS,
-    athleticCapabilitiesCreditedBy,
-    grantsAthleticCapabilityCredit,
-} from '../workouts/athleticCapability';
-import type { AthleticCapabilityKey } from './models';
 import type { CapabilityMaintenanceResult } from './capabilityMaintenance';
+
+export type { ExposurePlannedSession } from '../derived/exposure/capabilityExposure';
 
 export type CapabilityStatus = 'confirmed' | 'planned' | 'unknown' | 'overdue' | 'deliberately_suspended';
 type Modality = SessionTemplate['modality'] | 'Unknown';
-
-/** Future sessions from an authoritative plan (imported external plan). Never completed. */
-export interface ExposurePlannedSession {
-    date: string;
-    modality: string;
-    intensity: string;
-    title: string;
-}
 
 export interface ExposureLedgerInput {
     asOfDate: string;
@@ -127,7 +123,6 @@ export const MAX_STRESSOR_ROWS = 10;
 export const PLANNED_HORIZON_DAYS = 7;
 
 const MECHANICAL_MODALITIES: ReadonlySet<Modality> = new Set<Modality>(['Strength', 'Running', 'Field']);
-const AEROBIC_MODALITIES: ReadonlySet<Modality> = new Set<Modality>(['Cycling', 'Running', 'Swimming', 'Cross Training']);
 const QUALITY_DOMAINS: ReadonlySet<ActivityStimulusDomain> = new Set<ActivityStimulusDomain>(['tempo', 'threshold', 'vo2', 'anaerobic', 'race', 'mixed']);
 
 const TIER_PROVENANCE: Record<EvidenceTier, string> = {
@@ -274,168 +269,113 @@ function resolveSafety(input: ExposureLedgerInput): SafetyState {
     return { known: true, guardrails, blockedModalities: blocked };
 }
 
-interface CapabilitySpec {
+export interface EngineCapabilitySpec {
     key: string;
     label: string;
     confirms: (resolved: ResolvedEvent) => boolean;
-    /** Canonical facts carry modality but no stimulus intensity, so quality cannot use them. */
-    confirmsFact: (fact: PerformedExposureFact) => boolean;
-    plans: (session: ExposurePlannedSession) => boolean;
     suspension: (safety: SafetyState) => string | null;
-    /** Issue #805: the capability whose resolved cadence status this row reads, if any. */
-    athleticCapability?: AthleticCapabilityKey;
-    /** Extra provenance appended when a canonical fact confirms the row. */
-    factDetail?: (fact: PerformedExposureFact) => string;
 }
 
-/** Exact #805 capability confirmation from a canonical fact with a known authored variant. */
-const confirmsAthleticCapability = (capability: AthleticCapabilityKey) => (fact: PerformedExposureFact): boolean =>
-    fact.workoutVariantId !== undefined && grantsAthleticCapabilityCredit({
-        workoutId: fact.workoutId,
-        capability,
-        variant: fact.workoutVariantId as MechanicalDoseVariant,
-        isReadinessModifiedDose: fact.isReadinessModifiedDose,
-    });
+interface CapabilitySpec extends CapabilityFactSpec, EngineCapabilitySpec {}
 
-const plannedModality = (session: ExposurePlannedSession): Modality => normalizeModality(session.modality);
 const modalityBlocked = (safety: SafetyState, modality: string): string | null =>
     safety.blockedModalities.has(modality) ? `${modality} restricted/unavailable` : null;
 const impactBlocked = (safety: SafetyState): string | null =>
     safety.guardrails.has('avoid_high_impact') ? 'high-impact work blocked by an active safety limit' : null;
 
-const CAPABILITIES: readonly CapabilitySpec[] = [
+export const ENGINE_CAPABILITY_SPECS: readonly EngineCapabilitySpec[] = [
     {
         key: 'aerobic_endurance',
-        confirmsFact: f => AEROBIC_MODALITIES.has(f.modality),
         label: 'Aerobic endurance',
-        confirms: r => AEROBIC_MODALITIES.has(r.event.modality),
-        plans: s => AEROBIC_MODALITIES.has(plannedModality(s)),
+        confirms: r => AEROBIC_EXPOSURE_MODALITIES.has(r.event.modality),
         suspension: () => null,
     },
     {
         key: 'cycling_quality',
-        confirmsFact: () => false,
         label: 'Cycling quality (tempo+ / race)',
         confirms: r => r.event.modality === 'Cycling'
             && (r.event.intensity === 'hard' || QUALITY_DOMAINS.has(domainOf(r) ?? 'unknown')),
-        plans: s => plannedModality(s) === 'Cycling' && s.intensity === 'hard',
         suspension: safety => modalityBlocked(safety, 'Cycling'),
     },
     {
         key: 'strength',
-        confirmsFact: f => f.modality === 'Strength',
         label: 'Strength',
         confirms: r => r.event.modality === 'Strength',
-        plans: s => plannedModality(s) === 'Strength',
         suspension: safety => modalityBlocked(safety, 'Strength'),
     },
     {
-        // Issue #802: only an exact authored power identity at a non-modified dose counts.
-        // Garmin records and imported-plan titles cannot prove power content, so they never
-        // confirm or plan it; strength/VO2/threshold history leaves power `unknown`.
         key: 'neuromuscular_power',
-        confirmsFact: f => f.workoutVariantId !== undefined && grantsPowerExposureCredit({
-            workoutId: f.workoutId,
-            variant: f.workoutVariantId,
-            isReadinessModifiedDose: f.isReadinessModifiedDose,
-        }),
         label: 'Neuromuscular power',
         confirms: () => false,
-        plans: () => false,
         suspension: safety => modalityBlocked(safety, 'Strength'),
     },
     {
-        // Issue #803 (owner decision 2026-10-17): only logged unilateral working sets count --
-        // never authored composition, warm-ups, imported-plan titles or Garmin records.
         key: 'unilateral_lower_body',
-        confirmsFact: f => (f.deliveredUnilateralLowerBody?.workingSets ?? 0) > 0,
-        factDetail: f => `${f.deliveredUnilateralLowerBody?.workingSets ?? 0} unilateral lower-body working set(s) logged`,
         label: 'Unilateral lower-body',
         confirms: () => false,
-        plans: () => false,
         suspension: safety => modalityBlocked(safety, 'Strength'),
     },
     {
         key: 'running',
-        confirmsFact: f => f.modality === 'Running',
         label: 'Running familiarity',
         confirms: r => r.event.modality === 'Running',
-        plans: s => plannedModality(s) === 'Running',
         suspension: safety => modalityBlocked(safety, 'Running') ?? impactBlocked(safety),
     },
     {
         key: 'field',
-        confirmsFact: f => f.modality === 'Field',
         label: 'Field / multidirectional sport',
         confirms: r => r.event.modality === 'Field',
-        plans: s => plannedModality(s) === 'Field',
         suspension: safety => modalityBlocked(safety, 'Field') ?? impactBlocked(safety),
     },
     {
-        // Issue #804: only an exact authored mechanical/impact identity at a qualifying dose counts.
-        // Garmin records and imported-plan titles cannot prove mechanical/plyometric content, so they never
-        // confirm or plan it; generic running/strength leaves impact_jump `unknown`.
         key: 'impact_jump',
-        confirmsFact: f => f.workoutVariantId !== undefined && grantsMechanicalExposureCredit({
-            workoutId: f.workoutId,
-            variant: f.workoutVariantId as MechanicalDoseVariant,
-            isReadinessModifiedDose: f.isReadinessModifiedDose,
-        }),
         label: 'Impact / jump-land',
         confirms: () => false,
-        plans: () => false,
         suspension: safety => impactBlocked(safety),
     },
     {
         key: 'linear_speed_skill',
-        confirmsFact: confirmsAthleticCapability('linear_speed_skill'),
         label: 'Linear speed',
         confirms: () => false,
-        plans: () => false,
         suspension: safety => modalityBlocked(safety, 'Field') ?? impactBlocked(safety),
-        athleticCapability: 'linear_speed_skill',
     },
     {
         key: 'acceleration_deceleration',
-        confirmsFact: confirmsAthleticCapability('acceleration_deceleration'),
         label: 'Acceleration / deceleration',
         confirms: () => false,
-        plans: () => false,
         suspension: safety => modalityBlocked(safety, 'Field') ?? impactBlocked(safety),
-        athleticCapability: 'acceleration_deceleration',
     },
     {
-        // Issue #805: only exact authored capability identities whose defining steps were
-        // retained count; Garmin field records, running and imported-plan titles never do.
         key: 'multidirectional_change_of_direction',
-        confirmsFact: confirmsAthleticCapability('multidirectional_change_of_direction'),
         label: 'Change of direction / multidirectional',
         confirms: () => false,
-        plans: () => false,
         suspension: safety => modalityBlocked(safety, 'Field') ?? impactBlocked(safety),
-        athleticCapability: 'multidirectional_change_of_direction',
     },
     {
         key: 'sport_skill',
-        confirmsFact: confirmsAthleticCapability('sport_skill'),
         label: 'Sport skill',
         confirms: () => false,
-        plans: () => false,
         suspension: safety => modalityBlocked(safety, 'Field') ?? impactBlocked(safety),
-        athleticCapability: 'sport_skill',
     },
 ];
+
+const ENGINE_SPEC_BY_KEY = new Map(ENGINE_CAPABILITY_SPECS.map(spec => [spec.key, spec]));
+
+const CAPABILITIES: readonly CapabilitySpec[] = CAPABILITY_FACT_SPECS.map(factSpec => {
+    const engineSpec = ENGINE_SPEC_BY_KEY.get(factSpec.key);
+    if (!engineSpec) throw new Error(`Missing engine capability spec for ${factSpec.key}`);
+    return {
+        ...factSpec,
+        confirms: engineSpec.confirms,
+        suspension: engineSpec.suspension,
+    };
+});
 
 /** Families without a canonical exposure model yet. Reported, never inferred. */
 const UNMODELLED: ReadonlyArray<{ key: string; label: string; source: string; impact: boolean }> = [
     { key: 'long_aerobic_anchor', label: 'Long aerobic anchor', source: '#806', impact: false },
     { key: 'hamstring_calf_grip', label: 'Hamstring knee-flexion / calf-soleus / grip-carry', source: 'no issue yet', impact: false },
 ];
-
-function factProvenance(fact: PerformedExposureFact): string {
-    return `canonical performed occurrence (${fact.sourceKinds.join('+')}; ${fact.confidence}`
-        + `${fact.category ? `; ${fact.category}` : ''})`;
-}
 
 /** Structured/logged sessions the Garmin/adherence path cannot see (no provider record). */
 function factOnlyStressors(input: ExposureLedgerInput, events: readonly ResolvedEvent[]): StressorEntry[] {
@@ -458,31 +398,32 @@ function factOnlyStressors(input: ExposureLedgerInput, events: readonly Resolved
         }));
 }
 
-function capabilityEntry(spec: CapabilitySpec, events: readonly ResolvedEvent[], input: ExposureLedgerInput, safety: SafetyState): CapabilityEntry {
+function capabilityEntry(
+    spec: CapabilitySpec,
+    events: readonly ResolvedEvent[],
+    factEvidence: CapabilityFactEvidence,
+    input: ExposureLedgerInput,
+    safety: SafetyState,
+): CapabilityEntry {
+    const keyEvidence = factEvidence.byKey[spec.key];
     const confirmedEvents = events.filter(spec.confirms);
     const lastEvent = confirmedEvents.length > 0 ? confirmedEvents[confirmedEvents.length - 1] : null;
-    const lastFact = (input.performedFacts ?? [])
-        .filter(fact => fact.localDate >= input.lookbackStart && fact.localDate <= input.asOfDate && spec.confirmsFact(fact))
-        .sort((a, b) => a.localDate.localeCompare(b.localDate))
-        .at(-1) ?? null;
+    const lastFact = keyEvidence?.lastConfirmingFact ?? null;
     // Canonical facts win a same-day tie: they own live coverage credit and carry exact
     // structured-execution provenance the Garmin/adherence path cannot see.
     const useFact = lastFact !== null && (lastEvent === null || lastFact.localDate >= lastEvent.event.date);
     const lastDate = useFact ? lastFact.localDate : lastEvent?.event.date ?? null;
     const lastProvenance = useFact
-        ? `${factProvenance(lastFact)}${spec.factDetail ? `; ${spec.factDetail(lastFact)}` : ''}`
+        ? keyEvidence?.lastConfirmingFactProvenance ?? null
         : lastEvent ? provenanceOf(lastEvent.event, lastEvent.override) : null;
-    const planned = (input.plannedSessions ?? [])
-        .filter(session => session.date >= input.asOfDate && spec.plans(session))
-        .sort((a, b) => a.date.localeCompare(b.date))[0] ?? null;
+    const planned = keyEvidence?.nextPlannedSession ?? null;
     const suspension = spec.suspension(safety);
     const notes: string[] = [];
     if ((spec.key === 'strength' || spec.key === 'unilateral_lower_body') && safety.guardrails.has('avoid_heavy_lower_body')) {
         notes.push('heavy lower-body loading suspended by an active safety limit');
     }
     if (spec.key === 'unilateral_lower_body') {
-        const unreadable = (input.performedFacts ?? []).filter(fact => fact.deliveredCompositionUnavailable
-            && fact.localDate >= input.lookbackStart && fact.localDate <= input.asOfDate).length;
+        const unreadable = keyEvidence?.deliveredCompositionUnavailableCount ?? 0;
         if (unreadable > 0) notes.push(`logged sets of ${unreadable} structured session(s) were unreadable; unilateral work there is unknown`);
     }
     if (spec.key === 'neuromuscular_power' && impactBlocked(safety)) {
@@ -505,16 +446,8 @@ function capabilityEntry(spec: CapabilitySpec, events: readonly ResolvedEvent[],
         if (resolved.fulfilment?.status === 'deliberately_suspended') status = 'deliberately_suspended';
         else if (resolved.status === 'overdue') status = 'overdue';
         notes.push(`capability maintenance: ${resolved.message}`);
-        const unknownVariantEvidence = (input.performedFacts ?? []).some(fact =>
-            fact.workoutVariantId === undefined
-            && fact.workoutId !== undefined
-            && ATHLETIC_CAPABILITY_WORKOUT_IDS.includes(fact.workoutId)
-            && fact.localDate === resolved.lastQualifyingDate
-            && athleticCapabilitiesCreditedBy({
-                workoutId: fact.workoutId,
-                isReadinessModifiedDose: fact.isReadinessModifiedDose,
-            }).includes(spec.athleticCapability!),
-        );
+        const unknownVariantEvidence = resolved.lastQualifyingDate !== undefined
+            && (keyEvidence?.unknownVariantDates.has(resolved.lastQualifyingDate) ?? false);
         if (resolved.lastQualifyingDate && !lastDate && unknownVariantEvidence) {
             notes.push('planner cadence counts historical exposure without a known workout variant; this ledger cannot confirm variant-specific credit');
         }
@@ -534,7 +467,13 @@ export function deriveExposureLedger(input: ExposureLedgerInput): ExposureLedger
     const events = resolveEvents(input);
     const meaningful = events.filter(isMeaningful);
     const safety = resolveSafety(input);
-    const capabilities = CAPABILITIES.map(spec => capabilityEntry(spec, events, input, safety));
+    const factEvidence = deriveCapabilityFactEvidence(
+        input.performedFacts,
+        input.plannedSessions,
+        input.lookbackStart,
+        input.asOfDate,
+    );
+    const capabilities = CAPABILITIES.map(spec => capabilityEntry(spec, events, factEvidence, input, safety));
     for (const family of UNMODELLED) {
         const blocked = family.impact ? impactBlocked(safety) : null;
         capabilities.push({

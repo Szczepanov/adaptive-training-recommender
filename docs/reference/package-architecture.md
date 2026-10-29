@@ -75,6 +75,8 @@ app/src/derived/           # ADR-0052 Phase 1: derived metrics and D-FLAGS evalu
     multisourceBaselines.ts # Source-specific robust 7d/28d median+MAD baseline calculator (MS12, ADR-0024/0027)
     identityEligibility.ts # Pre-baseline effective-identity eligibility boundary (PI5, D-PID-PREBASE)
     subjectiveBaseline.ts # Phase 9.1: pure recent-vs-long subjective baseline
+  exposure/
+    capabilityExposure.ts # #813/#1144 PR1-10: pure capability-exposure fact derivation (`CAPABILITY_FACT_SPECS`, `deriveCapabilityFactEvidence`, `confirmsAthleticCapability`, `plannedModality`, `factProvenance`)
   flags/
     flagEvaluation.ts    # FlagEvaluation: one pure D-FLAGS result, in ledger-export state names
     illnessAnomaly/      # Health-anomaly family (ADR-0025), moved from engine/ in #1144 PR1-1
@@ -172,6 +174,7 @@ app/src/engine/
   contextBriefPurpose.ts # Export purposes (morning/planning/diagnostic), section titles, goal/use-instruction renderers
   contextBriefRecovery.ts # Objective wearable + body-composition sections of the context brief
   contextBriefRecoverySynthesis.ts # Explanatory multisignal recovery synthesis for the brief; no decision authority (#812); renders the derived recovery_beyond_baseline per-metric results
+  contextBriefExposureLedger.ts # #813 read-only stressor & physical-capability exposure ledgers; composes derived/exposure/capabilityExposure.ts with engine stressors, safety suspensions and capability maintenance (#1144 PR1-10)
   briefPlanAuthority.ts # Reconciles persisted verdict + imported occurrence into one brief authority outcome (#810)
   trainingSettingsSchema.ts # Persisted TrainingSettings schema version gate (current v3, supports v2)
   strengthSessionLifecycle.ts # Strength session state machine (new/in_progress/... transitions)

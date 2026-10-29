@@ -437,7 +437,12 @@ read-only ledgers (`contextBriefExposureLedger.ts` `deriveExposureLedger` /
   `coverageHistoryFromFacts` still consumes only canonical `creditKind: 'exact'` until
   a separately governed semantic-coverage policy is accepted. Canonical facts also
   confirm capabilities with their own provenance, including in-app structured executions
-  with no Garmin record or adherence answer. Unanswered or skipped recommendations and
+  with no Garmin record or adherence answer. Under ADR-0052 Phase 1 (#1144 PR1-10), the
+  engine-free capability-fact core (`CAPABILITY_FACT_SPECS`, `deriveCapabilityFactEvidence`,
+  `confirmsAthleticCapability`, `plannedModality` and `factProvenance`) lives in
+  `derived/exposure/capabilityExposure.ts`, while `engine/contextBriefExposureLedger.ts`
+  composes it with stressor rows, `resolveInjuryRestrictions` safety suspensions and the
+  caller-supplied `CapabilityMaintenanceResult`. Unanswered or skipped recommendations and
   imported future sessions never count as completed; imported sessions in the next 7 days
   can only make a capability `planned`.
 - **Status vocabulary.** `confirmed`, `planned`, `unknown`, `deliberately_suspended`

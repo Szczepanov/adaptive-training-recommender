@@ -282,7 +282,7 @@ stay compact enough to survive conservative client instruction budgets.
 | Python ingestion, providers, Firestore persistence | `src/garmin_sync/` |
 | Adaptive recommendation engine (frozen, ADR-0052) | `app/src/engine/` |
 | Ledger record types (snapshots, check-ins, injuries, activities, strength logs, settings), shared training, capability, goal-target and session vocabulary; must not import `engine/` | `app/src/ledger/` |
-| Derived metrics and D-FLAGS evaluators extracted from the engine (health anomaly, illness-risk symptom, recovery-beyond-baseline and injury-constraint-touches-session flags; source-specific and subjective baselines; performed-training facts and provider-evidence classifiers; goal progress, metric math, feasibility and performance-target policy); must not import `engine/` | `app/src/derived/` |
+| Derived metrics and D-FLAGS evaluators extracted from the engine (health anomaly, illness-risk symptom, recovery-beyond-baseline and injury-constraint-touches-session flags; source-specific and subjective baselines; performed-training facts and provider-evidence classifiers; capability-exposure fact derivation; goal progress, metric math, feasibility and performance-target policy); must not import `engine/` | `app/src/derived/` |
 | Source-neutral sessions / execution | `app/src/sessions/` |
 | Session responses and outcome interpretation | `app/src/responses/`, `app/src/outcomes/` |
 | Canonical observations / testing | `app/src/observations/` |

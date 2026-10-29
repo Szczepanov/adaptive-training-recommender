@@ -9,16 +9,20 @@
 
 ## Shipped
 
-- `contextBriefExposureLedger.ts` `deriveExposureLedger` / `renderExposureLedger`, wired into
-  `contextBrief.ts` for `planning` and `diagnostic` purposes (stressor rows with the engine cost
-  vector, then capability status rows).
+- `engine/contextBriefExposureLedger.ts` `deriveExposureLedger` / `renderExposureLedger`, wired into
+  `engine/contextBrief.ts` for `planning` and `diagnostic` purposes (stressor rows with the engine cost
+  vector, then capability status rows), composing the engine-free capability-fact core in
+  `derived/exposure/capabilityExposure.ts` (`CAPABILITY_FACT_SPECS`,
+  `deriveCapabilityFactEvidence`, #1144 PR1-10).
 - #809 session cost and stimulus domain are read from the existing reconciliation; a long easy
   (Z2) ride is listed as "high-dose aerobic — not a high-intensity stimulus", never as a quality
   session.
 - Capability confirmation consumes canonical owners: #802 `grantsPowerExposureCredit`, #804
   `grantsMechanicalExposureCredit`, #805 `grantsAthleticCapabilityCredit` plus the caller-supplied
   resolved `CapabilityMaintenanceResult` for `overdue`.
-- Tests: `contextBriefExposureLedger.test.ts`, including a dedicated long-Z2 test and an
+- Tests: `engine/contextBriefExposureLedger.test.ts`,
+  `engine/contextBriefExposureLedger.characterization.test.ts`, and
+  `derived/exposure/capabilityExposure.test.ts`, including a dedicated long-Z2 test and an
   explicit-`unknown` test for the unmodelled families.
 
 - #803 unilateral lower-body (owner decision 2026-10-17, recorded on #813):
