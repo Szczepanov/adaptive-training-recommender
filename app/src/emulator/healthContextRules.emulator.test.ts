@@ -152,6 +152,18 @@ emulatorDescribe('Daily subjective check-in health-context rules (HA1)', () => {
         }));
     });
 
+    it.each([
+        ['a list in otherDisruption', { otherDisruption: ['x'.repeat(501)] }],
+        ['a map in otherDisruption', { otherDisruption: { text: 'x'.repeat(501) } }],
+        ['a string in symptom types', { symptoms: { present: true, types: 'x'.repeat(501) } }],
+        ['a map in symptom types', { symptoms: { present: true, types: { text: 'x'.repeat(501) } } }],
+    ])('rejects a size-cap bypass using %s on create and update', async (_label, healthContext) => {
+        const db = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertFails(setDoc(doc(db, checkinPath), { ...baseCheckin(), healthContext }));
+        await assertSucceeds(setDoc(doc(db, checkinPath), baseCheckin()));
+        await assertFails(updateDoc(doc(db, checkinPath), { healthContext }));
+    });
+
     it('applies the caps to the merged document on update', async () => {
         const db = testEnvironment.authenticatedContext(ownerId).firestore();
         await assertSucceeds(setDoc(doc(db, checkinPath), { ...baseCheckin(), healthContext: { symptoms: { present: true } } }));

@@ -252,6 +252,7 @@ emulatorDescribe('Assessment trial and derivation Firestore rules (ADR-0046)', (
     });
 
     it.each([
+        ['an off-load repetition', { values: { load_kg: 61, successful: true, mean_concentric_velocity_mps: 0.8 } }],
         ['a failed repetition', { values: { load_kg: 60, successful: false, mean_concentric_velocity_mps: 0.8 } }],
         ['a practice repetition', { validity: 'practice' }],
     ])('rejects a fixed-load observation bound to %s', async (_label, overrides) => {

@@ -12,9 +12,9 @@
         let context = data.get('healthContext', {});
         let symptoms = context.get('symptoms', {});
         return context.keys().hasOnly(['alcoholDrinksLast24h', 'travelDisruption', 'timezoneShiftHours', 'unusualHeatOrSauna', 'dehydrationOrFluidLoss', 'recentVaccination', 'medicationChange', 'closeSickContact', 'otherDisruption', 'symptoms'])
-          && (!(context.get('otherDisruption', null) is string) || context.otherDisruption.size() <= 500)
+          && (context.get('otherDisruption', null) == null || (context.otherDisruption is string && context.otherDisruption.size() <= 500))
           && symptoms.keys().hasOnly(['present', 'onset', 'severity', 'types', 'suspectedCause'])
-          && (!(symptoms.get('types', null) is list) || symptoms.types.size() <= 10);
+          && (symptoms.get('types', null) == null || (symptoms.types is list && symptoms.types.size() <= 10));
       }
 
       // upsertCheckin writes with setDoc(..., {merge: true}), so validateCheckin sees only the

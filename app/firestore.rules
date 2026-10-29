@@ -2230,9 +2230,9 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
         let context = data.get('healthContext', {});
         let symptoms = context.get('symptoms', {});
         return context.keys().hasOnly(['alcoholDrinksLast24h', 'travelDisruption', 'timezoneShiftHours', 'unusualHeatOrSauna', 'dehydrationOrFluidLoss', 'recentVaccination', 'medicationChange', 'closeSickContact', 'otherDisruption', 'symptoms'])
-          && (!(context.get('otherDisruption', null) is string) || context.otherDisruption.size() <= 500)
+          && (context.get('otherDisruption', null) == null || (context.otherDisruption is string && context.otherDisruption.size() <= 500))
           && symptoms.keys().hasOnly(['present', 'onset', 'severity', 'types', 'suspectedCause'])
-          && (!(symptoms.get('types', null) is list) || symptoms.types.size() <= 10);
+          && (symptoms.get('types', null) == null || (symptoms.types is list && symptoms.types.size() <= 10));
       }
 
       // upsertCheckin writes with setDoc(..., {merge: true}), so validateCheckin sees only the
@@ -2757,8 +2757,8 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
 
       // A fixed-load benchmark is bound (ADR-0053 X) to its immutable source trial, which must
       // still head its correction chain after this write: fixed-load protocol, valid successful
-      // trial, equal value and series context, and a context unchanged from the previous
-      // revision. Reference shape and load equality are checked in the write transaction by
+      // trial, equal value, actual load and series context, and a context unchanged from the
+      // previous revision. Reference shape is checked in the write transaction by
       // fixedLoadVelocity.ts assertFixedLoadObservationEvidence.
       function hasFixedLoadObservationBinding(userId, data) {
         let trialPath = /databases/$(database)/documents/users/$(userId)/assessment_attempts/$(data.assessmentAttemptId)/trials/$(data.derivedFromEvidenceRefs[0].trialId);
@@ -2767,6 +2767,7 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
         return isFixedLoadProtocol(data.protocolRef)
           && !existsAfter(/databases/$(database)/documents/users/$(userId)/assessment_attempts/$(data.assessmentAttemptId)/trials/$(nextId))
           && trial.validity == 'valid' && trial.values.successful == true
+          && trial.values.load_kg == data.context.test_load_kg
           && data.value == trial.values.mean_concentric_velocity_mps
           && sameFixedLoadContext(data.context, trial.context)
           && (data.revision == 1 || sameFixedLoadContext(data.context,
