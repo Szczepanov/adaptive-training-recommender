@@ -118,7 +118,7 @@
     "harness:reap": "node scripts/harness/reap.mjs"
   },
   "dependencies": {
-    "firebase": "^13.0.0",
+    "firebase": "^13.1.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
   },
@@ -135,11 +135,11 @@
     "eslint": "^10.13.0",
     "eslint-plugin-react-hooks": "7.1.1",
     "eslint-plugin-react-refresh": "^0.5.6",
-    "firebase-tools": "^15.34.0",
+    "firebase-tools": "^15.34.1",
     "globals": "^17.13.0",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
-    "typescript-eslint": "^8.71.2",
-    "vite": "^8.3.4",
+    "typescript-eslint": "^8.72.0",
+    "vite": "^8.3.5",
     "vite-plugin-pwa": "^2.0.0",
     "vitest": "^5.0.5"
   },
