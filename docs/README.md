@@ -315,6 +315,7 @@ How agreed changes get made. Mutable, status-tracked, and expected to go stale �
 ### 🏗️ System Architecture
 In-depth technical design documents covering system subsystems:
 
+* [**Ledger Export Contract**](./architecture/ledger-export-contract.md) — Canonical structured export contract (D-EXPORT v1) for the authenticated account's Context Brief.
 * [**Wearable Ingestion Pipeline & Telemetry Architecture**](./architecture/ingestion-pipeline.md) — Current Garmin provider boundary, recovery/profile/activity ownership, archive/rebuild semantics, auto-sync coordination, and workout publication.
 * [**Multi-resolution activity response telemetry**](./architecture/activity-response-telemetry.md) — A bounded observation layer between native wearable traces and context-brief response features.
 * [**Recommendation Engine**](./architecture/recommendation-engine.md) — The two selection paths, module map, self-normalised strain scoring, `train`/`modify`/`recover` modes, candidate ranking, and the authority ordering.
