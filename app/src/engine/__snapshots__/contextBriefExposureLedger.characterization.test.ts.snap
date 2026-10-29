@@ -1,0 +1,198 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`contextBriefExposureLedger characterization golden (#1185) > renders identical output across the characterization fixture grid 1`] = `
+{
+  "facts empty, overrides present (empty), settings baseline, maintenance absent, planned present": "
+### Recent meaningful stressors (2026-09-11 → 2026-09-24)
+
+Completed sessions only: Garmin records and answered adherence reconciled as the engine's training history does (except rows marked athlete-reclassified, which also show the engine-recorded classification), plus canonical performed occurrences such as in-app structured sessions. Listed when the stimulus is high-intensity, the session cost is high, or the modality loads tissue mechanically. Cost vector = engine-estimated 0–1 cost, systemic vs mechanical.
+- None recorded in this window.
+
+### Physical-capability exposure
+
+Read-only status. \`confirmed\` = completed in this window; \`planned\` = imported plan session in the next 7 days only (never counted as done); \`unknown\` = not observed in this window or no canonical model; \`deliberately_suspended\` = blocked by a current safety limit or a deliberate planning suspension, not neglect. \`overdue\` is reported only for change of direction and sport skill, and only from the evergreen planner's resolved #805 capability-maintenance cadence when this export carries it; no other family has an authoritative cadence/max-gap policy. Not yet represented: taper/event-specific suppression outside #805, and the #806 long-anchor model. Neuromuscular power (#802), impact (#804), change of direction and sport skill (#805) are confirmed only by exact authored identities; unilateral lower-body (#803) only by logged working sets on steps carrying that structured movement pattern.
+- Aerobic endurance: planned · next planned 2026-09-25
+- Cycling quality (tempo+ / race): planned · next planned 2026-09-25
+- Strength: planned · next planned 2026-09-26
+- Neuromuscular power: unknown
+- Unilateral lower-body: unknown
+- Running familiarity: planned · next planned 2026-09-27
+- Field / multidirectional sport: planned · next planned 2026-09-28
+- Impact / jump-land: unknown
+- Linear speed: unknown · no resolved capability-maintenance cadence in this export; overdue status is not reported
+- Acceleration / deceleration: unknown · no resolved capability-maintenance cadence in this export; overdue status is not reported
+- Change of direction / multidirectional: unknown · no resolved capability-maintenance cadence in this export; overdue status is not reported
+- Sport skill: unknown · no resolved capability-maintenance cadence in this export; overdue status is not reported
+- Long aerobic anchor: unknown · no canonical exposure model yet (#806)
+- Hamstring knee-flexion / calf-soleus / grip-carry: unknown · no canonical exposure model yet (no issue yet)",
+  "facts mixed, overrides null, settings with guardrails, maintenance overdue, planned null": "
+### Recent meaningful stressors (2026-09-11 → 2026-09-24)
+
+Completed sessions only: Garmin records and answered adherence reconciled as the engine's training history does (except rows marked athlete-reclassified, which also show the engine-recorded classification), plus canonical performed occurrences such as in-app structured sessions. Listed when the stimulus is high-intensity, the session cost is high, or the modality loads tissue mechanically. Cost vector = engine-estimated 0–1 cost, systemic vs mechanical.
+- 2026-09-13: cycling race — hard stimulus (race) · very high session cost · systemic 0.7 · cardiovascular 0.8 | lower-body 0.7 · impact 0.1 · neuromuscular 0.5 · Garmin measured effort (garmin; inferred)
+- 2026-09-16: field — mechanical exposure — stimulus intensity not carried by the canonical fact · session cost not estimated here · systemic — | mechanical — · canonical performed occurrence (structured_execution; exact; Field Maintenance)
+- 2026-09-17: strength — Lower-body Strength (prescribed template) — hard stimulus · session cost not measured (engine cost row: hard) · systemic 0.8 · cardiovascular 0.3 | lower-body 0.9 · impact 0.4 · neuromuscular 0.9 · prescribed session confirmed followed (adherence; exact)
+- 2026-09-18: cycling quality — hard stimulus (threshold) · moderate session cost · systemic 0.7 · cardiovascular 0.8 | lower-body 0.7 · impact 0.1 · neuromuscular 0.5 · Garmin measured effort (garmin; inferred)
+- 2026-09-20: strength — Full-body Strength — stimulus intensity not carried by the canonical fact · session cost not estimated here · systemic — | mechanical — · canonical performed occurrence (structured_execution; exact; Full-body Strength)
+- 2026-09-21: cycling high-dose aerobic — not a high-intensity stimulus — easy stimulus (endurance) · high session cost · systemic 0.7 · cardiovascular 0.8 | lower-body 0.7 · impact 0.1 · neuromuscular 0.5 · Garmin measured effort (garmin; inferred)
+- 2026-09-22: running — mechanical exposure — stimulus intensity not carried by the canonical fact · session cost not estimated here · systemic — | mechanical — · canonical performed occurrence (structured_execution; exact; Easy Endurance)
+- 1 lower-cost, non-impact session(s) omitted (see the table above).
+
+### Physical-capability exposure
+
+Read-only status. \`confirmed\` = completed in this window; \`planned\` = imported plan session in the next 7 days only (never counted as done); \`unknown\` = not observed in this window or no canonical model; \`deliberately_suspended\` = blocked by a current safety limit or a deliberate planning suspension, not neglect. \`overdue\` is reported only for change of direction and sport skill, and only from the evergreen planner's resolved #805 capability-maintenance cadence when this export carries it; no other family has an authoritative cadence/max-gap policy. Not yet represented: taper/event-specific suppression outside #805, and the #806 long-anchor model. Neuromuscular power (#802), impact (#804), change of direction and sport skill (#805) are confirmed only by exact authored identities; unilateral lower-body (#803) only by logged working sets on steps carrying that structured movement pattern.
+- Aerobic endurance: confirmed · last confirmed 2026-09-22 — canonical performed occurrence (structured_execution; exact; Easy Endurance)
+- Cycling quality (tempo+ / race): confirmed · last confirmed 2026-09-18 — Garmin measured effort (garmin; inferred)
+- Strength: confirmed · last confirmed 2026-09-20 — canonical performed occurrence (structured_execution; exact; Full-body Strength) · heavy lower-body loading suspended by an active safety limit
+- Neuromuscular power: confirmed · last confirmed 2026-09-20 — canonical performed occurrence (structured_execution; exact; Full-body Strength) · impact (plyometric) power suspended by an active safety limit; non-impact power identities remain eligible
+- Unilateral lower-body: confirmed · last confirmed 2026-09-20 — canonical performed occurrence (structured_execution; exact; Full-body Strength); 4 unilateral lower-body working set(s) logged · heavy lower-body loading suspended by an active safety limit
+- Running familiarity: deliberately_suspended · last confirmed 2026-09-22 — canonical performed occurrence (structured_execution; exact; Easy Endurance) · high-impact work blocked by an active safety limit
+- Field / multidirectional sport: deliberately_suspended · last confirmed 2026-09-16 — canonical performed occurrence (structured_execution; exact; Field Maintenance) · high-impact work blocked by an active safety limit
+- Impact / jump-land: deliberately_suspended · last confirmed 2026-09-22 — canonical performed occurrence (structured_execution; exact; Easy Endurance) · high-impact work blocked by an active safety limit
+- Linear speed: deliberately_suspended · high-impact work blocked by an active safety limit
+- Acceleration / deceleration: deliberately_suspended · high-impact work blocked by an active safety limit
+- Change of direction / multidirectional: deliberately_suspended · high-impact work blocked by an active safety limit
+- Sport skill: deliberately_suspended · last confirmed 2026-09-16 — canonical performed occurrence (structured_execution; exact; Field Maintenance) · high-impact work blocked by an active safety limit
+- Long aerobic anchor: unknown · no canonical exposure model yet (#806)
+- Hamstring knee-flexion / calf-soleus / grip-carry: unknown · no canonical exposure model yet (no issue yet)
+- Note: Athlete reclassifications were unreadable: rows show the recorded classification.
+- Note: The future plan was not fully readable: \`planned\` may be incomplete.",
+  "facts mixed, overrides present, settings baseline, maintenance present, planned present": "
+### Recent meaningful stressors (2026-09-11 → 2026-09-24)
+
+Completed sessions only: Garmin records and answered adherence reconciled as the engine's training history does (except rows marked athlete-reclassified, which also show the engine-recorded classification), plus canonical performed occurrences such as in-app structured sessions. Listed when the stimulus is high-intensity, the session cost is high, or the modality loads tissue mechanically. Cost vector = engine-estimated 0–1 cost, systemic vs mechanical.
+- 2026-09-13: cycling race — hard stimulus (race) · very high session cost · systemic 0.7 · cardiovascular 0.8 | lower-body 0.7 · impact 0.1 · neuromuscular 0.5 · Garmin measured effort (garmin; inferred)
+- 2026-09-16: field — mechanical exposure — stimulus intensity not carried by the canonical fact · session cost not estimated here · systemic — | mechanical — · canonical performed occurrence (structured_execution; exact; Field Maintenance)
+- 2026-09-17: strength — Lower-body Strength (prescribed template) — hard stimulus · session cost not measured (engine cost row: hard) · systemic 0.8 · cardiovascular 0.3 | lower-body 0.9 · impact 0.4 · neuromuscular 0.9 · prescribed session confirmed followed (adherence; exact)
+- 2026-09-18: cycling quality — hard stimulus (threshold) · moderate session cost · systemic 0.7 · cardiovascular 0.8 | lower-body 0.7 · impact 0.1 · neuromuscular 0.5 · Garmin measured effort (garmin; inferred)
+- 2026-09-19: running — impact exposure — easy stimulus · session cost not measured (engine cost row: easy) · systemic 0.3 · cardiovascular 0.3 | lower-body 0.3 · impact 0.4 · neuromuscular 0.1 · athlete reclassified other/moderate → Running/easy (garmin+manual; display only — the engine's training history still uses the recorded classification); engine records Unknown/moderate, cost row moderate
+- 2026-09-20: strength — Full-body Strength — stimulus intensity not carried by the canonical fact · session cost not estimated here · systemic — | mechanical — · canonical performed occurrence (structured_execution; exact; Full-body Strength)
+- 2026-09-21: cycling high-dose aerobic — not a high-intensity stimulus — easy stimulus (endurance) · high session cost · systemic 0.7 · cardiovascular 0.8 | lower-body 0.7 · impact 0.1 · neuromuscular 0.5 · Garmin measured effort (garmin; inferred)
+- 2026-09-22: running — mechanical exposure — stimulus intensity not carried by the canonical fact · session cost not estimated here · systemic — | mechanical — · canonical performed occurrence (structured_execution; exact; Easy Endurance)
+
+### Physical-capability exposure
+
+Read-only status. \`confirmed\` = completed in this window; \`planned\` = imported plan session in the next 7 days only (never counted as done); \`unknown\` = not observed in this window or no canonical model; \`deliberately_suspended\` = blocked by a current safety limit or a deliberate planning suspension, not neglect. \`overdue\` is reported only for change of direction and sport skill, and only from the evergreen planner's resolved #805 capability-maintenance cadence when this export carries it; no other family has an authoritative cadence/max-gap policy. Not yet represented: taper/event-specific suppression outside #805, and the #806 long-anchor model. Neuromuscular power (#802), impact (#804), change of direction and sport skill (#805) are confirmed only by exact authored identities; unilateral lower-body (#803) only by logged working sets on steps carrying that structured movement pattern.
+- Aerobic endurance: confirmed · last confirmed 2026-09-22 — canonical performed occurrence (structured_execution; exact; Easy Endurance) · next planned 2026-09-25
+- Cycling quality (tempo+ / race): confirmed · last confirmed 2026-09-18 — Garmin measured effort (garmin; inferred) · next planned 2026-09-25
+- Strength: confirmed · last confirmed 2026-09-20 — canonical performed occurrence (structured_execution; exact; Full-body Strength) · next planned 2026-09-26
+- Neuromuscular power: confirmed · last confirmed 2026-09-20 — canonical performed occurrence (structured_execution; exact; Full-body Strength)
+- Unilateral lower-body: confirmed · last confirmed 2026-09-20 — canonical performed occurrence (structured_execution; exact; Full-body Strength); 4 unilateral lower-body working set(s) logged
+- Running familiarity: confirmed · last confirmed 2026-09-22 — canonical performed occurrence (structured_execution; exact; Easy Endurance) · next planned 2026-09-27
+- Field / multidirectional sport: confirmed · last confirmed 2026-09-16 — canonical performed occurrence (structured_execution; exact; Field Maintenance) · next planned 2026-09-28
+- Impact / jump-land: confirmed · last confirmed 2026-09-22 — canonical performed occurrence (structured_execution; exact; Easy Endurance)
+- Linear speed: unknown · capability maintenance: satisfied until 2026-10-03
+- Acceleration / deceleration: unknown · capability maintenance: due from 2026-09-24; plannable
+- Change of direction / multidirectional: unknown · capability maintenance: satisfied until 2026-10-07
+- Sport skill: confirmed · last confirmed 2026-09-16 — canonical performed occurrence (structured_execution; exact; Field Maintenance) · capability maintenance: satisfied until 2026-10-07
+- Long aerobic anchor: unknown · no canonical exposure model yet (#806)
+- Hamstring knee-flexion / calf-soleus / grip-carry: unknown · no canonical exposure model yet (no issue yet)",
+  "facts mixed, overrides present, settings with injuries and unavailable modalities, maintenance overdue, planned present": "
+### Recent meaningful stressors (2026-09-11 → 2026-09-24)
+
+Completed sessions only: Garmin records and answered adherence reconciled as the engine's training history does (except rows marked athlete-reclassified, which also show the engine-recorded classification), plus canonical performed occurrences such as in-app structured sessions. Listed when the stimulus is high-intensity, the session cost is high, or the modality loads tissue mechanically. Cost vector = engine-estimated 0–1 cost, systemic vs mechanical.
+- 2026-09-13: cycling race — hard stimulus (race) · very high session cost · systemic 0.7 · cardiovascular 0.8 | lower-body 0.7 · impact 0.1 · neuromuscular 0.5 · Garmin measured effort (garmin; inferred)
+- 2026-09-16: field — mechanical exposure — stimulus intensity not carried by the canonical fact · session cost not estimated here · systemic — | mechanical — · canonical performed occurrence (structured_execution; exact; Field Maintenance)
+- 2026-09-18: cycling quality — hard stimulus (threshold) · moderate session cost · systemic 0.7 · cardiovascular 0.8 | lower-body 0.7 · impact 0.1 · neuromuscular 0.5 · Garmin measured effort (garmin; inferred)
+- 2026-09-19: running — impact exposure — easy stimulus · session cost not measured (engine cost row: easy) · systemic 0.3 · cardiovascular 0.3 | lower-body 0.3 · impact 0.4 · neuromuscular 0.1 · athlete reclassified other/moderate → Running/easy (garmin+manual; display only — the engine's training history still uses the recorded classification); engine records Unknown/moderate, cost row moderate
+- 2026-09-20: strength — Full-body Strength — stimulus intensity not carried by the canonical fact · session cost not estimated here · systemic — | mechanical — · canonical performed occurrence (structured_execution; exact; Full-body Strength)
+- 2026-09-21: cycling high-dose aerobic — not a high-intensity stimulus — easy stimulus (endurance) · high session cost · systemic 0.7 · cardiovascular 0.8 | lower-body 0.7 · impact 0.1 · neuromuscular 0.5 · Garmin measured effort (garmin; inferred)
+- 2026-09-22: running — mechanical exposure — stimulus intensity not carried by the canonical fact · session cost not estimated here · systemic — | mechanical — · canonical performed occurrence (structured_execution; exact; Easy Endurance)
+
+### Physical-capability exposure
+
+Read-only status. \`confirmed\` = completed in this window; \`planned\` = imported plan session in the next 7 days only (never counted as done); \`unknown\` = not observed in this window or no canonical model; \`deliberately_suspended\` = blocked by a current safety limit or a deliberate planning suspension, not neglect. \`overdue\` is reported only for change of direction and sport skill, and only from the evergreen planner's resolved #805 capability-maintenance cadence when this export carries it; no other family has an authoritative cadence/max-gap policy. Not yet represented: taper/event-specific suppression outside #805, and the #806 long-anchor model. Neuromuscular power (#802), impact (#804), change of direction and sport skill (#805) are confirmed only by exact authored identities; unilateral lower-body (#803) only by logged working sets on steps carrying that structured movement pattern.
+- Aerobic endurance: confirmed · last confirmed 2026-09-22 — canonical performed occurrence (structured_execution; exact; Easy Endurance) · next planned 2026-09-25
+- Cycling quality (tempo+ / race): deliberately_suspended · last confirmed 2026-09-18 — Garmin measured effort (garmin; inferred) · next planned 2026-09-25 · Cycling restricted/unavailable
+- Strength: deliberately_suspended · last confirmed 2026-09-20 — canonical performed occurrence (structured_execution; exact; Full-body Strength) · next planned 2026-09-26 · Strength restricted/unavailable
+- Neuromuscular power: deliberately_suspended · last confirmed 2026-09-20 — canonical performed occurrence (structured_execution; exact; Full-body Strength) · Strength restricted/unavailable; impact (plyometric) power suspended by an active safety limit; non-impact power identities remain eligible
+- Unilateral lower-body: deliberately_suspended · last confirmed 2026-09-20 — canonical performed occurrence (structured_execution; exact; Full-body Strength); 4 unilateral lower-body working set(s) logged · Strength restricted/unavailable
+- Running familiarity: deliberately_suspended · last confirmed 2026-09-22 — canonical performed occurrence (structured_execution; exact; Easy Endurance) · next planned 2026-09-27 · Running restricted/unavailable
+- Field / multidirectional sport: deliberately_suspended · last confirmed 2026-09-16 — canonical performed occurrence (structured_execution; exact; Field Maintenance) · next planned 2026-09-28 · high-impact work blocked by an active safety limit
+- Impact / jump-land: deliberately_suspended · last confirmed 2026-09-22 — canonical performed occurrence (structured_execution; exact; Easy Endurance) · high-impact work blocked by an active safety limit
+- Linear speed: deliberately_suspended · high-impact work blocked by an active safety limit
+- Acceleration / deceleration: deliberately_suspended · high-impact work blocked by an active safety limit
+- Change of direction / multidirectional: deliberately_suspended · high-impact work blocked by an active safety limit
+- Sport skill: deliberately_suspended · last confirmed 2026-09-16 — canonical performed occurrence (structured_execution; exact; Field Maintenance) · high-impact work blocked by an active safety limit
+- Long aerobic anchor: unknown · no canonical exposure model yet (#806)
+- Hamstring knee-flexion / calf-soleus / grip-carry: unknown · no canonical exposure model yet (no issue yet)",
+  "facts null, overrides null, settings missing, maintenance absent, planned null, unreadable sources": "
+### Recent meaningful stressors (2026-09-11 → 2026-09-24)
+
+Completed sessions only: Garmin records and answered adherence reconciled as the engine's training history does (except rows marked athlete-reclassified, which also show the engine-recorded classification), plus canonical performed occurrences such as in-app structured sessions. Listed when the stimulus is high-intensity, the session cost is high, or the modality loads tissue mechanically. Cost vector = engine-estimated 0–1 cost, systemic vs mechanical.
+- Completed stressors unknown (activities unreadable).
+
+### Physical-capability exposure
+
+Read-only status. \`confirmed\` = completed in this window; \`planned\` = imported plan session in the next 7 days only (never counted as done); \`unknown\` = not observed in this window or no canonical model; \`deliberately_suspended\` = blocked by a current safety limit or a deliberate planning suspension, not neglect. \`overdue\` is reported only for change of direction and sport skill, and only from the evergreen planner's resolved #805 capability-maintenance cadence when this export carries it; no other family has an authoritative cadence/max-gap policy. Not yet represented: taper/event-specific suppression outside #805, and the #806 long-anchor model. Neuromuscular power (#802), impact (#804), change of direction and sport skill (#805) are confirmed only by exact authored identities; unilateral lower-body (#803) only by logged working sets on steps carrying that structured movement pattern.
+- Aerobic endurance: unknown · activity history unreadable
+- Cycling quality (tempo+ / race): unknown · activity history unreadable
+- Strength: unknown · activity history unreadable
+- Neuromuscular power: unknown · activity history unreadable
+- Unilateral lower-body: unknown · activity history unreadable
+- Running familiarity: unknown · activity history unreadable
+- Field / multidirectional sport: unknown · activity history unreadable
+- Impact / jump-land: unknown · activity history unreadable
+- Linear speed: unknown · activity history unreadable; no resolved capability-maintenance cadence in this export; overdue status is not reported
+- Acceleration / deceleration: unknown · activity history unreadable; no resolved capability-maintenance cadence in this export; overdue status is not reported
+- Change of direction / multidirectional: unknown · activity history unreadable; no resolved capability-maintenance cadence in this export; overdue status is not reported
+- Sport skill: unknown · activity history unreadable; no resolved capability-maintenance cadence in this export; overdue status is not reported
+- Long aerobic anchor: unknown · no canonical exposure model yet (#806)
+- Hamstring knee-flexion / calf-soleus / grip-carry: unknown · no canonical exposure model yet (no issue yet)
+- Note: Recorded activities were unreadable: completed exposures are unknown, not absent.
+- Note: Recommendation adherence was unreadable: exact prescribed-session confirmation is unavailable.
+- Note: Canonical performed-training facts were unreadable: in-app structured sessions may be missing.
+- Note: Athlete reclassifications were unreadable: rows show the recorded classification.
+- Note: The future plan was not fully readable: \`planned\` may be incomplete.
+- Note: Training settings missing or unreadable: safety suspensions are unknown, not absent.",
+  "unknown-variant and composition-unavailable facts with maintenance overdue and missing settings": "
+### Recent meaningful stressors (2026-09-11 → 2026-09-24)
+
+Completed sessions only: Garmin records and answered adherence reconciled as the engine's training history does (except rows marked athlete-reclassified, which also show the engine-recorded classification), plus canonical performed occurrences such as in-app structured sessions. Listed when the stimulus is high-intensity, the session cost is high, or the modality loads tissue mechanically. Cost vector = engine-estimated 0–1 cost, systemic vs mechanical.
+- 2026-09-23: strength — Lower-body Strength — stimulus intensity not carried by the canonical fact · session cost not estimated here · systemic — | mechanical — · canonical performed occurrence (structured_execution; exact; Lower-body Strength)
+- 2026-09-24: field — mechanical exposure — stimulus intensity not carried by the canonical fact · session cost not estimated here · systemic — | mechanical — · canonical performed occurrence (structured_execution; exact; Field Maintenance)
+
+### Physical-capability exposure
+
+Read-only status. \`confirmed\` = completed in this window; \`planned\` = imported plan session in the next 7 days only (never counted as done); \`unknown\` = not observed in this window or no canonical model; \`deliberately_suspended\` = blocked by a current safety limit or a deliberate planning suspension, not neglect. \`overdue\` is reported only for change of direction and sport skill, and only from the evergreen planner's resolved #805 capability-maintenance cadence when this export carries it; no other family has an authoritative cadence/max-gap policy. Not yet represented: taper/event-specific suppression outside #805, and the #806 long-anchor model. Neuromuscular power (#802), impact (#804), change of direction and sport skill (#805) are confirmed only by exact authored identities; unilateral lower-body (#803) only by logged working sets on steps carrying that structured movement pattern.
+- Aerobic endurance: unknown
+- Cycling quality (tempo+ / race): unknown
+- Strength: confirmed · last confirmed 2026-09-23 — canonical performed occurrence (structured_execution; exact; Lower-body Strength)
+- Neuromuscular power: unknown
+- Unilateral lower-body: unknown · logged sets of 1 structured session(s) were unreadable; unilateral work there is unknown
+- Running familiarity: unknown
+- Field / multidirectional sport: confirmed · last confirmed 2026-09-24 — canonical performed occurrence (structured_execution; exact; Field Maintenance)
+- Impact / jump-land: unknown
+- Linear speed: overdue · capability maintenance: overdue since 2026-09-14; blocked (modality_avoided)
+- Acceleration / deceleration: deliberately_suspended · capability maintenance: overdue: no qualifying exposure in the observed window; deliberately suspended (adverse_recovery)
+- Change of direction / multidirectional: overdue · capability maintenance: overdue since 2026-09-15; blocked (no_support_capacity); planner cadence counts historical exposure without a known workout variant; this ledger cannot confirm variant-specific credit
+- Sport skill: overdue · capability maintenance: overdue since 2026-09-15; blocked (mechanical_guardrail); planner cadence counts historical exposure without a known workout variant; this ledger cannot confirm variant-specific credit
+- Long aerobic anchor: unknown · no canonical exposure model yet (#806)
+- Hamstring knee-flexion / calf-soleus / grip-carry: unknown · no canonical exposure model yet (no issue yet)
+- Note: Training settings missing or unreadable: safety suspensions are unknown, not absent.",
+  "unknown-variant and composition-unavailable facts with maintenance present and heavy-lower-body guardrail": "
+### Recent meaningful stressors (2026-09-11 → 2026-09-24)
+
+Completed sessions only: Garmin records and answered adherence reconciled as the engine's training history does (except rows marked athlete-reclassified, which also show the engine-recorded classification), plus canonical performed occurrences such as in-app structured sessions. Listed when the stimulus is high-intensity, the session cost is high, or the modality loads tissue mechanically. Cost vector = engine-estimated 0–1 cost, systemic vs mechanical.
+- 2026-09-23: strength — Lower-body Strength — stimulus intensity not carried by the canonical fact · session cost not estimated here · systemic — | mechanical — · canonical performed occurrence (structured_execution; exact; Lower-body Strength)
+- 2026-09-24: field — mechanical exposure — stimulus intensity not carried by the canonical fact · session cost not estimated here · systemic — | mechanical — · canonical performed occurrence (structured_execution; exact; Field Maintenance)
+
+### Physical-capability exposure
+
+Read-only status. \`confirmed\` = completed in this window; \`planned\` = imported plan session in the next 7 days only (never counted as done); \`unknown\` = not observed in this window or no canonical model; \`deliberately_suspended\` = blocked by a current safety limit or a deliberate planning suspension, not neglect. \`overdue\` is reported only for change of direction and sport skill, and only from the evergreen planner's resolved #805 capability-maintenance cadence when this export carries it; no other family has an authoritative cadence/max-gap policy. Not yet represented: taper/event-specific suppression outside #805, and the #806 long-anchor model. Neuromuscular power (#802), impact (#804), change of direction and sport skill (#805) are confirmed only by exact authored identities; unilateral lower-body (#803) only by logged working sets on steps carrying that structured movement pattern.
+- Aerobic endurance: planned · next planned 2026-09-25
+- Cycling quality (tempo+ / race): planned · next planned 2026-09-25
+- Strength: confirmed · last confirmed 2026-09-23 — canonical performed occurrence (structured_execution; exact; Lower-body Strength) · next planned 2026-09-26 · heavy lower-body loading suspended by an active safety limit
+- Neuromuscular power: unknown
+- Unilateral lower-body: unknown · heavy lower-body loading suspended by an active safety limit; logged sets of 1 structured session(s) were unreadable; unilateral work there is unknown
+- Running familiarity: planned · next planned 2026-09-27
+- Field / multidirectional sport: confirmed · last confirmed 2026-09-24 — canonical performed occurrence (structured_execution; exact; Field Maintenance) · next planned 2026-09-28
+- Impact / jump-land: unknown
+- Linear speed: unknown · capability maintenance: satisfied until 2026-10-03
+- Acceleration / deceleration: unknown · capability maintenance: due from 2026-09-24; plannable; planner cadence counts historical exposure without a known workout variant; this ledger cannot confirm variant-specific credit
+- Change of direction / multidirectional: unknown · capability maintenance: satisfied until 2026-10-07; planner cadence counts historical exposure without a known workout variant; this ledger cannot confirm variant-specific credit
+- Sport skill: unknown · capability maintenance: satisfied until 2026-10-07; planner cadence counts historical exposure without a known workout variant; this ledger cannot confirm variant-specific credit
+- Long aerobic anchor: unknown · no canonical exposure model yet (#806)
+- Hamstring knee-flexion / calf-soleus / grip-carry: unknown · no canonical exposure model yet (no issue yet)",
+}
+`;
