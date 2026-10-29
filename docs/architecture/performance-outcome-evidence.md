@@ -45,8 +45,8 @@ graph rooted at `assessmentReducers.ts`, `assessmentDerivation.ts` and `assessme
 none of it reaches `app/src/engine/` (`contextBriefAssessments.ts`'s `UserGoal` import remains
 the known out-of-scope edge), and the goal/assessment evidence evaluators live in
 `app/src/derived/assessments/` (`goalProgress.ts`, `goalMetricMath.ts`, `goalFeasibility.ts`,
-`performanceTargetPolicy.ts`). A future
-outcome-to-planning rule requires a separate ADR/ship decision.
+`performanceTargetPolicy.ts`). A future outcome-to-planning rule requires a separate ADR/ship
+decision.
 
 ## Physical-capital block review (Issue #897 WP8.2)
 

@@ -632,7 +632,7 @@ Cover:
 
 ## PG4 — current measurement and progress projection
 
-**Status:** [x] Implemented — `app/src/engine/goalProgress.ts` (pure evaluator) resolves current e1RM (strength) or latest comparable observation (speed/power) and a direction-aware gap via `app/src/engine/goalMetricMath.ts`; `metricObservationService.listCurrentRevisionsForMetric` now supplies current revision data to `Goals.tsx` so speed/power progress works in the actual UI rather than only in evaluator tests. `PerformanceSections.tsx`'s e1RM picker is data-driven from the target-eligibility policy rather than a hardcoded three-lift list.
+**Status:** [x] Implemented — `app/src/derived/assessments/goalProgress.ts` (pure evaluator) resolves current e1RM (strength) or latest comparable observation (speed/power) and a direction-aware gap via `app/src/derived/assessments/goalMetricMath.ts`; `metricObservationService.listCurrentRevisionsForMetric` now supplies current revision data to `Goals.tsx` so speed/power progress works in the actual UI rather than only in evaluator tests. `PerformanceSections.tsx`'s e1RM picker is data-driven from the target-eligibility policy rather than a hardcoded three-lift list.
 **Blocked by:** PG1, PG3
 **Recommendation-affecting:** no
 
@@ -688,7 +688,7 @@ Cover:
 
 ## PG4.5 — goal feasibility and realism advisory
 
-**Status:** [x] Implemented for the strength family first slice — `app/src/engine/goalFeasibility.ts`'s `assessGoalFeasibility`, backed by a registered Sports Knowledge Registry claim (`goalFeasibility.strength.requiredChangeBands` in `app/src/knowledge/goalFeasibilityKnowledge.ts`). Policy v2 calibrates the plausible ceiling to 1.3%/week (about 7.8% over six weeks, near the upper end of the cited trained-men benchmark) and retains 2.0%/week as an explicitly low-certainty stretch heuristic. `Goals.tsx` passes `TrainingIntentProfile.weeklyCommitment` as a total-capacity upper bound and shows horizon, required change, capacity, target-specific-frequency uncertainty and baseline provenance behind the confidence label. Speed and power deliberately return `insufficient_evidence` rather than reusing the strength band. Personal-longitudinal-trajectory evidence (PG4.5.4) is **not yet implemented**.
+**Status:** [x] Implemented for the strength family first slice — `app/src/derived/assessments/goalFeasibility.ts`'s `assessGoalFeasibility`, backed by a registered Sports Knowledge Registry claim (`goalFeasibility.strength.requiredChangeBands` in `app/src/knowledge/goalFeasibilityKnowledge.ts`). Policy v2 calibrates the plausible ceiling to 1.3%/week (about 7.8% over six weeks, near the upper end of the cited trained-men benchmark) and retains 2.0%/week as an explicitly low-certainty stretch heuristic. `Goals.tsx` passes `TrainingIntentProfile.weeklyCommitment` as a total-capacity upper bound and shows horizon, required change, capacity, target-specific-frequency uncertainty and baseline provenance behind the confidence label. Speed and power deliberately return `insufficient_evidence` rather than reusing the strength band. Personal-longitudinal-trajectory evidence (PG4.5.4) is **not yet implemented**.
 **Blocked by:** PG1, PG2, PG4; PG5-PG7 improve target-specific frequency precision but are not required for an initial advisory
 **Recommendation-affecting:** no — advisory only
 
