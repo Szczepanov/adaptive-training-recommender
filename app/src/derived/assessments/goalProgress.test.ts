@@ -4,8 +4,8 @@ import type {
     AssessmentAttemptPurpose,
     AssessmentAttemptState,
     MetricObservationRevision,
-} from '../observations/models';
-import type { AthletePerformanceProfile } from '../workouts/models';
+} from '../../observations/models';
+import type { AthletePerformanceProfile } from '../../workouts/models';
 import { goalProgressEvidenceQuery, resolveGoalProgress } from './goalProgress';
 import type { GoalPerformanceTarget } from './performanceTargetPolicy';
 

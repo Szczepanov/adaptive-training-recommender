@@ -6,11 +6,11 @@ import {
     getPerformanceTargetPolicy,
     type GoalPerformanceTarget,
     type PerformanceGoalFamily,
-} from './performanceTargetPolicy';
+} from '../derived/assessments/performanceTargetPolicy';
 
 /**
  * Semantic validators for a typed performance target. Split out of
- * engine/performanceTargetPolicy.ts (Stage 2/PG5.1): this file imports the observations
+ * derived/assessments/performanceTargetPolicy.ts (Stage 2/PG5.1): this file imports the observations
  * metric/performance-test registries and the workouts exercise catalog, which must never
  * become reachable from production selection/ranking modules (see
  * observations/architecture.test.ts's OV1.4 boundary and performanceTargetPolicy.ts's

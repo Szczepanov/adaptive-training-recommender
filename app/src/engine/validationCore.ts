@@ -68,7 +68,7 @@ import { validateEventTiming, BODY_REGIONS, TISSUE_LEVELS } from './models';
 import { deriveGoalCategory } from './periodization';
 import { EVENT_PRESETS } from './eventPresets';
 import { getLocalDateString } from '../utils/localDate';
-import type { GoalPerformanceTarget } from './performanceTargetPolicy';
+import type { GoalPerformanceTarget } from '../derived/assessments/performanceTargetPolicy';
 import type { SessionReferenceBinding, SessionSourceRef } from '../sessions/models';
 import { isKnownIdentityReasonCode } from '../contracts/identityReasonCodes';
 

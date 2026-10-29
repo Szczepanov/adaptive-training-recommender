@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { getActiveKnowledgeClaim, KNOWLEDGE_CLAIM_IDS, validateCanonicalSportsKnowledgeRegistry } from './sportsKnowledgeRegistry';
-import { assessGoalFeasibility } from '../engine/goalFeasibility';
-import { resolveGoalProgress } from '../engine/goalProgress';
-import type { GoalPerformanceTarget } from '../engine/performanceTargetPolicy';
+import { assessGoalFeasibility } from '../derived/assessments/goalFeasibility';
+import { resolveGoalProgress } from '../derived/assessments/goalProgress';
+import type { GoalPerformanceTarget } from '../derived/assessments/performanceTargetPolicy';
 import type { AthletePerformanceProfile } from '../workouts/models';
 
 function benchTarget(targetValue: number): GoalPerformanceTarget {

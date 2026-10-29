@@ -14,8 +14,8 @@
  * engine/performanceTargetValidation.ts instead, which only goalService.ts (not
  * reachable from any selection module) and the Goals.tsx UI import.
  */
-import type { PerformanceGoalFamily, PerformanceSubjectRef } from '../ledger/models';
-export type { GoalPerformanceTarget, PerformanceSubjectRef, PerformanceGoalFamily } from '../ledger/models';
+import type { PerformanceGoalFamily, PerformanceSubjectRef } from '../../ledger/models';
+export type { GoalPerformanceTarget, PerformanceSubjectRef, PerformanceGoalFamily } from '../../ledger/models';
 
 export interface PerformanceTargetPolicy {
     metricId: string;

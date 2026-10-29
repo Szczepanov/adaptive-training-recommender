@@ -39,8 +39,14 @@ The evidence vocabulary keeps three planes distinct:
 The observation intent vocabulary is `training | testing | competition`. Outcome evidence has
 **no automatic selection authority**. Architecture tests reject runtime reachability between
 OV/outcome evidence and optimizer/planner/rules/weekly-allocation modules in either direction
-where that would grant outcome evidence production selection authority. A future
-outcome-to-planning rule requires a separate ADR/ship decision.
+where that would grant outcome evidence production selection authority. Under ADR-0052 Phase 1
+(#1144 PR1-11), `observations/assessmentReducers.architecture.test.ts` also pins the import
+graph rooted at `assessmentReducers.ts`, `assessmentDerivation.ts` and `assessmentTrials.ts` so
+none of it reaches `app/src/engine/` (`contextBriefAssessments.ts`'s `UserGoal` import remains
+the known out-of-scope edge), and the goal/assessment evidence evaluators live in
+`app/src/derived/assessments/` (`goalProgress.ts`, `goalMetricMath.ts`, `goalFeasibility.ts`,
+`performanceTargetPolicy.ts`). A future outcome-to-planning rule requires a separate ADR/ship
+decision.
 
 ## Physical-capital block review (Issue #897 WP8.2)
 

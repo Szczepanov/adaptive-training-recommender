@@ -70,7 +70,7 @@ export interface ScheduleWindowInput {
     equipment?: string[];
 }
 
-/** Structural `GoalPerformanceTarget` (`engine/performanceTargetPolicy.ts`, ADR-0041). */
+/** Structural `GoalPerformanceTarget` (`derived/assessments/performanceTargetPolicy.ts`, ADR-0041). */
 export interface GoalPerformanceTargetInput {
     kind: 'performance_metric';
     metricId: string;
