@@ -545,6 +545,99 @@ class GarminAccountLinkService:
                 "Failed to remove orphaned Garmin token object after link error: %s", exc
             )
 
+    def _resolve_target_user(
+        self, identity_digest: str, requested_uid: str | None
+    ) -> tuple[str, str | None, bool]:
+        """Determine target UID, creating a new Firebase user if necessary."""
+        mapped_uid = self.repository.uid_for_identity(identity_digest)
+        if mapped_uid:
+            if requested_uid and requested_uid != mapped_uid:
+                raise GarminLinkConflictError(
+                    "This Garmin account is already linked to another app account."
+                )
+            return mapped_uid, None, False
+        if requested_uid:
+            return requested_uid, None, False
+
+        user_record = firebase_auth.create_user()
+        return user_record.uid, user_record.uid, True
+
+    def _queue_initial_backfill_request(self, target_uid: str) -> None:
+        """Queue an initial 56-day backfill request in Firestore for background processing."""
+        db = getattr(self.repository, "db", None)
+        if db is None:
+            return
+        try:
+            now = datetime.now(timezone.utc)
+            backfill_end = datetime.now(ZoneInfo("Europe/Warsaw")).date()
+            sync_req_ref = (
+                db.collection("users")
+                .document(target_uid)
+                .collection("garmin_sync_requests")
+                .document("latest")
+            )
+
+            @google_firestore.transactional
+            def _queue_initial_backfill(transaction: Any) -> None:
+                snapshot = sync_req_ref.get(transaction=transaction)
+                existing = snapshot.to_dict() if snapshot.exists else None
+                # A plain merge=True set here would overwrite a claimed
+                # 'processing' request's status back to 'pending' while keeping
+                # its claimId -- the worker that already owns that claim would
+                # then mark *this* new request completed without ever running
+                # it, and a second poller could concurrently claim the
+                # 'pending' doc too. Only queue when nothing genuinely
+                # in-flight would be superseded; a stale claim (dead poller)
+                # is safe to overwrite, same policy as
+                # GarminSyncRequestService.requestSync().
+                if (
+                    existing
+                    and _is_sync_request_in_flight(existing)
+                    and not _is_sync_request_stale(existing, now)
+                ):
+                    return
+                # A dead worker may have completed some dates before its claim
+                # expired. Relinking must retain that durable cursor.
+                resume = (
+                    existing
+                    if existing
+                    and existing.get("requestType") == "initial_backfill"
+                    and existing.get("status") in {"pending", "processing"}
+                    else {}
+                )
+                transaction.set(
+                    sync_req_ref,
+                    {
+                        "userId": target_uid,
+                        "status": "pending",
+                        "requestType": "initial_backfill",
+                        "days": 56,
+                        "backfillEndDate": resume.get("backfillEndDate", backfill_end.isoformat()),
+                        "backfillPhase": resume.get("backfillPhase", "recent"),
+                        "backfillNextDate": resume.get("backfillNextDate"),
+                        "retryAt": resume.get("retryAt"),
+                        "requestedAt": now.isoformat(),
+                        "completedAt": None,
+                        "error": None,
+                    },
+                )
+
+            _queue_initial_backfill(db.transaction())
+        except Exception as exc:
+            logger.warning(
+                "Failed to queue initial backfill request for user %s: %s",
+                target_uid,
+                exc,
+            )
+
+    @staticmethod
+    def _create_firebase_custom_token(target_uid: str) -> str:
+        """Create a Firebase custom token string for authentication."""
+        custom_token = firebase_auth.create_custom_token(target_uid)
+        return (
+            custom_token.decode("utf-8") if isinstance(custom_token, bytes) else str(custom_token)
+        )
+
     def _finalize(
         self,
         api: Garmin,
@@ -557,23 +650,9 @@ class GarminAccountLinkService:
         uploaded_token_object: str | None = None
         try:
             identity_kind, identity_digest = _garmin_identity(api)
-            mapped_uid = self.repository.uid_for_identity(identity_digest)
-
-            if mapped_uid:
-                if requested_uid and requested_uid != mapped_uid:
-                    raise GarminLinkConflictError(
-                        "This Garmin account is already linked to another app account."
-                    )
-                target_uid = mapped_uid
-                is_new_user = False
-            elif requested_uid:
-                target_uid = requested_uid
-                is_new_user = False
-            else:
-                user_record = firebase_auth.create_user()
-                target_uid = user_record.uid
-                created_uid = target_uid
-                is_new_user = True
+            target_uid, created_uid, is_new_user = self._resolve_target_user(
+                identity_digest, requested_uid
+            )
 
             # Pre-flight only (may be stale under concurrent relinks); commit_link() below
             # re-validates transactionally and is the actual guard.
@@ -606,79 +685,9 @@ class GarminAccountLinkService:
             # Queue an initial 56-day backfill request in Firestore so the background
             # poller (garmin-manual-sync Cloud Run Job) immediately backfills historical
             # recovery and activity data to establish baselines without blocking login.
-            db = getattr(self.repository, "db", None)
-            if db is not None:
-                try:
-                    now = datetime.now(timezone.utc)
-                    backfill_end = datetime.now(ZoneInfo("Europe/Warsaw")).date()
-                    sync_req_ref = (
-                        db.collection("users")
-                        .document(target_uid)
-                        .collection("garmin_sync_requests")
-                        .document("latest")
-                    )
+            self._queue_initial_backfill_request(target_uid)
 
-                    @google_firestore.transactional
-                    def _queue_initial_backfill(transaction: Any) -> None:
-                        snapshot = sync_req_ref.get(transaction=transaction)
-                        existing = snapshot.to_dict() if snapshot.exists else None
-                        # A plain merge=True set here would overwrite a claimed
-                        # 'processing' request's status back to 'pending' while keeping
-                        # its claimId -- the worker that already owns that claim would
-                        # then mark *this* new request completed without ever running
-                        # it, and a second poller could concurrently claim the
-                        # 'pending' doc too. Only queue when nothing genuinely
-                        # in-flight would be superseded; a stale claim (dead poller)
-                        # is safe to overwrite, same policy as
-                        # GarminSyncRequestService.requestSync().
-                        if (
-                            existing
-                            and _is_sync_request_in_flight(existing)
-                            and not _is_sync_request_stale(existing, now)
-                        ):
-                            return
-                        # A dead worker may have completed some dates before its claim
-                        # expired. Relinking must retain that durable cursor.
-                        resume = (
-                            existing
-                            if existing
-                            and existing.get("requestType") == "initial_backfill"
-                            and existing.get("status") in {"pending", "processing"}
-                            else {}
-                        )
-                        transaction.set(
-                            sync_req_ref,
-                            {
-                                "userId": target_uid,
-                                "status": "pending",
-                                "requestType": "initial_backfill",
-                                "days": 56,
-                                "backfillEndDate": resume.get(
-                                    "backfillEndDate", backfill_end.isoformat()
-                                ),
-                                "backfillPhase": resume.get("backfillPhase", "recent"),
-                                "backfillNextDate": resume.get("backfillNextDate"),
-                                "retryAt": resume.get("retryAt"),
-                                "requestedAt": now.isoformat(),
-                                "completedAt": None,
-                                "error": None,
-                            },
-                        )
-
-                    _queue_initial_backfill(db.transaction())
-                except Exception as exc:
-                    logger.warning(
-                        "Failed to queue initial backfill request for user %s: %s",
-                        target_uid,
-                        exc,
-                    )
-
-            custom_token = firebase_auth.create_custom_token(target_uid)
-            custom_token_text = (
-                custom_token.decode("utf-8")
-                if isinstance(custom_token, bytes)
-                else str(custom_token)
-            )
+            custom_token_text = self._create_firebase_custom_token(target_uid)
             return {
                 "status": "authenticated",
                 "customToken": custom_token_text,

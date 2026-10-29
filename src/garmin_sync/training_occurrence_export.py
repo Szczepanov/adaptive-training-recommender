@@ -287,6 +287,8 @@ def export_training_occurrence_records(
         snapshots = db.get_all(doc_refs)
         # Match snapshots back by ID to preserve sorted order if get_all order varies
         snapshots_by_id = {snap.id: snap for snap in snapshots}
+        prescription_hashes: set[str] = set()
+        definition_revisions: set[tuple[str, int]] = set()
         for execution_id in sorted_execution_ids:
             snapshot = snapshots_by_id.get(execution_id)
             if snapshot and snapshot.exists:
@@ -301,27 +303,40 @@ def export_training_occurrence_records(
                 execution_entries.extend(_document(entry) for entry in entries)
                 prescription_hash = execution["data"].get("prescriptionHash")
                 if _safe_id(prescription_hash):
-                    prescription = (
-                        user.collection("execution_prescriptions")
-                        .document(str(prescription_hash))
-                        .get()
-                    )
-                    if prescription.exists:
-                        execution_prescriptions.append(_document(prescription))
+                    prescription_hashes.add(str(prescription_hash))
                 source = execution["data"].get("sessionSource") or {}
                 if source.get("kind") == "manual":
                     definition_id = str(source.get("definitionId") or "")
                     revision = source.get("revision")
                     if _safe_id(definition_id) and isinstance(revision, int) and revision >= 0:
-                        definition = (
-                            user.collection("session_definitions")
-                            .document(definition_id)
-                            .collection("revisions")
-                            .document(str(revision))
-                            .get()
-                        )
-                        if definition.exists:
-                            session_definition_revisions.append(_document(definition))
+                        definition_revisions.add((definition_id, revision))
+
+        sorted_hashes = sorted(prescription_hashes)
+        if sorted_hashes:
+            prescription_refs = [
+                user.collection("execution_prescriptions").document(p_hash)
+                for p_hash in sorted_hashes
+            ]
+            prescription_snaps = {snap.id: snap for snap in db.get_all(prescription_refs)}
+            for p_hash in sorted_hashes:
+                snap = prescription_snaps.get(p_hash)
+                if snap and snap.exists:
+                    execution_prescriptions.append(_document(snap))
+
+        sorted_def_refs = sorted(definition_revisions)
+        if sorted_def_refs:
+            def_doc_refs = [
+                user.collection("session_definitions")
+                .document(def_id)
+                .collection("revisions")
+                .document(str(revision))
+                for def_id, revision in sorted_def_refs
+            ]
+            def_snaps = {snap.reference.path: snap for snap in db.get_all(def_doc_refs)}
+            for _, ref in zip(sorted_def_refs, def_doc_refs, strict=True):
+                snap = def_snaps.get(ref.path)
+                if snap and snap.exists:
+                    session_definition_revisions.append(_document(snap))
 
     # An occurrence near the window edge may reference an activity whose provider date falls
     # just outside it; fetch those by ID so hydration does not report a false missing source.

@@ -60,15 +60,23 @@ def _batch_get_docs(db: Any, doc_refs: list[Any]) -> dict[str, Any]:
         return snapshots_by_id
 
     get_all_fn = getattr(db, "get_all", None)
+    if not callable(get_all_fn):
+        if len(doc_refs) == 1:
+            ref = doc_refs[0]
+            return {ref.id: ref.get()}
+        with ThreadPoolExecutor(max_workers=min(10, len(doc_refs))) as executor:
+            return dict(
+                zip(
+                    (ref.id for ref in doc_refs),
+                    executor.map(lambda ref: ref.get(), doc_refs),
+                    strict=True,
+                )
+            )
 
     def _fetch_chunk(chunk: list[Any]) -> dict[str, Any]:
-        chunk_snapshots = {}
-        if callable(get_all_fn):
-            for snap in get_all_fn(chunk):
-                chunk_snapshots[snap.id] = snap
-        else:
-            for ref in chunk:
-                chunk_snapshots[ref.id] = ref.get()
+        chunk_snapshots: dict[str, Any] = {}
+        for snap in get_all_fn(chunk):
+            chunk_snapshots[snap.id] = snap
         return chunk_snapshots
 
     if len(chunks) == 1:

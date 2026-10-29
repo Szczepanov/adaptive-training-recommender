@@ -115,15 +115,14 @@ class HealthObservationService:
 
         if keys_to_delete:
             self.repository.delete_health_observation_day_bundles_batch(keys_to_delete)
-            for logical_date, doc_provider, doc_transport in keys_to_delete:
-                logger.info(
-                    "Tombstoned stale health observation bundle %s_%s_%s: absent from "
-                    "current batch for transports %s.",
-                    logical_date,
-                    doc_provider,
-                    doc_transport,
-                    sorted(provider_transports),
-                )
+            logger.info(
+                "Tombstoned %d stale health observation bundle(s) for %s (%s) absent from "
+                "current batch for transports %s.",
+                len(keys_to_delete),
+                logical_date_iso,
+                ", ".join(stale_ids),
+                sorted(provider_transports),
+            )
 
         return stale_ids
 
