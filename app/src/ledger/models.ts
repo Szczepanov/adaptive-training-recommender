@@ -895,8 +895,8 @@ export interface ActivityOverride {
 export type CompletedTrainingIntensity = 'easy' | 'moderate' | 'hard' | 'unknown';
 
 /** The evidence hierarchy for inferring completed-training stimulus (Phase 5.5) -- see
- *  docs/plans/phase-5-sequence-planning.md 5.5 and completedTraining.ts's
- *  classifyGarminTier/stimulusConfidenceForTier. Strongest to weakest evidence.
+ *  docs/plans/phase-5-sequence-planning.md 5.5, derived/training/providerEvidence.ts's
+ *  classifyGarminTier and completedTraining.ts's stimulusConfidenceForTier. Strongest to weakest evidence.
  *  `completedStructuredWorkout` is named for completeness against the plan's full ladder
  *  but is not currently reachable -- no ingested source yet carries a structured
  *  completed-workout record independent of the prescribed template. `measuredEffort` IS

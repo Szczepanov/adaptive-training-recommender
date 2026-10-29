@@ -3,6 +3,7 @@ import {
     deriveFactsFromOccurrence,
     type HydratedOccurrenceContext,
 } from '../performedTrainingFacts';
+import { ENGINE_PERFORMED_TRAINING_CATALOG } from '../performedTrainingCatalog';
 import {
     buildCoverageState,
     resolveCoverageHistory,
@@ -86,7 +87,7 @@ describe('PR 3 — Canonical weekly coverage credit cutover', () => {
             },
         };
 
-        const facts = deriveFactsFromOccurrence(occ, hydrated, descriptor);
+        const facts = deriveFactsFromOccurrence(occ, hydrated, ENGINE_PERFORMED_TRAINING_CATALOG, descriptor);
         // One occurrence, two distinct exact keys: the authored hang power clean also earns
         // the embedded power exposure (#802) without becoming a second session.
         expect(facts.coverageCredits.map(credit => credit.coverageKey)).toEqual(['primary_strength', 'power_exposure']);
@@ -137,7 +138,7 @@ describe('PR 3 — Canonical weekly coverage credit cutover', () => {
             },
         };
 
-        const facts = deriveFactsFromOccurrence(occ, hydrated, descriptor);
+        const facts = deriveFactsFromOccurrence(occ, hydrated, ENGINE_PERFORMED_TRAINING_CATALOG, descriptor);
         expect(facts.coverageCredits).toHaveLength(1);
         expect(facts.coverageCredits[0]).toMatchObject({
             coverageKey: 'primary_strength',
@@ -174,7 +175,7 @@ describe('PR 3 — Canonical weekly coverage credit cutover', () => {
             },
         };
 
-        const facts = deriveFactsFromOccurrence(occ, hydrated, descriptor);
+        const facts = deriveFactsFromOccurrence(occ, hydrated, ENGINE_PERFORMED_TRAINING_CATALOG, descriptor);
         expect(facts.coverageCredits.map(credit => credit.coverageKey)).toEqual(['compact_strength', 'power_exposure']);
         expect(facts.coverageCredits.some(c => c.coverageKey === 'primary_strength')).toBe(false);
 
@@ -216,7 +217,7 @@ describe('PR 3 — Canonical weekly coverage credit cutover', () => {
             },
         };
 
-        const facts = deriveFactsFromOccurrence(occ, hydrated, descriptor);
+        const facts = deriveFactsFromOccurrence(occ, hydrated, ENGINE_PERFORMED_TRAINING_CATALOG, descriptor);
         expect(facts.coverageCredits).toHaveLength(1);
         expect(facts.coverageCredits[0]).toMatchObject({
             coverageKey: 'primary_strength',
@@ -276,7 +277,7 @@ describe('PR 3 — Canonical weekly coverage credit cutover', () => {
             },
         };
 
-        const facts = deriveFactsFromOccurrence(occ, hydrated, descriptor);
+        const facts = deriveFactsFromOccurrence(occ, hydrated, ENGINE_PERFORMED_TRAINING_CATALOG, descriptor);
         // App + Garmin still collapse to one occurrence; the two credits are distinct keys.
         expect(facts.coverageCredits.map(credit => credit.coverageKey)).toEqual(['primary_strength', 'power_exposure']);
         expect(facts.coverageCredits[0].creditKind).toBe('exact');
@@ -326,8 +327,8 @@ describe('PR 3 — Canonical weekly coverage credit cutover', () => {
             },
         };
 
-        const factsA = deriveFactsFromOccurrence(occA, hydrated, descriptor);
-        const factsB = deriveFactsFromOccurrence(occB, hydrated, descriptor);
+        const factsA = deriveFactsFromOccurrence(occA, hydrated, ENGINE_PERFORMED_TRAINING_CATALOG, descriptor);
+        const factsB = deriveFactsFromOccurrence(occB, hydrated, ENGINE_PERFORMED_TRAINING_CATALOG, descriptor);
 
         expect(factsA.exposure.workoutId).toBe('strength_full_body_maintenance_01');
         expect(factsB.exposure.workoutId).toBe('strength_full_body_maintenance_01');
@@ -351,7 +352,7 @@ describe('PR 3 — Canonical weekly coverage credit cutover', () => {
             },
         };
 
-        const facts = deriveFactsFromOccurrence(occ, hydrated, descriptor);
+        const facts = deriveFactsFromOccurrence(occ, hydrated, ENGINE_PERFORMED_TRAINING_CATALOG, descriptor);
         expect(facts.exposure.modality).toBe('Strength');
         expect(facts.exposure.workoutId).toBeUndefined();
         expect(facts.exposure.confidence).toBe('high');

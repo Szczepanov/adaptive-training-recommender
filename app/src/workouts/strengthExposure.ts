@@ -1,5 +1,6 @@
 import type { CompletedExposure } from '../engine/trainingHistory';
-import type { EvidenceTier, LoggedExercise, LoggedSet, StrengthSession, TrainingRecord, WorkoutStimulusProfile } from '../engine/models';
+import type { TrainingRecord } from '../engine/models';
+import type { EvidenceTier, LoggedExercise, LoggedSet, StrengthSession, WorkoutStimulusProfile } from '../ledger/models';
 import type { StimulusConfidence } from '../engine/stimulus';
 import { DEFAULT_COST_BY_MODALITY, DEFAULT_STIMULUS_BY_MODALITY, ZERO_STIMULUS, stimulusConfidenceForTier } from '../engine/completedTraining';
 import { EXERCISES_BY_ID } from './exercises';

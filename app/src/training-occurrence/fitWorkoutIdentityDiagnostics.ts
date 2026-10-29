@@ -7,7 +7,7 @@
  * Policy effect: none (diagnostic/export only). Only fingerprints are compared; dates, times
  * and durations are never identity evidence here.
  */
-import type { FitWorkoutFingerprintKind } from '../engine/models';
+import type { FitWorkoutFingerprintKind } from '../ledger/models';
 import { isProviderActivityRef, isStructuredExecutionRef, type PerformedOccurrenceSourceRef } from './models';
 
 export interface FitIdentityEvidence {

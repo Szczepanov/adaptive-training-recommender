@@ -4,7 +4,8 @@
  * Isolated outside app/src/engine so the recommendation engine and adjudication layer
  * remain strictly free of static I/O and Firebase imports.
  */
-import type { ActivityOverride, SessionTemplate, NormalizedGarminActivity, DailyRecommendation } from '../engine/models';
+import type { DailyRecommendation, SessionTemplate } from '../engine/models';
+import type { ActivityOverride, NormalizedGarminActivity } from '../ledger/models';
 import type { SessionExecution } from '../sessions/models';
 import type { CoverageSetDescriptor } from '../workouts/event-plan';
 import type { WorkoutVariant } from '../workouts/models';
@@ -20,11 +21,14 @@ import { resolveSessionDefinition } from '../sessions/sessionDefinitionResolver'
 import { deliveredPatternWork } from '../sessions/deliveredComposition';
 import { addDaysToLocalDateString, getLocalDateString, getPreviousLocalDateString } from '../utils/localDate';
 import {
-    deriveFactsFromOccurrence,
+    ENGINE_PERFORMED_TRAINING_CATALOG,
     categoryForWorkoutId,
-    templateIdForWorkoutId,
-    normalizeModality,
     recommendationOwnsExecution,
+    templateIdForWorkoutId,
+} from '../engine/performedTrainingCatalog';
+import {
+    deriveFactsFromOccurrence,
+    normalizeModality,
     type PerformedExposureFact,
     type CoverageCreditFact,
     type PerformedTrainingFactsSnapshot,
@@ -249,7 +253,7 @@ export async function getPerformedTrainingFactsInRange(
             };
         }
 
-        const facts = deriveFactsFromOccurrence(occurrence, hydrated, descriptor);
+        const facts = deriveFactsFromOccurrence(occurrence, hydrated, ENGINE_PERFORMED_TRAINING_CATALOG, descriptor);
         exposures.push(options.includeDisplayProvenance ? {
             ...facts.exposure,
             ...(hydrated.structured?.executionState ? { executionState: hydrated.structured.executionState } : {}),

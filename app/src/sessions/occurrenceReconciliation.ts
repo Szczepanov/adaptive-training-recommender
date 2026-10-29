@@ -21,7 +21,7 @@
  */
 import type { NormalizedGarminActivity } from '../engine/models';
 import type { SessionExecution } from './models';
-import { isGarminCyclingActivityType } from '../engine/garminTelemetryEvidence';
+import { isGarminCyclingActivityType } from '../derived/training/providerEvidence';
 
 export interface ExecutionOccurrenceSummary {
     executionId: string;

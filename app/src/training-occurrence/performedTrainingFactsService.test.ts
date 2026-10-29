@@ -10,8 +10,9 @@ import { sessionExecutionService } from '../services/sessionExecutionService';
 import { resolveSessionDefinition } from '../sessions/sessionDefinitionResolver';
 import { recommendationService } from '../services/recommendationService';
 import { activityOverrideService } from '../services/activityOverrideService';
-import { templateIdForWorkoutId } from '../engine/performedTrainingFacts';
-import type { DailyRecommendation, NormalizedGarminActivity } from '../engine/models';
+import { templateIdForWorkoutId } from '../engine/performedTrainingCatalog';
+import type { DailyRecommendation } from '../engine/models';
+import type { NormalizedGarminActivity } from '../ledger/models';
 import type { SessionExecution } from '../sessions/models';
 import type { SessionDefinition } from '../sessions/models';
 

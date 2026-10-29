@@ -8,7 +8,7 @@ import { performedTrainingOccurrenceRepository as repository } from './repositor
 import type { PerformedTrainingOccurrence } from './models';
 import { activityService } from '../services/activityService';
 import { activityOverrideService } from '../services/activityOverrideService';
-import type { ActivityOverride } from '../engine/models';
+import type { ActivityOverride } from '../ledger/models';
 
 vi.mock('./repository', () => ({
     performedTrainingOccurrenceRepository: {
