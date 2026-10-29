@@ -123,3 +123,7 @@
 ## 2026-10-29 - Batch fetch execution prescriptions and session definition revisions in export_training_occurrence_records
 **Learning:** `export_training_occurrence_records` was issuing individual `.get()` calls inside a loop over session executions to fetch linked `execution_prescriptions` and manual `session_definitions` revisions. This created an N+1 query pattern where each execution incurred sequential RPC network roundtrip delays. Collecting all unique prescription hashes and session definition revision keys into sets and issuing `db.get_all(...)` batches the requests into single RPCs per collection, eliminating serial network delays and yielding a ~20x to 50x theoretical speedup on Firestore I/O during record exports.
 **Action:** When resolving linked child/hash documents across multiple items in Firestore, collect unique document references into sorted lists and fetch them in batch with `db.get_all(...)` rather than calling `.get()` in a loop.
+
+## 2026-10-30 - Hoist O(N) array scans out of filter callbacks
+**Learning:** Calculating a static property using `.find()` inside a `.filter()` callback (e.g., finding the offset of an anchor date for every day being filtered) causes an O(N^2) array scan bottleneck.
+**Action:** When evaluating items in a `.filter()` based on a property of a single target item in the same array, calculate that property once outside the `.filter()` callback using a single `.find()` call.
