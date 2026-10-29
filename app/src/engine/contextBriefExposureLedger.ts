@@ -276,7 +276,7 @@ export interface EngineCapabilitySpec {
     suspension: (safety: SafetyState) => string | null;
 }
 
-export interface CapabilitySpec extends CapabilityFactSpec, EngineCapabilitySpec {}
+interface CapabilitySpec extends CapabilityFactSpec, EngineCapabilitySpec {}
 
 const modalityBlocked = (safety: SafetyState, modality: string): string | null =>
     safety.blockedModalities.has(modality) ? `${modality} restricted/unavailable` : null;

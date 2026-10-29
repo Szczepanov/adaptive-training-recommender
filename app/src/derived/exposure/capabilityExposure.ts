@@ -73,8 +73,6 @@ export interface CapabilityFactKeyEvidence {
 
 export interface CapabilityFactEvidence {
     byKey: Readonly<Record<string, CapabilityFactKeyEvidence>>;
-    /** Issue #803: total in-window facts with `deliveredCompositionUnavailable: true`. */
-    deliveredCompositionUnavailableCount: number;
 }
 
 /** Exact #805 capability confirmation from a canonical fact with a known authored variant. */
@@ -212,7 +210,7 @@ export function deriveCapabilityFactEvidence(
         const lastConfirmingFactProvenance = lastConfirmingFact
             ? `${factProvenance(lastConfirmingFact)}${spec.factDetail ? `; ${spec.factDetail(lastConfirmingFact)}` : ''}`
             : null;
-        const nextPlannedSession = [...futureSessions]
+        const nextPlannedSession = futureSessions
             .filter(spec.plans)
             .sort((a, b) => a.date.localeCompare(b.date))[0] ?? null;
         const unknownVariantDates = new Set<string>(
@@ -242,8 +240,5 @@ export function deriveCapabilityFactEvidence(
         };
     }
 
-    return {
-        byKey,
-        deliveredCompositionUnavailableCount,
-    };
+    return { byKey };
 }

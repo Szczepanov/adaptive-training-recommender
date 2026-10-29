@@ -104,7 +104,6 @@ describe('derived/exposure/capabilityExposure (#1144 PR1-10)', () => {
             AS_OF,
         );
 
-        expect(evidence.deliveredCompositionUnavailableCount).toBe(1);
         expect(evidence.byKey.unilateral_lower_body.deliveredCompositionUnavailableCount).toBe(1);
         expect(evidence.byKey.strength.deliveredCompositionUnavailableCount).toBe(0);
         expect([...evidence.byKey.sport_skill.unknownVariantDates]).toEqual([AS_OF]);
