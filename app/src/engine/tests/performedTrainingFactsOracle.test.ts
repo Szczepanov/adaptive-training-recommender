@@ -26,9 +26,9 @@ import type {
 } from '../models';
 import {
     TEMPLATE_STIMULUS_FAMILY,
-    WORKOUT_STIMULUS_FAMILY,
+    classifyWorkoutStimulusFamily,
 } from '../stimulusRecency';
-import { ENRICHED_TEMPLATES, TEMPLATES_BY_ID } from '../templates';
+import { ENRICHED_TEMPLATES, ENRICHED_TEMPLATES_BY_ID } from '../templates';
 import {
     getTemplateIdsForWorkoutId,
     getUniqueTemplateIdForWorkoutId,
@@ -80,15 +80,10 @@ function oracleTemplateIdForWorkoutId(workoutId: string): string | undefined {
 }
 
 function oracleCategoryForWorkoutId(workoutId: string): SessionCategory | undefined {
-    const categories = new Set<SessionCategory>();
-    for (const templateId of getTemplateIdsForWorkoutId(workoutId)) {
-        const category = TEMPLATES_BY_ID.get(templateId)?.category;
-        if (category) {
-            categories.add(category);
-        }
-    }
-    if (categories.size !== 1) return undefined;
-    return [...categories][0];
+    const templateIds = getTemplateIdsForWorkoutId(workoutId);
+    if (templateIds.length === 0) return undefined;
+    const categories = new Set(templateIds.map(templateId => ENRICHED_TEMPLATES_BY_ID.get(templateId)?.category));
+    return categories.size === 1 ? ENRICHED_TEMPLATES_BY_ID.get(templateIds[0])?.category : undefined;
 }
 
 function oracleIsValidCalendarDate(value: string): boolean {
@@ -159,7 +154,9 @@ function oracleDeriveFactsFromOccurrence(
         ?? 'Unknown';
 
     const workoutId = hydrated.structured?.workoutId;
-    const explicitTemplate = hydrated.structured?.templateId ? TEMPLATES_BY_ID.get(hydrated.structured?.templateId) : undefined;
+    const explicitTemplate = hydrated.structured?.templateId
+        ? ENRICHED_TEMPLATES_BY_ID.get(hydrated.structured?.templateId)
+        : undefined;
     const templateId = hydrated.structured?.templateId ?? (workoutId ? oracleTemplateIdForWorkoutId(workoutId) : undefined);
     const category = oracleNormalizeCategory(
         hydrated.structured?.category
@@ -205,7 +202,7 @@ function oracleDeriveFactsFromOccurrence(
 
     let structuredDomain: ActivityStimulusDomain | undefined;
     if (hydrated.structured) {
-        const family = (workoutId ? WORKOUT_STIMULUS_FAMILY[workoutId] : undefined)
+        const family = (workoutId ? classifyWorkoutStimulusFamily(workoutId) : undefined)
             ?? (templateId ? TEMPLATE_STIMULUS_FAMILY[templateId] : undefined);
         if (family && family !== 'recovery') {
             structuredDomain = family;
@@ -248,6 +245,7 @@ function oracleDeriveFactsFromOccurrence(
     if (workoutId && workoutId !== 'legacy_strength') {
         coverageCredits.push(...deriveExactCoverageCredits(exposure, descriptor));
     } else if (modality === 'Strength') {
+        // Generic strength occurred without proven exact catalog role (D1, D5).
         coverageCredits.push({
             performedOccurrenceId: occurrence.performedOccurrenceId,
             coverageSetId: descriptor.id,
