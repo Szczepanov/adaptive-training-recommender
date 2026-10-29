@@ -60,7 +60,7 @@ src/garmin_sync/
   cli.py               # Argument parsing and entry points
 
 app/src/ledger/            # ADR-0052 Phase 1: ledger record types; must never import engine/
-  models.ts            # Recovery snapshots, check-ins, injuries, activities, strength logs, settings/preferences, Modality/GuardrailKey vocabulary
+  models.ts            # Recovery snapshots, check-ins, injuries, activities, settings, shared training/capability/goal-target types and session vocabulary
   models.architecture.test.ts # Fails if anything under ledger/ reaches engine/, directly or transitively
 
 app/src/derived/           # ADR-0052 Phase 1: derived metrics and D-FLAGS evaluators; engine may import it, never the reverse

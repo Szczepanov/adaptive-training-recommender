@@ -855,3 +855,78 @@ export interface NormalizedGarminActivity {
 
 export const FIT_WORKOUT_FINGERPRINT_KINDS = ['semantic_definition', 'index_fallback'] as const;
 export type FitWorkoutFingerprintKind = (typeof FIT_WORKOUT_FINGERPRINT_KINDS)[number];
+
+// Shared training and goal vocabulary (ADR-0052 Phase 1).
+
+/** Issue #805: sport-neutral athletic capabilities that broad-athleticism maintenance can
+ * preserve. Future racket/court/field identities add workout mappings, not new keys. */
+export type AthleticCapabilityKey =
+    | 'linear_speed_skill'
+    | 'acceleration_deceleration'
+    | 'multidirectional_change_of_direction'
+    | 'sport_skill';
+
+export interface WorkoutStimulusProfile {
+    aerobicEndurance: number;     // 0.0 - 1.0 (canonical)
+    thresholdPower: number;       // 0.0 - 1.0 (canonical)
+    vo2MaxPower: number;          // 0.0 - 1.0 (canonical)
+    repeatedSurges: number;       // 0.0 - 1.0 (canonical)
+    sprintPower: number;          // 0.0 - 1.0 (canonical)
+    fatigueResistance: number;    // 0.0 - 1.0 (canonical)
+    maxStrength: number;          // 0.0 - 1.0 (canonical)
+    hypertrophy: number;          // 0.0 - 1.0 (canonical)
+}
+
+export interface ActivityOverride {
+    activityId: string;
+    userId: string;
+    date: string;
+    originalType: string;
+    originalIntensityTag: string;
+    overriddenModality: Modality | 'Unknown';
+    overriddenIntensity: CompletedTrainingIntensity;
+    rpe?: number | null;
+    stimulusFocus?: keyof WorkoutStimulusProfile | null;
+    notes?: string | null;
+    createdAt: string;
+    updatedAt: string;
+}
+
+export type CompletedTrainingIntensity = 'easy' | 'moderate' | 'hard' | 'unknown';
+
+/** The evidence hierarchy for inferring completed-training stimulus (Phase 5.5) -- see
+ *  docs/plans/phase-5-sequence-planning.md 5.5 and completedTraining.ts's
+ *  classifyGarminTier/stimulusConfidenceForTier. Strongest to weakest evidence.
+ *  `completedStructuredWorkout` is named for completeness against the plan's full ladder
+ *  but is not currently reachable -- no ingested source yet carries a structured
+ *  completed-workout record independent of the prescribed template. `measuredEffort` IS
+ *  reachable: classifyGarminTier returns it when a Garmin activity has both a training
+ *  effect and a positive `activityTrainingLoad`, Garmin's own proprietary composite
+ *  (derived from HR/pace/power across the session) standing in as the closest available
+ *  approximation of true per-interval power/cadence structure. */
+export type EvidenceTier =
+    | 'exactPrescribedMatch'
+    | 'completedStructuredWorkout'
+    | 'measuredEffort'
+    | 'garminTrainingEffect'
+    /** An externally-authored session (ADR-0019 D-EXTTIER): structured and deliberate,
+     * but written against no catalog, so its stimulus is derived rather than authored. */
+    | 'authoredExternal'
+    | 'durationIntensity'
+    | 'athleteClassification'
+    | 'genericModalityFallback';
+
+export type PerformanceGoalFamily = 'strength' | 'speed' | 'power';
+
+export type PerformanceSubjectRef =
+    | { kind: 'exercise'; exerciseId: string }
+    | { kind: 'performance_test'; performanceTestId: string };
+
+export interface GoalPerformanceTarget {
+    kind: 'performance_metric';
+    metricId: string;
+    subjectRef: PerformanceSubjectRef;
+    targetValue: number;
+}
+
+export type SessionCategory = 'Hard Endurance' | 'Moderate Endurance' | 'Easy Endurance' | 'Race-Specific Endurance' | 'Upper-body Strength' | 'Lower-body Strength' | 'Full-body Strength' | 'Power Maintenance' | 'Field Maintenance' | 'Technical Skill' | 'Mobility/Recovery' | 'Rest';
