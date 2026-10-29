@@ -406,6 +406,12 @@ export interface SessionExecution {
     schemaVersion: number;
 }
 
+/** Prefer an active execution, then the most recently started execution in each state. */
+export function compareExecutionPriority(a: SessionExecution, b: SessionExecution): number {
+    const rank = (state: SessionExecutionState) => state === 'in_progress' ? 2 : state === 'completed' ? 1 : 0;
+    return rank(b.state) - rank(a.state) || b.startedAt.localeCompare(a.startedAt);
+}
+
 export type RepetitionEntryPayload = {
     kind: 'repetition';
     setIndex: number;

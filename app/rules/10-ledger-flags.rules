@@ -1,0 +1,32 @@
+    // D-FLAGS: immutable, account-owned observations. Deep input validation lives at
+    // flagEvaluationPersistence; rules bound structure without unrolling 16 input maps.
+    match /users/{userId}/flag_evaluations/{revisionId} {
+      function hasValidFlagRevision() {
+        let d = request.resource.data;
+        return hasOwnedUserId(userId)
+          && d.keys().hasOnly(['schemaVersion', 'userId', 'revisionId', 'idempotencyKey', 'id',
+            'observedOn', 'evaluatedAt', 'sessionRef', 'active', 'state', 'reasonCode',
+            'definitionVersion', 'threshold', 'baselineWindow', 'inputs'])
+          && d.schemaVersion == 1
+          && d.revisionId == revisionId && revisionId.matches('^flag-[a-f0-9]{64}$')
+          && d.idempotencyKey == revisionId
+          && d.id in ['illness_anomaly', 'illness_risk_symptom', 'recovery_beyond_baseline', 'injury_constraint_touches_session']
+          && isValidActivityDate(d.observedOn)
+          && d.evaluatedAt is string && d.evaluatedAt.size() <= 40
+          && d.evaluatedAt.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}([.][0-9]{1,9})?(Z|[+-][0-9]{2}:[0-9]{2})$')
+          && isValidActivityDate(d.evaluatedAt.split('T')[0])
+          && (d.active == null || d.active is bool)
+          && d.state in ['measured', 'missing', 'unavailable', 'invalid', 'not_collected',
+            'not_applicable', 'stale', 'not_recorded', 'not_yet_supported']
+          && (d.active == null || d.state == 'measured' || (d.active == false && d.state == 'not_applicable'))
+          && d.definitionVersion is string && d.definitionVersion.size() > 0 && d.definitionVersion.size() <= 160
+          && d.reasonCode is string && d.reasonCode.size() > 0 && d.reasonCode.size() <= 160
+          && (d.threshold == null || (d.threshold is string && d.threshold.size() > 0 && d.threshold.size() <= 8192))
+          && (!('sessionRef' in d) || (d.sessionRef is string && d.sessionRef.size() > 0 && d.sessionRef.size() <= 256))
+          && (!('baselineWindow' in d) || (d.baselineWindow is string && d.baselineWindow.size() > 0 && d.baselineWindow.size() <= 512))
+          && d.inputs is list && d.inputs.size() <= 16;
+      }
+      allow read: if isOwner(userId);
+      allow create: if hasValidFlagRevision();
+      allow update, delete: if false;
+    }

@@ -190,6 +190,6 @@ describe('ledger export contract', () => {
         };
         const result = buildLedgerExport(fullInput({ flagEvaluations: [flag] }));
         expect(validateAgainstSchema(SCHEMA, clone(result))).toEqual([]);
-        expect(result.flags.find(candidate => candidate.id === flag.id)).toEqual(flag);
+        expect(result.flags.find(candidate => candidate.id === flag.id && candidate.observedOn === flag.observedOn)).toEqual(flag);
     });
 });

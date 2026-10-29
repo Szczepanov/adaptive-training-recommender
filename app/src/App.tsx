@@ -20,6 +20,7 @@ import { strengthSessionService } from './services/strengthSessionService';
 import { sessionExecutionService } from './services/sessionExecutionService';
 import { assessmentAttemptService } from './services/assessmentAttemptService';
 import { runConfiguredHealthAnomalyShadow } from './services/healthAnomalyRuntime';
+import { FLAG_INPUTS_CHANGED } from './services/flagCaptureRuntime';
 import { resolveSessionDefinition } from './sessions/sessionDefinitionResolver';
 import { OnboardingWizard } from './components/OnboardingWizard';
 
@@ -76,6 +77,11 @@ function App() {
     if (!userId) return;
     const requestUserId = userId;
     const requestRevision = ++decisionInputRequestRevision.current;
+
+    // Capture is independent of recommendation composition and remains account-scoped.
+    void import('./services/flagCaptureService').then(module => {
+      if (activeUserIdRef.current === requestUserId) module.captureCurrentFlags(requestUserId);
+    }).catch(() => console.warn('Flag capture could not start.'));
 
     try {
       const input = await decisionComposer.composeDailyDecisionInput(requestUserId);
@@ -148,6 +154,18 @@ function App() {
       }
     }
   }, [userId]);
+
+  useEffect(() => {
+    if (!userId || authPhase !== 'AUTHENTICATED') return;
+    const capture = (event: Event) => {
+      if ((event as CustomEvent<{ userId: string }>).detail.userId !== userId) return;
+      void import('./services/flagCaptureService').then(module => {
+        if (activeUserIdRef.current === userId) module.captureCurrentFlags(userId);
+      }).catch(() => console.warn('Flag capture could not start.'));
+    };
+    window.addEventListener(FLAG_INPUTS_CHANGED, capture);
+    return () => window.removeEventListener(FLAG_INPUTS_CHANGED, capture);
+  }, [userId, authPhase]);
 
   useEffect(() => {
     // Keep the async identity guard in effect-space rather than mutating a ref during render.

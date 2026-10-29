@@ -14,6 +14,8 @@ const firestore = vi.hoisted(() => ({
 
 vi.mock('firebase/firestore', () => firestore);
 vi.mock('../firebase', () => ({ getDb: vi.fn(() => ({})) }));
+vi.mock('./flagCaptureRuntime', () => ({ notifyFlagInputsChanged: vi.fn() }));
+import { notifyFlagInputsChanged } from './flagCaptureRuntime';
 
 import { SessionOccurrenceService, deterministicExternalPlanOccurrenceId } from './sessionOccurrenceService';
 import { MAX_RECOVERY_GENERATION } from './dailyLedgerAggregateService';
@@ -696,6 +698,7 @@ describe('SessionOccurrenceService authority methods (M3.3)', () => {
             const result = await service.transitionOccurrenceState('u1', 'occ-1', 'abandoned', '2026-08-18T11:00:00Z');
 
             expect(result.state).toBe('abandoned');
+            expect(notifyFlagInputsChanged).toHaveBeenCalledWith('u1');
             expect(result.updatedAt).toBe('2026-08-18T11:00:00Z');
             expect(mockTx.set).toHaveBeenCalledWith(
                 expect.anything(),

@@ -6,6 +6,7 @@ import { resolveWindow } from '../ledger/export/window';
 import { worstState } from '../ledger/export/ledgerValue';
 import { addDaysToLocalDateString } from '../utils/localDate';
 import type { DataState } from '../engine/dataState';
+import { flagEvaluationRepository } from './flagEvaluationPersistence';
 import { recoverySnapshotService } from './recoverySnapshotService';
 import { checkinService } from './checkinService';
 import { activityService } from './activityService';
@@ -29,7 +30,7 @@ import { externalPlanService } from './externalPlanService';
 import { computeContentHash } from '../engine/externalPlanHash';
 import { PLACEMENT_HISTORY_TRUNCATED_OPERATION } from '../ledger/placementHistory';
 
-interface Read<T> { data: T; state: LedgerState }
+interface Read<T> { data: T; state: LedgerState; reason?: string }
 function fromState<T>(result: DataState<T>, empty: T): Read<T> {
     return result.status === 'AVAILABLE' ? { data: result.data, state: 'measured' }
         : { data: empty, state: result.status === 'MISSING' ? 'missing' : result.status === 'INVALID' ? 'invalid' : 'unavailable' };
@@ -44,6 +45,7 @@ export class LedgerExportService {
         if (!LEDGER_PURPOSES.includes(request.purpose)) throw new Error('Unknown ledger export purpose');
         const window = resolveWindow(request.purpose, request.asOfDate, request.window);
         const through = addDaysToLocalDateString(window.endDate, 1);
+        const checkinStart = [window.startDate, addDaysToLocalDateString(request.asOfDate, -28)].sort()[0];
         const upcomingEnd = addDaysToLocalDateString(request.asOfDate, 6);
         const exportedAt = request.exportedAt ?? new Date().toISOString();
         const records: LedgerExportRecords = {};
@@ -53,16 +55,20 @@ export class LedgerExportService {
             try {
                 const result = await operation();
                 records[recordKey] = result.data;
-                sources[key] = { state: result.state, readAt: exportedAt };
+                sources[key] = { state: result.state, readAt: exportedAt, ...(result.reason ? { reason: result.reason } : {}) };
             } catch {
                 records[recordKey] = empty;
-                sources[key] = { state: 'unavailable', readAt: exportedAt };
+                sources[key] = { state: 'unavailable', readAt: exportedAt, ...(key === 'flag_evaluations' ? { reason: 'read_failed' } : {}) };
             }
         }
         let assessmentBindings: ReturnType<typeof assessmentBriefBindingsForGoals> = { bindings: [], unsupportedCount: 0 };
         await Promise.all([
+            read('flag_evaluations', 'flagEvaluations', async () => {
+                const result = await flagEvaluationRepository.getInRangeState(userId, window.startDate, window.endDate);
+                return { ...fromState(result, []), ...(result.status === 'INVALID' ? { reason: 'corrupt_record' } : result.status === 'UNAVAILABLE' ? { reason: result.operation === 'scan_limit_exceeded' ? 'scan_limit_exceeded' : 'read_failed' } : {}) };
+            }, []),
             read('daily_recovery_snapshots', 'recovery', async () => fromState(await recoverySnapshotService.getRecoverySnapshotsInRangeState(userId, window.startDate, through), []), []),
-            read('daily_subjective_checkins', 'checkins', async () => fromState(await checkinService.getCheckinsInRangeState(userId, window.startDate, through), []), []),
+            read('daily_subjective_checkins', 'checkins', async () => fromState(await checkinService.getCheckinsInRangeState(userId, checkinStart, through), []), []),
             read('activities', 'activities', async () => fromState(await activityService.getActivitiesInRange(userId, window.startDate, through), []), []),
             read('training_settings', 'trainingSettings', async () => fromState(await trainingSettingsService.peekTrainingSettingsState(userId), null), null),
             read('preferences', 'preferences', async () => fromState(await preferencesService.getPreferencesState(userId), null), null),

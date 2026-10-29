@@ -87,6 +87,12 @@ describe('planEndDate', () => {
 });
 
 describe('ActiveExternalPlanService', () => {
+    it('preserves invalid header evidence when ledger capture opts into strict reads', async () => {
+        const invalid: DataState<ExternalPlanHeader> = { status: 'INVALID', issues: [{ code: 'invalid-header', documentPath: 'test' }] };
+        const service = new ActiveExternalPlanService(stubPlans({ headers: { 'autumn-block': invalid } }));
+        expect(await service.getActivePlanState('u1', '2026-08-18', [], { failOnInvalidHeader: true })).toEqual(invalid);
+        expect(await service.getActivePlanState('u1', '2026-08-18')).toEqual({ status: 'MISSING' });
+    });
     it('resolves the plan covering the date, with placement applied', async () => {
         const state = await new ActiveExternalPlanService(stubPlans()).getActivePlanState('u1', '2026-08-18');
 

@@ -17,6 +17,7 @@ import {
     type WriteBatch,
 } from 'firebase/firestore';
 import { getDb } from '../firebase';
+import { notifyFlagInputsChanged } from './flagCaptureRuntime';
 import type { DataState } from '../engine/dataState';
 import type {
     SessionExecution,
@@ -27,6 +28,7 @@ import type {
     FitWorkoutFingerprintKind,
     SessionCompletionEvidence,
 } from '../sessions/models';
+import { compareExecutionPriority } from '../sessions/models';
 import type { NormalizedExecutionRecord } from '../sessions/legacyStrengthAdapter';
 import {
     parseSessionExecutionDocument,
@@ -268,6 +270,7 @@ export class SessionExecutionService {
             }
             throw error;
         }
+        notifyFlagInputsChanged(userId);
         // Transaction reads/writes do not populate the latency-compensated cache.
         // Seed the complete parent before diary batches merge an updatedAt touch;
         // otherwise offline reload can see only that partial patch, not identity.
@@ -850,15 +853,7 @@ export class SessionExecutionService {
 
         if (candidates.length === 0) return null;
 
-        candidates.sort((a, b) => {
-            // An active execution always outranks a finished one: a stale completed record
-            // must never hide a redo that is still in progress (that would let the caller
-            // re-run startExecution and orphan the in-progress doc under a fresh id).
-            const stateRank = (s: SessionExecutionState) => (s === 'in_progress' ? 2 : s === 'completed' ? 1 : 0);
-            const rankDiff = stateRank(b.state) - stateRank(a.state);
-            if (rankDiff !== 0) return rankDiff;
-            return b.startedAt.localeCompare(a.startedAt);
-        });
+        candidates.sort(compareExecutionPriority);
 
         return candidates[0] ?? null;
     }

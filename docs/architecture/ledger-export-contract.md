@@ -34,8 +34,8 @@ or policy-version bump is required for this additive path.
 | Layer | Contents | Authority and gaps |
 | --- | --- | --- |
 | `facts` | Recovery, check-ins, canonical performed occurrences, session responses, current assessment observation heads, body mass, nutrition, bounded activity detail, competition outcomes | Recorded facts only; provider activity rows are provenance and never added to canonical totals |
-| `derived` | Named baseline, D−1 step normalization and performed-load slots, each with definition/window/inputs | `not_yet_supported` until independently extracted under #1144; no engine derivations are called |
-| `flags` | The closed four D-FLAGS ids with persisted evaluation metadata and inputs | Service emits `not_yet_supported` while historical evaluation persistence is absent; builder can preserve supplied persisted evaluations without recomputation |
+| `derived` | Biometric and subjective baseline metrics with units, readiness and source states | D−1 step normalization and performed-load slots remain `not_yet_supported` pending #1166; no engine derivations are called |
+| `flags` | The closed four D-FLAGS ids with immutable evaluation metadata and inputs | Persisted versions pass through in deterministic date/session/time order; uncaptured dates remain `not_recorded`; illness/anomaly remains withheld by HA7 |
 | `userContext` | Current active goals/constraints, settings/equipment, active injuries and resolved injury periods overlapping the window, preferences, travel, venue restrictions, availability and intent-block events | Injury `since` and `resolvedAt` use recorded dates; legacy onset stays unknown. Other unsupported effective dates and revision history stay explicit; `updatedAt` does not establish field-level history |
 | `coachingHistory` | Immutable external-plan revision headers/rationale, as-of placements, immutable placement events, moved/dropped overrides, canonical planned→performed links | Missing override reasons and unrecorded legacy history remain `not_yet_supported` |
 
@@ -121,6 +121,54 @@ source-level metadata. Errors or source document paths never enter the exported 
 
 ## Dates, information bounds and determinism
 
+### Recorded advisory flags (#1153, #1165)
+
+The authenticated app captures only the current Warsaw date at initialization, daily
+refresh, and check-in/plan/settings/occurrence changes. Capture is independent of
+recommendation composition and non-blocking. It does not run in Python sync: days the app
+is not opened or refreshed have explicit gaps. Export never writes or retrospectively
+evaluates flags against today's mutable inputs.
+
+`flagCaptureService` reads validated recovery, check-in, structured injuries, external
+placements (including fixed-activity occupancy), scheduled/active/completed occurrences,
+and pinned execution definitions. Injury flags use
+`external_plan:<planId>@<revision>:<sessionId>` or `occurrence:<occurrenceId>`;
+matching external occurrences are deduplicated and their pinned dose is used when present.
+A readable day with zero planned sessions records `false / not_applicable` and
+`no_planned_session`, rather than treating rest as a missing session. Failed/corrupt
+sources remain `unavailable`/`invalid`, not user non-entry.
+
+Each `users/{uid}/flag_evaluations/{revisionId}` document preserves the evaluator's
+definition version, original evaluation instant, inputs and human-readable `threshold`
+rule. Its SHA-256 identity excludes the evaluation instant but includes the dated
+evaluation, source-evidence digests and optional session scope. Identical retries retain
+the original document; changed evidence creates a new immutable revision. Rules permit
+owner reads/creates only and deny updates/deletes; the parser validates nested values.
+
+The export reads date-ordered pages of 200 with a 2,000-record bound plus one sentinel.
+Corrupt history reports `invalid`; failed/truncated reads report `unavailable` and
+discard partial results. The source inventory includes `flag_evaluations` and an
+optional failure reason. Every date and flag id in the export window is represented;
+uncaptured pairs are `null / not_recorded`, with no synthetic inactive history.
+Recorded versions retain input transitions. HA7 is not released: `illness_anomaly`
+is always clamped to `null / not_yet_supported`, with reason
+`ha7_release_gate_unmet`; no raw shadow-assessment result is exposed.
+
+### Derived baseline leaves
+
+`DerivedMetric.metrics` carries individually state-bearing numeric leaves. The
+container's scalar `value` is null/`not_applicable` when readable because there
+is no single aggregate value. Missing/corrupt/unavailable sources retain their states.
+Biometric leaves use the as-of snapshot's 7d/28d readiness and stored averages,
+variability and units. Source-specific multisource/identity pipelines are not activated.
+
+Subjective baseline computation uses the extracted estimator over the 28 days strictly
+before the as-of date. The six dimensions are readiness, sleep quality, fatigue,
+soreness, mental stress and motivation on their recorded 1–10 scale; leaves expose
+recent/long averages, variability and complete distinct-day counts. Insufficient coverage
+leaves averages missing. The service reads enough prior check-ins even for a morning
+export, while `facts.checkins` remains bounded to the requested export window.
+
 Calendar dates use Europe/Warsaw helpers. The morning window is today and D−1; planning is
 at most fourteen inclusive days; diagnostic accepts the selected range. A caller can narrow
 morning/planning but cannot widen their historical windows. Forward-looking travel,
@@ -144,6 +192,7 @@ the actual user action and verifies the downloaded schema on desktop and mobile 
 ## Remaining phase gates
 
 This export does not turn off engine adjudication or close #1144. Phase 2 still needs the
-ADR-0052 extraction and device evidence gates. Historical flag evaluation persistence,
-legacy placement history before event recording, and the owner-completed protocol retest-interval table
-remain prerequisites for a qualifying D-EVAL block; explicit gaps are not passing evidence.
+ADR-0052 extraction and device evidence gates. Client capture cannot fill earlier missed
+dates; a qualifying D-EVAL block still requires sufficient recorded flag coverage,
+legacy placement history before event recording, and the owner-completed protocol
+retest-interval table. Explicit gaps are not passing evidence.

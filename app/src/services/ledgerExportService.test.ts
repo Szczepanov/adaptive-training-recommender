@@ -4,8 +4,9 @@ import { computeContentHash } from '../engine/externalPlanHash';
 import { SOURCE_KEYS } from '../ledger/export/inputs';
 import { PLACEMENT_HISTORY_TRUNCATED_OPERATION } from '../ledger/placementHistory';
 const reads = vi.hoisted(() => Object.fromEntries([
-'recovery', 'checkins', 'activities', 'preferences', 'goals', 'fixed', 'blocks', 'anthropometry', 'constraints', 'schedule', 'responses', 'outcomes', 'intent', 'assessments', 'executions', 'occurrences', 'settings', 'plans', 'header', 'activations', 'revision', 'placement', 'history', 'performed',
+'flags', 'recovery', 'checkins', 'activities', 'preferences', 'goals', 'fixed', 'blocks', 'anthropometry', 'constraints', 'schedule', 'responses', 'outcomes', 'intent', 'assessments', 'executions', 'occurrences', 'settings', 'plans', 'header', 'activations', 'revision', 'placement', 'history', 'performed',
 ].map(key => [key, vi.fn()])));
+vi.mock('./flagEvaluationPersistence', () => ({ flagEvaluationRepository: { getInRangeState: reads.flags } }));
 vi.mock('./recoverySnapshotService', () => ({ recoverySnapshotService: { getRecoverySnapshotsInRangeState: reads.recovery } }));
 vi.mock('./checkinService', () => ({ checkinService: { getCheckinsInRangeState: reads.checkins } }));
 vi.mock('./activityService', () => ({ activityService: { getActivitiesInRange: reads.activities } }));
@@ -35,7 +36,7 @@ const request = { asOfDate: AS_OF, purpose: 'planning' as const, exportedAt: '20
 describe('LedgerExportService', () => {
     beforeEach(() => {
         vi.resetAllMocks();
-        for (const key of ['recovery', 'checkins', 'activities', 'goals', 'fixed', 'blocks', 'schedule', 'responses', 'nutrition', 'occurrences']) reads[key].mockResolvedValue(available([]));
+        for (const key of ['flags', 'recovery', 'checkins', 'activities', 'goals', 'fixed', 'blocks', 'schedule', 'responses', 'nutrition', 'occurrences']) reads[key].mockResolvedValue(available([]));
         reads.settings.mockResolvedValue({ status: 'MISSING' });
         reads.preferences.mockResolvedValue({ status: 'MISSING' });
         for (const key of ['anthropometry', 'constraints', 'performed']) reads[key].mockResolvedValue([]);
@@ -46,11 +47,31 @@ describe('LedgerExportService', () => {
         reads.outcomes.mockResolvedValue({ outcomes: [], unreadableCount: 0, truncated: false });
         reads.assessments.mockResolvedValue({ sources: [], relevanceState: 'available', omittedCount: 0 });
     });
+    it.each([
+        [{ status: 'INVALID', issues: [] }, 'invalid', 'corrupt_record'],
+        [{ status: 'UNAVAILABLE', operation: 'scan_limit_exceeded', retryable: false }, 'unavailable', 'scan_limit_exceeded'],
+        [{ status: 'UNAVAILABLE', operation: 'read failed', retryable: true }, 'unavailable', 'read_failed'],
+    ])('reports a failed flag history without partial records', async (response, state, reason) => {
+        reads.flags.mockResolvedValue(response);
+        const output = await new LedgerExportService().build('owner', request);
+        expect(output.sources.find(source => source.source === 'flag_evaluations')).toMatchObject({ state, reason });
+        expect(output.flags.every(flag => flag.state === state && flag.active === null)).toBe(true);
+    });
+
+    it('reports an unexpected flag-read failure', async () => {
+        reads.flags.mockRejectedValue(new Error('offline'));
+        const output = await new LedgerExportService().build('owner', request);
+        expect(output.sources.find(source => source.source === 'flag_evaluations')).toMatchObject({ state: 'unavailable', reason: 'read_failed' });
+        expect(output.flags.every(flag => flag.state === 'unavailable')).toBe(true);
+    });
+
     it('reads every source with user scoping and the purpose window, without writing defaults', async () => {
         const output = await new LedgerExportService().build('owner', request);
         expect(output.sources.map(s => s.source)).toEqual([...SOURCE_KEYS]);
         expect(output.sources.every(s => s.state !== 'unavailable')).toBe(true);
         expect(reads.recovery).toHaveBeenCalledWith('owner', '2026-11-07', '2026-11-21');
+        expect(reads.checkins).toHaveBeenCalledWith('owner', '2026-10-23', '2026-11-21');
+        expect(reads.flags).toHaveBeenCalledWith('owner', '2026-11-07', '2026-11-20');
         expect(reads.nutrition).toHaveBeenCalledWith('owner', '2026-11-07', AS_OF);
         expect(reads.settings).toHaveBeenCalledWith('owner');
         expect(output.userContext.equipment.fields.free_weights.state).toBe('missing');
