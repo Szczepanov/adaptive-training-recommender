@@ -27,7 +27,7 @@ and say so instead of working around it.
 |---|---|---|
 | I1 | **User scoping** | Recovery documents go to `users/{APP_USER_ID}/daily_recovery_snapshots/{YYYY-MM-DD}`. Never `daily_recovery_snapshot/{date}`, never a `"default_user"` document. (ADR-0002) |
 | I2 | **Warsaw calendar dates** | Use `local_today()` (Python) and `getLocalDateString()` (`app/src/utils/localDate.ts`). Never `new Date().toISOString().split('T')[0]` for a calendar date — it silently shifts the day for ~2 hours every night. (ADR-0003) |
-| I3 | **`D - 1` step semantics** | `totalSteps` in a snapshot is the *previous completed* calendar day. Rolling 7d/28d baselines normalize ambient surges; estimated activity steps are deducted in `fatigue.ts` so structured training is not counted twice. (ADR-0003) |
+| I3 | **`D - 1` step semantics** | `totalSteps` in a snapshot is the *previous completed* calendar day. Rolling 7d/28d baselines normalize ambient surges; estimated activity steps are deducted in `derived/steps/activitySteps.ts`, consumed by `fatigue.ts`, so structured training is not counted twice. (ADR-0003) |
 | I4 | **Knowledge lineage** | Every engine threshold, weight, cadence or policy constant with decision authority is owned by a registered claim. Before touching one, see §2. (ADR-0033) |
 | I5 | **Policy version** | A change that can alter a recommendation must bump `POLICY_VERSION` in `app/src/engine/policy.ts`. Verify with `node scripts/check-policy-drift.mjs <base-sha>` from `app/`. (ADR-0010) |
 | I6 | **No credential leaks** | Never commit or print `.env`, `.garth/` token directories, Firebase service-account files, or raw health JSON payloads. Health data is personal data. |

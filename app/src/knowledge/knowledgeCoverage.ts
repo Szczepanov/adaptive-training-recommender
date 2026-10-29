@@ -346,7 +346,7 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         id: 'fatigue.ambient_step_surge', domain: 'fatigue_load', title: 'Ambient step-surge tissue-strain heuristic',
         currentRule: 'Ambient steps trigger tissue strain at >=1.8x 7-day baseline and >=6000 excess steps; strain scales to 0.4 by +15000. Running/field and walking/hiking are estimated at 155/110 steps per minute for subtraction.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'moderate', safetyImpact: 'moderate', researchPriority: 'none',
-        codeRefs: ['engine/fatigue.ts:estimateActivitySteps', 'engine/fatigue.ts:computeInternalResponseStrain'],
+        codeRefs: ['derived/steps/activitySteps.ts:estimateActivitySteps', 'derived/steps/activitySteps.ts:deriveAmbientSteps', 'engine/fatigue.ts:computeInternalResponseStrain'],
         knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.ambientStepSurgePolicy],
         coverageRationale: 'Registered as an explicit product-policy claim (`policy.fatigue.ambient_step_surge_v1`) with alignment testing. Cadence deduction and ambient surge scaling protect against unrecorded ambulatory load.',
     },

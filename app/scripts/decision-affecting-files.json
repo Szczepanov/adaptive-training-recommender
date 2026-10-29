@@ -9,6 +9,10 @@
     { "path": "app/src/engine/seasonRoadmap.ts" },
     { "path": "app/src/engine/fatigue.ts" },
     {
+      "path": "app/src/derived/steps/activitySteps.ts",
+      "reason": "ADR-0003/I3: activity-step cadences and the ambient deduction feed fatigue.ts ambulatory strain and the occupational-load context."
+    },
+    {
       "path": "app/src/engine/occupationalLoad.ts",
       "reason": "Occupational-load magnitudes and baseline discounts affect the live fatigue input."
     },

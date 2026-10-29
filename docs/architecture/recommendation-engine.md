@@ -1698,7 +1698,8 @@ safe or calibrated, and the aggregate scenario recovery-share gate remains relea
 
 `computeInternalResponseStrain` in `fatigue.ts` also evaluates unlogged ambulatory load: when
 an acute ambient step surge occurs on $D-1$ ($\ge 1.8\times$ 7d baseline and $\ge +6,000$ excess steps
-after deducting estimated steps from logged running/field/walking sessions via `estimateActivitySteps`),
+after deducting estimated steps from logged running/field/walking sessions via
+`derived/steps/activitySteps.ts` `deriveAmbientSteps` / `estimateActivitySteps`),
 it introduces a proportional tissue-strain contribution into the `impactTissue` and `lowerBody`
 fatigue dimensions to prevent high-impact lower-body prescriptions following unlogged heavy hiking/walking
 days without double-counting structured activities or requiring athlete subjective soreness input.

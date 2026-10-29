@@ -35,7 +35,7 @@ You take a GitHub issue number as input and drive it to an opened PR: issue inta
    - Never commit secrets: `.env`, `.garth/`, Firebase service-account files, raw health JSONs.
    - Never write recovery docs to `daily_recovery_snapshot/{date}` or with `"default_user"`. User-scoped path only: `users/{APP_USER_ID}/daily_recovery_snapshots/{YYYY-MM-DD}`.
    - Calendar dates use `Europe/Warsaw` (`local_today()` in Python, `getLocalDateString()` in TypeScript). Never `toISOString().split('T')[0]` for calendar dates.
-   - `totalSteps` means the completed previous calendar day (`D - 1`); do not reinterpret it without touching `fatigue.ts` deduction logic.
+   - `totalSteps` means the completed previous calendar day (`D - 1`); do not reinterpret it without touching `derived/steps/activitySteps.ts` and the `fatigue.ts` consumer/surge logic.
    - Knowledge lineage (ADR-0033): every engine threshold, weight, cadence or policy constant with decision authority is owned by a registered claim. Check the registry before changing one (Phase 3).
    - Reference symbols, never line numbers, in docs and plans (e.g. `` `rules.ts` `evaluateEnvelopes` ``).
    - Work in `WORKTREE` on its feature branch, never directly on `main` and never in the main checkout. One issue = one worktree = one branch unless the user says otherwise.
