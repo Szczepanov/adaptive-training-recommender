@@ -5,11 +5,11 @@
         let data = request.resource.data;
         return hasOwnedUserId(userId)
           && data.keys().hasOnly(['userId', 'planId', 'revision', 'title', 'startDate', 'weekCount', 'contentHash', 'importedAt', 'supersededFrom', 'updatedAt'])
-          && data.planId is string && data.planId.size() > 0 && data.planId.size() <= 64
-          && data.revision is int && data.revision >= 1
+          && isBoundedString(data.planId, 64)
+          && isPositiveInt(data.revision)
           && data.title is string && data.title.size() <= 200
           && isValidActivityDate(data.startDate)
-          && data.weekCount is int && data.weekCount >= 1 && data.weekCount <= 26
+          && isPositiveInt(data.weekCount) && data.weekCount <= 26
           && data.contentHash is string && data.contentHash.size() == 64
           && data.importedAt is string && data.updatedAt is string
           && (!('supersededFrom' in data) || data.supersededFrom == null || isValidActivityDate(data.supersededFrom));
@@ -18,8 +18,8 @@
       function isValidExternalRestDirective(directive, weekCount) {
         return directive is map
           && directive.keys().hasOnly(['id', 'week', 'day'])
-          && directive.id is string && directive.id.size() > 0 && directive.id.size() <= 64
-          && directive.week is int && directive.week >= 1 && directive.week <= weekCount
+          && isBoundedString(directive.id, 64)
+          && isPositiveInt(directive.week) && directive.week <= weekCount
           && directive.day in ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
       }
 
@@ -88,9 +88,9 @@
                   ? data.keys().hasOnly(['schema', 'planId', 'revision', 'title', 'startDate', 'weekCount', 'notes', 'sessions', 'restDays'])
                      && data.keys().hasAll(['restDays'])
                   : data.keys().hasOnly(['schema', 'planId', 'revision', 'title', 'startDate', 'weekCount', 'notes', 'sessions']))
-          && data.revision is int && data.revision >= 1
+          && isPositiveInt(data.revision)
           && isValidActivityDate(data.startDate)
-          && data.weekCount is int && data.weekCount >= 1 && data.weekCount <= 26
+          && isPositiveInt(data.weekCount) && data.weekCount <= 26
           && (!(data.schema in restDaySchemas)
             || hasValidExternalRestDirectives(data.restDays, data.weekCount))
           && (!isV5OrV6
@@ -103,8 +103,8 @@
         let data = request.resource.data;
         return hasOwnedUserId(userId)
           && data.keys().hasOnly(['userId', 'planId', 'revision', 'assignments', 'successors', 'updatedAt'])
-          && data.planId is string && data.planId.size() > 0 && data.planId.size() <= 64
-          && data.revision is int && data.revision >= 1
+          && isBoundedString(data.planId, 64)
+          && isPositiveInt(data.revision)
           && data.assignments is list && data.assignments.size() <= 120
           && (!('successors' in data) || (data.successors is map && data.successors.size() <= 120))
           && data.updatedAt is string;
@@ -117,7 +117,7 @@
         return hasOwnedUserId(userId)
           && data.keys().hasOnly(['userId', 'planId', 'revision', 'contentHash', 'effectiveFrom', 'activatedAt'])
           && data.planId == planId
-          && data.revision is int && data.revision >= 1
+          && isPositiveInt(data.revision)
           && string(data.revision) == revisionId
           && data.contentHash is string && data.contentHash.matches('^[a-f0-9]{64}$')
           && isValidActivityDate(data.effectiveFrom)
@@ -149,7 +149,6 @@
           && hasValidExternalPlanRevision()
           && request.resource.data.planId == planId
           && string(request.resource.data.revision) == revisionId;
-        allow update, delete: if false;
 
         match /placement_history/{eventId} {
           allow read: if isOwner(userId);
@@ -169,7 +168,6 @@
                 && request.resource.data.previous.size() == 0
                 && request.resource.data.get('previousStateReason', null) in ['current-schema-invalid', 'current-identity-mismatch', 'legacy-schema-invalid', 'legacy-identity-mismatch']))
             && existsAfter(/databases/$(database)/documents/users/$(userId)/external_plans/$(planId)/revisions/$(revisionId));
-          allow update, delete: if false;
         }
 
         match /placement/{placementId} {
@@ -186,7 +184,6 @@
       match /activations/{revisionId} {
         allow read: if isOwner(userId);
         allow create: if hasValidExternalPlanActivation(userId, planId, revisionId);
-        allow update, delete: if false;
       }
 
       match /placement/{placementId} {
@@ -211,12 +208,12 @@
         return hasOwnedUserId(userId)
           && data.keys().hasOnly(['userId', 'blockId', 'revision', 'contentHash', 'sourcePlanId', 'sourcePlanRevision', 'createdAt', 'updatedAt'])
           && data.keys().hasAll(['userId', 'blockId', 'revision', 'contentHash', 'sourcePlanId', 'sourcePlanRevision', 'createdAt', 'updatedAt'])
-          && data.blockId is string && data.blockId.size() > 0 && data.blockId.size() <= 128
-          && data.revision is int && data.revision >= 1
+          && isBoundedString(data.blockId, 128)
+          && isPositiveInt(data.revision)
           && data.contentHash is string && data.contentHash.size() == 64
-          && data.sourcePlanId is string && data.sourcePlanId.size() > 0 && data.sourcePlanId.size() <= 128
-          && data.sourcePlanRevision is int && data.sourcePlanRevision >= 1
-          && data.createdAt is string && data.updatedAt is string;
+          && isBoundedString(data.sourcePlanId, 128)
+          && isPositiveInt(data.sourcePlanRevision)
+          && hasStringTimestamps(data);
       }
 
       function hasValidIntentBlockRevision(blockId, revisionId) {
@@ -225,7 +222,7 @@
           && data.keys().hasAll(['userId', 'blockId', 'revision', 'block', 'pinnedTrainingIntentProfile', 'sourceSchemaVersion', 'sourceRef', 'contentHash', 'createdAt'])
           && data.blockId == blockId
           && string(data.revision) == revisionId
-          && data.revision is int && data.revision >= 1
+          && isPositiveInt(data.revision)
           && data.block is map
           && data.pinnedTrainingIntentProfile is map
           && data.sourceSchemaVersion is string && data.sourceSchemaVersion.size() > 0
@@ -248,7 +245,6 @@
         allow create: if isOwner(userId)
           && hasValidIntentBlockRevision(blockId, revisionId)
           && request.resource.data.userId == userId;
-        allow update, delete: if false;
       }
     }
 
@@ -263,13 +259,13 @@
           && data.keys().hasOnly(['userId', 'state', 'experimentId', 'blockId', 'proposalId', 'sourcePlanRevision', 'activationKey', 'activationRevisionId', 'acquiredAt', 'revision', 'createdAt', 'updatedAt'])
           && data.keys().hasAll(['userId', 'state', 'experimentId', 'blockId', 'proposalId', 'sourcePlanRevision', 'activationKey', 'activationRevisionId', 'acquiredAt', 'revision', 'createdAt', 'updatedAt'])
           && data.state in ['held', 'released']
-          && data.experimentId is string && data.experimentId.size() > 0 && data.experimentId.size() <= 64
-          && data.blockId is string && data.blockId.size() > 0 && data.blockId.size() <= 128
-          && data.proposalId is string && data.proposalId.size() > 0 && data.proposalId.size() <= 128
-          && data.sourcePlanRevision is int && data.sourcePlanRevision >= 1
+          && isBoundedString(data.experimentId, 64)
+          && isBoundedString(data.blockId, 128)
+          && isBoundedString(data.proposalId, 128)
+          && isPositiveInt(data.sourcePlanRevision)
           && data.activationKey is string && data.activationKey.size() == 64
           && data.activationRevisionId is string && data.activationRevisionId.size() > 0
-          && data.acquiredAt is string && data.createdAt is string && data.updatedAt is string;
+          && data.acquiredAt is string && hasStringTimestamps(data);
       }
 
       allow read: if isOwner(userId);
@@ -277,7 +273,6 @@
       allow update: if hasValidProgressionClaim(userId)
         && keepsOwnership(userId)
         && request.resource.data.revision == resource.data.revision + 1;
-      allow delete: if false;
     }
 
     match /users/{userId}/progression_experiment_activations/{activationKey} {
@@ -295,16 +290,15 @@
           && data.experimentId is string && data.experimentId.size() > 0
           && data.blockId is string && data.blockId.size() > 0
           && data.proposalId is string && data.proposalId.size() > 0
-          && data.sourcePlanRevision is int && data.sourcePlanRevision >= 1
+          && isPositiveInt(data.sourcePlanRevision)
           && data.activationRevisionId is string && data.activationRevisionId.size() > 0
-          && data.claimRevision is int && data.claimRevision >= 1
+          && isPositiveInt(data.claimRevision)
           && data.activatedAt is string
           && data.priorSettings is map && data.acceptedSettings is map;
       }
 
       allow read: if isOwner(userId);
       allow create: if hasValidProgressionActivation(userId, activationKey);
-      allow update, delete: if false;
     }
 
     match /users/{userId}/plan_blocks/{blockId} {
@@ -319,14 +313,14 @@
           && data.volumeScale is number && data.volumeScale >= 0 && data.volumeScale <= 1
           && data.intensityScale is number && data.intensityScale >= 0 && data.intensityScale <= 1
           && (!('eventId' in data) || data.eventId is string)
-          && data.createdAt is string && data.updatedAt is string;
+          && hasStringTimestamps(data);
       }
 
       allow read: if isOwner(userId);
       allow create: if hasValidPlanBlock(userId);
       allow update: if hasValidPlanBlock(userId)
         && keepsOwnership(userId)
-        && request.resource.data.createdAt == resource.data.createdAt;
+        && keepsCreatedAt();
       allow delete: if isOwner(userId);
     }
 
@@ -336,7 +330,7 @@
         return hasOwnedUserId(userId)
           && data.keys().hasOnly(['userId', 'title', 'category', 'sport', 'startDate', 'endDate', 'dailyAvailabilityMinutes', 'volumeScale', 'intensityScale', 'expectedCost', 'equipment', 'environment', 'notes', 'createdAt', 'updatedAt'])
           && data.keys().hasAll(['userId', 'title', 'category', 'startDate', 'endDate', 'dailyAvailabilityMinutes', 'volumeScale', 'intensityScale', 'expectedCost', 'createdAt', 'updatedAt'])
-          && data.title is string && data.title.size() > 0 && data.title.size() <= 200
+          && isBoundedString(data.title, 200)
           && data.category in ['active_sport', 'sedentary_rest', 'high_step_walking', 'limited_availability']
           && (!('sport' in data) || data.sport in ['skiing', 'volleyball', 'hiking', 'court_sport', 'field_sport', 'general'])
           && isValidActivityDate(data.startDate)
@@ -349,13 +343,13 @@
           && (!('equipment' in data) || hasValidEquipmentList(data.equipment))
           && (!('environment' in data) || data.environment in ['indoor', 'outdoor', 'either'])
           && (!('notes' in data) || (data.notes is string && data.notes.size() <= 1000))
-          && data.createdAt is string && data.updatedAt is string;
+          && hasStringTimestamps(data);
       }
 
       allow read: if isOwner(userId);
       allow create: if hasValidScheduleOverlay(userId);
       allow update: if hasValidScheduleOverlay(userId)
         && keepsOwnership(userId)
-        && request.resource.data.createdAt == resource.data.createdAt;
+        && keepsCreatedAt();
       allow delete: if isOwner(userId);
     }

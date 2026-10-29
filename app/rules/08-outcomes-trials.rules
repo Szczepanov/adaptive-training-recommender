@@ -75,10 +75,10 @@
       allow create: if hasValidPerformedTrainingOccurrence(userId, occurrenceId);
       allow update: if hasValidPerformedTrainingOccurrence(userId, occurrenceId)
         && keepsOwnership(userId)
-        && request.resource.data.createdAt == resource.data.createdAt
+        && keepsCreatedAt()
         && request.resource.data.schemaVersion == resource.data.schemaVersion;
       // Tombstoning is via `status: 'merged'`, never delete (ADR-0034 "not destructive").
-      allow delete: if false;
+      // Deletes denied by default.
     }
 
     match /users/{userId}/performedOccurrenceSourceLinks/{sourceLinkId} {
@@ -108,8 +108,7 @@
         && keepsOwnership(userId)
         && request.resource.data.sourceKey == resource.data.sourceKey
         && request.resource.data.sourceKind == resource.data.sourceKind
-        && request.resource.data.createdAt == resource.data.createdAt;
-      allow delete: if false;
+        && keepsCreatedAt();
     }
 
     match /users/{userId}/session_responses/{responseId} {
@@ -142,7 +141,7 @@
           && (!('unexpectedFatigue' in data) || data.unexpectedFatigue is bool)
           && (!('techniqueNote' in data) || (data.techniqueNote is string && data.techniqueNote.size() <= 2000))
           && (!('note' in data) || (data.note is string && data.note.size() <= 2000))
-          && data.createdAt is string && data.updatedAt is string;
+          && hasStringTimestamps(data);
       }
 
       allow read: if isOwner(userId);
@@ -154,7 +153,7 @@
         && (!('occurrenceId' in resource.data) || request.resource.data.occurrenceId == resource.data.occurrenceId)
         && request.resource.data.window == resource.data.window
         && request.resource.data.date == resource.data.date
-        && request.resource.data.createdAt == resource.data.createdAt;
+        && keepsCreatedAt();
       allow delete: if isOwner(userId);
     }
 
@@ -184,8 +183,8 @@
       return protocolRef is map
         && protocolRef.keys().hasOnly(['id', 'revision'])
         && protocolRef.keys().hasAll(['id', 'revision'])
-        && protocolRef.id is string && protocolRef.id.size() > 0 && protocolRef.id.size() <= 128
-        && protocolRef.revision is int && protocolRef.revision >= 1
+        && isBoundedString(protocolRef.id, 128)
+        && isPositiveInt(protocolRef.revision)
         && exists(protocolPath);
     }
 
@@ -202,8 +201,8 @@
         return capture is map
           && capture.keys().hasOnly(['plannedTrials', 'maxTrials', 'fields', 'reducers', 'reducerVersion'])
           && capture.keys().hasAll(['plannedTrials', 'maxTrials', 'fields', 'reducers', 'reducerVersion'])
-          && capture.maxTrials is int && capture.maxTrials >= 1 && capture.maxTrials <= 30
-          && capture.plannedTrials is int && capture.plannedTrials >= 1 && capture.plannedTrials <= capture.maxTrials
+          && isPositiveInt(capture.maxTrials) && capture.maxTrials <= 30
+          && isPositiveInt(capture.plannedTrials) && capture.plannedTrials <= capture.maxTrials
           && capture.fields is list && capture.fields.size() >= 1 && capture.fields.size() <= 16
           && capture.reducers is list && capture.reducers.size() >= 1 && capture.reducers.size() <= 8
           && capture.reducerVersion == 'assessment-reducer-v1';
@@ -218,14 +217,14 @@
           && data.keys().hasOnly(['id', 'revision', 'title', 'intent', 'metricIds', 'instructions', 'warmupRef', 'comparisonContext', 'familiarization', 'burden', 'expectedRecoveryHours', 'invalidationRules', 'capture', 'createdAt'])
           && data.keys().hasAll(['id', 'revision', 'title', 'intent', 'metricIds', 'instructions', 'comparisonContext', 'familiarization', 'burden', 'invalidationRules', 'createdAt'])
           && data.id == protocolId
-          && data.id is string && data.id.size() > 0 && data.id.size() <= 128
-          && data.revision is int && data.revision >= 1 && string(data.revision) == revisionId
-          && data.title is string && data.title.size() > 0 && data.title.size() <= 200
+          && isBoundedString(data.id, 128)
+          && isPositiveInt(data.revision) && string(data.revision) == revisionId
+          && isBoundedString(data.title, 200)
           && data.intent == 'testing'
           && data.metricIds is list && data.metricIds.size() >= 1 && data.metricIds.size() <= 8
           && data.metricIds.hasOnly(outcomeMetricUnits().keys())
           && data.instructions is list && data.instructions.size() <= 64
-          && (!('warmupRef' in data) || (data.warmupRef is string && data.warmupRef.size() > 0 && data.warmupRef.size() <= 128))
+          && (!('warmupRef' in data) || (isBoundedString(data.warmupRef, 128)))
           && comparison is map
           && comparison.keys().hasOnly(['required', 'seriesDefining', 'contextOnly', 'canonicalizationVersion'])
           && comparison.keys().hasAll(['required', 'seriesDefining', 'contextOnly', 'canonicalizationVersion'])
@@ -234,7 +233,7 @@
           && comparison.contextOnly is list && comparison.contextOnly.size() <= 16 && comparison.contextOnly.hasOnly(comparison.required)
           && !comparison.seriesDefining.hasAny(comparison.contextOnly)
           && comparison.required.size() <= comparison.seriesDefining.size() + comparison.contextOnly.size()
-          && comparison.canonicalizationVersion is string && comparison.canonicalizationVersion.size() > 0 && comparison.canonicalizationVersion.size() <= 64
+          && isBoundedString(comparison.canonicalizationVersion, 64)
           && familiarization is map
           && familiarization.keys().hasOnly(['required', 'minimumExposures'])
           && familiarization.keys().hasAll(['required', 'minimumExposures'])
@@ -250,7 +249,6 @@
 
       allow read: if isOwner(userId);
       allow create: if hasValidMeasurementProtocol(userId, protocolId, revisionId);
-      allow update, delete: if false;
     }
 
     match /users/{userId}/assessment_attempts/{attemptId} {
@@ -260,14 +258,14 @@
           && data.keys().hasOnly(['id', 'protocolRef', 'scheduledDate', 'startedAt', 'completedAt', 'state', 'purpose', 'sourceSessionRef', 'notes'])
           && data.keys().hasAll(['id', 'protocolRef', 'state', 'purpose'])
           && data.id == attemptId
-          && data.id is string && data.id.size() > 0 && data.id.size() <= 160
+          && isBoundedString(data.id, 160)
           && hasValidProtocolRef(userId, data.protocolRef)
           && data.state in ['scheduled', 'in_progress', 'completed', 'abandoned']
           && data.purpose in ['familiarization', 'baseline', 'checkpoint', 'post_block']
           && (!('scheduledDate' in data) || isValidActivityDate(data.scheduledDate))
           && (!('startedAt' in data) || (data.startedAt is string && data.startedAt.size() > 0))
           && (!('completedAt' in data) || (data.completedAt is string && data.completedAt.size() > 0))
-          && (!('sourceSessionRef' in data) || (data.sourceSessionRef is string && data.sourceSessionRef.size() > 0 && data.sourceSessionRef.size() <= 256))
+          && (!('sourceSessionRef' in data) || (isBoundedString(data.sourceSessionRef, 256)))
           && (!('notes' in data) || (data.notes is string && data.notes.size() <= 4000))
           && (data.state != 'scheduled' || (!('startedAt' in data) && !('completedAt' in data)))
           && (data.state != 'in_progress' || (('startedAt' in data) && !('completedAt' in data)))
@@ -294,16 +292,15 @@
       allow create: if hasValidAssessmentAttempt(userId, attemptId);
       allow update: if hasValidAssessmentAttempt(userId, attemptId)
         && hasValidAssessmentAttemptTransition();
-      allow delete: if false;
     }
 
     function hasValidObservationDevice(device) {
       return device is map
         && device.keys().hasOnly(['provider', 'model', 'deviceId'])
         && device.keys().hasAll(['provider'])
-        && device.provider is string && device.provider.size() > 0 && device.provider.size() <= 128
-        && (!('model' in device) || (device.model is string && device.model.size() > 0 && device.model.size() <= 128))
-        && (!('deviceId' in device) || (device.deviceId is string && device.deviceId.size() > 0 && device.deviceId.size() <= 256));
+        && isBoundedString(device.provider, 128)
+        && (!('model' in device) || (isBoundedString(device.model, 128)))
+        && (!('deviceId' in device) || (isBoundedString(device.deviceId, 256)));
     }
 
     function isFixedLoadProtocol(protocolRef) {
@@ -338,10 +335,10 @@
           && data.keys().hasOnly(['observationKey', 'assessmentAttemptId', 'metricId', 'headRevision', 'createdAt', 'updatedAt'])
           && data.keys().hasAll(['observationKey', 'assessmentAttemptId', 'metricId', 'headRevision', 'createdAt', 'updatedAt'])
           && data.observationKey == observationKey
-          && data.assessmentAttemptId is string && data.assessmentAttemptId.size() > 0 && data.assessmentAttemptId.size() <= 160
+          && isBoundedString(data.assessmentAttemptId, 160)
           && hasKnownOutcomeMetric(data.metricId)
           && data.observationKey == data.assessmentAttemptId + ':' + data.metricId
-          && data.headRevision is int && data.headRevision >= 1
+          && isPositiveInt(data.headRevision)
           && data.createdAt is string && data.createdAt.size() > 0
           && data.updatedAt is string && data.updatedAt.size() > 0;
       }
@@ -396,25 +393,25 @@
           && data.keys().hasOnly(['observationKey', 'revision', 'supersedesRevision', 'metricId', 'value', 'unit', 'observedAt', 'source', 'sourceRef', 'device', 'protocolRef', 'comparisonSeriesKey', 'comparisonCanonicalizationVersion', 'assessmentAttemptId', 'validity', 'invalidReason', 'context', 'derivedFromObservationIds', 'derivedFromEvidenceRefs', 'algorithmVersion', 'correctionReason', 'createdAt'])
           && data.keys().hasAll(['observationKey', 'revision', 'metricId', 'value', 'unit', 'observedAt', 'source', 'protocolRef', 'comparisonSeriesKey', 'comparisonCanonicalizationVersion', 'assessmentAttemptId', 'validity', 'context', 'createdAt'])
           && data.observationKey == observationKey
-          && data.assessmentAttemptId is string && data.assessmentAttemptId.size() > 0 && data.assessmentAttemptId.size() <= 160
+          && isBoundedString(data.assessmentAttemptId, 160)
           && data.observationKey == data.assessmentAttemptId + ':' + data.metricId
-          && data.revision is int && data.revision >= 1 && string(data.revision) == revisionId
+          && isPositiveInt(data.revision) && string(data.revision) == revisionId
           && ((data.revision == 1 && !('supersedesRevision' in data) && !('correctionReason' in data))
             || (data.revision > 1
               && data.supersedesRevision is int && data.supersedesRevision == data.revision - 1
-              && data.correctionReason is string && data.correctionReason.size() > 0 && data.correctionReason.size() <= 2000))
+              && isBoundedString(data.correctionReason, 2000)))
           && data.metricId is string && data.metricId in units
           && data.value is number
           && data.unit == units[data.metricId]
           && data.observedAt is string && data.observedAt.size() > 0
           && data.source in ['manual', 'garmin_activity', 'garmin_lap', 'derived']
-          && (!('sourceRef' in data) || (data.sourceRef is string && data.sourceRef.size() > 0 && data.sourceRef.size() <= 512))
+          && (!('sourceRef' in data) || (isBoundedString(data.sourceRef, 512)))
           && (!('device' in data) || hasValidObservationDevice(data.device))
-          && data.comparisonSeriesKey is string && data.comparisonSeriesKey.size() > 0 && data.comparisonSeriesKey.size() <= 128
-          && data.comparisonCanonicalizationVersion is string && data.comparisonCanonicalizationVersion.size() > 0 && data.comparisonCanonicalizationVersion.size() <= 64
+          && isBoundedString(data.comparisonSeriesKey, 128)
+          && isBoundedString(data.comparisonCanonicalizationVersion, 64)
           && data.validity in ['valid', 'invalid', 'practice', 'questionable']
           && (data.validity != 'invalid' || ('invalidReason' in data))
-          && (!('invalidReason' in data) || (data.invalidReason is string && data.invalidReason.size() > 0 && data.invalidReason.size() <= 2000))
+          && (!('invalidReason' in data) || (isBoundedString(data.invalidReason, 2000)))
           && data.context is map && data.context.size() <= 64
           && hasValidDerivationProvenance(data)
           && data.createdAt is string && data.createdAt.size() > 0
@@ -430,7 +427,7 @@
             && (('derivedFromObservationIds' in data) || ('derivedFromEvidenceRefs' in data))
             && (!('derivedFromObservationIds' in data) || (data.derivedFromObservationIds is list && data.derivedFromObservationIds.size() >= 1 && data.derivedFromObservationIds.size() <= 32))
             && (!('derivedFromEvidenceRefs' in data) || (data.derivedFromEvidenceRefs is list && data.derivedFromEvidenceRefs.size() >= 1 && data.derivedFromEvidenceRefs.size() <= 32))
-            && ('algorithmVersion' in data) && data.algorithmVersion is string && data.algorithmVersion.size() > 0 && data.algorithmVersion.size() <= 128)
+            && ('algorithmVersion' in data) && isBoundedString(data.algorithmVersion, 128))
           || (data.source != 'derived'
             && !('derivedFromObservationIds' in data)
             && !('derivedFromEvidenceRefs' in data)
@@ -445,7 +442,6 @@
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['headRevision', 'updatedAt'])
         && request.resource.data.headRevision == resource.data.headRevision + 1
         && revisionAfterHead(userId, observationKey, request.resource.data.headRevision);
-      allow delete: if false;
 
       match /revisions/{revisionId} {
         allow read: if isOwner(userId);
@@ -456,7 +452,6 @@
             || (request.resource.data.revision > 1
               && get(/databases/$(database)/documents/users/$(userId)/metric_observations/$(observationKey)).data.headRevision == request.resource.data.supersedesRevision)
           );
-        allow update, delete: if false;
       }
     }
 
@@ -582,7 +577,7 @@
           && data.keys().hasAll(['id', 'assessmentAttemptId', 'ordinal', 'correctionIndex', 'validity', 'values', 'context', 'createdAt'])
           && data.id == trialId
           && data.assessmentAttemptId == attemptId
-          && data.ordinal is int && data.ordinal >= 1
+          && isPositiveInt(data.ordinal)
           && data.correctionIndex is int && data.correctionIndex >= 0 && data.correctionIndex <= 20
           && data.id == assessmentTrialIdFor(data.ordinal, data.correctionIndex)
           && exists(attemptPath)
@@ -594,24 +589,23 @@
             || (data.correctionIndex > 0
               && data.supersedesTrialId == assessmentTrialIdFor(data.ordinal, data.correctionIndex - 1)
               && existsAfter(/databases/$(database)/documents/users/$(userId)/assessment_attempts/$(attemptId)/trials/$(data.supersedesTrialId))
-              && data.correctionReason is string && data.correctionReason.size() > 0 && data.correctionReason.size() <= 2000))
+              && isBoundedString(data.correctionReason, 2000)))
           && data.validity in ['valid', 'invalid', 'practice', 'questionable']
           && (data.validity != 'invalid' || ('invalidReason' in data))
-          && (!('invalidReason' in data) || (data.invalidReason is string && data.invalidReason.size() > 0 && data.invalidReason.size() <= 2000))
-          && (!('performedAt' in data) || (data.performedAt is string && data.performedAt.size() > 0 && data.performedAt.size() <= 64))
+          && (!('invalidReason' in data) || (isBoundedString(data.invalidReason, 2000)))
+          && (!('performedAt' in data) || (isBoundedString(data.performedAt, 64)))
           && data.values is map && data.values.size() <= 16
           && data.context is map && data.context.size() <= 32
           && (!isFixedLoadProtocol(attempt.protocolRef) || (hasEligibleFixedLoadTrial(data, old)
             && (data.correctionIndex == 0 || hasFixedLoadCorrectionIntegrity(userId, attempt, data))))
-          && (!('sourceRef' in data) || (data.sourceRef is string && data.sourceRef.size() > 0 && data.sourceRef.size() <= 512))
+          && (!('sourceRef' in data) || (isBoundedString(data.sourceRef, 512)))
           && (!('device' in data) || hasValidObservationDevice(data.device))
           && (!('notes' in data) || (data.notes is string && data.notes.size() <= 4000))
-          && data.createdAt is string && data.createdAt.size() > 0 && data.createdAt.size() <= 64;
+          && isBoundedString(data.createdAt, 64);
       }
 
       allow read: if isOwner(userId);
       allow create: if hasValidAssessmentTrial(userId, attemptId, trialId);
-      allow update, delete: if false;
     }
 
     match /users/{userId}/outcome_evaluations/{evaluationId} {
@@ -639,8 +633,8 @@
           && data.keys().hasOnly(['id', 'currentRevision', 'createdAt', 'updatedAt'])
           && data.keys().hasAll(['id', 'currentRevision', 'createdAt', 'updatedAt'])
           && data.id == evaluationId
-          && data.id is string && data.id.size() > 0 && data.id.size() <= 160
-          && data.currentRevision is int && data.currentRevision >= 1
+          && isBoundedString(data.id, 160)
+          && isPositiveInt(data.currentRevision)
           && data.createdAt is string && data.createdAt.size() > 0
           && data.updatedAt is string && data.updatedAt.size() > 0;
       }
@@ -650,7 +644,7 @@
           && sourceRef.keys().hasOnly(['kind', 'id'])
           && sourceRef.keys().hasAll(['kind', 'id'])
           && sourceRef.kind in ['event', 'authored_plan', 'manual_block']
-          && sourceRef.id is string && sourceRef.id.size() > 0 && sourceRef.id.size() <= 256;
+          && isBoundedString(sourceRef.id, 256);
       }
 
       function hasValidOutcomeEvaluationRevision(userId, evaluationId, revisionId) {
@@ -659,9 +653,9 @@
           && data.keys().hasOnly(['id', 'revision', 'title', 'startDate', 'endDate', 'sourceRef', 'status', 'activatedAt', 'contentHash', 'createdAt', 'bindings'])
           && data.keys().hasAll(['id', 'revision', 'title', 'startDate', 'endDate', 'status', 'contentHash', 'createdAt', 'bindings'])
           && data.id == evaluationId
-          && data.id is string && data.id.size() > 0 && data.id.size() <= 160
-          && data.revision is int && data.revision >= 1 && string(data.revision) == revisionId
-          && data.title is string && data.title.size() > 0 && data.title.size() <= 200
+          && isBoundedString(data.id, 160)
+          && isPositiveInt(data.revision) && string(data.revision) == revisionId
+          && isBoundedString(data.title, 200)
           && isValidActivityDate(data.startDate)
           && isValidActivityDate(data.endDate)
           && data.startDate <= data.endDate
@@ -686,10 +680,9 @@
         && outcomeEvaluationRevisionAfterHead(userId, evaluationId, 1);
       allow update: if hasValidOutcomeEvaluationHead(userId, evaluationId)
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['currentRevision', 'updatedAt'])
-        && request.resource.data.createdAt == resource.data.createdAt
+        && keepsCreatedAt()
         && request.resource.data.currentRevision == resource.data.currentRevision + 1
         && outcomeEvaluationRevisionAfterHead(userId, evaluationId, request.resource.data.currentRevision);
-      allow delete: if false;
 
       match /revisions/{revisionId} {
         allow read: if isOwner(userId);
@@ -705,7 +698,7 @@
         allow update: if hasValidOutcomeEvaluationRevision(userId, evaluationId, revisionId)
           && request.resource.data.id == resource.data.id
           && request.resource.data.revision == resource.data.revision
-          && request.resource.data.createdAt == resource.data.createdAt
+          && keepsCreatedAt()
           && (
             (resource.data.status == 'draft'
               && request.resource.data.status == 'active'
@@ -718,7 +711,6 @@
               && request.resource.data.status == 'archived'
               && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']))
           );
-        allow delete: if false;
       }
     }
 
@@ -728,8 +720,8 @@
         return evaluationRef is map
           && evaluationRef.keys().hasOnly(['id', 'revision', 'contentHash'])
           && evaluationRef.keys().hasAll(['id', 'revision', 'contentHash'])
-          && evaluationRef.id is string && evaluationRef.id.size() > 0 && evaluationRef.id.size() <= 160
-          && evaluationRef.revision is int && evaluationRef.revision >= 1
+          && isBoundedString(evaluationRef.id, 160)
+          && isPositiveInt(evaluationRef.revision)
           && evaluationRef.contentHash is string && evaluationRef.contentHash.matches('^[0-9a-f]{64}$')
           && exists(revisionPath)
           && get(revisionPath).data.status in ['active', 'completed', 'archived']
@@ -751,25 +743,25 @@
           && data.keys().hasOnly(['id', 'eventRef', 'evaluationRef', 'sport', 'occurredAt', 'source', 'sourceRef', 'result', 'metrics', 'context', 'createdAt'])
           && data.keys().hasAll(['id', 'sport', 'occurredAt', 'source', 'result', 'metrics', 'context', 'createdAt'])
           && data.id == outcomeId
-          && data.id is string && data.id.size() > 0 && data.id.size() <= 160
-          && (!('eventRef' in data) || (data.eventRef is string && data.eventRef.size() > 0 && data.eventRef.size() <= 256))
+          && isBoundedString(data.id, 160)
+          && (!('eventRef' in data) || (isBoundedString(data.eventRef, 256)))
           && data.sport in ['cycling', 'running', 'field', 'other']
           && data.occurredAt is string && data.occurredAt.size() > 0
           && data.source in ['manual', 'garmin_activity', 'imported_result']
-          && (data.source == 'manual' || ('sourceRef' in data && data.sourceRef is string && data.sourceRef.size() > 0 && data.sourceRef.size() <= 512))
-          && (!('sourceRef' in data) || (data.sourceRef is string && data.sourceRef.size() > 0 && data.sourceRef.size() <= 512))
+          && (data.source == 'manual' || ('sourceRef' in data && isBoundedString(data.sourceRef, 512)))
+          && (!('sourceRef' in data) || (isBoundedString(data.sourceRef, 512)))
           && (!('evaluationRef' in data) || hasValidCompetitionOutcomeEvaluationRef(userId, data.evaluationRef))
           && (!('evaluationRef' in data) || competitionOutcomeEventMatchesEvaluation(userId, data.evaluationRef, ('eventRef' in data ? data.eventRef : '')))
           && result is map
           && result.keys().hasOnly(['completed', 'placing', 'fieldSize', 'elapsedSeconds', 'distanceM', 'courseId', 'summary'])
           && result.keys().hasAll(['completed'])
           && result.completed is bool
-          && (!('placing' in result) || (result.placing is int && result.placing >= 1))
-          && (!('fieldSize' in result) || (result.fieldSize is int && result.fieldSize >= 1))
+          && (!('placing' in result) || (isPositiveInt(result.placing)))
+          && (!('fieldSize' in result) || (isPositiveInt(result.fieldSize)))
           && (!('placing' in result) || !('fieldSize' in result) || result.placing <= result.fieldSize)
           && (!('elapsedSeconds' in result) || (result.elapsedSeconds is number && result.elapsedSeconds >= 0))
           && (!('distanceM' in result) || (result.distanceM is number && result.distanceM >= 0))
-          && (!('courseId' in result) || (result.courseId is string && result.courseId.size() > 0 && result.courseId.size() <= 256))
+          && (!('courseId' in result) || (isBoundedString(result.courseId, 256)))
           && (!('summary' in result) || (result.summary is string && result.summary.size() <= 4000))
           && data.metrics is map && data.metrics.size() <= 64
           && data.context is map && data.context.size() <= 64
@@ -778,5 +770,4 @@
 
       allow read: if isOwner(userId);
       allow create: if hasValidCompetitionOutcome(userId, outcomeId);
-      allow update, delete: if false;
     }

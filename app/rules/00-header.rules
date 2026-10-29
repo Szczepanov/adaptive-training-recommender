@@ -2,6 +2,22 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
+    function keepsCreatedAt() {
+      return request.resource.data.createdAt == resource.data.createdAt;
+    }
+
+    function hasStringTimestamps(v) {
+      return v.createdAt is string && v.updatedAt is string;
+    }
+
+    function isBoundedString(v, max) {
+      return v is string && v.size() > 0 && v.size() <= max;
+    }
+
+    function isPositiveInt(v) {
+      return v is int && v >= 1;
+    }
+
     function isOwner(userId) {
       return request.auth != null && request.auth.uid == userId;
     }

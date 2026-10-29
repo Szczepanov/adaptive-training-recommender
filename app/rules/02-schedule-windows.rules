@@ -8,15 +8,15 @@
         return window is map
           && window.keys().hasOnly(['id', 'userId', 'date', 'startLocal', 'endLocal', 'label', 'equipment', 'environment', 'revision', 'createdAt', 'updatedAt'])
           && window.keys().hasAll(['id', 'userId', 'date', 'startLocal', 'endLocal', 'revision', 'createdAt', 'updatedAt'])
-          && window.id is string && window.id.size() > 0 && window.id.size() <= 128
+          && isBoundedString(window.id, 128)
           && window.userId == userId
           && window.date == date
           && window.startLocal is string && window.startLocal.matches('^([01][0-9]|2[0-3]):[0-5][0-9]$')
           && window.endLocal is string && window.endLocal.matches('^([01][0-9]|2[0-3]):[0-5][0-9]$')
           && window.endLocal > window.startLocal
-          && window.revision is int && window.revision >= 1
+          && isPositiveInt(window.revision)
           && window.createdAt is string && window.updatedAt is string
-          && (!('label' in window) || (window.label is string && window.label.size() > 0 && window.label.size() <= 100))
+          && (!('label' in window) || (isBoundedString(window.label, 100)))
           && (!('equipment' in window) || hasValidEquipmentList(window.equipment))
           && (!('environment' in window) || window.environment in ['indoor', 'outdoor', 'either']);
       }
@@ -108,8 +108,8 @@
           && data.keys().hasOnly(['userId', 'date', 'revision', 'windows', 'createdAt', 'updatedAt'])
           && data.keys().hasAll(['userId', 'date', 'revision', 'windows', 'createdAt', 'updatedAt'])
           && data.date == date && isValidActivityDate(data.date)
-          && data.revision is int && data.revision >= 1
-          && data.createdAt is string && data.updatedAt is string
+          && isPositiveInt(data.revision)
+          && hasStringTimestamps(data)
           && hasValidScheduleWindowManifestEntries(userId, date, data.windows)
           && hasDistinctScheduleWindowManifestIds(data.windows)
           && hasNonOverlappingScheduleWindowManifestEntries(data.windows);
@@ -121,8 +121,8 @@
           && data.keys().hasOnly(['userId', 'date', 'revision', 'windows', 'createdAt', 'updatedAt'])
           && data.keys().hasAll(['userId', 'date', 'revision', 'windows', 'createdAt', 'updatedAt'])
           && data.date == date && isValidActivityDate(data.date)
-          && data.revision is int && data.revision >= 1
-          && data.createdAt is string && data.updatedAt is string
+          && isPositiveInt(data.revision)
+          && hasStringTimestamps(data)
           && hasValidScheduleWindowManifestEntriesUpToThree(userId, date, data.windows)
           && hasDistinctScheduleWindowManifestIdsUpToThree(data.windows)
           && hasNonOverlappingScheduleWindowManifestEntries(data.windows);
@@ -140,19 +140,17 @@
       allow update: if (
         (request.resource.data.windows.size() <= 3
           && hasValidSmallScheduleWindowManifest(userId, date)
-          && request.resource.data.createdAt == resource.data.createdAt
+          && keepsCreatedAt()
           && request.resource.data.revision == resource.data.revision + 1)
         || (request.resource.data.windows.size() > 3
           && hasValidScheduleWindowManifest(userId, date)
-          && request.resource.data.createdAt == resource.data.createdAt
+          && keepsCreatedAt()
           && request.resource.data.revision == resource.data.revision + 1)
       );
-      allow delete: if false;
     }
 
     // Retired sibling documents remain readable for forensic/migration purposes but no
     // client can create, mutate, or delete one and bypass the manifest invariant.
     match /users/{userId}/schedule_windows/{windowId} {
       allow read: if isOwner(userId);
-      allow write: if false;
     }

@@ -343,7 +343,6 @@
       allow read: if isOwner(userId);
       allow create: if hasValidRecommendation(userId, date);
       allow update: if recommendationUpdateAllowed(userId, date, request.resource.data.diff(resource.data).affectedKeys());
-      allow delete: if false;
 
       match /revisions/{revId} {
         allow read: if isOwner(userId);
@@ -357,13 +356,11 @@
           // null audit against an audit-less parent; an archived audit must be a map.
           && (!('recommendationAudit' in request.resource.data) || request.resource.data.recommendationAudit is map)
           && archiveAccompaniesParentBump(userId, date, request.resource.data.revision);
-        allow update, delete: if false;
       }
 
       match /decision_contexts/{revision} {
         allow read: if isOwner(userId);
         allow create: if isOwner(userId) && hasValidDecisionContext(userId, date, revision);
-        allow update, delete: if false;
       }
     }
 
@@ -425,7 +422,6 @@
 
       allow read: if isOwner(userId);
       allow create: if hasValidIntradayDecision(userId, decisionId);
-      allow update, delete: if false;
     }
 
     match /users/{userId}/daily_ledgers/{date} {
@@ -474,7 +470,6 @@
         // the same optimistic-sequencing property that makes a concurrent claim conflict
         // and retry rather than silently overwrite another writer's reservation change.
         && request.resource.data.revision == resource.data.revision + 1;
-      allow delete: if false;
     }
 
     match /users/{userId}/intraday_bundle_placements/{date} {
@@ -511,7 +506,6 @@
         && request.resource.data.date == resource.data.date
         && request.resource.data.createdAt == resource.data.createdAt
         && request.resource.data.revision == resource.data.revision + 1;
-      allow delete: if false;
     }
 
     match /users/{userId}/intraday_bundle_placement_audits/{auditId} {
@@ -572,5 +566,4 @@
       allow read: if isOwner(userId);
       allow create: if hasValidIntradayBundlePlacementAudit(userId)
         && request.resource.data.auditId == auditId;
-      allow update, delete: if false;
     }

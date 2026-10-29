@@ -241,7 +241,7 @@ Multi-trial protocols retain repeated attempts and load/velocity evidence as imm
   * includes full observation revision chains (not just latest heads);
   * computes longitudinal progress via `deriveProgress()` across comparable attempts;
   * formats keys with canonical recursive code-unit sorting (`canonicalJson.ts`).
-* **Rules parity and immutability:** rules deny trial `update` and `delete` (`allow update, delete: if false`). Parity between rules allowlists/bounds and domain constants is verified by `firestoreRulesParity.test.ts` and `assessmentTrialRules.emulator.test.ts`.
+* **Rules parity and immutability:** rules deny trial `update` and `delete` (no update/delete allow; denied by default). Parity between rules allowlists/bounds and domain constants is verified by `firestoreRulesParity.test.ts` and `assessmentTrialRules.emulator.test.ts`.
 
 ### Metric observations
 

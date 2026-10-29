@@ -2,6 +2,22 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
+    function keepsCreatedAt() {
+      return request.resource.data.createdAt == resource.data.createdAt;
+    }
+
+    function hasStringTimestamps(v) {
+      return v.createdAt is string && v.updatedAt is string;
+    }
+
+    function isBoundedString(v, max) {
+      return v is string && v.size() > 0 && v.size() <= max;
+    }
+
+    function isPositiveInt(v) {
+      return v is int && v >= 1;
+    }
+
     function isOwner(userId) {
       return request.auth != null && request.auth.uid == userId;
     }
@@ -72,12 +88,11 @@ service cloud.firestore {
       allow create: if hasValidDecisionJournalEntry(userId, date);
       allow update: if keepsOwnership(userId)
         && hasValidDecisionJournalEntry(userId, date)
-        && request.resource.data.createdAt == resource.data.createdAt
+        && keepsCreatedAt()
         && request.resource.data.sawEngineVerdictFirst == resource.data.sawEngineVerdictFirst
         && request.resource.data.externalVerdict == resource.data.externalVerdict
         && (('externalNote' in request.resource.data) == ('externalNote' in resource.data))
         && (!('externalNote' in resource.data) || request.resource.data.externalNote == resource.data.externalNote);
-      allow delete: if false;
     }
 
     match /users/{userId}/goals/{goalId} {
@@ -119,7 +134,7 @@ service cloud.firestore {
 
       allow read: if isOwner(userId);
       allow create: if hasOwnedUserId(userId) && hasValidGoalTaper() && hasValidGoalPerformanceTarget();
-      allow update: if keepsOwnership(userId) && request.resource.data.createdAt == resource.data.createdAt && hasValidGoalTaper() && hasValidGoalPerformanceTarget();
+      allow update: if keepsOwnership(userId) && keepsCreatedAt() && hasValidGoalTaper() && hasValidGoalPerformanceTarget();
       allow delete: if isOwner(userId);
     }
 
@@ -209,7 +224,7 @@ service cloud.firestore {
       allow create: if hasValidFixedActivity(userId);
       allow update: if hasValidFixedActivity(userId)
         && keepsOwnership(userId)
-        && request.resource.data.createdAt == resource.data.createdAt;
+        && keepsCreatedAt();
       allow delete: if isOwner(userId);
     }
 
@@ -240,25 +255,25 @@ service cloud.firestore {
           && data.weeklyCommitment is map
           && commitment.keys().hasOnly(['minSessions', 'targetSessions', 'maxSessions'])
           && commitment.keys().hasAll(['minSessions', 'targetSessions', 'maxSessions'])
-          && commitment.minSessions is int && commitment.minSessions >= 1 && commitment.minSessions <= 14
+          && isPositiveInt(commitment.minSessions) && commitment.minSessions <= 14
           && commitment.targetSessions is int && commitment.targetSessions >= commitment.minSessions && commitment.targetSessions <= 14
           && commitment.maxSessions is int && commitment.maxSessions >= commitment.targetSessions && commitment.maxSessions <= 14
           && data.organizationPreference == 'auto'
-          && data.schemaVersion is int && data.schemaVersion >= 1
-          && data.createdAt is string && data.updatedAt is string;
+          && isPositiveInt(data.schemaVersion)
+          && hasStringTimestamps(data);
       }
 
       allow read: if isOwner(userId);
       allow create: if hasValidTrainingIntentProfile(userId);
       allow update: if hasValidTrainingIntentProfile(userId)
         && keepsOwnership(userId)
-        && request.resource.data.createdAt == resource.data.createdAt;
+        && keepsCreatedAt();
       allow delete: if isOwner(userId);
     }
 
     match /users/{userId}/constraints/{constraintId} {
       allow read: if isOwner(userId);
-      allow write: if false;
+      // Server-managed: client writes denied by default.
     }
 
     match /users/{userId}/preferences/profile {
@@ -271,9 +286,8 @@ service cloud.firestore {
 
       allow read: if isOwner(userId);
       allow create: if hasOwnedUserId(userId) && hasValidUnavailableModalities(request.resource.data);
-      allow update: if keepsOwnership(userId) && request.resource.data.createdAt == resource.data.createdAt
+      allow update: if keepsOwnership(userId) && keepsCreatedAt()
         && hasValidUnavailableModalities(request.resource.data);
-      allow delete: if false;
     }
 
     match /users/{userId}/trainingSettings/profile {
@@ -287,21 +301,20 @@ service cloud.firestore {
         && (!('injuries' in request.resource.data) || hasValidInjuryList(request.resource.data.injuries))
         && (!('injuryHistory' in request.resource.data) || request.resource.data.injuryHistory is list);
       allow update: if keepsOwnership(userId)
-        && request.resource.data.createdAt == resource.data.createdAt
+        && keepsCreatedAt()
         && request.resource.data.schemaVersion in [2, 3]
         && (!('injuries' in request.resource.data) || hasValidInjuryList(request.resource.data.injuries))
         && (!('injuryHistory' in request.resource.data) || request.resource.data.injuryHistory is list);
-      allow delete: if false;
     }
 
     match /users/{userId}/daily_recovery_snapshots/{date} {
       allow read: if isOwner(userId);
-      allow write: if false;
+      // Server-managed: client writes denied by default.
     }
 
     match /users/{userId}/activities/{activityId} {
       allow read: if isOwner(userId);
-      allow write: if false;
+      // Server-managed: client writes denied by default.
     }
 
     match /users/{userId}/activity_annotations/{activityId} {
@@ -348,7 +361,7 @@ service cloud.firestore {
           && isValidActivityDate(data.date)
           && data.keys().hasOnly(['activityId', 'userId', 'date', 'originalType', 'originalIntensityTag', 'overriddenModality', 'overriddenIntensity', 'rpe', 'stimulusFocus', 'notes', 'createdAt', 'updatedAt'])
           && data.keys().hasAll(['activityId', 'userId', 'date', 'originalType', 'originalIntensityTag', 'overriddenModality', 'overriddenIntensity', 'createdAt', 'updatedAt'])
-          && data.originalType is string && data.originalType.size() > 0 && data.originalType.size() <= 128
+          && isBoundedString(data.originalType, 128)
           && data.originalIntensityTag is string && data.originalIntensityTag.size() <= 64
           && data.overriddenModality in ['Running', 'Cycling', 'Swimming', 'Strength', 'Mobility', 'Field', 'Cross Training', 'Unknown']
           && data.overriddenIntensity in ['easy', 'moderate', 'hard', 'unknown']
@@ -365,13 +378,13 @@ service cloud.firestore {
         && keepsOwnership(userId)
         && request.resource.data.activityId == resource.data.activityId
         && request.resource.data.date == resource.data.date
-        && request.resource.data.createdAt == resource.data.createdAt;
+        && keepsCreatedAt();
       allow delete: if isOwner(userId);
     }
 
     match /users/{userId}/gear/{gearId} {
       allow read: if isOwner(userId);
-      allow write: if false;
+      // Server-managed: client writes denied by default.
     }
 
     match /users/{userId}/strength_sessions/{sessionId} {
@@ -385,7 +398,7 @@ service cloud.firestore {
           && isStrengthSessionDocument(sessionId)
           && data.keys().hasOnly(['userId', 'sessionId', 'date', 'startedAt', 'completedAt', 'updatedAt', 'state', 'sourceRecommendationDate', 'exercises', 'sessionRpe', 'notes', 'completionEvidence', 'schemaVersion'])
           && data.keys().hasAll(['userId', 'sessionId', 'date', 'startedAt', 'updatedAt', 'state', 'exercises', 'schemaVersion'])
-          && data.sessionId is string && data.sessionId.size() > 0 && data.sessionId.size() <= 128
+          && isBoundedString(data.sessionId, 128)
           && isValidActivityDate(data.date)
           && data.startedAt is string && data.startedAt.size() > 0
           && data.updatedAt is string && data.updatedAt.size() > 0
@@ -457,7 +470,7 @@ service cloud.firestore {
               && !(data.activityId in ['.', '..'])
               && exists(/databases/$(database)/documents/users/$(userId)/activities/$(data.activityId)))
             : !('activityId' in data))
-          && (!('days' in data) || (data.days is int && data.days >= 1 && data.days <= 365))
+          && (!('days' in data) || (isPositiveInt(data.days) && data.days <= 365))
           && (!('completedAt' in data) || data.completedAt == null)
           && (!('error' in data) || data.error == null);
       }
@@ -470,7 +483,7 @@ service cloud.firestore {
     // --- MS4/ADR-0027: server-owned integration connection metadata.
     match /users/{userId}/connections/{connectionId} {
       allow read: if isOwner(userId);
-      allow write: if false; // Server-managed only
+      // Server-managed only: client writes denied by default.
     }
 
 
@@ -482,15 +495,15 @@ service cloud.firestore {
         return window is map
           && window.keys().hasOnly(['id', 'userId', 'date', 'startLocal', 'endLocal', 'label', 'equipment', 'environment', 'revision', 'createdAt', 'updatedAt'])
           && window.keys().hasAll(['id', 'userId', 'date', 'startLocal', 'endLocal', 'revision', 'createdAt', 'updatedAt'])
-          && window.id is string && window.id.size() > 0 && window.id.size() <= 128
+          && isBoundedString(window.id, 128)
           && window.userId == userId
           && window.date == date
           && window.startLocal is string && window.startLocal.matches('^([01][0-9]|2[0-3]):[0-5][0-9]$')
           && window.endLocal is string && window.endLocal.matches('^([01][0-9]|2[0-3]):[0-5][0-9]$')
           && window.endLocal > window.startLocal
-          && window.revision is int && window.revision >= 1
+          && isPositiveInt(window.revision)
           && window.createdAt is string && window.updatedAt is string
-          && (!('label' in window) || (window.label is string && window.label.size() > 0 && window.label.size() <= 100))
+          && (!('label' in window) || (isBoundedString(window.label, 100)))
           && (!('equipment' in window) || hasValidEquipmentList(window.equipment))
           && (!('environment' in window) || window.environment in ['indoor', 'outdoor', 'either']);
       }
@@ -582,8 +595,8 @@ service cloud.firestore {
           && data.keys().hasOnly(['userId', 'date', 'revision', 'windows', 'createdAt', 'updatedAt'])
           && data.keys().hasAll(['userId', 'date', 'revision', 'windows', 'createdAt', 'updatedAt'])
           && data.date == date && isValidActivityDate(data.date)
-          && data.revision is int && data.revision >= 1
-          && data.createdAt is string && data.updatedAt is string
+          && isPositiveInt(data.revision)
+          && hasStringTimestamps(data)
           && hasValidScheduleWindowManifestEntries(userId, date, data.windows)
           && hasDistinctScheduleWindowManifestIds(data.windows)
           && hasNonOverlappingScheduleWindowManifestEntries(data.windows);
@@ -595,8 +608,8 @@ service cloud.firestore {
           && data.keys().hasOnly(['userId', 'date', 'revision', 'windows', 'createdAt', 'updatedAt'])
           && data.keys().hasAll(['userId', 'date', 'revision', 'windows', 'createdAt', 'updatedAt'])
           && data.date == date && isValidActivityDate(data.date)
-          && data.revision is int && data.revision >= 1
-          && data.createdAt is string && data.updatedAt is string
+          && isPositiveInt(data.revision)
+          && hasStringTimestamps(data)
           && hasValidScheduleWindowManifestEntriesUpToThree(userId, date, data.windows)
           && hasDistinctScheduleWindowManifestIdsUpToThree(data.windows)
           && hasNonOverlappingScheduleWindowManifestEntries(data.windows);
@@ -614,21 +627,19 @@ service cloud.firestore {
       allow update: if (
         (request.resource.data.windows.size() <= 3
           && hasValidSmallScheduleWindowManifest(userId, date)
-          && request.resource.data.createdAt == resource.data.createdAt
+          && keepsCreatedAt()
           && request.resource.data.revision == resource.data.revision + 1)
         || (request.resource.data.windows.size() > 3
           && hasValidScheduleWindowManifest(userId, date)
-          && request.resource.data.createdAt == resource.data.createdAt
+          && keepsCreatedAt()
           && request.resource.data.revision == resource.data.revision + 1)
       );
-      allow delete: if false;
     }
 
     // Retired sibling documents remain readable for forensic/migration purposes but no
     // client can create, mutate, or delete one and bypass the manifest invariant.
     match /users/{userId}/schedule_windows/{windowId} {
       allow read: if isOwner(userId);
-      allow write: if false;
     }
 
 
@@ -637,11 +648,11 @@ service cloud.firestore {
         let data = request.resource.data;
         return hasOwnedUserId(userId)
           && data.keys().hasOnly(['userId', 'planId', 'revision', 'title', 'startDate', 'weekCount', 'contentHash', 'importedAt', 'supersededFrom', 'updatedAt'])
-          && data.planId is string && data.planId.size() > 0 && data.planId.size() <= 64
-          && data.revision is int && data.revision >= 1
+          && isBoundedString(data.planId, 64)
+          && isPositiveInt(data.revision)
           && data.title is string && data.title.size() <= 200
           && isValidActivityDate(data.startDate)
-          && data.weekCount is int && data.weekCount >= 1 && data.weekCount <= 26
+          && isPositiveInt(data.weekCount) && data.weekCount <= 26
           && data.contentHash is string && data.contentHash.size() == 64
           && data.importedAt is string && data.updatedAt is string
           && (!('supersededFrom' in data) || data.supersededFrom == null || isValidActivityDate(data.supersededFrom));
@@ -650,8 +661,8 @@ service cloud.firestore {
       function isValidExternalRestDirective(directive, weekCount) {
         return directive is map
           && directive.keys().hasOnly(['id', 'week', 'day'])
-          && directive.id is string && directive.id.size() > 0 && directive.id.size() <= 64
-          && directive.week is int && directive.week >= 1 && directive.week <= weekCount
+          && isBoundedString(directive.id, 64)
+          && isPositiveInt(directive.week) && directive.week <= weekCount
           && directive.day in ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
       }
 
@@ -720,9 +731,9 @@ service cloud.firestore {
                   ? data.keys().hasOnly(['schema', 'planId', 'revision', 'title', 'startDate', 'weekCount', 'notes', 'sessions', 'restDays'])
                      && data.keys().hasAll(['restDays'])
                   : data.keys().hasOnly(['schema', 'planId', 'revision', 'title', 'startDate', 'weekCount', 'notes', 'sessions']))
-          && data.revision is int && data.revision >= 1
+          && isPositiveInt(data.revision)
           && isValidActivityDate(data.startDate)
-          && data.weekCount is int && data.weekCount >= 1 && data.weekCount <= 26
+          && isPositiveInt(data.weekCount) && data.weekCount <= 26
           && (!(data.schema in restDaySchemas)
             || hasValidExternalRestDirectives(data.restDays, data.weekCount))
           && (!isV5OrV6
@@ -735,8 +746,8 @@ service cloud.firestore {
         let data = request.resource.data;
         return hasOwnedUserId(userId)
           && data.keys().hasOnly(['userId', 'planId', 'revision', 'assignments', 'successors', 'updatedAt'])
-          && data.planId is string && data.planId.size() > 0 && data.planId.size() <= 64
-          && data.revision is int && data.revision >= 1
+          && isBoundedString(data.planId, 64)
+          && isPositiveInt(data.revision)
           && data.assignments is list && data.assignments.size() <= 120
           && (!('successors' in data) || (data.successors is map && data.successors.size() <= 120))
           && data.updatedAt is string;
@@ -749,7 +760,7 @@ service cloud.firestore {
         return hasOwnedUserId(userId)
           && data.keys().hasOnly(['userId', 'planId', 'revision', 'contentHash', 'effectiveFrom', 'activatedAt'])
           && data.planId == planId
-          && data.revision is int && data.revision >= 1
+          && isPositiveInt(data.revision)
           && string(data.revision) == revisionId
           && data.contentHash is string && data.contentHash.matches('^[a-f0-9]{64}$')
           && isValidActivityDate(data.effectiveFrom)
@@ -781,7 +792,6 @@ service cloud.firestore {
           && hasValidExternalPlanRevision()
           && request.resource.data.planId == planId
           && string(request.resource.data.revision) == revisionId;
-        allow update, delete: if false;
 
         match /placement_history/{eventId} {
           allow read: if isOwner(userId);
@@ -801,7 +811,6 @@ service cloud.firestore {
                 && request.resource.data.previous.size() == 0
                 && request.resource.data.get('previousStateReason', null) in ['current-schema-invalid', 'current-identity-mismatch', 'legacy-schema-invalid', 'legacy-identity-mismatch']))
             && existsAfter(/databases/$(database)/documents/users/$(userId)/external_plans/$(planId)/revisions/$(revisionId));
-          allow update, delete: if false;
         }
 
         match /placement/{placementId} {
@@ -818,7 +827,6 @@ service cloud.firestore {
       match /activations/{revisionId} {
         allow read: if isOwner(userId);
         allow create: if hasValidExternalPlanActivation(userId, planId, revisionId);
-        allow update, delete: if false;
       }
 
       match /placement/{placementId} {
@@ -843,12 +851,12 @@ service cloud.firestore {
         return hasOwnedUserId(userId)
           && data.keys().hasOnly(['userId', 'blockId', 'revision', 'contentHash', 'sourcePlanId', 'sourcePlanRevision', 'createdAt', 'updatedAt'])
           && data.keys().hasAll(['userId', 'blockId', 'revision', 'contentHash', 'sourcePlanId', 'sourcePlanRevision', 'createdAt', 'updatedAt'])
-          && data.blockId is string && data.blockId.size() > 0 && data.blockId.size() <= 128
-          && data.revision is int && data.revision >= 1
+          && isBoundedString(data.blockId, 128)
+          && isPositiveInt(data.revision)
           && data.contentHash is string && data.contentHash.size() == 64
-          && data.sourcePlanId is string && data.sourcePlanId.size() > 0 && data.sourcePlanId.size() <= 128
-          && data.sourcePlanRevision is int && data.sourcePlanRevision >= 1
-          && data.createdAt is string && data.updatedAt is string;
+          && isBoundedString(data.sourcePlanId, 128)
+          && isPositiveInt(data.sourcePlanRevision)
+          && hasStringTimestamps(data);
       }
 
       function hasValidIntentBlockRevision(blockId, revisionId) {
@@ -857,7 +865,7 @@ service cloud.firestore {
           && data.keys().hasAll(['userId', 'blockId', 'revision', 'block', 'pinnedTrainingIntentProfile', 'sourceSchemaVersion', 'sourceRef', 'contentHash', 'createdAt'])
           && data.blockId == blockId
           && string(data.revision) == revisionId
-          && data.revision is int && data.revision >= 1
+          && isPositiveInt(data.revision)
           && data.block is map
           && data.pinnedTrainingIntentProfile is map
           && data.sourceSchemaVersion is string && data.sourceSchemaVersion.size() > 0
@@ -880,7 +888,6 @@ service cloud.firestore {
         allow create: if isOwner(userId)
           && hasValidIntentBlockRevision(blockId, revisionId)
           && request.resource.data.userId == userId;
-        allow update, delete: if false;
       }
     }
 
@@ -895,13 +902,13 @@ service cloud.firestore {
           && data.keys().hasOnly(['userId', 'state', 'experimentId', 'blockId', 'proposalId', 'sourcePlanRevision', 'activationKey', 'activationRevisionId', 'acquiredAt', 'revision', 'createdAt', 'updatedAt'])
           && data.keys().hasAll(['userId', 'state', 'experimentId', 'blockId', 'proposalId', 'sourcePlanRevision', 'activationKey', 'activationRevisionId', 'acquiredAt', 'revision', 'createdAt', 'updatedAt'])
           && data.state in ['held', 'released']
-          && data.experimentId is string && data.experimentId.size() > 0 && data.experimentId.size() <= 64
-          && data.blockId is string && data.blockId.size() > 0 && data.blockId.size() <= 128
-          && data.proposalId is string && data.proposalId.size() > 0 && data.proposalId.size() <= 128
-          && data.sourcePlanRevision is int && data.sourcePlanRevision >= 1
+          && isBoundedString(data.experimentId, 64)
+          && isBoundedString(data.blockId, 128)
+          && isBoundedString(data.proposalId, 128)
+          && isPositiveInt(data.sourcePlanRevision)
           && data.activationKey is string && data.activationKey.size() == 64
           && data.activationRevisionId is string && data.activationRevisionId.size() > 0
-          && data.acquiredAt is string && data.createdAt is string && data.updatedAt is string;
+          && data.acquiredAt is string && hasStringTimestamps(data);
       }
 
       allow read: if isOwner(userId);
@@ -909,7 +916,6 @@ service cloud.firestore {
       allow update: if hasValidProgressionClaim(userId)
         && keepsOwnership(userId)
         && request.resource.data.revision == resource.data.revision + 1;
-      allow delete: if false;
     }
 
     match /users/{userId}/progression_experiment_activations/{activationKey} {
@@ -927,16 +933,15 @@ service cloud.firestore {
           && data.experimentId is string && data.experimentId.size() > 0
           && data.blockId is string && data.blockId.size() > 0
           && data.proposalId is string && data.proposalId.size() > 0
-          && data.sourcePlanRevision is int && data.sourcePlanRevision >= 1
+          && isPositiveInt(data.sourcePlanRevision)
           && data.activationRevisionId is string && data.activationRevisionId.size() > 0
-          && data.claimRevision is int && data.claimRevision >= 1
+          && isPositiveInt(data.claimRevision)
           && data.activatedAt is string
           && data.priorSettings is map && data.acceptedSettings is map;
       }
 
       allow read: if isOwner(userId);
       allow create: if hasValidProgressionActivation(userId, activationKey);
-      allow update, delete: if false;
     }
 
     match /users/{userId}/plan_blocks/{blockId} {
@@ -951,14 +956,14 @@ service cloud.firestore {
           && data.volumeScale is number && data.volumeScale >= 0 && data.volumeScale <= 1
           && data.intensityScale is number && data.intensityScale >= 0 && data.intensityScale <= 1
           && (!('eventId' in data) || data.eventId is string)
-          && data.createdAt is string && data.updatedAt is string;
+          && hasStringTimestamps(data);
       }
 
       allow read: if isOwner(userId);
       allow create: if hasValidPlanBlock(userId);
       allow update: if hasValidPlanBlock(userId)
         && keepsOwnership(userId)
-        && request.resource.data.createdAt == resource.data.createdAt;
+        && keepsCreatedAt();
       allow delete: if isOwner(userId);
     }
 
@@ -968,7 +973,7 @@ service cloud.firestore {
         return hasOwnedUserId(userId)
           && data.keys().hasOnly(['userId', 'title', 'category', 'sport', 'startDate', 'endDate', 'dailyAvailabilityMinutes', 'volumeScale', 'intensityScale', 'expectedCost', 'equipment', 'environment', 'notes', 'createdAt', 'updatedAt'])
           && data.keys().hasAll(['userId', 'title', 'category', 'startDate', 'endDate', 'dailyAvailabilityMinutes', 'volumeScale', 'intensityScale', 'expectedCost', 'createdAt', 'updatedAt'])
-          && data.title is string && data.title.size() > 0 && data.title.size() <= 200
+          && isBoundedString(data.title, 200)
           && data.category in ['active_sport', 'sedentary_rest', 'high_step_walking', 'limited_availability']
           && (!('sport' in data) || data.sport in ['skiing', 'volleyball', 'hiking', 'court_sport', 'field_sport', 'general'])
           && isValidActivityDate(data.startDate)
@@ -981,14 +986,14 @@ service cloud.firestore {
           && (!('equipment' in data) || hasValidEquipmentList(data.equipment))
           && (!('environment' in data) || data.environment in ['indoor', 'outdoor', 'either'])
           && (!('notes' in data) || (data.notes is string && data.notes.size() <= 1000))
-          && data.createdAt is string && data.updatedAt is string;
+          && hasStringTimestamps(data);
       }
 
       allow read: if isOwner(userId);
       allow create: if hasValidScheduleOverlay(userId);
       allow update: if hasValidScheduleOverlay(userId)
         && keepsOwnership(userId)
-        && request.resource.data.createdAt == resource.data.createdAt;
+        && keepsCreatedAt();
       allow delete: if isOwner(userId);
     }
 
@@ -999,15 +1004,15 @@ service cloud.firestore {
         return hasOwnedUserId(userId)
           && data.keys().hasOnly(['userId', 'definitionId', 'title', 'latestRevision', 'dominantModality', 'status', 'archivedAt', 'createdAt', 'updatedAt'])
           && data.definitionId == definitionId
-          && data.title is string && data.title.size() > 0 && data.title.size() <= 200
-          && data.latestRevision is int && data.latestRevision >= 1
+          && isBoundedString(data.title, 200)
+          && isPositiveInt(data.latestRevision)
           && (!('dominantModality' in data) || data.dominantModality is string)
           && (!('status' in data) || data.status in ['active', 'archived'])
           && (!('archivedAt' in data) || data.archivedAt is string)
           && (!('archivedAt' in data) || 'status' in data)
           && (!('status' in data) || data.status != 'archived' || data.archivedAt is string)
           && (!('status' in data) || data.status != 'active' || !('archivedAt' in data))
-          && data.createdAt is string && data.updatedAt is string;
+          && hasStringTimestamps(data);
       }
 
       function hasValidSessionDefinitionRevision(userId, definitionId, revId) {
@@ -1030,13 +1035,12 @@ service cloud.firestore {
       allow update: if hasValidSessionDefinitionHeader(userId, definitionId)
         && keepsOwnership(userId)
         && request.resource.data.latestRevision >= resource.data.latestRevision
-        && request.resource.data.createdAt == resource.data.createdAt;
+        && keepsCreatedAt();
       allow delete: if isOwner(userId);
 
       match /revisions/{revId} {
         allow read: if isOwner(userId);
         allow create: if hasValidSessionDefinitionRevision(userId, definitionId, revId);
-        allow update, delete: if false;
       }
     }
 
@@ -1044,8 +1048,8 @@ service cloud.firestore {
       function hasValidOccurrenceWindowBinding(binding) {
         return binding is map
           && binding.keys().hasOnly(['windowId', 'bundleId', 'order', 'boundStartLocal', 'boundEndLocal', 'startInstant', 'endInstant'])
-          && binding.windowId is string && binding.windowId.size() > 0 && binding.windowId.size() <= 128
-          && binding.bundleId is string && binding.bundleId.size() > 0 && binding.bundleId.size() <= 128
+          && isBoundedString(binding.windowId, 128)
+          && isBoundedString(binding.bundleId, 128)
           && binding.order is int && binding.order >= 0
           && binding.boundStartLocal is string && binding.boundStartLocal.size() > 0
           && binding.boundEndLocal is string && binding.boundEndLocal.size() > 0
@@ -1074,19 +1078,19 @@ service cloud.firestore {
             data.definitionRef is map
             && data.definitionRef.keys().hasOnly(['definitionId', 'revision', 'contentHash'])
             && data.definitionRef.definitionId is string && data.definitionRef.definitionId.size() > 0
-            && data.definitionRef.revision is int && data.definitionRef.revision >= 1
+            && isPositiveInt(data.definitionRef.revision)
             && data.definitionRef.contentHash is string && data.definitionRef.contentHash.size() > 0
           ))
           && (!('externalPlanRef' in data) || (
             data.externalPlanRef is map
             && data.externalPlanRef.keys().hasOnly(['planId', 'revision', 'sessionId', 'contentHash'])
-            && data.externalPlanRef.planId is string && data.externalPlanRef.planId.size() > 0 && data.externalPlanRef.planId.size() <= 64
-            && data.externalPlanRef.revision is int && data.externalPlanRef.revision >= 1
-            && data.externalPlanRef.sessionId is string && data.externalPlanRef.sessionId.size() > 0 && data.externalPlanRef.sessionId.size() <= 64
-            && data.externalPlanRef.contentHash is string && data.externalPlanRef.contentHash.size() > 0 && data.externalPlanRef.contentHash.size() <= 128
+            && isBoundedString(data.externalPlanRef.planId, 64)
+            && isPositiveInt(data.externalPlanRef.revision)
+            && isBoundedString(data.externalPlanRef.sessionId, 64)
+            && isBoundedString(data.externalPlanRef.contentHash, 128)
           ))
           && (!('placementOrder' in data) || (data.placementOrder is int && data.placementOrder >= 0))
-          && data.createdAt is string && data.updatedAt is string;
+          && hasStringTimestamps(data);
       }
 
       function isValidOccurrenceStateTransition(fromState, toState) {
@@ -1133,7 +1137,7 @@ service cloud.firestore {
       allow update: if hasValidSessionOccurrence(userId, occurrenceId)
         && keepsOwnership(userId)
         && request.resource.data.date == resource.data.date
-        && request.resource.data.createdAt == resource.data.createdAt
+        && keepsCreatedAt()
         && request.resource.data.authority == resource.data.authority
         && isValidOccurrenceStateTransition(resource.data.state, request.resource.data.state)
         && (
@@ -1157,8 +1161,8 @@ service cloud.firestore {
         return hasOwnedUserId(userId)
           && data.keys().hasOnly(['userId', 'date', 'windowId', 'occurrenceId', 'createdAt'])
           && isValidActivityDate(data.date)
-          && data.windowId is string && data.windowId.size() > 0 && data.windowId.size() <= 128
-          && data.occurrenceId is string && data.occurrenceId.size() > 0 && data.occurrenceId.size() <= 128
+          && isBoundedString(data.windowId, 128)
+          && isBoundedString(data.occurrenceId, 128)
           && data.createdAt is string;
       }
 
@@ -1213,7 +1217,6 @@ service cloud.firestore {
 
       allow read: if isOwner(userId);
       allow create: if hasValidExecutionPrescription(userId, prescriptionHash);
-      allow update, delete: if false;
     }
 
     function hasValidSessionSource(source) {
@@ -1370,8 +1373,7 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
         && sessionExecutionLockTargetsInProgress(userId, request.resource.data);
       allow update: if canUpdateSessionExecutionLock(userId);
       // The pointer is a durable concurrency anchor. Deleting it would reopen the exact
-      // check-then-create race this collection exists to close.
-      allow delete: if false;
+      // check-then-create race this collection exists to close. Deletes denied by default.
     }
 
     match /users/{userId}/session_executions/{executionId} {
@@ -1417,7 +1419,7 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
           ])
           && data.id == entryId
           && data.executionId == executionId
-          && data.completedAt is string && data.createdAt is string && data.updatedAt is string
+          && data.completedAt is string && hasStringTimestamps(data)
           && (!('diaryMutationId' in data) || (data.diaryMutationId is string && data.diaryMutationId.size() > 0))
           && (!('deletedAt' in data) || data.deletedAt == null || data.deletedAt is string)
           && (!('stepId' in data) || data.stepId is string)
@@ -1440,8 +1442,8 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
           && (
             (payload.kind == 'repetition'
               && payload.keys().hasOnly(['kind', 'setIndex', 'reps', 'weightKg', 'isWarmup', 'gauge'])
-              && payload.setIndex is int && payload.setIndex >= 1
-              && payload.reps is int && payload.reps >= 1
+              && isPositiveInt(payload.setIndex)
+              && isPositiveInt(payload.reps)
               && (!('weightKg' in payload) || (payload.weightKg is number && payload.weightKg >= 0))
               && (!('isWarmup' in payload) || payload.isWarmup is bool))
             || (payload.kind == 'duration'
@@ -1458,13 +1460,13 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
               && payload.splitSeconds is number && payload.splitSeconds > 0)
             || (payload.kind == 'jump_attempt'
               && payload.keys().hasOnly(['kind', 'attemptIndex', 'heightInches', 'distanceMeters'])
-              && payload.attemptIndex is int && payload.attemptIndex >= 1
+              && isPositiveInt(payload.attemptIndex)
               && (('heightInches' in payload && payload.heightInches is number && payload.heightInches > 0)
                 || ('distanceMeters' in payload && payload.distanceMeters is number && payload.distanceMeters > 0)))
             || (payload.kind == 'checkoff'
               && payload.keys().hasOnly(['kind', 'roundIndex', 'completed'])
               && payload.completed is bool
-              && (!('roundIndex' in payload) || (payload.roundIndex is int && payload.roundIndex >= 1)))
+              && (!('roundIndex' in payload) || (isPositiveInt(payload.roundIndex))))
             || (payload.kind == 'choice'
               && payload.keys().hasOnly(['kind', 'choiceId', 'optionId', 'reason'])
               && payload.choiceId is string && payload.choiceId.size() > 0
@@ -1620,7 +1622,6 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
         allow create: if validDiaryMutation(userId, executionId, mutationId);
         // Idempotent replay may resend the same immutable marker, never replace history.
         allow update: if isOwner(userId) && request.resource.data == resource.data;
-        allow delete: if false;
       }
 
       // A session-ending rest event must be written before the execution's own
@@ -1642,9 +1643,8 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
           && request.resource.data.afterEntryId == resource.data.afterEntryId
           && request.resource.data.startedAt == resource.data.startedAt
           && request.resource.data.endReason == resource.data.endReason
-          && request.resource.data.createdAt == resource.data.createdAt
+          && keepsCreatedAt()
           && restKeepsDiaryAudit(userId, executionId, restEventId);
-        allow delete: if false;
       }
     }
 
@@ -1992,7 +1992,6 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
       allow read: if isOwner(userId);
       allow create: if hasValidRecommendation(userId, date);
       allow update: if recommendationUpdateAllowed(userId, date, request.resource.data.diff(resource.data).affectedKeys());
-      allow delete: if false;
 
       match /revisions/{revId} {
         allow read: if isOwner(userId);
@@ -2006,13 +2005,11 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
           // null audit against an audit-less parent; an archived audit must be a map.
           && (!('recommendationAudit' in request.resource.data) || request.resource.data.recommendationAudit is map)
           && archiveAccompaniesParentBump(userId, date, request.resource.data.revision);
-        allow update, delete: if false;
       }
 
       match /decision_contexts/{revision} {
         allow read: if isOwner(userId);
         allow create: if isOwner(userId) && hasValidDecisionContext(userId, date, revision);
-        allow update, delete: if false;
       }
     }
 
@@ -2074,7 +2071,6 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
 
       allow read: if isOwner(userId);
       allow create: if hasValidIntradayDecision(userId, decisionId);
-      allow update, delete: if false;
     }
 
     match /users/{userId}/daily_ledgers/{date} {
@@ -2123,7 +2119,6 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
         // the same optimistic-sequencing property that makes a concurrent claim conflict
         // and retry rather than silently overwrite another writer's reservation change.
         && request.resource.data.revision == resource.data.revision + 1;
-      allow delete: if false;
     }
 
     match /users/{userId}/intraday_bundle_placements/{date} {
@@ -2160,7 +2155,6 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
         && request.resource.data.date == resource.data.date
         && request.resource.data.createdAt == resource.data.createdAt
         && request.resource.data.revision == resource.data.revision + 1;
-      allow delete: if false;
     }
 
     match /users/{userId}/intraday_bundle_placement_audits/{auditId} {
@@ -2221,7 +2215,6 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
       allow read: if isOwner(userId);
       allow create: if hasValidIntradayBundlePlacementAudit(userId)
         && request.resource.data.auditId == auditId;
-      allow update, delete: if false;
     }
 
 
@@ -2277,7 +2270,7 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
       function hasValidHunger(data) {
         let hasHunger = 'hunger1To10' in data && data.hunger1To10 != null;
         let hasTiming = 'hungerTiming' in data && data.hungerTiming != null;
-        return (!('hunger1To10' in data) || data.hunger1To10 == null || (data.hunger1To10 is int && data.hunger1To10 >= 1 && data.hunger1To10 <= 10))
+        return (!('hunger1To10' in data) || data.hunger1To10 == null || (isPositiveInt(data.hunger1To10) && data.hunger1To10 <= 10))
           && (!('hungerTiming' in data) || data.hungerTiming == null || data.hungerTiming in ['morning_pre_breakfast', 'other'])
           && (hasHunger == hasTiming);
       }
@@ -2293,7 +2286,7 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
         && hasValidSubjectiveHealthFields(request.resource.data)
         && hasValidHunger(request.resource.data)
         && hasValidNutritionAdherence(request.resource.data);
-      allow update: if keepsOwnership(userId) && isDateDocument(date) && request.resource.data.createdAt == resource.data.createdAt
+      allow update: if keepsOwnership(userId) && isDateDocument(date) && keepsCreatedAt()
         && hasValidSubjectiveHealthFields(request.resource.data)
         && hasValidHunger(request.resource.data)
         && hasValidNutritionAdherence(request.resource.data);
@@ -2304,12 +2297,12 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
       function hasValidHealthAnomalyThresholdPolicy(policy) {
         return policy is map
           && policy.keys().hasOnly(['policyVersion', 'moderateDeviation', 'strongDeviation', 'minimumCoreSignalsForMultiSignal', 'persistenceDaysForEscalation', 'minimumHistoryCount', 'minimumRecentDayCoverage', 'maxBaselineAgeDays', 'estimatorBySignal'])
-          && policy.policyVersion is string && policy.policyVersion.size() > 0 && policy.policyVersion.size() <= 128
+          && isBoundedString(policy.policyVersion, 128)
           && policy.moderateDeviation is number && policy.moderateDeviation > 0 && policy.moderateDeviation <= 20
           && policy.strongDeviation is number && policy.strongDeviation > policy.moderateDeviation && policy.strongDeviation <= 20
           && policy.minimumCoreSignalsForMultiSignal is int && policy.minimumCoreSignalsForMultiSignal >= 2 && policy.minimumCoreSignalsForMultiSignal <= 3
-          && policy.persistenceDaysForEscalation is int && policy.persistenceDaysForEscalation >= 1 && policy.persistenceDaysForEscalation <= 30
-          && policy.minimumHistoryCount is int && policy.minimumHistoryCount >= 1 && policy.minimumHistoryCount <= 28
+          && isPositiveInt(policy.persistenceDaysForEscalation) && policy.persistenceDaysForEscalation <= 30
+          && isPositiveInt(policy.minimumHistoryCount) && policy.minimumHistoryCount <= 28
           && policy.minimumRecentDayCoverage is number && policy.minimumRecentDayCoverage >= 0 && policy.minimumRecentDayCoverage <= 1
           && policy.maxBaselineAgeDays is int && policy.maxBaselineAgeDays >= 0 && policy.maxBaselineAgeDays <= 30
           && policy.estimatorBySignal is map
@@ -2331,9 +2324,9 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
           && isValidActivityDate(data.date)
           && data.revisionId == revisionId
           && data.revisionId is string && data.revisionId.matches('^ha-[0-9a-f]{16}$')
-          && data.idempotencyKey is string && data.idempotencyKey.size() > 0 && data.idempotencyKey.size() <= 160
+          && isBoundedString(data.idempotencyKey, 160)
           && data.computedAt is string && data.computedAt.size() > 0
-          && data.policyVersion is string && data.policyVersion.size() > 0 && data.policyVersion.size() <= 128
+          && isBoundedString(data.policyVersion, 128)
           && data.mode in ['shadow-v1', 'visible-v1', 'tighten-v1']
           && data.schemaVersion == 1
           && hasValidHealthAnomalyThresholdPolicy(data.thresholdPolicy)
@@ -2359,7 +2352,7 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
           && assessment.unexplainedEvidence is list && assessment.unexplainedEvidence.size() <= 3
           && assessment.persistenceDays is int && assessment.persistenceDays >= 0 && assessment.persistenceDays <= 365
           && (assessment.episodeId == null || (assessment.episodeId is string && assessment.episodeId.size() <= 160))
-          && (assessment.episodeDay == null || (assessment.episodeDay is int && assessment.episodeDay >= 1 && assessment.episodeDay <= 365))
+          && (assessment.episodeDay == null || (isPositiveInt(assessment.episodeDay) && assessment.episodeDay <= 365))
           && assessment.dataQuality is list && assessment.dataQuality.size() <= 3
           && assessment.rationale is map
           // The parent assessment rule is close to Firestore's 1,000-expression ceiling.
@@ -2373,7 +2366,6 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
 
       allow read: if isOwner(userId);
       allow create: if hasValidHealthAnomalyRevision(userId, date, revisionId);
-      allow update, delete: if false;
     }
 
     match /users/{userId}/health_anomaly_outcomes/{episodeId} {
@@ -2387,7 +2379,7 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
           && data.keys().hasOnly(['userId', 'episodeId', 'sourceAssessment', 'explanation', 'symptomOnset', 'respiratoryTest', 'note', 'createdAt', 'updatedAt', 'schemaVersion'])
           && data.keys().hasAll(['userId', 'episodeId', 'sourceAssessment', 'explanation', 'symptomOnset', 'respiratoryTest', 'note', 'createdAt', 'updatedAt', 'schemaVersion'])
           && data.episodeId == episodeId
-          && data.episodeId is string && data.episodeId.size() > 0 && data.episodeId.size() <= 160
+          && isBoundedString(data.episodeId, 160)
           && sourceAssessment is map
           && sourceAssessment.keys().hasOnly(['date', 'revisionId'])
           && sourceAssessment.keys().hasAll(['date', 'revisionId'])
@@ -2423,26 +2415,22 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
         && keepsOwnership(userId)
         && request.resource.data.episodeId == resource.data.episodeId
         && request.resource.data.sourceAssessment == resource.data.sourceAssessment
-        && request.resource.data.createdAt == resource.data.createdAt
+        && keepsCreatedAt()
         && request.resource.data.schemaVersion == resource.data.schemaVersion;
-      allow delete: if false;
     }
 
     // --- PI6/ADR-0028: physiological identity passports and immutable assessments are
     // server-managed. Clients may read their own evidence but cannot forge model output.
     match /users/{userId}/physiological_identity_passports/{passportId} {
       allow read: if isOwner(userId) && passportId == 'current';
-      allow write: if false;
     }
 
     match /users/{userId}/physiological_identity_passport_versions/{versionId} {
       allow read: if isOwner(userId);
-      allow write: if false;
     }
 
     match /users/{userId}/health_identity_assessments/{assessmentId} {
       allow read: if isOwner(userId);
-      allow write: if false;
     }
 
     match /users/{userId}/health_identity_review_events/{eventId} {
@@ -2454,8 +2442,8 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
           && data.keys().hasOnly(['id', 'assessmentId', 'schemaVersion', 'label', 'occupancyAttestation', 'supersedesReviewEventId', 'recordedAt', 'source'])
           && data.keys().hasAll(['id', 'assessmentId', 'schemaVersion', 'label', 'occupancyAttestation', 'supersedesReviewEventId', 'recordedAt', 'source'])
           && data.id == eventId
-          && data.id is string && data.id.size() > 0 && data.id.size() <= 160
-          && data.assessmentId is string && data.assessmentId.size() > 0 && data.assessmentId.size() <= 160
+          && isBoundedString(data.id, 160)
+          && isBoundedString(data.assessmentId, 160)
           && data.schemaVersion == 1
           && data.label in ['USER', 'NOT_USER', 'UNCERTAIN']
           && data.occupancyAttestation in ['EXCLUSIVE', 'MIXED', 'UNKNOWN']
@@ -2483,13 +2471,12 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
 
       allow read: if isOwner(userId);
       allow create: if hasValidIdentityReviewEvent(userId, eventId);
-      allow update, delete: if false;
     }
 
     // --- MS2/ADR-0027: server-owned multisource health observation day bundles.
     match /users/{userId}/health_observation_days/{daySourceId} {
       allow read: if isOwner(userId);
-      allow write: if false; // Server-managed only
+      // Server-managed only: client writes denied by default.
     }
 
 
@@ -2568,10 +2555,10 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
       allow create: if hasValidPerformedTrainingOccurrence(userId, occurrenceId);
       allow update: if hasValidPerformedTrainingOccurrence(userId, occurrenceId)
         && keepsOwnership(userId)
-        && request.resource.data.createdAt == resource.data.createdAt
+        && keepsCreatedAt()
         && request.resource.data.schemaVersion == resource.data.schemaVersion;
       // Tombstoning is via `status: 'merged'`, never delete (ADR-0034 "not destructive").
-      allow delete: if false;
+      // Deletes denied by default.
     }
 
     match /users/{userId}/performedOccurrenceSourceLinks/{sourceLinkId} {
@@ -2601,8 +2588,7 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
         && keepsOwnership(userId)
         && request.resource.data.sourceKey == resource.data.sourceKey
         && request.resource.data.sourceKind == resource.data.sourceKind
-        && request.resource.data.createdAt == resource.data.createdAt;
-      allow delete: if false;
+        && keepsCreatedAt();
     }
 
     match /users/{userId}/session_responses/{responseId} {
@@ -2635,7 +2621,7 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
           && (!('unexpectedFatigue' in data) || data.unexpectedFatigue is bool)
           && (!('techniqueNote' in data) || (data.techniqueNote is string && data.techniqueNote.size() <= 2000))
           && (!('note' in data) || (data.note is string && data.note.size() <= 2000))
-          && data.createdAt is string && data.updatedAt is string;
+          && hasStringTimestamps(data);
       }
 
       allow read: if isOwner(userId);
@@ -2647,7 +2633,7 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
         && (!('occurrenceId' in resource.data) || request.resource.data.occurrenceId == resource.data.occurrenceId)
         && request.resource.data.window == resource.data.window
         && request.resource.data.date == resource.data.date
-        && request.resource.data.createdAt == resource.data.createdAt;
+        && keepsCreatedAt();
       allow delete: if isOwner(userId);
     }
 
@@ -2677,8 +2663,8 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
       return protocolRef is map
         && protocolRef.keys().hasOnly(['id', 'revision'])
         && protocolRef.keys().hasAll(['id', 'revision'])
-        && protocolRef.id is string && protocolRef.id.size() > 0 && protocolRef.id.size() <= 128
-        && protocolRef.revision is int && protocolRef.revision >= 1
+        && isBoundedString(protocolRef.id, 128)
+        && isPositiveInt(protocolRef.revision)
         && exists(protocolPath);
     }
 
@@ -2695,8 +2681,8 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
         return capture is map
           && capture.keys().hasOnly(['plannedTrials', 'maxTrials', 'fields', 'reducers', 'reducerVersion'])
           && capture.keys().hasAll(['plannedTrials', 'maxTrials', 'fields', 'reducers', 'reducerVersion'])
-          && capture.maxTrials is int && capture.maxTrials >= 1 && capture.maxTrials <= 30
-          && capture.plannedTrials is int && capture.plannedTrials >= 1 && capture.plannedTrials <= capture.maxTrials
+          && isPositiveInt(capture.maxTrials) && capture.maxTrials <= 30
+          && isPositiveInt(capture.plannedTrials) && capture.plannedTrials <= capture.maxTrials
           && capture.fields is list && capture.fields.size() >= 1 && capture.fields.size() <= 16
           && capture.reducers is list && capture.reducers.size() >= 1 && capture.reducers.size() <= 8
           && capture.reducerVersion == 'assessment-reducer-v1';
@@ -2711,14 +2697,14 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
           && data.keys().hasOnly(['id', 'revision', 'title', 'intent', 'metricIds', 'instructions', 'warmupRef', 'comparisonContext', 'familiarization', 'burden', 'expectedRecoveryHours', 'invalidationRules', 'capture', 'createdAt'])
           && data.keys().hasAll(['id', 'revision', 'title', 'intent', 'metricIds', 'instructions', 'comparisonContext', 'familiarization', 'burden', 'invalidationRules', 'createdAt'])
           && data.id == protocolId
-          && data.id is string && data.id.size() > 0 && data.id.size() <= 128
-          && data.revision is int && data.revision >= 1 && string(data.revision) == revisionId
-          && data.title is string && data.title.size() > 0 && data.title.size() <= 200
+          && isBoundedString(data.id, 128)
+          && isPositiveInt(data.revision) && string(data.revision) == revisionId
+          && isBoundedString(data.title, 200)
           && data.intent == 'testing'
           && data.metricIds is list && data.metricIds.size() >= 1 && data.metricIds.size() <= 8
           && data.metricIds.hasOnly(outcomeMetricUnits().keys())
           && data.instructions is list && data.instructions.size() <= 64
-          && (!('warmupRef' in data) || (data.warmupRef is string && data.warmupRef.size() > 0 && data.warmupRef.size() <= 128))
+          && (!('warmupRef' in data) || (isBoundedString(data.warmupRef, 128)))
           && comparison is map
           && comparison.keys().hasOnly(['required', 'seriesDefining', 'contextOnly', 'canonicalizationVersion'])
           && comparison.keys().hasAll(['required', 'seriesDefining', 'contextOnly', 'canonicalizationVersion'])
@@ -2727,7 +2713,7 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
           && comparison.contextOnly is list && comparison.contextOnly.size() <= 16 && comparison.contextOnly.hasOnly(comparison.required)
           && !comparison.seriesDefining.hasAny(comparison.contextOnly)
           && comparison.required.size() <= comparison.seriesDefining.size() + comparison.contextOnly.size()
-          && comparison.canonicalizationVersion is string && comparison.canonicalizationVersion.size() > 0 && comparison.canonicalizationVersion.size() <= 64
+          && isBoundedString(comparison.canonicalizationVersion, 64)
           && familiarization is map
           && familiarization.keys().hasOnly(['required', 'minimumExposures'])
           && familiarization.keys().hasAll(['required', 'minimumExposures'])
@@ -2743,7 +2729,6 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
 
       allow read: if isOwner(userId);
       allow create: if hasValidMeasurementProtocol(userId, protocolId, revisionId);
-      allow update, delete: if false;
     }
 
     match /users/{userId}/assessment_attempts/{attemptId} {
@@ -2753,14 +2738,14 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
           && data.keys().hasOnly(['id', 'protocolRef', 'scheduledDate', 'startedAt', 'completedAt', 'state', 'purpose', 'sourceSessionRef', 'notes'])
           && data.keys().hasAll(['id', 'protocolRef', 'state', 'purpose'])
           && data.id == attemptId
-          && data.id is string && data.id.size() > 0 && data.id.size() <= 160
+          && isBoundedString(data.id, 160)
           && hasValidProtocolRef(userId, data.protocolRef)
           && data.state in ['scheduled', 'in_progress', 'completed', 'abandoned']
           && data.purpose in ['familiarization', 'baseline', 'checkpoint', 'post_block']
           && (!('scheduledDate' in data) || isValidActivityDate(data.scheduledDate))
           && (!('startedAt' in data) || (data.startedAt is string && data.startedAt.size() > 0))
           && (!('completedAt' in data) || (data.completedAt is string && data.completedAt.size() > 0))
-          && (!('sourceSessionRef' in data) || (data.sourceSessionRef is string && data.sourceSessionRef.size() > 0 && data.sourceSessionRef.size() <= 256))
+          && (!('sourceSessionRef' in data) || (isBoundedString(data.sourceSessionRef, 256)))
           && (!('notes' in data) || (data.notes is string && data.notes.size() <= 4000))
           && (data.state != 'scheduled' || (!('startedAt' in data) && !('completedAt' in data)))
           && (data.state != 'in_progress' || (('startedAt' in data) && !('completedAt' in data)))
@@ -2787,16 +2772,15 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
       allow create: if hasValidAssessmentAttempt(userId, attemptId);
       allow update: if hasValidAssessmentAttempt(userId, attemptId)
         && hasValidAssessmentAttemptTransition();
-      allow delete: if false;
     }
 
     function hasValidObservationDevice(device) {
       return device is map
         && device.keys().hasOnly(['provider', 'model', 'deviceId'])
         && device.keys().hasAll(['provider'])
-        && device.provider is string && device.provider.size() > 0 && device.provider.size() <= 128
-        && (!('model' in device) || (device.model is string && device.model.size() > 0 && device.model.size() <= 128))
-        && (!('deviceId' in device) || (device.deviceId is string && device.deviceId.size() > 0 && device.deviceId.size() <= 256));
+        && isBoundedString(device.provider, 128)
+        && (!('model' in device) || (isBoundedString(device.model, 128)))
+        && (!('deviceId' in device) || (isBoundedString(device.deviceId, 256)));
     }
 
     function isFixedLoadProtocol(protocolRef) {
@@ -2831,10 +2815,10 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
           && data.keys().hasOnly(['observationKey', 'assessmentAttemptId', 'metricId', 'headRevision', 'createdAt', 'updatedAt'])
           && data.keys().hasAll(['observationKey', 'assessmentAttemptId', 'metricId', 'headRevision', 'createdAt', 'updatedAt'])
           && data.observationKey == observationKey
-          && data.assessmentAttemptId is string && data.assessmentAttemptId.size() > 0 && data.assessmentAttemptId.size() <= 160
+          && isBoundedString(data.assessmentAttemptId, 160)
           && hasKnownOutcomeMetric(data.metricId)
           && data.observationKey == data.assessmentAttemptId + ':' + data.metricId
-          && data.headRevision is int && data.headRevision >= 1
+          && isPositiveInt(data.headRevision)
           && data.createdAt is string && data.createdAt.size() > 0
           && data.updatedAt is string && data.updatedAt.size() > 0;
       }
@@ -2889,25 +2873,25 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
           && data.keys().hasOnly(['observationKey', 'revision', 'supersedesRevision', 'metricId', 'value', 'unit', 'observedAt', 'source', 'sourceRef', 'device', 'protocolRef', 'comparisonSeriesKey', 'comparisonCanonicalizationVersion', 'assessmentAttemptId', 'validity', 'invalidReason', 'context', 'derivedFromObservationIds', 'derivedFromEvidenceRefs', 'algorithmVersion', 'correctionReason', 'createdAt'])
           && data.keys().hasAll(['observationKey', 'revision', 'metricId', 'value', 'unit', 'observedAt', 'source', 'protocolRef', 'comparisonSeriesKey', 'comparisonCanonicalizationVersion', 'assessmentAttemptId', 'validity', 'context', 'createdAt'])
           && data.observationKey == observationKey
-          && data.assessmentAttemptId is string && data.assessmentAttemptId.size() > 0 && data.assessmentAttemptId.size() <= 160
+          && isBoundedString(data.assessmentAttemptId, 160)
           && data.observationKey == data.assessmentAttemptId + ':' + data.metricId
-          && data.revision is int && data.revision >= 1 && string(data.revision) == revisionId
+          && isPositiveInt(data.revision) && string(data.revision) == revisionId
           && ((data.revision == 1 && !('supersedesRevision' in data) && !('correctionReason' in data))
             || (data.revision > 1
               && data.supersedesRevision is int && data.supersedesRevision == data.revision - 1
-              && data.correctionReason is string && data.correctionReason.size() > 0 && data.correctionReason.size() <= 2000))
+              && isBoundedString(data.correctionReason, 2000)))
           && data.metricId is string && data.metricId in units
           && data.value is number
           && data.unit == units[data.metricId]
           && data.observedAt is string && data.observedAt.size() > 0
           && data.source in ['manual', 'garmin_activity', 'garmin_lap', 'derived']
-          && (!('sourceRef' in data) || (data.sourceRef is string && data.sourceRef.size() > 0 && data.sourceRef.size() <= 512))
+          && (!('sourceRef' in data) || (isBoundedString(data.sourceRef, 512)))
           && (!('device' in data) || hasValidObservationDevice(data.device))
-          && data.comparisonSeriesKey is string && data.comparisonSeriesKey.size() > 0 && data.comparisonSeriesKey.size() <= 128
-          && data.comparisonCanonicalizationVersion is string && data.comparisonCanonicalizationVersion.size() > 0 && data.comparisonCanonicalizationVersion.size() <= 64
+          && isBoundedString(data.comparisonSeriesKey, 128)
+          && isBoundedString(data.comparisonCanonicalizationVersion, 64)
           && data.validity in ['valid', 'invalid', 'practice', 'questionable']
           && (data.validity != 'invalid' || ('invalidReason' in data))
-          && (!('invalidReason' in data) || (data.invalidReason is string && data.invalidReason.size() > 0 && data.invalidReason.size() <= 2000))
+          && (!('invalidReason' in data) || (isBoundedString(data.invalidReason, 2000)))
           && data.context is map && data.context.size() <= 64
           && hasValidDerivationProvenance(data)
           && data.createdAt is string && data.createdAt.size() > 0
@@ -2923,7 +2907,7 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
             && (('derivedFromObservationIds' in data) || ('derivedFromEvidenceRefs' in data))
             && (!('derivedFromObservationIds' in data) || (data.derivedFromObservationIds is list && data.derivedFromObservationIds.size() >= 1 && data.derivedFromObservationIds.size() <= 32))
             && (!('derivedFromEvidenceRefs' in data) || (data.derivedFromEvidenceRefs is list && data.derivedFromEvidenceRefs.size() >= 1 && data.derivedFromEvidenceRefs.size() <= 32))
-            && ('algorithmVersion' in data) && data.algorithmVersion is string && data.algorithmVersion.size() > 0 && data.algorithmVersion.size() <= 128)
+            && ('algorithmVersion' in data) && isBoundedString(data.algorithmVersion, 128))
           || (data.source != 'derived'
             && !('derivedFromObservationIds' in data)
             && !('derivedFromEvidenceRefs' in data)
@@ -2938,7 +2922,6 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['headRevision', 'updatedAt'])
         && request.resource.data.headRevision == resource.data.headRevision + 1
         && revisionAfterHead(userId, observationKey, request.resource.data.headRevision);
-      allow delete: if false;
 
       match /revisions/{revisionId} {
         allow read: if isOwner(userId);
@@ -2949,7 +2932,6 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
             || (request.resource.data.revision > 1
               && get(/databases/$(database)/documents/users/$(userId)/metric_observations/$(observationKey)).data.headRevision == request.resource.data.supersedesRevision)
           );
-        allow update, delete: if false;
       }
     }
 
@@ -3075,7 +3057,7 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
           && data.keys().hasAll(['id', 'assessmentAttemptId', 'ordinal', 'correctionIndex', 'validity', 'values', 'context', 'createdAt'])
           && data.id == trialId
           && data.assessmentAttemptId == attemptId
-          && data.ordinal is int && data.ordinal >= 1
+          && isPositiveInt(data.ordinal)
           && data.correctionIndex is int && data.correctionIndex >= 0 && data.correctionIndex <= 20
           && data.id == assessmentTrialIdFor(data.ordinal, data.correctionIndex)
           && exists(attemptPath)
@@ -3087,24 +3069,23 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
             || (data.correctionIndex > 0
               && data.supersedesTrialId == assessmentTrialIdFor(data.ordinal, data.correctionIndex - 1)
               && existsAfter(/databases/$(database)/documents/users/$(userId)/assessment_attempts/$(attemptId)/trials/$(data.supersedesTrialId))
-              && data.correctionReason is string && data.correctionReason.size() > 0 && data.correctionReason.size() <= 2000))
+              && isBoundedString(data.correctionReason, 2000)))
           && data.validity in ['valid', 'invalid', 'practice', 'questionable']
           && (data.validity != 'invalid' || ('invalidReason' in data))
-          && (!('invalidReason' in data) || (data.invalidReason is string && data.invalidReason.size() > 0 && data.invalidReason.size() <= 2000))
-          && (!('performedAt' in data) || (data.performedAt is string && data.performedAt.size() > 0 && data.performedAt.size() <= 64))
+          && (!('invalidReason' in data) || (isBoundedString(data.invalidReason, 2000)))
+          && (!('performedAt' in data) || (isBoundedString(data.performedAt, 64)))
           && data.values is map && data.values.size() <= 16
           && data.context is map && data.context.size() <= 32
           && (!isFixedLoadProtocol(attempt.protocolRef) || (hasEligibleFixedLoadTrial(data, old)
             && (data.correctionIndex == 0 || hasFixedLoadCorrectionIntegrity(userId, attempt, data))))
-          && (!('sourceRef' in data) || (data.sourceRef is string && data.sourceRef.size() > 0 && data.sourceRef.size() <= 512))
+          && (!('sourceRef' in data) || (isBoundedString(data.sourceRef, 512)))
           && (!('device' in data) || hasValidObservationDevice(data.device))
           && (!('notes' in data) || (data.notes is string && data.notes.size() <= 4000))
-          && data.createdAt is string && data.createdAt.size() > 0 && data.createdAt.size() <= 64;
+          && isBoundedString(data.createdAt, 64);
       }
 
       allow read: if isOwner(userId);
       allow create: if hasValidAssessmentTrial(userId, attemptId, trialId);
-      allow update, delete: if false;
     }
 
     match /users/{userId}/outcome_evaluations/{evaluationId} {
@@ -3132,8 +3113,8 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
           && data.keys().hasOnly(['id', 'currentRevision', 'createdAt', 'updatedAt'])
           && data.keys().hasAll(['id', 'currentRevision', 'createdAt', 'updatedAt'])
           && data.id == evaluationId
-          && data.id is string && data.id.size() > 0 && data.id.size() <= 160
-          && data.currentRevision is int && data.currentRevision >= 1
+          && isBoundedString(data.id, 160)
+          && isPositiveInt(data.currentRevision)
           && data.createdAt is string && data.createdAt.size() > 0
           && data.updatedAt is string && data.updatedAt.size() > 0;
       }
@@ -3143,7 +3124,7 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
           && sourceRef.keys().hasOnly(['kind', 'id'])
           && sourceRef.keys().hasAll(['kind', 'id'])
           && sourceRef.kind in ['event', 'authored_plan', 'manual_block']
-          && sourceRef.id is string && sourceRef.id.size() > 0 && sourceRef.id.size() <= 256;
+          && isBoundedString(sourceRef.id, 256);
       }
 
       function hasValidOutcomeEvaluationRevision(userId, evaluationId, revisionId) {
@@ -3152,9 +3133,9 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
           && data.keys().hasOnly(['id', 'revision', 'title', 'startDate', 'endDate', 'sourceRef', 'status', 'activatedAt', 'contentHash', 'createdAt', 'bindings'])
           && data.keys().hasAll(['id', 'revision', 'title', 'startDate', 'endDate', 'status', 'contentHash', 'createdAt', 'bindings'])
           && data.id == evaluationId
-          && data.id is string && data.id.size() > 0 && data.id.size() <= 160
-          && data.revision is int && data.revision >= 1 && string(data.revision) == revisionId
-          && data.title is string && data.title.size() > 0 && data.title.size() <= 200
+          && isBoundedString(data.id, 160)
+          && isPositiveInt(data.revision) && string(data.revision) == revisionId
+          && isBoundedString(data.title, 200)
           && isValidActivityDate(data.startDate)
           && isValidActivityDate(data.endDate)
           && data.startDate <= data.endDate
@@ -3179,10 +3160,9 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
         && outcomeEvaluationRevisionAfterHead(userId, evaluationId, 1);
       allow update: if hasValidOutcomeEvaluationHead(userId, evaluationId)
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['currentRevision', 'updatedAt'])
-        && request.resource.data.createdAt == resource.data.createdAt
+        && keepsCreatedAt()
         && request.resource.data.currentRevision == resource.data.currentRevision + 1
         && outcomeEvaluationRevisionAfterHead(userId, evaluationId, request.resource.data.currentRevision);
-      allow delete: if false;
 
       match /revisions/{revisionId} {
         allow read: if isOwner(userId);
@@ -3198,7 +3178,7 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
         allow update: if hasValidOutcomeEvaluationRevision(userId, evaluationId, revisionId)
           && request.resource.data.id == resource.data.id
           && request.resource.data.revision == resource.data.revision
-          && request.resource.data.createdAt == resource.data.createdAt
+          && keepsCreatedAt()
           && (
             (resource.data.status == 'draft'
               && request.resource.data.status == 'active'
@@ -3211,7 +3191,6 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
               && request.resource.data.status == 'archived'
               && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']))
           );
-        allow delete: if false;
       }
     }
 
@@ -3221,8 +3200,8 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
         return evaluationRef is map
           && evaluationRef.keys().hasOnly(['id', 'revision', 'contentHash'])
           && evaluationRef.keys().hasAll(['id', 'revision', 'contentHash'])
-          && evaluationRef.id is string && evaluationRef.id.size() > 0 && evaluationRef.id.size() <= 160
-          && evaluationRef.revision is int && evaluationRef.revision >= 1
+          && isBoundedString(evaluationRef.id, 160)
+          && isPositiveInt(evaluationRef.revision)
           && evaluationRef.contentHash is string && evaluationRef.contentHash.matches('^[0-9a-f]{64}$')
           && exists(revisionPath)
           && get(revisionPath).data.status in ['active', 'completed', 'archived']
@@ -3244,25 +3223,25 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
           && data.keys().hasOnly(['id', 'eventRef', 'evaluationRef', 'sport', 'occurredAt', 'source', 'sourceRef', 'result', 'metrics', 'context', 'createdAt'])
           && data.keys().hasAll(['id', 'sport', 'occurredAt', 'source', 'result', 'metrics', 'context', 'createdAt'])
           && data.id == outcomeId
-          && data.id is string && data.id.size() > 0 && data.id.size() <= 160
-          && (!('eventRef' in data) || (data.eventRef is string && data.eventRef.size() > 0 && data.eventRef.size() <= 256))
+          && isBoundedString(data.id, 160)
+          && (!('eventRef' in data) || (isBoundedString(data.eventRef, 256)))
           && data.sport in ['cycling', 'running', 'field', 'other']
           && data.occurredAt is string && data.occurredAt.size() > 0
           && data.source in ['manual', 'garmin_activity', 'imported_result']
-          && (data.source == 'manual' || ('sourceRef' in data && data.sourceRef is string && data.sourceRef.size() > 0 && data.sourceRef.size() <= 512))
-          && (!('sourceRef' in data) || (data.sourceRef is string && data.sourceRef.size() > 0 && data.sourceRef.size() <= 512))
+          && (data.source == 'manual' || ('sourceRef' in data && isBoundedString(data.sourceRef, 512)))
+          && (!('sourceRef' in data) || (isBoundedString(data.sourceRef, 512)))
           && (!('evaluationRef' in data) || hasValidCompetitionOutcomeEvaluationRef(userId, data.evaluationRef))
           && (!('evaluationRef' in data) || competitionOutcomeEventMatchesEvaluation(userId, data.evaluationRef, ('eventRef' in data ? data.eventRef : '')))
           && result is map
           && result.keys().hasOnly(['completed', 'placing', 'fieldSize', 'elapsedSeconds', 'distanceM', 'courseId', 'summary'])
           && result.keys().hasAll(['completed'])
           && result.completed is bool
-          && (!('placing' in result) || (result.placing is int && result.placing >= 1))
-          && (!('fieldSize' in result) || (result.fieldSize is int && result.fieldSize >= 1))
+          && (!('placing' in result) || (isPositiveInt(result.placing)))
+          && (!('fieldSize' in result) || (isPositiveInt(result.fieldSize)))
           && (!('placing' in result) || !('fieldSize' in result) || result.placing <= result.fieldSize)
           && (!('elapsedSeconds' in result) || (result.elapsedSeconds is number && result.elapsedSeconds >= 0))
           && (!('distanceM' in result) || (result.distanceM is number && result.distanceM >= 0))
-          && (!('courseId' in result) || (result.courseId is string && result.courseId.size() > 0 && result.courseId.size() <= 256))
+          && (!('courseId' in result) || (isBoundedString(result.courseId, 256)))
           && (!('summary' in result) || (result.summary is string && result.summary.size() <= 4000))
           && data.metrics is map && data.metrics.size() <= 64
           && data.context is map && data.context.size() <= 64
@@ -3271,7 +3250,6 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
 
       allow read: if isOwner(userId);
       allow create: if hasValidCompetitionOutcome(userId, outcomeId);
-      allow update, delete: if false;
     }
 
     // --- ADR-0039: athlete-authored home anthropometry entries
@@ -3280,13 +3258,13 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
       // Nested protocol validation now runs in the token-authenticated Cloud Run service.
       // Keeping client writes closed eliminates Firestore's per-request rule-expression
       // ceiling for the ten-measurement payload and prevents direct SDK bypasses.
-      allow write: if false;
+      // Client writes denied by default.
     }
 
     // --- ADR-0042: server-owned daily nutrition observation day bundles.
     match /users/{userId}/nutrition_days/{daySourceId} {
       allow read: if isOwner(userId);
-      allow write: if false; // Server-managed only
+      // Server-managed only: client writes denied by default.
     }
     // D-FLAGS: immutable, account-owned observations. Deep input validation lives at
     // flagEvaluationPersistence; rules bound structure without unrolling 16 input maps.
@@ -3309,16 +3287,15 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
           && d.state in ['measured', 'missing', 'unavailable', 'invalid', 'not_collected',
             'not_applicable', 'stale', 'not_recorded', 'not_yet_supported']
           && (d.active == null || d.state == 'measured' || (d.active == false && d.state == 'not_applicable'))
-          && d.definitionVersion is string && d.definitionVersion.size() > 0 && d.definitionVersion.size() <= 160
-          && d.reasonCode is string && d.reasonCode.size() > 0 && d.reasonCode.size() <= 160
-          && (d.threshold == null || (d.threshold is string && d.threshold.size() > 0 && d.threshold.size() <= 8192))
-          && (!('sessionRef' in d) || (d.sessionRef is string && d.sessionRef.size() > 0 && d.sessionRef.size() <= 256))
-          && (!('baselineWindow' in d) || (d.baselineWindow is string && d.baselineWindow.size() > 0 && d.baselineWindow.size() <= 512))
+          && isBoundedString(d.definitionVersion, 160)
+          && isBoundedString(d.reasonCode, 160)
+          && (d.threshold == null || (isBoundedString(d.threshold, 8192)))
+          && (!('sessionRef' in d) || (isBoundedString(d.sessionRef, 256)))
+          && (!('baselineWindow' in d) || (isBoundedString(d.baselineWindow, 512)))
           && d.inputs is list && d.inputs.size() <= 16;
       }
       allow read: if isOwner(userId);
       allow create: if hasValidFlagRevision();
-      allow update, delete: if false;
     }
   }
 }

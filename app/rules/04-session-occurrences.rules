@@ -6,15 +6,15 @@
         return hasOwnedUserId(userId)
           && data.keys().hasOnly(['userId', 'definitionId', 'title', 'latestRevision', 'dominantModality', 'status', 'archivedAt', 'createdAt', 'updatedAt'])
           && data.definitionId == definitionId
-          && data.title is string && data.title.size() > 0 && data.title.size() <= 200
-          && data.latestRevision is int && data.latestRevision >= 1
+          && isBoundedString(data.title, 200)
+          && isPositiveInt(data.latestRevision)
           && (!('dominantModality' in data) || data.dominantModality is string)
           && (!('status' in data) || data.status in ['active', 'archived'])
           && (!('archivedAt' in data) || data.archivedAt is string)
           && (!('archivedAt' in data) || 'status' in data)
           && (!('status' in data) || data.status != 'archived' || data.archivedAt is string)
           && (!('status' in data) || data.status != 'active' || !('archivedAt' in data))
-          && data.createdAt is string && data.updatedAt is string;
+          && hasStringTimestamps(data);
       }
 
       function hasValidSessionDefinitionRevision(userId, definitionId, revId) {
@@ -37,13 +37,12 @@
       allow update: if hasValidSessionDefinitionHeader(userId, definitionId)
         && keepsOwnership(userId)
         && request.resource.data.latestRevision >= resource.data.latestRevision
-        && request.resource.data.createdAt == resource.data.createdAt;
+        && keepsCreatedAt();
       allow delete: if isOwner(userId);
 
       match /revisions/{revId} {
         allow read: if isOwner(userId);
         allow create: if hasValidSessionDefinitionRevision(userId, definitionId, revId);
-        allow update, delete: if false;
       }
     }
 
@@ -51,8 +50,8 @@
       function hasValidOccurrenceWindowBinding(binding) {
         return binding is map
           && binding.keys().hasOnly(['windowId', 'bundleId', 'order', 'boundStartLocal', 'boundEndLocal', 'startInstant', 'endInstant'])
-          && binding.windowId is string && binding.windowId.size() > 0 && binding.windowId.size() <= 128
-          && binding.bundleId is string && binding.bundleId.size() > 0 && binding.bundleId.size() <= 128
+          && isBoundedString(binding.windowId, 128)
+          && isBoundedString(binding.bundleId, 128)
           && binding.order is int && binding.order >= 0
           && binding.boundStartLocal is string && binding.boundStartLocal.size() > 0
           && binding.boundEndLocal is string && binding.boundEndLocal.size() > 0
@@ -81,19 +80,19 @@
             data.definitionRef is map
             && data.definitionRef.keys().hasOnly(['definitionId', 'revision', 'contentHash'])
             && data.definitionRef.definitionId is string && data.definitionRef.definitionId.size() > 0
-            && data.definitionRef.revision is int && data.definitionRef.revision >= 1
+            && isPositiveInt(data.definitionRef.revision)
             && data.definitionRef.contentHash is string && data.definitionRef.contentHash.size() > 0
           ))
           && (!('externalPlanRef' in data) || (
             data.externalPlanRef is map
             && data.externalPlanRef.keys().hasOnly(['planId', 'revision', 'sessionId', 'contentHash'])
-            && data.externalPlanRef.planId is string && data.externalPlanRef.planId.size() > 0 && data.externalPlanRef.planId.size() <= 64
-            && data.externalPlanRef.revision is int && data.externalPlanRef.revision >= 1
-            && data.externalPlanRef.sessionId is string && data.externalPlanRef.sessionId.size() > 0 && data.externalPlanRef.sessionId.size() <= 64
-            && data.externalPlanRef.contentHash is string && data.externalPlanRef.contentHash.size() > 0 && data.externalPlanRef.contentHash.size() <= 128
+            && isBoundedString(data.externalPlanRef.planId, 64)
+            && isPositiveInt(data.externalPlanRef.revision)
+            && isBoundedString(data.externalPlanRef.sessionId, 64)
+            && isBoundedString(data.externalPlanRef.contentHash, 128)
           ))
           && (!('placementOrder' in data) || (data.placementOrder is int && data.placementOrder >= 0))
-          && data.createdAt is string && data.updatedAt is string;
+          && hasStringTimestamps(data);
       }
 
       function isValidOccurrenceStateTransition(fromState, toState) {
@@ -140,7 +139,7 @@
       allow update: if hasValidSessionOccurrence(userId, occurrenceId)
         && keepsOwnership(userId)
         && request.resource.data.date == resource.data.date
-        && request.resource.data.createdAt == resource.data.createdAt
+        && keepsCreatedAt()
         && request.resource.data.authority == resource.data.authority
         && isValidOccurrenceStateTransition(resource.data.state, request.resource.data.state)
         && (
@@ -164,8 +163,8 @@
         return hasOwnedUserId(userId)
           && data.keys().hasOnly(['userId', 'date', 'windowId', 'occurrenceId', 'createdAt'])
           && isValidActivityDate(data.date)
-          && data.windowId is string && data.windowId.size() > 0 && data.windowId.size() <= 128
-          && data.occurrenceId is string && data.occurrenceId.size() > 0 && data.occurrenceId.size() <= 128
+          && isBoundedString(data.windowId, 128)
+          && isBoundedString(data.occurrenceId, 128)
           && data.createdAt is string;
       }
 

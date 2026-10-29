@@ -3,7 +3,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { minifyRules } from './minify-firestore-rules.mjs';
-import { buildRules, RULES_MODULES } from './build-firestore-rules.mjs';
+import {
+  assertMinifiedRulesBudget, buildRules, MAX_MINIFIED_RULES_BYTES, RULES_MODULES,
+} from './build-firestore-rules.mjs';
 import { normalizeRulesSource, rulesApiRequest } from './check-firestore-rules-drift.mjs';
 import { deployFirestoreRules } from './deploy-firestore-rules.mjs';
 
@@ -151,11 +153,11 @@ describe('readable rules assembly', () => {
     const source = await buildRules({ check: true });
     // Root helpers are compiled into every child match; new shared helpers need review.
     expect([...source.matchAll(/^    function (\w+)\(/gm)].map((match) => match[1]).sort()).toEqual([
-      'assessmentTrialIdFor', 'hasOwnedUserId', 'hasValidAxisValue', 'hasValidEquipmentList',
-      'hasValidExpectedCost', 'hasValidObservationDevice',
-      'hasValidProtocolRef', 'hasValidSessionSource', 'isDateDocument', 'isFixedLoadProtocol',
-      'isOwner', 'isRealCalendarDate', 'isValidActivityDate', 'isValidEquipmentItem',
-      'keepsOwnership', 'outcomeMetricUnits', 'sameFixedLoadContext',
+      'assessmentTrialIdFor', 'hasOwnedUserId', 'hasStringTimestamps', 'hasValidAxisValue',
+      'hasValidEquipmentList', 'hasValidExpectedCost', 'hasValidObservationDevice',
+      'hasValidProtocolRef', 'hasValidSessionSource', 'isBoundedString', 'isDateDocument',
+      'isFixedLoadProtocol', 'isOwner', 'isPositiveInt', 'isRealCalendarDate', 'isValidActivityDate',
+      'isValidEquipmentItem', 'keepsCreatedAt', 'keepsOwnership', 'outcomeMetricUnits', 'sameFixedLoadContext',
     ].sort());
   });
 
@@ -200,6 +202,28 @@ describe('readable rules assembly', () => {
     await writeFile(path.join(directory, 'rules', 'README.md'), 'ignored');
     const output = await buildRules({ directory });
     expect(output).toContain('// extra\n// 99-footer.rules');
+  });
+
+  it('keeps the repository rules under the minified size budget', async () => {
+    const source = await buildRules({ check: true });
+    expect(assertMinifiedRulesBudget(minifyRules(source))).toBeLessThanOrEqual(MAX_MINIFIED_RULES_BYTES);
+  });
+
+  it('accepts minified rules exactly at the budget and rejects one byte over', () => {
+    expect(assertMinifiedRulesBudget('a'.repeat(MAX_MINIFIED_RULES_BYTES))).toBe(MAX_MINIFIED_RULES_BYTES);
+    expect(() => assertMinifiedRulesBudget('a'.repeat(MAX_MINIFIED_RULES_BYTES + 1))).toThrow(/budget.*256,000 bytes/);
+  });
+
+  it('enforces the size budget in build and check modes without writing output', async () => {
+    const directory = await fixture();
+    await modules(directory);
+    const oversized = `allow read: if '${'a'.repeat(MAX_MINIFIED_RULES_BYTES)}' == '';`;
+    await writeFile(path.join(directory, 'rules', '98-oversized.rules'), oversized);
+    await expect(buildRules({ directory })).rejects.toThrow(/budget/);
+    await expect(readFile(path.join(directory, 'firestore.rules'), 'utf8')).rejects.toThrow(/ENOENT/);
+    await writeFile(path.join(directory, 'firestore.rules'), 'stale');
+    await expect(buildRules({ directory, check: true })).rejects.toThrow(/budget/);
+    expect(await readFile(path.join(directory, 'firestore.rules'), 'utf8')).toBe('stale');
   });
 });
 

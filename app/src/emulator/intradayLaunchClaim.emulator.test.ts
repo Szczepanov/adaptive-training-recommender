@@ -132,7 +132,7 @@ emulatorDescribe('claimIntradayMemberLaunch (real transactions, real rules)', ()
      *
      * Every document is written exactly once, in its final shape. Both stores forbid the
      * shortcut a fixture naturally reaches for: `intraday_decisions` is append-only
-     * (`allow update: if false`) and `daily_ledgers` enforces `revision == old + 1` per write,
+     * (no update allow; denied by default) and `daily_ledgers` enforces `revision == old + 1` per write,
      * so a test that seeds a happy path and then rewrites it into the shape it actually wants
      * fails on the rules rather than on the behavior under test.
      */

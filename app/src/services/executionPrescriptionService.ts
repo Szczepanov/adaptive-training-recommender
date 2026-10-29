@@ -86,7 +86,7 @@ export class ExecutionPrescriptionService {
      * Persists an execution prescription using write-once, first-commit semantics (ADR-0023).
      *
      * Execution prescriptions are immutable and content-addressed; Firestore security rules
-     * strictly forbid updates (`allow update, delete: if false`). If a record with the same
+     * strictly forbid updates (no update/delete allow; denied by default). If a record with the same
      * `prescriptionHash` has already been committed, the transaction validates that the stored
      * content hash matches and exits without modifying the existing document, preserving the
      * first committed write (including its `createdAt` timestamp).
