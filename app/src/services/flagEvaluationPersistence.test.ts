@@ -66,11 +66,18 @@ describe('immutable flag evaluations', () => {
         expect(await flagEvaluationRepository.getInRangeState('alice', '2026-10-01', '2026-10-28')).toMatchObject({ status: 'INVALID' });
     });
     it('bounds scans at 2000 plus a sentinel and discards truncated results', async () => {
-        const good = await revision();
-        const row = { id: good.revisionId, data: () => good };
-        db.page.mockResolvedValue({ docs: Array.from({ length: 200 }, () => row) });
-        expect(await flagEvaluationRepository.getInRangeState('alice', '2026-10-01', '2026-10-28'))
-            .toMatchObject({ status: 'UNAVAILABLE', operation: 'scan_limit_exceeded' });
-        expect(db.page).toHaveBeenCalledTimes(11);
+        // Test pagination without 2,000 native crypto jobs competing with other workers.
+        const digest = vi.spyOn(crypto.subtle, 'digest').mockResolvedValue(new ArrayBuffer(32));
+        try {
+            const good = await revision();
+            const row = { id: good.revisionId, data: () => good };
+            db.page.mockResolvedValue({ docs: Array.from({ length: 200 }, () => row) });
+            expect(await flagEvaluationRepository.getInRangeState('alice', '2026-10-01', '2026-10-28'))
+                .toMatchObject({ status: 'UNAVAILABLE', operation: 'scan_limit_exceeded' });
+            expect(db.page).toHaveBeenCalledTimes(11);
+            expect(db.page.mock.calls.at(-1)?.[0].at(-1)).toBe(1);
+        } finally {
+            digest.mockRestore();
+        }
     });
 });
