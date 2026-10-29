@@ -372,7 +372,7 @@ original authored intent in audit provenance.
 The exact persistence seam must be selected after tracing existing recommendation-audit and
 canonical-occurrence composition. Expected touch points include:
 
-- `app/src/engine/performedTrainingFacts.ts` or a recovery-specific adapter beside it;
+- `app/src/derived/training/performedTrainingFacts.ts` (relocated from `engine/` in #1184) or a recovery-specific adapter beside it;
 - `app/src/engine/externalRestProvenance.ts` / existing external-rest composition;
 - recommendation audit/replay persistence and validation modules;
 - user/history composition for bootstrap epoch;
