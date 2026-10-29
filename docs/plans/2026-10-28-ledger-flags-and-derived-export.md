@@ -1,7 +1,7 @@
 # Recorded flags and derived ledger export (#1165, #1153)
 
-- **Status:** In progress
-- **Blocked by:** None (`#1158`, `#1160`–`#1164`, and `#1172` gap 1 have landed on `main`; owner reviewed and revised the implementation contract on 2026-10-28).
+- **Status:** Implemented (#1181, merged 2026-10-29; deployed to production with `a8986145`)
+- **Blocked by:** None (`#1158`, `#1160`–`#1164`, and `#1172` gap 1 landed before implementation; owner reviewed and revised the implementation contract on 2026-10-28).
 - **Unlocks:** `#1167` (`[ADR-0052][D-ENGINE Phase 2] Switch off daily recommendation engine after D-EVAL pass`) and the qualifying 28-day `D-EVAL` block (`C3` flag auditability)
 - **Decision source:** [ADR-0052](../adr/0052-user-ledger-and-external-ai-planning-authority.md) (`D-EXPORT`, `D-FLAGS`, `D-ENGINE Phase 1`, `D-EVAL`), [ledger-export-contract.md](../architecture/ledger-export-contract.md), [2026-10-25-adr-0052-d-eval-criteria.md](../analysis/2026-10-25-adr-0052-d-eval-criteria.md) (`OD8`)
 
