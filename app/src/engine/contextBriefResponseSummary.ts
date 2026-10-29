@@ -1,7 +1,7 @@
 import type { NormalizedGarminActivity } from './models';
 import type { TrainingResponseSessionEvidence } from '../training-occurrence/trainingResponseEvidence';
 import type { ResponseSessionIdentity } from './contextBriefComparability';
-import { normalizeModality } from './performedTrainingFacts';
+import { normalizeModality } from '../derived/training/performedTrainingFacts';
 import {
     deriveDecoupling,
     deriveEfficiencyComparison,

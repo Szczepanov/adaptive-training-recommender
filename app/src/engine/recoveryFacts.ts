@@ -34,7 +34,7 @@ import type {
     CoverageCreditFact,
     HydratedOccurrenceContext,
     PerformedExposureFact,
-} from './performedTrainingFacts';
+} from '../derived/training/performedTrainingFacts';
 import type { PerformedTrainingOccurrence, PerformedOccurrenceStatus } from '../training-occurrence/models';
 import { getLocalDateString } from '../utils/localDate';
 import { replayRecommendationAuditAgainstRevision } from './replay';

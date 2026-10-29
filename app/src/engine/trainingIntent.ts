@@ -10,7 +10,7 @@ import type { IntentBlock } from './blockIntent';
 import { revalidateDevelopmentEvidence } from './developmentAuthority';
 import { resolvePlanningContext, usesEvergreenProgramming, type PlanningContext } from './planningMode';
 import { applyPlanningOverlays } from './planningOverlays';
-import type { PerformedTrainingFactsSnapshot } from './performedTrainingFacts';
+import type { PerformedTrainingFactsSnapshot } from '../derived/training/performedTrainingFacts';
 import { coverageSetFor, EVERGREEN_GENERAL_COVERAGE_SET } from '../workouts/event-plan';
 import { resolveSequenceIntent, type SequenceIntentPolicy } from './sequenceIntent';
 import { ROLLING_LOAD_BUDGET_LOOKBACK_DAYS } from './rollingLoadBudget';

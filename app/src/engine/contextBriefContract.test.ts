@@ -9,7 +9,7 @@ import {
 } from './contextBriefContract';
 import { SENSOR_OBSERVATION_HORIZON_DAYS } from './contextBriefSensorEvidence';
 import { POLICY_VERSION } from './policy';
-import type { PerformedExposureFact } from './performedTrainingFacts';
+import type { PerformedExposureFact } from '../derived/training/performedTrainingFacts';
 import type { DailySubjectiveCheckin, NormalizedGarminActivity } from './models';
 
 const AS_OF = '2026-09-10';

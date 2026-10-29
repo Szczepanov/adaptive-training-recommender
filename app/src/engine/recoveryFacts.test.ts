@@ -13,7 +13,7 @@ import { resolveRecoveryAuthority, resolveRecoveryPlacementState } from './recov
 import { computeContentHash } from './externalPlanHash';
 import { POLICY_VERSION } from './policy';
 import type { PerformedTrainingOccurrence } from '../training-occurrence/models';
-import type { CoverageCreditFact, PerformedExposureFact } from './performedTrainingFacts';
+import type { CoverageCreditFact, PerformedExposureFact } from '../derived/training/performedTrainingFacts';
 import { EXTERNAL_PLAN_SCHEMA, type DailyRecommendation, type ExternalTrainingPlan } from './models';
 
 function mockOccurrence(overrides: Partial<PerformedTrainingOccurrence> = {}): PerformedTrainingOccurrence {

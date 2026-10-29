@@ -4,7 +4,7 @@ import { workoutForTemplate } from '../workouts/prescription';
 import type { GuardrailKey, ObjectivePriority, SessionTemplate } from './models';
 import type { PlanDefinition } from './planSchedule';
 import { addDaysToLocalDateString } from '../utils/localDate';
-import { deriveExactCoverageCredits, type CoverageCreditFact, type PerformedTrainingFactsSnapshot } from './performedTrainingFacts';
+import { deriveExactCoverageCredits, type CoverageCreditFact, type PerformedTrainingFactsSnapshot } from '../derived/training/performedTrainingFacts';
 import type { CompletedExposure } from './trainingHistory';
 import { aerobicVolumeFloorForWorkout, type AerobicVolumeFloor } from './aerobicVolumeFloor';
 import { hasAdjacentMechanicalExposure } from './mechanicalProgression';

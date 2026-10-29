@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildCoverageState, resolveCoverageHistory } from '../coverage';
-import type { PerformedTrainingFactsSnapshot } from '../performedTrainingFacts';
+import type { PerformedTrainingFactsSnapshot } from '../../derived/training/performedTrainingFacts';
 import type { PlanDefinition } from '../planSchedule';
 
 function plan(

@@ -1,7 +1,7 @@
 import type { SessionCategory } from '../ledger/models';
 import type { SessionExecution } from '../sessions/models';
 import type { DailyRecommendation } from './models';
-import type { PerformedTrainingCatalog } from './performedTrainingFacts';
+import type { PerformedTrainingCatalog } from '../derived/training/performedTrainingFacts';
 import { classifyWorkoutStimulusFamily, TEMPLATE_STIMULUS_FAMILY } from './stimulusRecency';
 import { ENRICHED_TEMPLATES_BY_ID } from './templates';
 import { getTemplateIdsForWorkoutId, getUniqueTemplateIdForWorkoutId } from './workoutTemplateIndex';

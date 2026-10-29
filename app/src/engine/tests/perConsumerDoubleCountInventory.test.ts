@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { deriveFactsFromOccurrence, type HydratedOccurrenceContext } from '../performedTrainingFacts';
+import { deriveFactsFromOccurrence, type HydratedOccurrenceContext } from '../../derived/training/performedTrainingFacts';
 import { ENGINE_PERFORMED_TRAINING_CATALOG } from '../performedTrainingCatalog';
 import { buildCoverageState, resolveCoverageHistory } from '../coverage';
 import { buildContextBrief, type ContextBriefInput } from '../contextBrief';
@@ -286,7 +286,7 @@ describe('#895 WP6 per-consumer double-count inventory', () => {
 
         it('the module scanner sees multi-line and dynamic-style imports', () => {
             const modules = importedModules('./perConsumerDoubleCountInventory.test.ts');
-            expect(modules).toContain('../performedTrainingFacts');
+            expect(modules).toContain('../../derived/training/performedTrainingFacts');
             expect(modules).toContain('../../training-occurrence/trainingResponseEvidence');
         });
 

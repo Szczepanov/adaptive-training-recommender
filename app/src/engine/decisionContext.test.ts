@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildInfo } from '../buildInfo';
 import type { SameDayRecommendationInputs } from './sameDayRecommendation';
-import type { PerformedTrainingFactsSnapshot } from './performedTrainingFacts';
+import type { PerformedTrainingFactsSnapshot } from '../derived/training/performedTrainingFacts';
 import {
     createDecisionContext,
     validateDecisionContext,

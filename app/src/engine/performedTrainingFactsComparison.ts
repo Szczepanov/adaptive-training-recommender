@@ -1,6 +1,6 @@
 import type { Modality } from '../ledger/models';
 import type { CompletedTrainingEvent } from './models';
-import { normalizeModality, type PerformedExposureFact } from './performedTrainingFacts';
+import { normalizeModality, type PerformedExposureFact } from '../derived/training/performedTrainingFacts';
 
 export interface FactsComparisonResult {
     canonicalExposureCount: number;

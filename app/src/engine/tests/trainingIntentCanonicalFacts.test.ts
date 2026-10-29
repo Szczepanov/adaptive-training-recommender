@@ -7,7 +7,7 @@ import {
 import { getPerformedTrainingFactsInRange } from '../../training-occurrence/performedTrainingFactsService';
 import type { DailyReadiness, TrainingIntentProfile, UserEvent } from '../models';
 import type { TrainingHistorySnapshot } from '../trainingHistorySnapshot';
-import type { PerformedTrainingFactsSnapshot } from '../performedTrainingFacts';
+import type { PerformedTrainingFactsSnapshot } from '../../derived/training/performedTrainingFacts';
 import { resolveDemandProfile } from '../eventPresets';
 
 vi.mock('../firestoreTrainingHistory', () => ({

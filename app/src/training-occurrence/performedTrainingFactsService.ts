@@ -33,7 +33,7 @@ import {
     type CoverageCreditFact,
     type PerformedTrainingFactsSnapshot,
     type HydratedOccurrenceContext,
-} from '../engine/performedTrainingFacts';
+} from '../derived/training/performedTrainingFacts';
 
 export interface GetPerformedTrainingFactsOptions {
     coverageSetDescriptor?: CoverageSetDescriptor;

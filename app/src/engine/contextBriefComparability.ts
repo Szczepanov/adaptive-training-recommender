@@ -1,6 +1,6 @@
 import type { NormalizedGarminActivity } from './models';
 import { getHrUseAuthority } from './activityHrFidelity';
-import { normalizeModality } from './performedTrainingFacts';
+import { normalizeModality } from '../derived/training/performedTrainingFacts';
 
 export const COMPARABLE_DURATION_MAX_RATIO = 1.25;
 export const STEADY_MAX_VARIABILITY_INDEX = 1.05;

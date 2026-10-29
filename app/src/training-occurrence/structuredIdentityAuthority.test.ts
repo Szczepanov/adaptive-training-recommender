@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ENGINE_PERFORMED_TRAINING_CATALOG } from '../engine/performedTrainingCatalog';
-import { deriveFactsFromOccurrence, type HydratedOccurrenceContext } from '../engine/performedTrainingFacts';
+import { deriveFactsFromOccurrence, type HydratedOccurrenceContext } from '../derived/training/performedTrainingFacts';
 import { buildCoverageState, resolveCoverageHistory } from '../engine/coverage';
 import { EVERGREEN_GENERAL_COVERAGE_SET } from '../workouts/event-plan';
 import type { ActivityOverride, NormalizedGarminActivity } from '../ledger/models';

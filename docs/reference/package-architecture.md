@@ -90,6 +90,7 @@ app/src/derived/           # ADR-0052 Phase 1: derived metrics and D-FLAGS evalu
     recoveryBeyondBaseline.ts # D-FLAGS recovery_beyond_baseline (ADR-0024, #1144 PR1-5): per-metric HRV/RHR/sleep vs 7d baseline, active if any is adverse; owns RECOVERY_VARIABILITY_FLOORS, SLEEP_SCORE_ABSOLUTE_FLOOR, PHYSIOLOGICAL_BOUNDS
   training/
     providerEvidence.ts  # Pure provider-evidence classifiers (classifyGarminTier, isGarminCyclingActivityType, GARMIN_CYCLING_ACTIVITY_TYPES) shared across derived facts, occurrence reconciliation, and engine consumers (#1144 PR1-8)
+    performedTrainingFacts.ts # Canonical occurrence -> facts & weekly role credit derivation (ADR-0034); receives PerformedTrainingCatalog via port (#1144 PR1-8/PR1-9)
 
 app/src/engine/
   models.ts            # Engine decision models, event schemas, microcycle & strain telemetry; re-exports ledger/models.ts
@@ -194,7 +195,6 @@ app/src/engine/
   activityHrFidelityAdapters.ts # HR-dependent field/training-load/effect authority adapters over activityHrFidelity
   activityHrFidelityReplay.ts # Deterministic shadow-only HR-fidelity replay/report over real activity history (HRF7)
   sleepRecoveryEvidence.ts # Sleep-decision-authority evidence evaluator (2026-08-29 sleep-decision-authority plan)
-  performedTrainingFacts.ts # Canonical occurrence -> facts & weekly role credit derivation (ADR-0034); imports nothing from engine/ and receives PerformedTrainingCatalog via port (#1144 PR1-8)
   performedTrainingCatalog.ts # Engine-owned PerformedTrainingCatalog implementation, templateIdForWorkoutId, categoryForWorkoutId, recommendationOwnsExecution (#1144 PR1-8)
   performedTrainingFactsComparison.ts # Shadow-diff comparison between canonical exposure facts and legacy CompletedTrainingEvent rows (#1144 PR1-8)
   strengthSpacingPolicy.ts # Pure resistance training spacing & recovery candidate suppression

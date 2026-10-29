@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildContextBrief, type ContextBriefInput } from './contextBrief';
 import type { NormalizedGarminActivity } from './models';
-import type { PerformedExposureFact } from './performedTrainingFacts';
+import type { PerformedExposureFact } from '../derived/training/performedTrainingFacts';
 
 const AS_OF = '2026-08-15';
 const D1 = '2026-08-10';

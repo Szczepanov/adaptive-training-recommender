@@ -13,7 +13,7 @@
  * - Exact weekly-role coverage remains strictly exact-identity under ADR-0016.
  */
 import type { ActivityStimulusDomain, SessionTemplate } from './models';
-import type { PerformedExposureFact } from './performedTrainingFacts';
+import type { PerformedExposureFact } from '../derived/training/performedTrainingFacts';
 import type { StrengthExposureLike } from './strengthSpacingPolicy';
 import { addDaysToLocalDateString } from '../utils/localDate';
 

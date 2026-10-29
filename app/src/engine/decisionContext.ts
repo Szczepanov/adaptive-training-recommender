@@ -5,7 +5,7 @@ import { buildInfo } from '../buildInfo';
 import { canonicalise } from './externalPlanHash';
 import type { CheckinRecord } from './mechanicalProgression';
 import { BODY_REGIONS, TISSUE_LEVELS, type BodyRegion, type DailySubjectiveCheckin, type RegionTissueResponse } from './models';
-import type { PerformedTrainingFactsSnapshot } from './performedTrainingFacts';
+import type { PerformedTrainingFactsSnapshot } from '../derived/training/performedTrainingFacts';
 import { POLICY_VERSION } from './policy';
 import type { MinimumSafetyCheckinStatus } from './safetyCheckin';
 import { validateIntentBlock } from './blockIntent';

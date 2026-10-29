@@ -9,9 +9,9 @@ Weekly programming-role coverage must use the same canonical performed-training 
 The architecture deliberately separates:
 
 1. **Occurrence identity** — `PerformedTrainingOccurrence` answers which provider/app records describe one physical session.
-2. **Broad performed exposure** — `PerformedExposureFact` answers what can safely be said about the performed session for recency/spacing.
-3. **Programming-role semantics** — `CoverageCreditFact` answers whether that occurrence satisfies an authored coverage role such as `primary_strength`.
-4. **Coverage-state eligibility** — `buildCoverageState()` applies the active plan phase, rolling window, required/target counts, and dose constraints such as the aerobic minimum duration.
+2. **Broad performed exposure** — `PerformedExposureFact` (`derived/training/performedTrainingFacts.ts`) answers what can safely be said about the performed session for recency/spacing.
+3. **Programming-role semantics** — `CoverageCreditFact` (`derived/training/performedTrainingFacts.ts`) answers whether that occurrence satisfies an authored coverage role such as `primary_strength`.
+4. **Coverage-state eligibility** — `buildCoverageState()` (`engine/coverage.ts`) applies the active plan phase, rolling window, required/target counts, and dose constraints such as the aerobic minimum duration.
 
 A downstream consumer must not use layer 2 to reconstruct a decision already made by layer 3.
 

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { evaluateTrainingWithIntent } from '../rules';
-import { deriveFactsFromOccurrence } from '../performedTrainingFacts';
+import { deriveFactsFromOccurrence } from '../../derived/training/performedTrainingFacts';
 import { ENGINE_PERFORMED_TRAINING_CATALOG } from '../performedTrainingCatalog';
 import { evaluateStrengthSpacingStatus } from '../strengthSpacingPolicy';
 import { ENRICHED_TEMPLATES_BY_ID } from '../templates';
