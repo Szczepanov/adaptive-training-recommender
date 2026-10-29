@@ -1,5 +1,5 @@
 import { activityService } from '../services/activityService';
-import type { ActivityOverride, NormalizedGarminActivity } from '../engine/models';
+import type { ActivityOverride, NormalizedGarminActivity } from '../ledger/models';
 import { addDaysToLocalDateString } from '../utils/localDate';
 import { performedTrainingOccurrenceRepository } from './repository';
 import { isProviderActivityRef, type PerformedTrainingOccurrence, type ProviderActivitySourceRef } from './models';

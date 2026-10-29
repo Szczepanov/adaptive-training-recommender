@@ -30,7 +30,8 @@ import {
     scaleCostByDeliveredDose,
     templateDurationReferenceMin,
 } from '../engine/completedTraining';
-import { normalizeModality, recommendationOwnsExecution, templateIdForWorkoutId } from '../engine/performedTrainingFacts';
+import { normalizeModality } from '../engine/performedTrainingFacts';
+import { recommendationOwnsExecution, templateIdForWorkoutId } from '../engine/performedTrainingCatalog';
 import { ENRICHED_TEMPLATES_BY_ID } from '../engine/templates';
 import { workoutForTemplate } from '../workouts/prescription';
 import { getLocalDateString } from '../utils/localDate';

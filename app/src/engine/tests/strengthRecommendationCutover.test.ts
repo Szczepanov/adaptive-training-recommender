@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { evaluateTrainingWithIntent } from '../rules';
 import { deriveFactsFromOccurrence } from '../performedTrainingFacts';
+import { ENGINE_PERFORMED_TRAINING_CATALOG } from '../performedTrainingCatalog';
 import { evaluateStrengthSpacingStatus } from '../strengthSpacingPolicy';
 import { ENRICHED_TEMPLATES_BY_ID } from '../templates';
 import type { TrainingHistoryProvider, CompletedExposure } from '../trainingHistory';
@@ -214,7 +215,11 @@ describe('Strength Recommendation Canonical Occurrence Cutover (Incident Reprodu
             },
         };
 
-        const { exposure, coverageCredits } = deriveFactsFromOccurrence(occurrence, hydrated);
+        const { exposure, coverageCredits } = deriveFactsFromOccurrence(
+            occurrence,
+            hydrated,
+            ENGINE_PERFORMED_TRAINING_CATALOG,
+        );
 
         expect(exposure.modality).toBe('Strength');
         expect(exposure.durationMin).toBe(77);

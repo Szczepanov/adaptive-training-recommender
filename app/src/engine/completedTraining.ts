@@ -17,10 +17,13 @@ import type { DeliveredDose } from './models';
 import {
     derivePowerZoneStimulusCandidate,
     extractPowerZoneFeatures,
-    isGarminCyclingActivityType,
     isGarminCyclingPowerActivity,
     type GarminStimulusPolicy,
 } from './garminTelemetryEvidence';
+import {
+    classifyGarminTier,
+    isGarminCyclingActivityType,
+} from '../derived/training/providerEvidence';
 
 type CompletedModality = SessionTemplate['modality'] | 'Unknown';
 
@@ -150,36 +153,6 @@ export function costIntensityFromGarmin(activity: NormalizedGarminActivity, stim
 // docs/plans/phase-5-sequence-planning.md 5.5: generalises the coarse modality x
 // intensity inference below into a named, ordered hierarchy so every inferred profile
 // carries a legible reason for how confident it is, not just a flat true/false.
-
-/** Signals classifyGarminTier actually has available. `activityTrainingLoad` is Garmin's
- *  own proprietary composite (derived from HR/pace/power across the session) -- a
- *  materially different, richer signal than the coarse 0-5 trainingEffect scalar alone,
- *  even though it still isn't per-interval structure. `averageHr` is deliberately not
- *  consulted: a single session-average HR number without zone/interval context isn't
- *  meaningfully more informative than trainingEffect, and treating it as if it were would
- *  overclaim precision this data doesn't have. */
-export interface GarminEvidenceSignals {
-    trainingEffectAerobic: number | null;
-    trainingEffectAnaerobic: number | null;
-    intensityTag: string;
-    activityTrainingLoad: number | null;
-    modalityKnown: boolean;
-}
-
-/** Exported for `training-occurrence/historyShadowDiff.ts` (PR 4, ADR-0034), which reuses
- * this classifier for its canonical-side evidence-tier estimate rather than duplicating
- * it -- the same "one matcher, not two" principle ADR-0034 applies to reconciliation also
- * applies to evidence-tier classification consistency between the live and shadow paths.
- * Purely additive (no behavior change to this file's own live callers). */
-export function classifyGarminTier(signals: GarminEvidenceSignals): EvidenceTier {
-    const hasTrainingEffect = (signals.trainingEffectAerobic ?? 0) > 0 || (signals.trainingEffectAnaerobic ?? 0) > 0;
-    const hasTrainingLoad = signals.activityTrainingLoad !== null && signals.activityTrainingLoad > 0;
-    if (hasTrainingEffect && hasTrainingLoad) return 'measuredEffort';
-    if (hasTrainingEffect) return 'garminTrainingEffect';
-    if (signals.intensityTag && signals.intensityTag.trim() !== '') return 'durationIntensity';
-    if (signals.modalityKnown) return 'athleteClassification';
-    return 'genericModalityFallback';
-}
 
 /** Maps a tier to the coarse 3-value confidence CompletedExposure.stimulusConfidence
  *  (and, downstream, stimulus.ts's CONFIDENCE_CREDIT_WEIGHT) already expects -- this is

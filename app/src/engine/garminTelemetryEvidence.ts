@@ -1,4 +1,5 @@
 import type { NormalizedGarminActivity, WorkoutStimulusProfile } from './models';
+import { isGarminCyclingActivityType } from '../derived/training/providerEvidence';
 
 export const POWER_ZONE_CANDIDATE_POLICY = 'power-zones-direct-share-v1' as const;
 
@@ -37,10 +38,6 @@ export interface UnavailableMatchedIntervalFade {
 }
 
 const REQUIRED_POWER_ZONES = [1, 2, 3, 4, 5, 6, 7] as const;
-const GARMIN_CYCLING_POWER_TYPES = new Set([
-    'cycling', 'cyclocross', 'gravel_cycling', 'indoor_cycling',
-    'mountain_biking', 'road_biking', 'virtual_ride',
-]);
 
 function sevenZeros(): [number, number, number, number, number, number, number] {
     return [0, 0, 0, 0, 0, 0, 0];
@@ -49,13 +46,6 @@ function sevenZeros(): [number, number, number, number, number, number, number] 
 function rounded(value: number, decimals = 6): number {
     const factor = 10 ** decimals;
     return Math.round(value * factor) / factor;
-}
-
-/** Canonical Garmin cycling typeKey vocabulary (e.g. `road_biking`, `virtual_ride`). Every
- * modality classifier must accept these explicitly: substring matching on "cycl"/"bike"
- * misses `road_biking`, `mountain_biking` and `virtual_ride`. */
-export function isGarminCyclingActivityType(type: string): boolean {
-    return GARMIN_CYCLING_POWER_TYPES.has(type.trim().toLowerCase());
 }
 
 /** Mirrors the accepted ingestion gate's explicit Garmin cycling-type vocabulary. It is

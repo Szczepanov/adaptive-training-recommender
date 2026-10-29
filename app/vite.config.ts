@@ -135,6 +135,7 @@ export default defineConfig({
             id.includes('/engine/contextBriefPlanningHandoff') ||
             id.includes('/engine/contextBriefActivityTelemetry') ||
             id.includes('/engine/completedTraining') ||
+            id.includes('/derived/training/providerEvidence') ||
             id.includes('/engine/microcycle') ||
             id.includes('/engine/fatigue') ||
             id.includes('/engine/adapters') ||

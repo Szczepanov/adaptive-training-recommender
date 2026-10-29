@@ -21,8 +21,10 @@
  * `history_shadow.evidence_tier_delta`) ask for. Evidence-tier comparison stays
  * aggregate-only because event-to-tier attribution is not part of the current DTO.
  */
-import type { CompletedTrainingEvent, EvidenceTier } from '../engine/models';
-import { classifyGarminTier, completedEventToExposure } from '../engine/completedTraining';
+import type { CompletedTrainingEvent } from '../engine/models';
+import type { EvidenceTier } from '../ledger/models';
+import { classifyGarminTier } from '../derived/training/providerEvidence';
+import { completedEventToExposure } from '../engine/completedTraining';
 import type { CompletedExposure } from '../engine/trainingHistory';
 import type { CompletedWorkoutView } from './completedWorkoutView';
 import { compareCompletedExposureSets, type ExposureComparison } from './historyCounterfactual';

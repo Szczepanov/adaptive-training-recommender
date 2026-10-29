@@ -1117,7 +1117,9 @@ currently-ingested proxy for "completedStructuredWorkout" and per-interval
 power/HR/cadence structure, which nothing ingests yet) → `garminTrainingEffect` →
 `durationIntensity` (an intensity tag alone) → `athleteClassification` (modality guessed
 from free text) → `genericModalityFallback` (nothing known at all).
-`classifyGarminTier`/`stimulusConfidenceForTier` produce `CompletedExposure`'s existing
+`classifyGarminTier` (owned by `derived/training/providerEvidence.ts` since #1183, shared with
+canonical performed-training facts and occurrence reconciliation) and `completedTraining.ts`'s
+`stimulusConfidenceForTier` produce `CompletedExposure`'s existing
 `stimulusConfidence` ('exact' | 'inferred' | 'unknown') from this ladder, replacing what
 used to be an ad hoc `exactTemplateMatch`/`hasStimulus`/`modality` check.
 

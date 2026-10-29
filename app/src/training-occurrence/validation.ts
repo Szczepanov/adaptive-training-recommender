@@ -5,7 +5,7 @@
  * DataState/UI-consumed) collection: malformed data throws inside a transaction rather
  * than degrading to a DataState -- this collection has no public read API in PR 1.
  */
-import type { FitWorkoutFingerprintKind } from '../engine/models';
+import type { FitWorkoutFingerprintKind } from '../ledger/models';
 import type {
     ManualReconciliationDecision,
     PerformedOccurrenceSourceKind,
