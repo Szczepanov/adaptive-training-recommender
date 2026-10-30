@@ -940,6 +940,8 @@ export function buildContextBrief(input: ContextBriefInput): string {
         [
             '# Training context brief',
             '',
+            '## Export metadata',
+            '',
             ...briefContractHeaderLines({
                 purpose,
                 asOfDate,

@@ -94,6 +94,12 @@ each field is independently machine-readable. Planning and diagnostic exports ex
 - `Engine policy version`;
 - `Generated at`.
 
+Every purpose wraps identity fields and source freshness in an explicit `## Export metadata`
+section. Planning and diagnostic keep it near the beginning; morning uses a footer. Metadata
+insertion and validation are bounded to that section, stopping at the next peer heading.
+Labels inside athlete notes (such as `Generated at: 08:00`) are content, not metadata, and are
+preserved by timestamp stripping used in determinism checks.
+
 Morning keeps the as-of date at the top and moves contract identity, generation metadata and
 source freshness to the footer. It omits unused horizon metadata and the engine policy version.
 The morning recovery timeline covers seven days. Planning and diagnostic horizons that the

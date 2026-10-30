@@ -5,7 +5,7 @@ import type { CapabilityMaintenanceResult } from '../engine/capabilityMaintenanc
 import { formatContextBriefExport } from '../utils/contextBriefExport';
 import { CONTEXT_BRIEF_EXPORT_SCHEMA_VERSION } from '../utils/contextBriefExport';
 import { CONTEXT_BRIEF_CONTRACT_VERSION } from '../engine/contextBriefContract';
-import { stripBriefContractEphemeral } from '../engine/contextBriefContract';
+import { parseBriefContractField, stripBriefContractEphemeral } from '../engine/contextBriefContract';
 
 const services = vi.hoisted(() => ({
     getRecoverySnapshotState: vi.fn(),
@@ -154,6 +154,28 @@ describe('ContextBriefService', () => {
         services.getActiveBlocksWithDiagnostics.mockResolvedValue({ blocks: [], unreadableCount: 0, truncated: false });
         services.getOutcomeEvaluationRevision.mockResolvedValue(null);
         services.loadPlanningAssessmentSources.mockResolvedValue({ sources: [], relevanceState: 'available', relevanceNotes: [], omittedCount: 0 });
+    });
+
+    it.each(['daily', 'full', 'diagnostic'] as const)('keeps source state and identity in metadata when %s check-in notes contain timestamp labels', async preset => {
+        services.getCheckinsInRange.mockResolvedValue([{
+            userId: 'u1', date: AS_OF, readiness: 7, fatigue: 3, soreness: 2,
+            sleepQuality: 8, motivation: 7, mentalStress: 2,
+            painOrInjury: false, illnessSymptoms: false, unusuallyLimitedTime: false, alreadyTrainedToday: false,
+            availability: { timeAvailableMin: 60, indoorOnly: false, preferredModalityToday: null },
+            notes: 'Personal log\nGenerated at: 08:00\nAs-of date: 2000-01-01\nEnd of notes',
+            submittedAt: `${AS_OF}T06:00:00Z`, schemaVersion: 1,
+            dataQuality: { isComplete: true, missingFields: [] },
+            createdAt: `${AS_OF}T06:00:00Z`, updatedAt: `${AS_OF}T06:00:00Z`,
+        }]);
+        const result = await new ContextBriefService().build('u1', AS_OF, 2, preset);
+        const generatedAt = parseBriefContractField(result.text, 'Generated at');
+        expect(generatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+        expect(parseBriefContractField(result.text, 'As-of date')).toContain(AS_OF);
+        expect(result.text).toContain('Generated at: 08:00');
+        expect(stripBriefContractEphemeral(result.text)).toContain('Generated at: 08:00');
+        expect(result.text.indexOf('Source state and currency')).toBeGreaterThan(result.text.indexOf('## Export metadata'));
+        expect(result.text).toContain(`Generated at: ${generatedAt}\nSource state and currency`);
+        expect(result.text.match(/Source state and currency/g)).toHaveLength(1);
     });
 
     it('exports compact planning benchmarks and partial-source diagnostics through Markdown and JSON v2 with semantic v5', async () => {

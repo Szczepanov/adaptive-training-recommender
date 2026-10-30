@@ -57,6 +57,7 @@ import type { ArchivedRecommendation } from '../persistence/parsers/trainingHist
 import { isExternalPlanOccurrence, isManualOccurrence } from '../sessions/models';
 import {
     assertRenderedBriefContract,
+    findBriefContractMetadata,
     CONTEXT_BRIEF_CONTRACT_VERSION,
 } from '../engine/contextBriefContract';
 import type { PerformedExposureFact } from '../derived/training/performedTrainingFacts';
@@ -1227,7 +1228,11 @@ export class ContextBriefService {
             ...(assessmentEvidence ? [`- Assessment benchmarks: relevance ${assessmentEvidence.relevanceState}; ${assessmentEvidence.sources.length} selected binding(s); ${assessmentEvidence.sources.filter(s => s.unavailable).length} unavailable source(s); ${assessmentEvidence.sources.filter(s => s.truncated || s.unreadableCount).length} incomplete source(s). Missing valid benchmarks, measurement dates and unsupported bindings are explicit in Measured performance evidence; the training-detail window does not limit baselines.`] : []),
             '- Value states: a measured 0 is explicit zero; missing means no record; unavailable means read failure; invalid means an unparseable record; unsupported means not collected by the source; not applicable means the feature does not apply. An em dash means unmeasured, never zero.',
         ];
-        const text = rendered.replace(/(Generated at: [^\n]+)(?:\n|$)/, `$1\n${sourceLines.join('\n')}\n`);
+        const metadataSection = findBriefContractMetadata(rendered);
+        if (!metadataSection) throw new Error('Context Brief export metadata section missing');
+        const metadata = rendered.slice(metadataSection.start, metadataSection.end)
+            .replace(/^(Generated at: [^\r\n]+)(?:\r?\n|$)/m, (_, timestamp: string) => `${timestamp}\n${sourceLines.join('\n')}\n`);
+        const text = rendered.slice(0, metadataSection.start) + metadata + rendered.slice(metadataSection.end);
         assertRenderedBriefContract(text, {
             purpose,
             asOfDate: targetDate,

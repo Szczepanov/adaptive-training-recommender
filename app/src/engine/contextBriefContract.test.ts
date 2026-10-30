@@ -56,6 +56,38 @@ function morningInput(overrides: Partial<ContextBriefPlanningHandoffInput> = {})
 }
 
 describe('context brief contract identity (#894)', () => {
+    it('reads identity only within the export metadata section', () => {
+        const text = '# Brief\nGenerated at: 08:00\n\n## Export metadata\n\nGenerated at: 2026-09-10T06:00:00.000Z\n\n## Athlete notes\nPurpose: morning\nGenerated at: 09:00';
+        expect(parseBriefContractField(text, 'Generated at')).toBe('2026-09-10T06:00:00.000Z');
+        expect(parseBriefContractField(text, 'Purpose')).toBeNull();
+        expect(parseBriefContractField('Generated at: 08:00', 'Generated at')).toBeNull();
+    });
+
+    it('strips only the metadata timestamp, preserving timestamp labels in notes', () => {
+        const text = '# Brief\nGenerated at: 08:00\n\n## Export metadata\n\nGenerated at: 2026-09-10T06:00:00.000Z\n\n## Athlete notes\nGenerated at: 09:00';
+        const stripped = stripBriefContractEphemeral(text);
+        expect(stripped).toContain('Generated at: 08:00');
+        expect(stripped).toContain('Generated at: 09:00');
+        expect(stripped).not.toContain('2026-09-10T06:00:00.000Z');
+    });
+
+    it('rejects a missing metadata timestamp even when a matching label exists in later notes', () => {
+        const generatedAt = '2026-09-10T06:00:00.000Z';
+        const text = `${buildMorningCoachBrief(morningInput())}\n\n## Athlete notes\nGenerated at: ${generatedAt}`;
+        expect(() => assertRenderedBriefContract(text, { purpose: 'morning', asOfDate: AS_OF, generatedAt }))
+            .toThrow(/generation timestamp mismatch/);
+    });
+
+    it('does not accept source-state labels outside the metadata section', () => {
+        const generatedAt = '2026-09-10T06:00:00.000Z';
+        const text = `${buildMorningCoachBrief(morningInput({ generatedAt }))}\n\n## Athlete notes\n`
+            + 'Source state and currency (dates never shift the as-of date):\n- Recovery snapshot for today\n'
+            + '- Canonical performed training:\n- Current-day plan authority inputs:';
+        expect(() => assertRenderedBriefContract(text, {
+            purpose: 'morning', asOfDate: AS_OF, generatedAt, requireSourceState: true,
+        })).toThrow(/source state and currency missing/);
+    });
+
     it('exposes an explicit contract version and purpose on planning and diagnostic', () => {
         for (const purpose of ['planning', 'diagnostic'] as const) {
             const text = buildContextBrief(baseInput({ purpose }));
@@ -251,14 +283,15 @@ describe('context brief contract identity (#894)', () => {
         const source = '\nSource state and currency (dates never shift the as-of date):\n- Recovery snapshot for today\n- Canonical performed training:\n- Current-day plan authority inputs:\n- Assessment benchmarks:\n';
         for (const purpose of ['planning', 'morning'] as const) {
             const textToTest = (purpose === 'planning' ? planningText : morningText);
+            const withSource = textToTest.replace(`Generated at: ${generatedAt}`, `Generated at: ${generatedAt}${source}`);
             const expected = { purpose, asOfDate: AS_OF, generatedAt, requireSourceState: true };
-            expect(() => assertRenderedBriefContract(textToTest + source, expected)).not.toThrow();
+            expect(() => assertRenderedBriefContract(withSource, expected)).not.toThrow();
             if (purpose === 'morning') {
-                expect(() => assertRenderedBriefContract(textToTest + source.replace('- Assessment benchmarks:', ''), expected)).not.toThrow();
+                expect(() => assertRenderedBriefContract(withSource.replace('- Assessment benchmarks:', ''), expected)).not.toThrow();
                 continue;
             }
-            expect(() => assertRenderedBriefContract((textToTest + source).replace('## Measured performance evidence', ''), expected)).toThrow(/assessment evidence\/source state missing/);
-            expect(() => assertRenderedBriefContract(textToTest + source.replace('- Assessment benchmarks:', ''), expected)).toThrow(/assessment evidence\/source state missing/);
+            expect(() => assertRenderedBriefContract(withSource.replace('## Measured performance evidence', ''), expected)).toThrow(/assessment evidence\/source state missing/);
+            expect(() => assertRenderedBriefContract(withSource.replace('- Assessment benchmarks:', ''), expected)).toThrow(/assessment evidence\/source state missing/);
         }
     });
 });

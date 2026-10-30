@@ -86,6 +86,8 @@ Source state and currency (dates never shift the as-of date):
 exports[`ContextBriefService > golden service artifact: 14-day diagnostic export 1`] = `
 "# Training context brief
 
+## Export metadata
+
 Contract version: 2026-10-context-brief-contract-v11
 Purpose: diagnostic
 As-of date: 2026-08-15 (Europe/Warsaw calendar date)
@@ -288,6 +290,8 @@ Use this exact day-block format so it remains compatible with 1-click plan impor
 
 exports[`ContextBriefService > golden service artifact: 14-day full export 1`] = `
 "# Training context brief
+
+## Export metadata
 
 Contract version: 2026-10-context-brief-contract-v11
 Purpose: planning
