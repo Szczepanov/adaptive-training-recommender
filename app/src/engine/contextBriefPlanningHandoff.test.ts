@@ -10,11 +10,103 @@ import type {
     UserPreferences,
 } from './models';
 import {
+    buildMorningCoachBrief,
     enhanceContextBriefForPlanning,
     type ContextBriefPlanningHandoffInput,
 } from './contextBriefPlanningHandoff';
 
 const AS_OF = '2026-08-20';
+
+describe('daily conversation update', () => {
+    it('omits empty horizons and repeated planning background, keeping only actual commitments', () => {
+        const input = handoffInput({ preset: 'daily', recommendations: [recommendation()], upcomingFixedActivities: [], upcomingExternalSessions: [] });
+        const empty = buildMorningCoachBrief(input);
+        expect(empty).not.toContain('Short-Term Horizon');
+        expect(empty).not.toContain('Long-horizon target:');
+        expect(empty).not.toContain('Season roadmap');
+        expect(empty).not.toContain('Engine rationale:');
+        expect(empty).toContain('plan already agreed in this conversation');
+        expect(empty.indexOf("Today's Status")).toBeLessThan(empty.indexOf('Resolved planning authority'));
+        const upcoming = buildMorningCoachBrief({ ...input, upcomingFixedActivities: [fixedActivity()] });
+        expect(upcoming).toContain('D+2 · 2026-08-22: Fixed activity: 6v6 football');
+        expect(upcoming).not.toContain('D+1 ·');
+        expect(upcoming).not.toContain('D+3 ·');
+    });
+
+    it('distinguishes unreported physical work from an explicit negative answer', () => {
+        const missing = buildMorningCoachBrief(handoffInput({ checkins: [checkin()] }));
+        expect(missing).toContain('Unlogged physical work (yesterday D-1): not recorded');
+        expect(missing).not.toContain('Manual physical work:');
+        const none = buildMorningCoachBrief(handoffInput({ checkins: [checkin(AS_OF, { physicalWork: { performed: false } })] }));
+        expect(none).toContain('Unlogged physical work (yesterday D-1): none reported');
+    });
+
+    it('reports today canonical work once with linked intensity, not as another Garmin workout', () => {
+        const text = buildMorningCoachBrief(handoffInput({
+            checkins: [checkin(AS_OF, { alreadyTrainedToday: true })],
+            performedFacts: [{ performedOccurrenceId: 'private-id', localDate: AS_OF, modality: 'Cycling', durationMin: 45,
+                providerActivityIds: ['provider-id'], sourceKinds: ['provider_activity'], confidence: 'exact', evidenceTier: 'genericModalityFallback' }],
+            activities: [{ activityId: 'provider-id', date: AS_OF, type: 'cycling', durationMin: 45,
+                intensityTag: 'easy', normalizedPower: 150, intensityFactor: 0.6, trainingEffectAerobic: null, trainingEffectAnaerobic: null, averageHr: null, activityTrainingLoad: null }],
+        }));
+        expect(text).toContain('Recorded today (canonical): Cycling · 45 min');
+        expect(text).toContain('normalized power 150 W · IF 0.6');
+        expect(text.match(/Recorded today \(canonical\):/g)).toHaveLength(1);
+        expect(text).not.toContain('private-id');
+        expect(text).not.toContain('provider-id');
+    });
+
+    it('warns when already-trained details are absent and retains unreadable future context', () => {
+        const text = buildMorningCoachBrief(handoffInput({
+            checkins: [checkin(AS_OF, { alreadyTrainedToday: true })],
+            performedFacts: null, activitiesReadable: false,
+            unavailableSources: ['upcoming fixed activities'],
+        }));
+        expect(text).toContain('Reported trained today; session details unavailable');
+        expect(text).toContain('DATA INCOMPLETE');
+        expect(text).toContain('upcoming fixed activities');
+    });
+
+    it('withholds provider intensity when two canonical sessions share a recording', () => {
+        const text = buildMorningCoachBrief(handoffInput({
+            performedFacts: ['first', 'second'].map(performedOccurrenceId => ({
+                performedOccurrenceId, localDate: AS_OF, modality: 'Cycling', durationMin: 45,
+                providerActivityIds: ['shared'], sourceKinds: ['provider_activity'], confidence: 'exact', evidenceTier: 'genericModalityFallback',
+            })),
+            activities: [{ activityId: 'shared', date: AS_OF, type: 'cycling', durationMin: 45,
+                intensityTag: 'easy', normalizedPower: 150, trainingEffectAerobic: null, trainingEffectAnaerobic: null, averageHr: null, activityTrainingLoad: null }],
+        }));
+        expect(text.match(/Recorded today \(canonical\):/g)).toHaveLength(2);
+        expect(text).not.toContain('normalized power 150 W');
+        expect(text).toContain('identity unresolved');
+    });
+
+    it('keeps active safety restrictions even before a recommendation is recorded', () => {
+        const text = buildMorningCoachBrief(handoffInput({ recommendations: [], trainingSettings: {
+            defaults: {}, guardrails: { hardSessionCap: true },
+            injuries: [{ region: 'knee', severity: 'moderate', restrictedModalities: ['Running'] }],
+        } as unknown as TrainingSettings }));
+        expect(text).toContain('Active safety limits: hardSessionCap');
+        expect(text).toContain('Active injuries: knee (moderate, restricts Running)');
+    });
+
+    it('keeps clinical red flags independent of pain and illness, even without a recommendation', () => {
+        const text = buildMorningCoachBrief(handoffInput({ recommendations: [], checkins: [checkin(AS_OF, {
+            painOrInjury: false, illnessSymptoms: false,
+            redFlags: { present: true, categories: ['neurological'], notes: 'New weakness' },
+        })] }));
+        expect(text).toContain('clinical red flag reported (neurological)');
+        expect(text).toContain('New weakness');
+        expect(text).not.toContain('no acute flags');
+    });
+
+    it('retains saved safety explanations when the check-in is unavailable', () => {
+        const text = buildMorningCoachBrief(handoffInput({ checkins: [], recommendations: [{ ...recommendation(),
+            mode: 'recover', rationale: 'Training paused until medical evaluation.',
+        }] }));
+        expect(text).toContain('Training paused until medical evaluation.');
+    });
+});
 const BASE = `# Training context brief
 
 Window: 2026-08-07 → 2026-08-20 (14 days).
@@ -250,12 +342,12 @@ it('exports persisted long-horizon development authority, authored purpose and e
         recentCompletedExposures: 4, evidenceLimitations: 'Follow-up tolerance and adaptation gaps unverified.', diagnostics: [],
     } };
     const text = enhanceContextBriefForPlanning(BASE, handoffInput({ recommendations: [rec], effectivePlanningMode: 'event_directed', eventStrategy: 'development_block' }));
-    expect(text).toContain('Long-horizon target: road-race on 2027-06-16');
+    expect(text).toContain('Long-horizon target: Event (name unavailable) on 2027-06-16');
     expect(text).toContain('Executable development authority: vo2-block@2');
     expect(text).toContain('vo2_max: develop; authored dose 1/2/2 sessions');
     expect(text).toContain('Follow-up tolerance and adaptation gaps unverified');
     const morning = enhanceContextBriefForPlanning(BASE, handoffInput({ recommendations: [rec], purpose: 'morning', effectivePlanningMode: 'event_directed', eventStrategy: 'development_block' }));
-    expect(morning).toContain('Executable development authority: vo2-block@2');
+    expect(morning).not.toContain('Executable development authority:');
 });
 
 it('explains each event role and the supporting-event dose limit from the persisted season trace', () => {
@@ -275,7 +367,8 @@ it('explains each event role and the supporting-event dose limit from the persis
     expect(text).toContain('B race (2026-07-04, in 2 day(s)): benchmark (limited taper)');
     expect(text).toContain('Supporting-event dose limit today: B race taper (volume x0.91, intensity unchanged)');
     const morning = enhanceContextBriefForPlanning(BASE, handoffInput({ recommendations: [rec], purpose: 'morning' }));
-    expect(morning).toContain('Season roadmap');
+    expect(morning).not.toContain('Season roadmap');
+    expect(morning).toContain('Supporting-event dose limit today: B race taper');
 });
 
 describe('enhanceContextBriefForPlanning', () => {
@@ -663,13 +756,13 @@ describe('enhanceContextBriefForPlanning', () => {
             expect(text).toContain('Recorded training: Road cycling · 65 min · Load 85 · Aerobic TE 2.9 · Avg HR 135 bpm · moderate');
             expect(text).toContain('Power summary: normalized power 195 W · IF 0.75');
             expect(text).toContain('Adherence Delta: **ON_PLAN**');
-            expect(text).toContain('Manual physical work: 1–3 hrs · hard effort · strain: lower back/spine, grip/forearms — "heavy yard work and soil moving"');
+            expect(text).not.toContain('Manual physical work:');
             expect(text).toContain('Recommendation feedback (athlete response, not execution): reported followed as prescribed — "Good steady rhythm on the road"');
 
             // Today's Recommendation & Engine Stance
             expect(text).toContain('Mode: MODIFY');
-            expect(text).toContain('Recommended workout: Aerobic Maintenance Capped (Cycling · Easy Endurance)');
-            expect(text).toContain('Engine rationale: "Moderate readiness with lumbar strain; capping duration and avoiding heavy climbing"');
+            expect(text).toContain('Authoritative session today: **Aerobic Maintenance Capped (Cycling · modify)**');
+            expect(text).toContain('Session notes: Preserving aerobic volume while protecting lower back');
             expect(text).toContain('Session adjustment: easier (tier 1) · Reduced duration · reason: soreness · "Lumbar strain from physical work"');
             expect(text).toContain('Prescription steps:');
             expect(text).toContain('Spin: 10 min easy · targets: Zone 1 HR (<120 bpm) · cues: High cadence 90+ rpm');
@@ -678,7 +771,7 @@ describe('enhanceContextBriefForPlanning', () => {
             // Explicit D+1..D+3 horizon
             expect(text).toContain('D+1 · 2026-08-21: Imported session: Threshold quality (cycling · 60–75 min · hard · priority: KEY)');
             expect(text).toContain('D+2 · 2026-08-22: Fixed activity: 6v6 football (90 min · fixed)');
-            expect(text).toContain('D+3 · 2026-08-23: No app-held fixed activity, travel block, or imported session.');
+            expect(text).not.toContain('D+3 · 2026-08-23:');
 
             // Morning Coach Instructions
             expect(text).toContain('Treat this brief as state/context for your ongoing morning conversation');
@@ -971,7 +1064,7 @@ describe('enhanceContextBriefForPlanning', () => {
                 preset: 'daily',
                 checkins: [checkin(AS_OF, { hunger1To10: 6, hungerTiming: 'morning_pre_breakfast' })],
             }));
-            expect(text).toContain('- Appetite (hunger 1–10, pre-breakfast): 6 — observation only, zero recommendation authority');
+            expect(text).toContain('- Appetite (hunger 1–10, pre-breakfast): 6 — not used in the app recommendation');
         });
 
         it('labels a non-preferred hunger timing and omits the line entirely when unscored', () => {

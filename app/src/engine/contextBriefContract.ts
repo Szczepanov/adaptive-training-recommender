@@ -7,7 +7,7 @@ import type { BriefPurpose } from './contextBriefPurpose';
  *
  * The rendered artifact may stay human/LLM-readable Markdown, but the semantics
  * behind it must be explicit and machine-testable. Every service-level export
- * carries this block so an external coach can identify its purpose, windows,
+ * carries this identity block (in the morning footer) so a coach can identify its purpose, windows,
  * generation time, and the engine-policy build that produced the export.
  *
  * Changing the semantic meaning of a contract field requires an explicit
@@ -17,7 +17,7 @@ import type { BriefPurpose } from './contextBriefPurpose';
  * omit it for deterministic unit tests. `ContextBriefService.build` is the
  * complete export boundary and always supplies it.
  */
-export const CONTEXT_BRIEF_CONTRACT_VERSION = '2026-10-context-brief-contract-v10';
+export const CONTEXT_BRIEF_CONTRACT_VERSION = '2026-10-context-brief-contract-v11';
 
 export interface BriefContractMetadata {
     purpose: BriefPurpose;
@@ -37,8 +37,6 @@ export interface BriefContractMetadata {
     generatedAt?: string;
 }
 
-const NOT_USED = 'not used by this export';
-
 export function briefContractHeaderLines(meta: BriefContractMetadata): string[] {
     const contractVersion = meta.contractVersion ?? CONTEXT_BRIEF_CONTRACT_VERSION;
     const enginePolicyVersion = meta.enginePolicyVersion ?? POLICY_VERSION;
@@ -55,22 +53,29 @@ export function briefContractHeaderLines(meta: BriefContractMetadata): string[] 
         lines.push(
             `Subjective baseline window: ${baselineStart} → ${meta.asOfDate} (${meta.subjectiveBaselineDays} days)`,
         );
-    } else {
-        lines.push(`Subjective baseline window: ${NOT_USED}`);
     }
 
-    lines.push(
-        `Recovery timeline: ${meta.recoveryTimelineDays === undefined ? NOT_USED : `${meta.recoveryTimelineDays} days`}`,
-        `Sensor evidence horizon: ${meta.sensorHorizonDays === undefined ? NOT_USED : `${meta.sensorHorizonDays} days`}`,
-        `Engine policy version: ${enginePolicyVersion}`,
-    );
+    if (meta.recoveryTimelineDays !== undefined) lines.push(`Recovery timeline: ${meta.recoveryTimelineDays} days`);
+    if (meta.sensorHorizonDays !== undefined) lines.push(`Sensor evidence horizon: ${meta.sensorHorizonDays} days`);
+    if (meta.purpose !== 'morning') lines.push(`Engine policy version: ${enginePolicyVersion}`);
     if (meta.generatedAt) lines.push(`Generated at: ${meta.generatedAt}`);
     return lines;
 }
 
-/** Reads one `Label: value` contract line from rendered text, or null. */
+/** Locate the explicit metadata section, excluding subsequent peer sections. */
+export function findBriefContractMetadata(text: string): { start: number; end: number } | null {
+    const heading = [...text.matchAll(/^## Export metadata[ \t]*\r?$/gm)].at(-1);
+    if (!heading) return null;
+    const start = heading.index + heading[0].length;
+    const nextHeading = text.slice(start).search(/^#{1,2}[ \t]+/m);
+    return { start, end: nextHeading === -1 ? text.length : start + nextHeading };
+}
+
+/** Reads one `Label: value` line only from export metadata, or null. */
 export function parseBriefContractField(text: string, label: string): string | null {
-    for (const line of text.split('\n')) {
+    const section = findBriefContractMetadata(text);
+    if (!section) return null;
+    for (const line of text.slice(section.start, section.end).split('\n')) {
         const trimmed = line.trim().replace(/^-\s*/, '');
         if (trimmed.startsWith(`${label}:`)) return trimmed.slice(label.length + 1).trim() || null;
     }
@@ -79,10 +84,13 @@ export function parseBriefContractField(text: string, label: string): string | n
 
 /** Strips ephemeral lines (generation timestamp) so determinism tests compare semantics only. */
 export function stripBriefContractEphemeral(text: string): string {
-    return text
+    const section = findBriefContractMetadata(text);
+    if (!section) return text;
+    const metadata = text.slice(section.start, section.end)
         .split('\n')
         .filter(line => !line.trim().replace(/^-\s*/, '').startsWith('Generated at:'))
         .join('\n');
+    return text.slice(0, section.start) + metadata + text.slice(section.end);
 }
 
 export interface ExpectedRenderedBriefContract {
@@ -106,6 +114,8 @@ export function assertRenderedBriefContract(
     const actualPurpose = parseBriefContractField(text, 'Purpose');
     const actualAsOf = parseBriefContractField(text, 'As-of date');
     const actualGeneratedAt = parseBriefContractField(text, 'Generated at');
+    const section = findBriefContractMetadata(text);
+    const metadata = section ? text.slice(section.start, section.end) : '';
 
     if (actualVersion !== expectedVersion) {
         throw new Error(`Context Brief contract version mismatch: expected ${expectedVersion}, got ${actualVersion ?? 'missing'}`);
@@ -121,14 +131,14 @@ export function assertRenderedBriefContract(
             `Context Brief generation timestamp mismatch: expected ${expected.generatedAt}, got ${actualGeneratedAt ?? 'missing'}`,
         );
     }
-    if (expected.requireSourceState && (!text.includes('Source state and currency (dates never shift the as-of date):')
-        || !text.includes('- Recovery snapshot for ')
-        || !text.includes('- Canonical performed training:')
-        || !text.includes('- Current-day plan authority inputs:'))) {
+    if (expected.requireSourceState && (!metadata.includes('Source state and currency (dates never shift the as-of date):')
+        || !metadata.includes('- Recovery snapshot for ')
+        || !metadata.includes('- Canonical performed training:')
+        || !metadata.includes('- Current-day plan authority inputs:'))) {
         throw new Error('Context Brief source state and currency missing');
     }
-    if (expected.requireSourceState && (expected.purpose === 'planning' || expected.purpose === 'morning')
-        && (!text.includes('## Measured performance evidence') || !text.includes('- Assessment benchmarks:'))) {
-        throw new Error('Context Brief planning or morning assessment evidence/source state missing');
+    if (expected.requireSourceState && expected.purpose === 'planning'
+        && (!text.includes('## Measured performance evidence') || !metadata.includes('- Assessment benchmarks:'))) {
+        throw new Error('Context Brief planning assessment evidence/source state missing');
     }
 }

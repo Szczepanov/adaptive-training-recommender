@@ -5,7 +5,7 @@ import type { CapabilityMaintenanceResult } from '../engine/capabilityMaintenanc
 import { formatContextBriefExport } from '../utils/contextBriefExport';
 import { CONTEXT_BRIEF_EXPORT_SCHEMA_VERSION } from '../utils/contextBriefExport';
 import { CONTEXT_BRIEF_CONTRACT_VERSION } from '../engine/contextBriefContract';
-import { stripBriefContractEphemeral } from '../engine/contextBriefContract';
+import { parseBriefContractField, stripBriefContractEphemeral } from '../engine/contextBriefContract';
 
 const services = vi.hoisted(() => ({
     getRecoverySnapshotState: vi.fn(),
@@ -156,6 +156,28 @@ describe('ContextBriefService', () => {
         services.loadPlanningAssessmentSources.mockResolvedValue({ sources: [], relevanceState: 'available', relevanceNotes: [], omittedCount: 0 });
     });
 
+    it.each(['daily', 'full', 'diagnostic'] as const)('keeps source state and identity in metadata when %s check-in notes contain timestamp labels', async preset => {
+        services.getCheckinsInRange.mockResolvedValue([{
+            userId: 'u1', date: AS_OF, readiness: 7, fatigue: 3, soreness: 2,
+            sleepQuality: 8, motivation: 7, mentalStress: 2,
+            painOrInjury: false, illnessSymptoms: false, unusuallyLimitedTime: false, alreadyTrainedToday: false,
+            availability: { timeAvailableMin: 60, indoorOnly: false, preferredModalityToday: null },
+            notes: 'Personal log\nGenerated at: 08:00\nAs-of date: 2000-01-01\nEnd of notes',
+            submittedAt: `${AS_OF}T06:00:00Z`, schemaVersion: 1,
+            dataQuality: { isComplete: true, missingFields: [] },
+            createdAt: `${AS_OF}T06:00:00Z`, updatedAt: `${AS_OF}T06:00:00Z`,
+        }]);
+        const result = await new ContextBriefService().build('u1', AS_OF, 2, preset);
+        const generatedAt = parseBriefContractField(result.text, 'Generated at');
+        expect(generatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+        expect(parseBriefContractField(result.text, 'As-of date')).toContain(AS_OF);
+        expect(result.text).toContain('Generated at: 08:00');
+        expect(stripBriefContractEphemeral(result.text)).toContain('Generated at: 08:00');
+        expect(result.text.indexOf('Source state and currency')).toBeGreaterThan(result.text.indexOf('## Export metadata'));
+        expect(result.text).toContain(`Generated at: ${generatedAt}\nSource state and currency`);
+        expect(result.text.match(/Source state and currency/g)).toHaveLength(1);
+    });
+
     it('exports compact planning benchmarks and partial-source diagnostics through Markdown and JSON v2 with semantic v5', async () => {
         const protocolId = 'strength-back-squat-1rm';
         const goal = { status: 'active', title: 'Squat', priority: 3, performanceTarget: {
@@ -180,7 +202,7 @@ describe('ContextBriefService', () => {
         expect(json.content).toBe(markdown);
         expect(json.unavailableSources).toEqual(result.unavailableSources);
         expect(json.schemaVersion).toBe('context_brief_export_v2');
-        expect(json.contractVersion).toBe('2026-10-context-brief-contract-v10');
+        expect(json.contractVersion).toBe(CONTEXT_BRIEF_CONTRACT_VERSION);
         expect(markdown).toContain(`Contract version: ${json.contractVersion}`);
     });
 
@@ -215,9 +237,9 @@ describe('ContextBriefService', () => {
         expect(unsupported.text).toContain('unsupported for measured assessment evidence');
     });
 
-    it.each(['morning', 'planning'] as const)('reports incomplete completed assessment discovery in %s exports', async purpose => {
+    it('reports incomplete completed assessment discovery in planning exports', async () => {
         services.loadPlanningAssessmentSources.mockResolvedValueOnce({ sources: [], relevanceState: 'incomplete', relevanceNotes: ['Completed assessment discovery incomplete: attempt sample truncated.'], omittedCount: 2 });
-        const result = await new ContextBriefService().build('u1', AS_OF, purpose === 'morning' ? 2 : 14, purpose === 'morning' ? 'daily' : 'full');
+        const result = await new ContextBriefService().build('u1', AS_OF, 14, 'full');
         expect(result.text).toContain('Relevance incomplete');
         expect(result.text).toContain('Completed assessment discovery incomplete');
         expect(result.text).not.toContain('No supported assessment binding');
@@ -236,14 +258,18 @@ describe('ContextBriefService', () => {
         expect(services.getOutcomeEvaluationRevision).not.toHaveBeenCalled();
     });
 
-    it('adds assessment reads and compact section to daily (morning)', async () => {
+    it('omits standing assessment reads and unused sections from daily', async () => {
         services.getActiveGoalsState.mockResolvedValue({ status: 'AVAILABLE', data: [{ status: 'active', performanceTarget: {
             kind: 'performance_metric', metricId: 'strength_1rm_kg', subjectRef: { kind: 'exercise', exerciseId: 'back_squat' }, targetValue: 180,
         } }] });
         const result = await new ContextBriefService().build('u1', AS_OF, 2, 'daily');
-        expect(result.text).toContain('## Measured performance evidence');
-        expect(services.loadPlanningAssessmentSources).toHaveBeenCalled();
-        expect(services.getActiveBlocksWithDiagnostics).toHaveBeenCalled();
+        expect(result.text).not.toContain('## Measured performance evidence');
+        expect(result.text).not.toContain('not used by this export');
+        expect(result.text).not.toContain('Training-response comparisons:');
+        expect(result.text).not.toContain('Power telemetry capability:');
+        expect(result.text).not.toContain('Short-Term Horizon');
+        expect(services.loadPlanningAssessmentSources).not.toHaveBeenCalled();
+        expect(services.getActiveBlocksWithDiagnostics).not.toHaveBeenCalled();
     });
 
     it('preserves measured values, older baselines and raw change in both service-built transports', async () => {
@@ -272,7 +298,7 @@ describe('ContextBriefService', () => {
         expect(markdown).toContain('comparable raw change +5 kg (+3.3%); status insufficient_evidence');
         expect(markdown).toContain('source derived');
         expect(json.content).toBe(markdown);
-        expect(json.contractVersion).toBe('2026-10-context-brief-contract-v10');
+        expect(json.contractVersion).toBe(CONTEXT_BRIEF_CONTRACT_VERSION);
         expect(result.unavailableSources).not.toContain('assessment benchmarks (incomplete or unavailable sources)');
         expect(result.measuredBenchmarks).toBeDefined();
         expect(result.measuredBenchmarks).toHaveLength(1);
@@ -347,7 +373,7 @@ describe('ContextBriefService', () => {
 
     it('emits the planning round-trip section and preserves unavailable source reads as unknown', async () => {
         const empty = await new ContextBriefService().build('u1', AS_OF, 14, 'full');
-        expect(empty.contractVersion).toBe('2026-10-context-brief-contract-v10');
+        expect(empty.contractVersion).toBe(CONTEXT_BRIEF_CONTRACT_VERSION);
         expect(empty.text).toContain('External-plan execution round trip (14-day window)');
         expect(empty.text).toContain('Missing activity is not treated as a missed session.');
 
@@ -1005,7 +1031,7 @@ describe('ContextBriefService', () => {
 
         const result = await new ContextBriefService().build('u1', AS_OF, 2, 'daily');
 
-        expect(result.text).toContain('Provider-local D-1 row(s) assigned to another canonical date: 1; excluded from D-1 training and adherence. late-provider-row');
+        expect(result.text).toContain('Provider-local D-1 row(s) assigned to another canonical date: 1; excluded from D-1 training and adherence.');
         expect(result.text).not.toContain('45 min · Cycling · provider activity');
     });
 
@@ -1015,7 +1041,7 @@ describe('ContextBriefService', () => {
         for (const [windowDays, preset] of [[2, 'daily'], [14, 'full']] as const) {
             const result = await new ContextBriefService().build('u1', AS_OF, windowDays, preset);
             expect(result.text).toContain('Source state and currency (dates never shift the as-of date):');
-            expect(result.text).toContain('Recovery snapshot for 2026-08-15: missing; latest 2026-08-14 (1 calendar day(s) before as-of); current-day state stale or absent; source schema 3, baseline computation 2');
+            expect(result.text).toContain('Recovery snapshot for 2026-08-15: missing; latest 2026-08-14 (1 calendar day(s) before as-of); current-day state stale or absent');
             expect(result.text).toContain('Subjective check-in for 2026-08-15: missing');
             expect(result.text).toContain('Garmin activities: available; latest none in fetched window; D-1 0 provider row(s).');
             expect(result.text).toContain('Canonical performed training: missing/no occurrence in fetched window');
@@ -1024,15 +1050,15 @@ describe('ContextBriefService', () => {
     });
 
     it('keeps power telemetry capability missingness states distinct', async () => {
-        const missing = await new ContextBriefService().build('u1', AS_OF, 2, 'daily');
+        const missing = await new ContextBriefService().build('u1', AS_OF, 14, 'full');
         expect(missing.text).toContain('Power telemetry capability: missing/not configured (training settings absent).');
 
         services.peekTrainingSettingsState.mockResolvedValue({ status: 'INVALID', issues: [] });
-        const invalid = await new ContextBriefService().build('u1', AS_OF, 2, 'daily');
+        const invalid = await new ContextBriefService().build('u1', AS_OF, 14, 'full');
         expect(invalid.text).toContain('Power telemetry capability: invalid (training-settings record could not be parsed).');
 
         services.peekTrainingSettingsState.mockResolvedValue({ status: 'UNAVAILABLE', operation: 'read training settings', retryable: true });
-        const unavailable = await new ContextBriefService().build('u1', AS_OF, 2, 'daily');
+        const unavailable = await new ContextBriefService().build('u1', AS_OF, 14, 'full');
         expect(unavailable.text).toContain('Power telemetry capability: unavailable (training-settings read failed).');
 
         const unsupportedSettings = {
@@ -1048,7 +1074,7 @@ describe('ContextBriefService', () => {
             updatedAt: '2026-01-01T00:00:00Z',
         } as TrainingSettings;
         services.peekTrainingSettingsState.mockResolvedValue({ status: 'AVAILABLE', data: unsupportedSettings, revision: 'settings-r1' });
-        const unsupported = await new ContextBriefService().build('u1', AS_OF, 2, 'daily');
+        const unsupported = await new ContextBriefService().build('u1', AS_OF, 14, 'full');
         expect(unsupported.text).toContain('Power telemetry capability: unsupported/not collected (configured unavailable).');
     });
 

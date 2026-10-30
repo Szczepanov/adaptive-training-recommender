@@ -143,8 +143,9 @@ export function renderAssessmentBrief(input: AssessmentBriefInput, asOfDate: str
     }
     for (const source of sources.slice(0, ASSESSMENT_BRIEF_MAX_BINDINGS)) {
         const definition = assessmentBriefDefinition(source.binding);
-        const label = token(definition?.protocol.title ?? source.binding.protocolId);
-        const identity = `${token(source.binding.protocolId)}${source.binding.protocolRevision === undefined ? '' : ` r${source.binding.protocolRevision}`}; ${token(source.binding.metricId)}`;
+        const metricName = definition ? getMetricDefinition(source.binding.metricId).displayName : undefined;
+        const label = token(definition ? `${definition.protocol.title}${metricName ? ` — ${metricName}` : ''}` : 'Unrecognized assessment');
+        const identity = `protocol revision ${source.binding.protocolRevision ?? definition?.protocol.revision ?? 'unknown'}`;
         if (!definition) {
             lines.push(`- ${label}: unsupported assessment binding (${identity}).`);
             continue;
@@ -178,7 +179,7 @@ export function renderAssessmentBrief(input: AssessmentBriefInput, asOfDate: str
             continue;
         }
         const value = `${benchmark.value} ${token(benchmark.unit)} (${benchmark.localDate})`;
-        const provenance = `${token(source.binding.protocolId)} r${series.protocolRevision}; ${token(source.binding.metricId)}; series ${token(series.comparisonSeriesKey)}; source ${token(benchmark.revision.source)}${benchmark.revision.device ? `/${token(benchmark.revision.device.provider)}${benchmark.revision.device.deviceId ? `/${token(benchmark.revision.device.deviceId)}` : ''}` : ''}`;
+        const provenance = `protocol revision ${series.protocolRevision}; source ${token(benchmark.revision.source)}${benchmark.revision.device ? `/${token(benchmark.revision.device.provider)}` : ''}`;
         if (incomplete) {
             lines.push(`- ${label}: ${partial}measured benchmark in read sample ${value}; baseline/latest and comparison unavailable (incomplete read); status insufficient_evidence; ${provenance}.`);
             continue;
