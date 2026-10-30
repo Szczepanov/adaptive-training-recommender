@@ -12,8 +12,8 @@ import { EVENT_PRESETS, resolveDemandProfile } from './eventPresets';
  * or semantic cycling segments) needed to close yesterday's training loop. `full` is the
  * original two-week lookback, useful when actually designing a new block. Sections that
  * are already fixed-horizon regardless of window (the 7-day recovery timeline, the
- * 28-day subjective baseline, the 7-day commitments handoff) are unaffected by this
- * choice — see contextBriefService.ts's `contextDays`.
+ * 28-day subjective baseline) are unaffected by this choice. Forward commitments cover
+ * 14 days for planning and seven for diagnostic, independently of the lookback.
  */
 export type BriefWindowPreset = 'daily' | 'full' | 'diagnostic';
 
@@ -35,6 +35,11 @@ const PURPOSE_BY_PRESET: Readonly<Record<BriefWindowPreset, BriefPurpose>> = {
 /** The existing UI preset names stay for compatibility; each maps to exactly one purpose. */
 export function briefPurposeFor(preset: BriefWindowPreset): BriefPurpose {
     return PURPOSE_BY_PRESET[preset];
+}
+
+/** Forward app-held commitments, separate from the retrospective detail window. */
+export function upcomingContextDays(purpose: BriefPurpose): number {
+    return purpose === 'planning' ? 14 : 7;
 }
 
 /** Section titles shared by both orders; numbering is applied per purpose. Other modules
@@ -125,6 +130,17 @@ export function renderGoalSpecifics(goals: readonly UserGoal[]): string {
  * export omits the respiration candidate and median/MAD fields, so it must not tell the
  * reader to use them. */
 export function renderUseInstructions(purpose: BriefPurpose): string {
+    if (purpose === 'diagnostic') {
+        return [
+            '## 8. How to use this diagnostic handoff',
+            '',
+            '- Answer the athlete\'s actual question using the recorded evidence; do not generate a training block merely because this export was pasted.',
+            '- Distinguish measurements, athlete reports and engine interpretations. Preserve source dates, uncertainty, incomplete reads and omitted-detail counts; missing is not zero.',
+            '- Count canonical performed sessions once; linked provider recordings are supporting evidence, not additional workouts.',
+            '- Current symptoms and safety restrictions still apply. For today, use the Resolved planning authority block; if UNRESOLVED or UNKNOWN, ask the athlete.',
+            '- Treat respiration robust statistics and the observation-only median/MAD fields as context for pattern recognition, not independent additive penalties.',
+        ].join('\n');
+    }
     const observabilityLine = purpose === 'planning'
         ? '- Secondary device composites (body battery, stress, training readiness) are correlated context, not independent additive evidence. Candidate median/MAD baselines are deliberately absent from this planning export; do not infer them.'
         : '- Treat respiration robust statistics and the observation-only median/MAD fields as context for pattern recognition, not independent additive penalties.';

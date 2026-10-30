@@ -67,7 +67,7 @@ Authority order: current symptoms and safety > the app's readiness/safety adjudi
 
 ## Export metadata
 
-Contract version: 2026-10-context-brief-contract-v11
+Contract version: 2026-10-context-brief-contract-v12
 Purpose: morning
 As-of date: 2026-08-15 (Europe/Warsaw calendar date)
 Retrospective detail window: 2026-08-14 → 2026-08-15 (2 days)
@@ -88,7 +88,7 @@ exports[`ContextBriefService > golden service artifact: 14-day diagnostic export
 
 ## Export metadata
 
-Contract version: 2026-10-context-brief-contract-v11
+Contract version: 2026-10-context-brief-contract-v12
 Purpose: diagnostic
 As-of date: 2026-08-15 (Europe/Warsaw calendar date)
 Retrospective detail window: 2026-08-02 → 2026-08-15 (14 days)
@@ -112,7 +112,7 @@ Blank values ("—") mean not measured, not zero. This brief contains no raw dev
 Export purpose: diagnostic — bounded forensic telemetry and observation-only candidate baselines. None of that detail has recommendation authority; it does not change what the app recommends.
 
 
-## 0. Planning handoff & data currency
+## 0. Diagnostic handoff & data currency
 
 **Use this as context for the conversation, not as a standalone command.** Answer the user's actual question that accompanies or follows this brief; do not generate a new plan merely because the brief was pasted.
 - Planning date: 2026-08-15 (Europe/Warsaw calendar date).
@@ -261,30 +261,13 @@ Preserve these when proposing days unless the user explicitly asks to move, repl
 
 No fixed activity, travel block or imported-plan session is recorded in this 7-day horizon. This only describes app-held commitments; it does not prove the athlete has no calendar constraints outside the app.
 
-## 8. How to use this handoff
+## 8. How to use this diagnostic handoff
 
-- Treat the brief as **state/context**, not as a request to automatically create a plan. Answer the user's actual question first.
-- For **today**, current illness/pain/tissue response and current-day availability outrank favorable wearable metrics. A green wearable day does not justify overriding a local warning signal.
-- **Day 1 of a new block is not a blank slate.** Cross-check it against the most recent rows in the completed-training table before finalizing it — a session scheduled for today or tomorrow that duplicates one already completed the day of or immediately before the brief's date needs an explicit adjustment (lower end of the range, different modality, or rest), not a repeat of the same slot.
-- For **future days**, preserve the intended purpose and hard/easy spacing of key sessions. Do not pre-emptively downgrade a future quality day merely because the preceding planned work may create normal fatigue; reassess that day when current data exists.
-- Favorable recovery metrics may support proceeding with the intended dose, but are not a reason by themselves to add volume or intensity beyond the plan.
+- Answer the athlete's actual question using the recorded evidence; do not generate a training block merely because this export was pasted.
+- Distinguish measurements, athlete reports and engine interpretations. Preserve source dates, uncertainty, incomplete reads and omitted-detail counts; missing is not zero.
+- Count canonical performed sessions once; linked provider recordings are supporting evidence, not additional workouts.
+- Current symptoms and safety restrictions still apply. For today, use the Resolved planning authority block; if UNRESOLVED or UNKNOWN, ask the athlete.
 - Treat respiration robust statistics and the observation-only median/MAD fields as context for pattern recognition, not independent additive penalties.
-- For **today**, follow the *Resolved planning authority* block in section 0. It already reconciles the app recommendation with the imported plan; do not re-decide between them, merge them, or invent a compromise dose. If it says UNRESOLVED or UNKNOWN, say so and ask the athlete instead of choosing.
-- Respect fixed activities, travel scaling blocks and imported-plan sessions above. Imported sessions on later dates keep their authored authority on those dates. If a change is warranted, explain which constraint or new evidence justifies it.
-- Honor configured sensor capabilities; observed recent telemetry (section 0) shows what recent activities contained, not guaranteed future availability. If a sensor is not configured available, do not make the session depend solely on that sensor; provide an executable RPE/HR/feel alternative as appropriate. Never treat a sensor configured unavailable as available because it once appeared in historical data.
-- Prefer dated/current records when information conflicts. Explicitly call out missing or stale data instead of assuming normality.
-
-### If the user asks for an importable schedule
-
-Use this exact day-block format so it remains compatible with 1-click plan import:
-\`\`\`markdown
-### Day YYYY-MM-DD: <Session Name>
-- Modality: <Cycling | Running | Strength | Mobility | Field | Cross Training>
-- Duration: <minutes> min
-- Intensity: <easy | moderate | hard>
-- Objectives: <zone2 aerobic | threshold quality | surge repeatability | vo2 max | strength maintenance | strength development | race specific endurance> (or omit if recovery)
-- Description: <Interval structure, target power/HR zones, or workout instructions>
-\`\`\`
 "
 `;
 
@@ -293,7 +276,7 @@ exports[`ContextBriefService > golden service artifact: 14-day full export 1`] =
 
 ## Export metadata
 
-Contract version: 2026-10-context-brief-contract-v11
+Contract version: 2026-10-context-brief-contract-v12
 Purpose: planning
 As-of date: 2026-08-15 (Europe/Warsaw calendar date)
 Retrospective detail window: 2026-08-02 → 2026-08-15 (14 days)
@@ -338,8 +321,9 @@ Export purpose: planning — sections are ordered by decision authority; forensi
 
 Authority order: current symptoms and safety > the app's readiness/safety adjudication > the imported (authored) plan > the app's own generated recommendation. Fixed activities are availability/load constraints, not workouts.
 
-- Outcome: **NO_AUTHORED_SESSION — no imported plan governs today; the app recommendation is the planning input**.
+- Outcome: **No imported session governs today in the app**.
 - Authoritative session today: none recorded yet.
+- App-held context only: a plan already agreed in this conversation may not be imported. Reconcile it with the app stance, preserving current symptoms, safety restrictions and reduced-dose limits.
 ## 1. Constraints
 
 A session that violates any of these cannot be executed.
@@ -473,11 +457,11 @@ No app recommendations recorded in this window.
 
 Plan execution reconciliation: unavailable (canonical planned-vs-performed reconciliation is shadow-only; ADR-0034 TO4/TO5, #646). Observed execution is not reconciled against planned sessions in this export: an unanswered prompt is not a skip, and a missing activity is not proof of non-execution (sync may be incomplete) — compare against the completed-training section yourself.
 
-## 7. Existing commitments / imported plan (2026-08-15 → 2026-08-21)
+## 7. Existing commitments / imported plan (2026-08-15 → 2026-08-28)
 
 Preserve these when proposing days unless the user explicitly asks to move, replace or re-plan them. Authored travel blocks scale the surrounding plan rather than representing an extra workout.
 
-No fixed activity, travel block or imported-plan session is recorded in this 7-day horizon. This only describes app-held commitments; it does not prove the athlete has no calendar constraints outside the app.
+No fixed activity, travel block or imported-plan session is recorded in this 14-day horizon. This only describes app-held commitments; it does not prove the athlete has no calendar constraints outside the app.
 
 ## 8. How to use this handoff
 

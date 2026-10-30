@@ -31,9 +31,9 @@ import { SENSOR_OBSERVATION_HORIZON_DAYS } from '../engine/contextBriefSensorEvi
 import {
     enhanceContextBriefForPlanning,
     RECOVERY_TIMELINE_DAYS,
-    UPCOMING_CONTEXT_DAYS,
     type UpcomingExternalPlanSession,
 } from '../engine/contextBriefPlanningHandoff';
+import { upcomingContextDays } from '../engine/contextBriefPurpose';
 import { externalSessionDisplayPrescription, externalTemplateId } from '../engine/externalSessionProfiles';
 import { resolvePlanningContext } from '../engine/planningMode';
 import { evaluatePeriodizationPhase, goalToUserEvent } from '../engine/periodization';
@@ -268,19 +268,20 @@ export class ContextBriefService {
         // is inclusive of targetDate, so the fetch reaches one day further.
         const throughExclusive = addDaysToLocalDateString(targetDate, 1);
         const activityThroughExclusive = addDaysToLocalDateString(throughExclusive, 1);
-        const upcomingEndDate = addDaysToLocalDateString(targetDate, UPCOMING_CONTEXT_DAYS - 1);
+        const upcomingDays = upcomingContextDays(purpose);
+        const upcomingEndDate = addDaysToLocalDateString(targetDate, upcomingDays - 1);
         const upcomingDates = Array.from(
-            { length: UPCOMING_CONTEXT_DAYS },
+            { length: upcomingDays },
             (_, offset) => addDaysToLocalDateString(targetDate, offset),
         );
         // Morning closed-loop debrief needs yesterday's imported authority as well as
-        // D0..D+6 future placement. Planning/diagnostic keep their existing read set.
+        // D0..D+6 placement. Planning includes both weeks; diagnostic keeps seven days.
         const yesterdayPlanDate = addDaysToLocalDateString(targetDate, -1);
         const externalPlanDates = purpose === 'morning'
             ? [yesterdayPlanDate, ...upcomingDates]
             : upcomingDates;
         // External-plan placement spreads flexible sessions within their whole plan week.
-        // A fixed activity just before or after the 7-day handoff horizon can therefore
+        // A fixed activity just before or after the visible handoff horizon can therefore
         // change which date a session resolves onto inside the horizon. Six calendar days
         // of padding on both sides fully covers every Monday-Sunday plan week intersecting
         // the handoff, without requiring timezone-sensitive weekday arithmetic here.
@@ -584,12 +585,12 @@ export class ContextBriefService {
             const activePlanResults = await Promise.allSettled(
                 externalPlanDates.map(date => activeExternalPlanService.getActivePlanState(userId, date, placementFixedActivities)),
             );
-            let unreadablePlanDays = 0;
+            const unreadablePlanDates: string[] = [];
             for (let index = 0; index < activePlanResults.length; index++) {
                 const date = externalPlanDates[index];
                 const settled = activePlanResults[index];
                 if (settled.status === 'rejected') {
-                    unreadablePlanDays += 1;
+                    unreadablePlanDates.push(date);
                     if (date === targetDate) {
                         externalScheduleTodayConfirmed = false;
                         currentPlanReadStatus = 'UNAVAILABLE';
@@ -600,7 +601,7 @@ export class ContextBriefService {
                 if (date === targetDate) currentPlanReadStatus = state.status;
                 if (state.status === 'MISSING') continue;
                 if (state.status !== 'AVAILABLE') {
-                    unreadablePlanDays += 1;
+                    unreadablePlanDates.push(date);
                     if (date === targetDate) externalScheduleTodayConfirmed = false;
                     continue;
                 }
@@ -661,9 +662,9 @@ export class ContextBriefService {
                     });
                 }
             }
-            if (unreadablePlanDays > 0) {
+            if (unreadablePlanDates.length > 0) {
                 planScheduleFullyRead = false;
-                unavailableSources.push(`external plan schedule (${unreadablePlanDays} day(s) unreadable)`);
+                unavailableSources.push(`external plan schedule (${unreadablePlanDates.length} day(s) unreadable: ${unreadablePlanDates.join(', ')})`);
             }
         } else {
             // Placement depends on fixed-activity occupancy; showing a schedule resolved

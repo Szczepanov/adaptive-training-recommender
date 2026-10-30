@@ -28,6 +28,7 @@ import {
     renderCompactGoalSpecifics,
     renderGoalSpecifics,
     renderUseInstructions,
+    upcomingContextDays,
     SECTION_TITLE,
     type BriefPurpose,
     type BriefWindowPreset,
@@ -45,7 +46,6 @@ import { briefContractHeaderLines } from './contextBriefContract';
 import type { PerformedExposureFact } from '../derived/training/performedTrainingFacts';
 import type { AssessmentBriefInput } from '../observations/contextBriefAssessments';
 
-export const UPCOMING_CONTEXT_DAYS = 7;
 export const RECOVERY_TIMELINE_DAYS = 7;
 
 export interface UpcomingExternalPlanSession {
@@ -375,7 +375,7 @@ function resolveTodayAuthority(input: ContextBriefPlanningHandoffInput): { autho
         recommendationsReadable: input.recommendationsReadable,
         restDirectiveToday: input.restDirectiveToday,
     });
-    return { authority, block: renderBriefPlanAuthority(authority, input.asOfDate, recommendation, resolvePurpose(input) === 'morning') };
+    return { authority, block: renderBriefPlanAuthority(authority, input.asOfDate, recommendation, resolvePurpose(input) !== 'diagnostic') };
 }
 
 type TodayAuthority = ReturnType<typeof resolveTodayAuthority>;
@@ -383,16 +383,21 @@ type TodayAuthority = ReturnType<typeof resolveTodayAuthority>;
 function renderDevelopmentAuthority(input: ContextBriefPlanningHandoffInput): string[] {
     const development = input.recommendations.find(item => item.date === input.asOfDate)?.recommendationAudit?.development;
     if (!development) return [];
+    const compact = resolvePurpose(input) === 'planning';
+    const diagnostics = development.diagnostics.map(code => compact ? code.replaceAll('_', ' ') : code).join(', ');
+    const blockLabel = compact
+        ? `Development block: ${development.executableDates?.startDate}–${development.executableDates?.endDate}; revision ${development.blockRevision}`
+        : `Executable development authority: ${development.blockId}@${development.blockRevision}, ${development.executableDates?.startDate}–${development.executableDates?.endDate}`;
     const eventTitle = input.recommendations.find(item => item.date === input.asOfDate)?.recommendationAudit?.season?.entries
         .find(event => event.eventId === development.eventId)?.title
         ?? 'Event (name unavailable)';
     return [
-        `- Long-horizon target: ${eventTitle} on ${development.eventDate}; event demand ${JSON.stringify(development.eventDemand)}.`,
+        `- Long-horizon target: ${eventTitle} on ${development.eventDate}${compact ? '.' : `; event demand ${JSON.stringify(development.eventDemand)}.`}`,
         development.blockId
-            ? `- Executable development authority: ${development.blockId}@${development.blockRevision}, ${development.executableDates?.startDate}–${development.executableDates?.endDate}; review ${development.nextReviewDate}.${development.diagnostics.length ? ` Review should consider: ${development.diagnostics.join(', ')}.` : ''}`
-            : `- Development authority withheld; Evergreen fallback: ${development.diagnostics.join(', ')}.`,
+            ? `- ${blockLabel}; review ${development.nextReviewDate}.${diagnostics ? ` Review should consider: ${diagnostics}.` : ''}`
+            : `- Development authority withheld; Evergreen fallback: ${diagnostics}.`,
         ...development.objectives.flatMap(objective => [
-            `- ${objective.adaptationScope}: ${objective.intent}; authored dose ${objective.doseEnvelope.min}/${objective.doseEnvelope.target}/${objective.doseEnvelope.max} ${objective.doseEnvelope.unit}${objective.coverageKey ? `; exact role ${objective.coverageKey}` : ''}.`,
+            `- ${compact ? objective.adaptationScope.replaceAll('_', ' ') : objective.adaptationScope}: ${objective.intent}; authored dose ${objective.doseEnvelope.min}/${objective.doseEnvelope.target}/${objective.doseEnvelope.max} ${objective.doseEnvelope.unit}${objective.coverageKey ? `; exact role ${compact ? objective.coverageKey.replaceAll('_', ' ') : objective.coverageKey}` : ''}.`,
             ...(objective.demandRationale ? [`- Development rationale: ${objective.demandRationale}`] : []),
         ]),
         `- Recent completed exposure: ${development.recentCompletedExposures} sessions. ${development.evidenceLimitations}`,
@@ -428,7 +433,7 @@ function renderDataHandoff(input: ContextBriefPlanningHandoffInput, today: Today
             : input.effectivePlanningMode;
 
     const lines: string[] = [
-        '## 0. Planning handoff & data currency',
+        `## 0. ${resolvePurpose(input) === 'diagnostic' ? 'Diagnostic' : 'Planning'} handoff & data currency`,
         '',
         '**Use this as context for the conversation, not as a standalone command.** Answer the user\'s actual question that accompanies or follows this brief; do not generate a new plan merely because the brief was pasted.',
         `- Planning date: ${input.asOfDate} (Europe/Warsaw calendar date).`,
@@ -483,7 +488,7 @@ function renderDataHandoff(input: ContextBriefPlanningHandoffInput, today: Today
 
     if (todayActivities.length > 0) {
         const hard = todayActivities.filter(item => item.intensityTag === 'hard').length;
-        lines.push(`- Recorded activity on planning date: ${todayActivities.length} session(s)${hard > 0 ? `, ${hard} tagged hard` : ''}.`);
+        lines.push(`- Recorded activity on planning date: ${todayActivities.length} provider recording(s)${hard > 0 ? `, ${hard} tagged hard` : ''}; canonical session totals are in Completed training.`);
     } else {
         lines.push('- No activity record is currently dated to the planning date. Same-day Garmin activity can lag until a post-session sync, so this is not proof that no training occurred.');
     }
@@ -625,7 +630,8 @@ const PRESCRIPTION_SAFE_OUTCOMES: ReadonlySet<BriefPlanAuthorityOutcome> = new S
 const RECOMMENDATION_IS_IMPORTED_SESSION: ReadonlySet<BriefPlanAuthorityOutcome> = new Set<BriefPlanAuthorityOutcome>(['MATCH', 'DOSE_MODIFIED']);
 
 function renderUpcoming(input: ContextBriefPlanningHandoffInput, today: TodayAuthority): string {
-    const endDate = addDaysToLocalDateString(input.asOfDate, UPCOMING_CONTEXT_DAYS - 1);
+    const horizonDays = upcomingContextDays(resolvePurpose(input));
+    const endDate = addDaysToLocalDateString(input.asOfDate, horizonDays - 1);
     const fixed = input.upcomingFixedActivities
         .filter(item => !item.isCompleted && item.date >= input.asOfDate && item.date <= endDate)
         .map(item => ({
@@ -682,13 +688,13 @@ function renderUpcoming(input: ContextBriefPlanningHandoffInput, today: TodayAut
         ? ' Today\'s external plan schedule could not be read, so this is unconfirmed — treat it as unreadable, not as a confirmed absence.'
         : '';
     if (input.externalFallback && external.length === 0) {
-        lines.push('', `> External-plan fallback is active today and no imported session is visible in this 7-day horizon. Do not silently invent a replacement block; the imported block may have ended, start later, or be unavailable.${fallbackUncertainNote}`);
+        lines.push('', `> External-plan fallback is active today and no imported session is visible in this ${horizonDays}-day horizon. Do not silently invent a replacement block; the imported block may have ended, start later, or be unavailable.${fallbackUncertainNote}`);
     } else if (input.externalFallback && external.length > 0) {
         lines.push('', `> External-plan fallback is active today because no imported session is placed today; imported sessions later in this horizon remain authoritative on their placed dates, subject to readiness/safety gating.${fallbackUncertainNote}`);
     }
 
     if (rows.length === 0) {
-        lines.push('', 'No fixed activity, travel block or imported-plan session is recorded in this 7-day horizon. This only describes app-held commitments; it does not prove the athlete has no calendar constraints outside the app.');
+        lines.push('', `No fixed activity, travel block or imported-plan session is recorded in this ${horizonDays}-day horizon. This only describes app-held commitments; it does not prove the athlete has no calendar constraints outside the app.`);
         return lines.join('\n');
     }
 
@@ -1120,7 +1126,7 @@ export function enhanceContextBriefForPlanning(
     }
 
     const requestedOutputMarker = '\n## Requested output';
-    const requestedIndex = baseBrief.indexOf(requestedOutputMarker);
+    const requestedIndex = baseBrief.lastIndexOf(requestedOutputMarker);
     const retrospective = requestedIndex >= 0 ? baseBrief.slice(0, requestedIndex) : baseBrief;
 
     const constraintMarker = '\n## 1. Constraints';
