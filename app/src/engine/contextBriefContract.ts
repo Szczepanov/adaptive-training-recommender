@@ -7,7 +7,7 @@ import type { BriefPurpose } from './contextBriefPurpose';
  *
  * The rendered artifact may stay human/LLM-readable Markdown, but the semantics
  * behind it must be explicit and machine-testable. Every service-level export
- * carries this block so an external coach can identify its purpose, windows,
+ * carries this identity block (in the morning footer) so a coach can identify its purpose, windows,
  * generation time, and the engine-policy build that produced the export.
  *
  * Changing the semantic meaning of a contract field requires an explicit
@@ -17,7 +17,7 @@ import type { BriefPurpose } from './contextBriefPurpose';
  * omit it for deterministic unit tests. `ContextBriefService.build` is the
  * complete export boundary and always supplies it.
  */
-export const CONTEXT_BRIEF_CONTRACT_VERSION = '2026-10-context-brief-contract-v10';
+export const CONTEXT_BRIEF_CONTRACT_VERSION = '2026-10-context-brief-contract-v11';
 
 export interface BriefContractMetadata {
     purpose: BriefPurpose;
@@ -37,8 +37,6 @@ export interface BriefContractMetadata {
     generatedAt?: string;
 }
 
-const NOT_USED = 'not used by this export';
-
 export function briefContractHeaderLines(meta: BriefContractMetadata): string[] {
     const contractVersion = meta.contractVersion ?? CONTEXT_BRIEF_CONTRACT_VERSION;
     const enginePolicyVersion = meta.enginePolicyVersion ?? POLICY_VERSION;
@@ -55,15 +53,11 @@ export function briefContractHeaderLines(meta: BriefContractMetadata): string[] 
         lines.push(
             `Subjective baseline window: ${baselineStart} → ${meta.asOfDate} (${meta.subjectiveBaselineDays} days)`,
         );
-    } else {
-        lines.push(`Subjective baseline window: ${NOT_USED}`);
     }
 
-    lines.push(
-        `Recovery timeline: ${meta.recoveryTimelineDays === undefined ? NOT_USED : `${meta.recoveryTimelineDays} days`}`,
-        `Sensor evidence horizon: ${meta.sensorHorizonDays === undefined ? NOT_USED : `${meta.sensorHorizonDays} days`}`,
-        `Engine policy version: ${enginePolicyVersion}`,
-    );
+    if (meta.recoveryTimelineDays !== undefined) lines.push(`Recovery timeline: ${meta.recoveryTimelineDays} days`);
+    if (meta.sensorHorizonDays !== undefined) lines.push(`Sensor evidence horizon: ${meta.sensorHorizonDays} days`);
+    if (meta.purpose !== 'morning') lines.push(`Engine policy version: ${enginePolicyVersion}`);
     if (meta.generatedAt) lines.push(`Generated at: ${meta.generatedAt}`);
     return lines;
 }
@@ -127,8 +121,8 @@ export function assertRenderedBriefContract(
         || !text.includes('- Current-day plan authority inputs:'))) {
         throw new Error('Context Brief source state and currency missing');
     }
-    if (expected.requireSourceState && (expected.purpose === 'planning' || expected.purpose === 'morning')
+    if (expected.requireSourceState && expected.purpose === 'planning'
         && (!text.includes('## Measured performance evidence') || !text.includes('- Assessment benchmarks:'))) {
-        throw new Error('Context Brief planning or morning assessment evidence/source state missing');
+        throw new Error('Context Brief planning assessment evidence/source state missing');
     }
 }

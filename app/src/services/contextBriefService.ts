@@ -353,7 +353,7 @@ export class ContextBriefService {
             // Issue #813: exposure-ledger inputs, bounded to the render window and not read at
             // all for the morning brief, which does not render the ledgers.
             purpose === 'morning' ? Promise.resolve(null) : activityOverrideService.getOverridesSinceState(userId, startDate),
-            (purpose === 'planning' || purpose === 'morning') ? intentBlockService.getActiveBlocksWithDiagnostics(userId, targetDate) : Promise.resolve(null),
+            purpose === 'planning' ? intentBlockService.getActiveBlocksWithDiagnostics(userId, targetDate) : Promise.resolve(null),
         ] as const);
 
         const snapshots: DailyRecoverySnapshot[] = [];
@@ -449,7 +449,7 @@ export class ContextBriefService {
         }
 
         let assessmentEvidence: AssessmentBriefInput | undefined;
-        if (purpose === 'planning' || purpose === 'morning') {
+        if (purpose === 'planning') {
             const goalBindings = assessmentBriefBindingsForGoals(goals);
             const bindings = new Map<string, AssessmentBriefBinding>(goalBindings.bindings.map(b => [assessmentBriefBindingKey(b), b]));
             let unsupportedCount = goalBindings.unsupportedCount;
@@ -1205,7 +1205,16 @@ export class ContextBriefService {
                 : currentPlanReadStatus === 'UNAVAILABLE' ? 'unavailable'
                     : currentPlanReadStatus === 'MISSING' ? 'no active plan'
                         : 'no current-day authored occurrence');
-        const sourceLines = [
+        const sourceLines = purpose === 'morning' ? [
+            'Source state and currency (dates never shift the as-of date):',
+            `- Recovery snapshot for ${targetDate}: ${todaySnapshotState.toLowerCase()}; latest ${dated(latestDate(snapshots.map(item => item.date)))}${todaySnapshotState === 'MISSING' ? '; current-day state stale or absent' : ''}.`,
+            `- Wearable metric dates: sleep ${currentMetricDate(metricDates?.sleep)}; HRV ${currentMetricDate(metricDates?.hrv)}; RHR ${currentMetricDate(metricDates?.restingHr)}; D-1 steps ${metricDate(metricDates?.steps)}${metricDates?.steps && metricDates.steps !== yesterdayPlanDate ? ` (expected ${yesterdayPlanDate}; stale or mismatched)` : ''}; activities through ${currentMetricDate(metricDates?.activitiesThrough)}.`,
+            `- Subjective check-in for ${targetDate}: ${checkinTodayState}; latest ${dated(latestDate(checkins.map(item => item.date)))}.`,
+            `- Garmin activities: ${activitiesReadable ? 'available' : activityResult.status === 'fulfilled' ? activityResult.value.status.toLowerCase() : 'unavailable'}; latest ${activitiesReadable ? dated(latestDate(activities.map(item => item.date))) : 'unknown'}; D-1 ${activitiesReadable ? `${activities.filter(item => item.date === yesterdayPlanDate).length} provider row(s)` : 'unknown'}.`,
+            `- Canonical performed training: ${performedFacts === null ? 'unavailable' : performedFacts.length ? 'available' : 'missing/no occurrence in fetched window'}; latest ${performedFacts === null ? 'unknown' : dated(latestDate(performedFacts.map(item => item.localDate)))}.`,
+            `- Current-day plan authority inputs: recommendations ${recommendationState} (latest update ${recommendationsReadable ? currentRecommendationUpdatedAt : 'unknown'}); imported schedule ${importedScheduleState}; imported revision ${planRevisions.length || restDirectiveToday ? 'recorded' : importedRevisionState}; date ${targetDate}.`,
+            '- Missing or failed reads mean unknown; an em dash is unmeasured, never zero.',
+        ] : [
             'Source state and currency (dates never shift the as-of date):',
             `- Recovery snapshot for ${targetDate}: ${todaySnapshotState.toLowerCase()}; latest ${dated(latestDate(snapshots.map(item => item.date)))}${todaySnapshotState === 'MISSING' ? '; current-day state stale or absent' : ''}; source schema ${latestSnapshot?.source.sourceSchemaVersion ?? 'unknown'}, baseline computation ${latestSnapshot?.derived.baselineComputationVersion ?? 'unknown'}, Garmin synced ${latestSnapshot?.source.garminSyncedAt ?? 'unknown'}.`,
             `- Wearable metric dates: sleep ${currentMetricDate(metricDates?.sleep)}; HRV ${currentMetricDate(metricDates?.hrv)}; RHR ${currentMetricDate(metricDates?.restingHr)}; D-1 steps ${metricDate(metricDates?.steps)}${metricDates?.steps && metricDates.steps !== yesterdayPlanDate ? ` (expected ${yesterdayPlanDate}; stale or mismatched)` : ''}; activities through ${currentMetricDate(metricDates?.activitiesThrough)}. The sync timestamp above is transport provenance, not the measurement date.`,
@@ -1214,11 +1223,11 @@ export class ContextBriefService {
             `- Canonical performed training: ${performedFacts === null ? 'unavailable' : performedFacts.length ? 'available' : 'missing/no occurrence in fetched window'}; latest ${performedFacts === null ? 'unknown' : dated(latestDate(performedFacts.map(item => item.localDate)))}.`,
             `- Current-day plan authority inputs: recommendations ${recommendationState} (latest update ${recommendationsReadable ? currentRecommendationUpdatedAt : 'unknown'}); imported schedule ${importedScheduleState}; imported revision ${importedRevisionState}; date ${targetDate}.`,
             `- Power telemetry capability: ${trainingSettingsReadStatus === 'INVALID' ? 'invalid (training-settings record could not be parsed)' : trainingSettingsReadStatus === 'UNAVAILABLE' ? 'unavailable (training-settings read failed)' : trainingSettingsReadStatus === 'MISSING' ? 'missing/not configured (training settings absent)' : trainingSettings?.capabilities?.powerMeter === false ? 'unsupported/not collected (configured unavailable)' : trainingSettings?.capabilities?.powerMeter === true ? 'configured available; individual activity measurement still depends on source' : 'missing/not configured (capability not configured)'}.`,
-            `- Training-response comparisons: ${purpose === 'morning' ? 'not applicable to this compact morning export' : responseEvidence?.occurrenceRead === 'unavailable' ? 'unavailable (occurrence evidence read failed)' : 'see display-only feature rows; insufficient evidence is stated per feature'}.`,
+            `- Training-response comparisons: ${responseEvidence?.occurrenceRead === 'unavailable' ? 'unavailable (occurrence evidence read failed)' : 'see display-only feature rows; insufficient evidence is stated per feature'}.`,
             ...(assessmentEvidence ? [`- Assessment benchmarks: relevance ${assessmentEvidence.relevanceState}; ${assessmentEvidence.sources.length} selected binding(s); ${assessmentEvidence.sources.filter(s => s.unavailable).length} unavailable source(s); ${assessmentEvidence.sources.filter(s => s.truncated || s.unreadableCount).length} incomplete source(s). Missing valid benchmarks, measurement dates and unsupported bindings are explicit in Measured performance evidence; the training-detail window does not limit baselines.`] : []),
             '- Value states: a measured 0 is explicit zero; missing means no record; unavailable means read failure; invalid means an unparseable record; unsupported means not collected by the source; not applicable means the feature does not apply. An em dash means unmeasured, never zero.',
         ];
-        const text = rendered.replace(/(Generated at: [^\n]+\n)/, `$1${sourceLines.join('\n')}\n`);
+        const text = rendered.replace(/(Generated at: [^\n]+)(?:\n|$)/, `$1\n${sourceLines.join('\n')}\n`);
         assertRenderedBriefContract(text, {
             purpose,
             asOfDate: targetDate,

@@ -161,7 +161,7 @@ describe('context brief contract identity (#894)', () => {
             activities: [providerRow], performedFacts: [todayFact], activitiesReadable: true,
             restDirectiveYesterday: { planId: 'rest-plan', revision: 2, restDirectiveId: 'rest' },
         }));
-        expect(text).toContain('Provider-local D-1 row(s) assigned to another canonical date: 1; excluded from D-1 training and adherence. warsaw-boundary.');
+        expect(text).toContain('Provider-local D-1 row(s) assigned to another canonical date: 1; excluded from D-1 training and adherence.');
         expect(text).toContain('Recorded training: No recorded sessions in this window.');
         expect(text).toContain('Adherence Delta: **ON_PLAN**');
         expect(text).not.toContain('Recorded training: Cycling');
@@ -176,7 +176,7 @@ describe('context brief contract identity (#894)', () => {
         const text = buildMorningCoachBrief(morningInput({ checkins: [checkin], snapshots: [] }));
         expect(text).toContain('Subjective scores (1–10): Readiness 7');
         expect(text).toContain('Wearable caution: No wearable data in this window.');
-        expect(text).toContain('Pattern: INSUFFICIENT');
+        expect(text).toContain('Pattern: insufficient evidence');
     });
 
     it('states planning horizons as independently machine-readable fields', () => {
@@ -194,8 +194,8 @@ describe('context brief contract identity (#894)', () => {
         const text = buildMorningCoachBrief(morningInput());
         expect(parseBriefContractField(text, 'Retrospective detail window')).toContain('2 days');
         expect(parseBriefContractField(text, 'Recovery timeline')).toBe('7 days');
-        expect(parseBriefContractField(text, 'Subjective baseline window')).toBe('not used by this export');
-        expect(parseBriefContractField(text, 'Sensor evidence horizon')).toBe('not used by this export');
+        expect(parseBriefContractField(text, 'Subjective baseline window')).toBeNull();
+        expect(parseBriefContractField(text, 'Sensor evidence horizon')).toBeNull();
     });
 
     it('is deterministic for identical inputs ignoring the generation timestamp', () => {
@@ -237,14 +237,14 @@ describe('context brief contract identity (#894)', () => {
         })).toThrow(/source state and currency missing/);
     });
 
-    it('renders assessment evidence for planning and morning, omits for diagnostic, and guards the contract', () => {
+    it('requires standing assessment evidence only for planning', () => {
         const assessmentEvidence = { sources: [], unsupportedCount: 0, omittedCount: 0, relevanceState: 'available' as const };
         const generatedAt = '2026-09-10T06:00:00.000Z';
         const planningText = buildContextBrief(baseInput({ purpose: 'planning', generatedAt, assessmentEvidence }));
         expect(planningText).toContain('## Measured performance evidence');
 
         const morningText = buildMorningCoachBrief(morningInput({ assessmentEvidence, generatedAt }));
-        expect(morningText).toContain('## Measured performance evidence');
+        expect(morningText).not.toContain('## Measured performance evidence');
 
         expect(buildContextBrief(baseInput({ purpose: 'diagnostic', assessmentEvidence }))).not.toContain('## Measured performance evidence');
 
@@ -253,6 +253,10 @@ describe('context brief contract identity (#894)', () => {
             const textToTest = (purpose === 'planning' ? planningText : morningText);
             const expected = { purpose, asOfDate: AS_OF, generatedAt, requireSourceState: true };
             expect(() => assertRenderedBriefContract(textToTest + source, expected)).not.toThrow();
+            if (purpose === 'morning') {
+                expect(() => assertRenderedBriefContract(textToTest + source.replace('- Assessment benchmarks:', ''), expected)).not.toThrow();
+                continue;
+            }
             expect(() => assertRenderedBriefContract((textToTest + source).replace('## Measured performance evidence', ''), expected)).toThrow(/assessment evidence\/source state missing/);
             expect(() => assertRenderedBriefContract(textToTest + source.replace('- Assessment benchmarks:', ''), expected)).toThrow(/assessment evidence\/source state missing/);
         }

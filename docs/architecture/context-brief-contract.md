@@ -9,7 +9,7 @@ The Context Brief is the read-only handoff between the athlete record and an ext
 It is treated as a versioned API even though the wire format remains human/LLM-readable
 Markdown.
 
-This document describes the current v10 contract. Issue #894 established the versioned export
+This document describes the current v11 contract. Issue #894 established the versioned export
 contract through v3: purpose/window identity, source state and currency, canonical performed
 training, missingness semantics, purpose budgets, golden fixtures and service-built regression
 coverage. Issue #893 advanced that contract to v4 for the planning-only external-plan execution
@@ -22,14 +22,15 @@ Issue #929 advanced it to v7 (season roadmap). Issue #941 advances it to v8: the
 Issue #813 advances it to v9: the planning/diagnostic physical-capability ledger's unilateral
 lower-body row (#803) changes from permanently `unknown` to `confirmed` when logged working sets
 on steps carrying the `unilateral_lower_body` movement pattern exist.
-Contract v10 expands measured performance evidence to daily morning exports (`purpose: 'morning'`),
-adds bounded auto-discovery of completed assessment protocols, distinguishes Current value vs
+Historically, contract v10 expanded measured performance evidence to daily morning exports (`purpose: 'morning'`),
+added bounded auto-discovery of completed assessment protocols, distinguished Current value vs
 Best (PR) value within the active comparison series, and includes structured `measuredBenchmarks`
-in the JSON transport envelope (`context_brief_export_v2`).
+in the JSON transport envelope (`context_brief_export_v2`). Contract v11 removes the standing
+assessment section and its reads from morning exports while retaining planning evidence.
 
 ## Export boundary
 
-Issue #927 advances the contract to v6. Morning, planning and diagnostic handoffs include
+Issue #927 advanced the contract to v6. Planning and diagnostic handoffs include
 the persisted long-horizon target and development authority when a decision audit carries
 them: block/revision, executable dates, authored develop/maintain purpose and dose bounds,
 review checkpoint, completed-exposure limitations and fallback reasons. The exporter does
@@ -80,8 +81,8 @@ create a second planning engine.
 
 ## Contract identity block
 
-Contract version `2026-10-context-brief-contract-v10` currently exposes one field per line so
-each field is independently machine-readable:
+Contract version `2026-10-context-brief-contract-v11` uses one field per line so
+each field is independently machine-readable. Planning and diagnostic exports expose:
 
 - `Contract version`;
 - `Purpose`;
@@ -93,26 +94,46 @@ each field is independently machine-readable:
 - `Engine policy version`;
 - `Generated at`.
 
-A horizon that the selected renderer does not use is written explicitly as
-`not used by this export`; it is not populated merely because the service happened to fetch a
-wider source range. In particular, the morning artifact uses the 7-day recovery timeline but
-does not claim the longer planning/diagnostic subjective-baseline or sensor-evidence sections.
+Morning keeps the as-of date at the top and moves contract identity, generation metadata and
+source freshness to the footer. It omits unused horizon metadata and the engine policy version.
+The morning recovery timeline covers seven days. Planning and diagnostic horizons that the
+selected renderer does not use are written as `not used by this export`, rather than populated
+merely because the service fetched a wider source range.
 
 The source-state section identifies the relevant recovery snapshot and wearable metric dates,
 check-in date, Garmin activity read, canonical completed-training read, current plan inputs,
-planning/morning assessment-benchmark relevance/read state, and comparison evidence state. It distinguishes measured, missing, unavailable, invalid,
+planning assessment-benchmark relevance/read state, and comparison evidence state as applicable. It distinguishes measured, missing, unavailable, invalid,
 unsupported/not collected, and not applicable; a measured zero remains a value, not missingness.
 Where source data has a semantic date, the brief reports its age against the as-of date and
 flags a date older than the expected day as stale. Transport sync/update timestamps are
 provenance only; they do not establish measurement freshness. A late-arriving source never
 changes the explicit as-of date.
 
-`Engine policy version` is the current `POLICY_VERSION` bundled with the application build.
+When rendered in planning or diagnostic exports, `Engine policy version` is the current
+`POLICY_VERSION` bundled with the application build.
 It identifies the engine-policy build present when the export was generated. It must not be
 read as the historical decision policy of every persisted recommendation in the retrospective
 window; decision-specific provenance remains on `DailyRecommendation.recommendationAudit`.
 Source schema, baseline-computation, activity-response derivation and imported-plan revisions
 are included where they materially qualify a rendered value.
+
+## Morning handoff
+
+The daily brief leads with check-in and recovery information and the seven-day timeline, with
+clear column units. Its D-1 debrief compares observed work with the app-held or imported
+prescription. One section then presents today's app-held authority, including restrictions and
+recorded canonical work, with bounded Garmin fallback when canonical facts cannot be read.
+Session descriptions in this authority section omit opaque identifiers. The brief cannot infer
+a plan held in an external conversation and does not track chat synchronization or exports.
+Clinical red flags are shown independently of pain/illness booleans and recommendation
+availability. Saved non-training safety/recovery explanations remain visible because they may
+be the only persisted medical-escalation instruction. Active safety limits and injuries remain
+visible even before a recommendation is recorded.
+
+D+1 through D+3 rows are omitted when empty, and the future section is omitted when all are
+empty. Unavailable sources remain explicitly unknown rather than being represented as empty.
+Morning coaching instructions are concise and conditional on whether a session or rest remains.
+The daily brief does not include the season roadmap or development inventory.
 
 ## Completed-training authority
 
@@ -243,12 +264,12 @@ give identical semantic output; only `Generated at` varies.
 
 ## Measured performance evidence
 
-Planning exports render `## Measured performance evidence` after goals; morning exports render
-it before Morning Coach Instructions. It is an observational, bounded assessment summary, never
-an input to recommendation selection. Diagnostic briefs omit it; diagnostic assessment export
-remains the detailed evidence surface. `ContextBriefService.build` includes its relevance/read
-state in the required planning/morning source-state lines, and `assertRenderedBriefContract`
-rejects either service-built artifact without them.
+Planning exports render `## Measured performance evidence` after goals. It is an observational,
+bounded assessment summary, never an input to recommendation selection. Morning exports omit
+the standing section and its associated assessment reads; diagnostic briefs omit the section,
+and diagnostic assessment export remains the detailed evidence surface.
+`ContextBriefService.build` includes its relevance/read state in the required planning
+source-state lines, and `assertRenderedBriefContract` requires them for planning artifacts.
 
 Only exact, supported bindings enter the section:
 
@@ -272,7 +293,10 @@ sentinel. Failed, unreadable or truncated discovery remains explicit in relevanc
 even when no bindings are found. Known bindings omitted by the cap are counted. It reads only
 eligible attempt/metric heads and current revisions, never metric-wide observations, trial rows, revision chains, or extra body-mass data. It does not reconstruct
 historical as-of authoring state. Rendering independently caps rows at 12 and bounds displayed
-IDs/device tokens to a single line of 96 characters.
+tokens to a single line of 96 characters. Markdown names the protocol and metric, preserving
+the distinction between metrics sharing a protocol and unit. Comparison-series hashes, raw
+protocol/metric IDs and device IDs are omitted; structured benchmark fields retain comparison
+identities and exact bindings.
 
 Projection reuses `buildAssessmentHistory` and `computeSeriesProgress`: completed,
 non-familiarization attempts with known parents and Warsaw observation/completion dates on or
@@ -365,6 +389,11 @@ Version history:
   alongside planning exports; auto-discovery of tested assessment protocols up to the 12-binding cap;
   distinguishes Current observation and active-series Best (PR) observation; exposes structured
   `measuredBenchmarks` in `ContextBriefJsonExport`.
+- v10 → v11: morning places identity and freshness in the footer, removes unused horizon and
+  engine-policy metadata, and omits standing assessment evidence and reads. Its daily handoff
+  prioritizes recovery and the D-1 debrief, then presents today’s app-held authority; empty
+  future rows and an entirely empty future section are omitted. Planning retains assessment
+  evidence, and diagnostic retains its forensic purpose.
 
 Contract identity is asserted on every service-built artifact, and fixed-date semantic tests
 exclude only the generation timestamp. JSON's `context_brief_export_v2` transport version is

@@ -323,11 +323,12 @@ describe('context brief resolved authority block (#810)', () => {
         expect(text).toContain('revision 2 · authored authority on its date');
     });
 
-    it('puts the authority block ahead of the morning-brief sections', () => {
+    it('places authority with today’s session after check-in and recovery', () => {
         const text = enhanceContextBriefForPlanning(BASE, briefInput({ preset: 'daily' }));
         const block = text.indexOf('### Resolved planning authority');
         expect(block).toBeGreaterThan(-1);
-        expect(block).toBeLessThan(text.indexOf('## 1. Today'));
+        expect(block).toBeGreaterThan(text.indexOf('## 1. Today'));
+        expect(block).toBeGreaterThan(text.indexOf('## 2. Overnight Recovery'));
         expect(text).toContain('Not independently actionable');
     });
 

@@ -318,16 +318,16 @@ const CONFLICT_DETAIL: Record<BriefPlanConflictReason, string> = {
     fallback_with_placed_session: 'the app ran in external-plan fallback, yet an imported session is visible on today\'s date',
 };
 
-function describeSession(session: BriefAuthoredSession): string {
+function describeSession(session: BriefAuthoredSession, compact = false): string {
     const range = session.durationMax !== session.durationMin ? `${session.durationMin}–${session.durationMax}` : `${session.durationMin}`;
-    return `${session.title} (${session.modality} · ${range} min · ${session.intensity} · ${session.priority} · ${session.flexibility}; plan ${session.planId} revision ${session.revision}, session ${session.sessionId})`;
+    return `${session.title} (${session.modality} · ${range} min · ${session.intensity} · ${session.priority} · ${session.flexibility}${compact ? '' : `; plan ${session.planId} revision ${session.revision}, session ${session.sessionId}`})`;
 }
 
 function describeRecommendation(recommendation: DailyRecommendation): string {
     return `${recommendation.templateTitle} (${recommendation.modality} · ${recommendation.mode})`;
 }
 
-function authoritativeLine(authority: BriefPlanAuthority): string {
+function authoritativeLine(authority: BriefPlanAuthority, compact = false): string {
     const target = authority.authoritative;
     if (!target) {
         if (authority.outcome === 'CONFLICT_UNRESOLVED' || authority.outcome === 'EXTERNAL_PLAN_UNREADABLE') {
@@ -343,26 +343,31 @@ function authoritativeLine(authority: BriefPlanAuthority): string {
         ? ' — at the app\'s reduced dose, not the authored dose'
         : authority.outcome === 'AUTHORED_UNADJUDICATED' ? ' — authored, not yet readiness-checked by the app' : '';
     // DOSE_MODIFIED: the reduced dose is stated from the persisted audit below, if present.
-    return `- Authoritative session today: **${describeSession(target.session)}** (imported plan)${suffix}.`;
+    return `- Authoritative session today: **${describeSession(target.session, compact)}** (imported plan)${suffix}.`;
 }
 
 /** Renders the resolved authority block. It is placed before any descriptive telemetry. */
-export function renderBriefPlanAuthority(authority: BriefPlanAuthority, asOfDate: string, recommendation: DailyRecommendation | null): string {
+export function renderBriefPlanAuthority(authority: BriefPlanAuthority, asOfDate: string, recommendation: DailyRecommendation | null, compact = false): string {
     const lines: string[] = [
         `### Resolved planning authority for ${asOfDate}`,
         '',
         'Authority order: current symptoms and safety > the app\'s readiness/safety adjudication > the imported (authored) plan > the app\'s own generated recommendation. Fixed activities are availability/load constraints, not workouts.',
         '',
-        `- Outcome: **${OUTCOME_HEADLINE[authority.outcome]}**.`,
-        authoritativeLine(authority),
+        `- Outcome: **${compact && (authority.outcome === 'NO_AUTHORED_SESSION' || authority.outcome === 'EXTERNAL_PLAN_FALLBACK')
+            ? `No imported session governs today in the app${authority.authoritative?.kind === 'app_recommendation' ? '; the app recommendation is a fallback for this handoff' : ''}`
+            : OUTCOME_HEADLINE[authority.outcome]}**.`,
+        authoritativeLine(authority, compact),
     ];
+    if (compact) lines.push('- App-held context only: a plan already agreed in this conversation may not be imported. Reconcile it with the app stance, preserving current symptoms, safety restrictions and reduced-dose limits.');
     if (authority.conflictReason) lines.push(`- Why unresolved: ${CONFLICT_DETAIL[authority.conflictReason]}.`);
     if (authority.outcome === 'CONFLICT_UNRESOLVED' && recommendation) {
         lines.push(`- Unreconciled app recommendation (NOT independently actionable): ${describeRecommendation(recommendation)}.`);
     }
     if (authority.outcome === 'SESSION_REPLACED_BY_GATE' && authority.authoritative?.kind === 'app_recommendation') {
         const displaced = recommendation?.recommendationAudit?.externalPlan;
-        if (displaced) lines.push(`- Displaced imported session: plan ${displaced.planId} revision ${displaced.revision}, session ${displaced.sessionId}. Its authored revision is unchanged.`);
+        if (displaced) lines.push(compact
+            ? '- The imported session was displaced by the app gate; its authored revision is unchanged.'
+            : `- Displaced imported session: plan ${displaced.planId} revision ${displaced.revision}, session ${displaced.sessionId}. Its authored revision is unchanged.`);
     }
     const executionDose = recommendation?.recommendationAudit?.executionDose;
     if (authority.outcome === 'DOSE_MODIFIED' && executionDose) {
@@ -372,14 +377,14 @@ export function renderBriefPlanAuthority(authority: BriefPlanAuthority, asOfDate
         lines.push('- The athlete explicitly overrode today\'s authored rest directive; the app recommendation ran through the normal safety/readiness gates.');
     }
     for (const context of authority.nonGoverningImportedSessionsToday) {
-        lines.push(`- Imported-plan context (not governing: planning mode is not externally planned): ${describeSession(context)}.`);
+        lines.push(`- Imported-plan context (not governing: planning mode is not externally planned): ${describeSession(context, compact)}.`);
     }
     if (authority.override) lines.push(`- Override source: app readiness/safety adjudication (verdict \`${authority.verdict}\`) — "${authority.override.reason}"`);
     for (const other of authority.otherAuthoredSessionsToday) {
         const label = authority.outcome === 'SESSION_REPLACED_BY_GATE'
             ? 'Also placed today (UNRESOLVED: today\'s readiness/safety gate closed the primary session; do not substitute this one without asking)'
             : 'Also placed today (authored authority, not covered by today\'s app decision)';
-        lines.push(`- ${label}: ${describeSession(other)}.`);
+        lines.push(`- ${label}: ${describeSession(other, compact)}.`);
     }
     for (const fixed of authority.fixedConstraintsToday) {
         lines.push(`- Constraint (not a prescription): fixed activity ${fixed.title} · ${fixed.durationMin} min · ${fixed.fixed ? 'fixed' : 'movable'}.`);

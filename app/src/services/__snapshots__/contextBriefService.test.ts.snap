@@ -3,37 +3,10 @@
 exports[`ContextBriefService > golden service artifact: 2-day daily export 1`] = `
 "# Morning Training & Readiness Brief
 
-Contract version: 2026-10-context-brief-contract-v10
-Purpose: morning
-As-of date: 2026-08-15 (Europe/Warsaw calendar date)
-Retrospective detail window: 2026-08-14 → 2026-08-15 (2 days)
-Subjective baseline window: not used by this export
-Recovery timeline: 7 days
-Sensor evidence horizon: not used by this export
-Engine policy version: 2026-10-map-lookup-coverage-overrides-v1
-Source state and currency (dates never shift the as-of date):
-- Recovery snapshot for 2026-08-15: available; latest 2026-08-15 (0 calendar day(s) before as-of); source schema 3, baseline computation 2, Garmin synced 2026-08-15T06:15:00Z.
-- Wearable metric dates: sleep not reported; HRV not reported; RHR not reported; D-1 steps not reported; activities through not reported. The sync timestamp above is transport provenance, not the measurement date.
-- Subjective check-in for 2026-08-15: missing; latest none in fetched window; current-day subjective state stale or absent.
-- Garmin activities: available; latest 2026-08-14 (1 calendar day(s) before as-of); D-1 1 provider row(s).
-- Canonical performed training: available; latest 2026-08-14 (1 calendar day(s) before as-of).
-- Current-day plan authority inputs: recommendations missing/no recommendation (latest update none recorded); imported schedule missing/no authored occurrence; imported revision no active plan; date 2026-08-15.
-- Power telemetry capability: missing/not configured (training settings absent).
-- Training-response comparisons: not applicable to this compact morning export.
-- Assessment benchmarks: relevance available; 0 selected binding(s); 0 unavailable source(s); 0 incomplete source(s). Missing valid benchmarks, measurement dates and unsupported bindings are explicit in Measured performance evidence; the training-detail window does not limit baselines.
-- Value states: a measured 0 is explicit zero; missing means no record; unavailable means read failure; invalid means an unparseable record; unsupported means not collected by the source; not applicable means the feature does not apply. An em dash means unmeasured, never zero.
-
 Date: 2026-08-15 (Europe/Warsaw) · Mode: Daily Morning Coach Handoff
 Context: This brief is shared daily in an ongoing chat. Focus on today's session, yesterday's debrief, and acute adaptations.
 
 > **DATA INCOMPLETE:** missing or unreadable source context: training settings. Absence from affected sections means "unknown", not "none".
-
-### Resolved planning authority for 2026-08-15
-
-Authority order: current symptoms and safety > the app's readiness/safety adjudication > the imported (authored) plan > the app's own generated recommendation. Fixed activities are availability/load constraints, not workouts.
-
-- Outcome: **NO_AUTHORED_SESSION — no imported plan governs today; the app recommendation is the planning input**.
-- Authoritative session today: none recorded yet.
 
 ## 1. Today's Status & Check-in
 
@@ -41,13 +14,13 @@ Authority order: current symptoms and safety > the app's readiness/safety adjudi
 
 ## 2. Overnight Recovery (Wearable)
 
-- HRV: 62 ms (+4 vs 7d), RHR: 48 bpm (-2 vs 7d), Sleep: 7h 30m (78 pts) | Pattern: CONVERGENT_REASSURING
+- HRV: 62 ms (+4 vs 7d), RHR: 48 bpm (-2 vs 7d), Sleep: 7h 30m (78 pts) | Pattern: available signals broadly reassuring
 
 ### Recent 7-day recovery timeline
 
 Calendar-day rows preserve direction and clustering that window averages can hide. Steps are the completed D-1 total carried by that morning's snapshot. “—” means not recorded.
 
-| Date | Sleep | HRV | RHR | Resp | BB | Stress | Steps D-1 | Ready | Fatigue | Sore | Training / flags |
+| Date | Sleep score | HRV (ms) | RHR (bpm) | Resp (/min) | Body Battery | Stress | Steps D-1 | Ready | Fatigue | Sore | Training / flags |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
 | 2026-08-09 | — | — | — | — | — | — | — | — | — | — | — |
 | 2026-08-10 | — | — | — | — | — | — | — | — | — | — | — |
@@ -62,6 +35,7 @@ Calendar-day rows preserve direction and clustering that window averages can hid
 - Prescribed: No app/imported prescription recorded for yesterday.
 - Recorded training (canonical): Cycling · 62 min · Garmin · identity exact
 - Garmin detail: 1 linked provider row(s), observational evidence for the canonical sessions above; not additional workouts.
+- Linked Garmin intensity evidence: load 118 · average HR 143 bpm · normalized power 226 W
   - Quality-session detail (display-only):
     - Session detail: anaerobic TE 0.8
     - Interval/lap detail:
@@ -70,40 +44,49 @@ Calendar-day rows preserve direction and clustering that window averages can hid
       |---:|---:|---:|---:|
       | 1 | 15:00 | 210 W | 138 bpm |
       | 2 | 15:00 | 230 W | 148 bpm |
-- Manual physical work: none reported
 - Adherence Delta: not computable — no executable app/imported prescription recorded for yesterday.
 - Recommendation feedback (athlete response, not execution): no app recommendation recorded for yesterday.
 
 ## 4. Today's App Recommendation & Engine Stance
 
-No recommendation recorded for today yet (check-in may be pending or sync in progress).
+### Resolved planning authority for 2026-08-15
 
-## 5. Short-Term Horizon (Next 48–72h)
+Authority order: current symptoms and safety > the app's readiness/safety adjudication > the imported (authored) plan > the app's own generated recommendation. Fixed activities are availability/load constraints, not workouts.
 
-- D+1 · 2026-08-16: No app-held fixed activity, travel block, or imported session.
-- D+2 · 2026-08-17: No app-held fixed activity, travel block, or imported session.
-- D+3 · 2026-08-18: No app-held fixed activity, travel block, or imported session.
-
-## Measured performance evidence
-
-Assessment benchmarks only; observational evidence, with no recommendation authority. Dates are Europe/Warsaw.
-No supported assessment binding in active typed goals, explicitly bound block objectives, or completed assessments.
+- Outcome: **No imported session governs today in the app**.
+- Authoritative session today: none recorded yet.
+- App-held context only: a plan already agreed in this conversation may not be imported. Reconcile it with the app stance, preserving current symptoms, safety restrictions and reduced-dose limits.
 
 ## 6. Morning Coach Instructions
 
 - Treat this brief as state/context for your ongoing morning conversation. Answer the athlete's actual question first.
-- Acknowledge today's recovery metrics, check-in scores, and yesterday's debrief (flagging any notable strain deltas, soreness, or fatigue from manual labor).
 - Today's authoritative session is the one named in *Resolved planning authority*; do not choose between, or merge, the app recommendation and an imported session. If it is UNRESOLVED or UNKNOWN, ask the athlete.
-- Review today's recommended session against how the athlete feels, their available time, and any sore areas. Confirm or suggest practical fine-tuning (e.g. cadence emphasis, intensity ceiling).
-- Provide concrete execution guidance (power/HR zones, warmup emphasis for reported aches).
-- Keep tomorrow's planned session in mind so today appropriately sets up the week.
-- Do NOT output a multi-day schedule table or redesign the training block unless explicitly asked. Focus on coaching today."
+- Continue the plan already agreed in this conversation, reconciling the app-held context with current symptoms, safety restrictions, reduced-dose limits and training already performed today. Do not add another session merely because a recommendation is shown.
+- Explain any necessary adjustment. Give execution guidance only for a session still to be performed; on rest days, focus on recovery. Observed recovery changes do not establish their cause.
+- Do NOT output a multi-day schedule table or redesign the training block unless explicitly asked. Focus on coaching today.
+
+## Export metadata
+
+Contract version: 2026-10-context-brief-contract-v11
+Purpose: morning
+As-of date: 2026-08-15 (Europe/Warsaw calendar date)
+Retrospective detail window: 2026-08-14 → 2026-08-15 (2 days)
+Recovery timeline: 7 days
+Source state and currency (dates never shift the as-of date):
+- Recovery snapshot for 2026-08-15: available; latest 2026-08-15 (0 calendar day(s) before as-of).
+- Wearable metric dates: sleep not reported; HRV not reported; RHR not reported; D-1 steps not reported; activities through not reported.
+- Subjective check-in for 2026-08-15: missing; latest none in fetched window.
+- Garmin activities: available; latest 2026-08-14 (1 calendar day(s) before as-of); D-1 1 provider row(s).
+- Canonical performed training: available; latest 2026-08-14 (1 calendar day(s) before as-of).
+- Current-day plan authority inputs: recommendations missing/no recommendation (latest update none recorded); imported schedule missing/no authored occurrence; imported revision no active plan; date 2026-08-15.
+- Missing or failed reads mean unknown; an em dash is unmeasured, never zero.
+"
 `;
 
 exports[`ContextBriefService > golden service artifact: 14-day diagnostic export 1`] = `
 "# Training context brief
 
-Contract version: 2026-10-context-brief-contract-v10
+Contract version: 2026-10-context-brief-contract-v11
 Purpose: diagnostic
 As-of date: 2026-08-15 (Europe/Warsaw calendar date)
 Retrospective detail window: 2026-08-02 → 2026-08-15 (14 days)
@@ -193,7 +176,7 @@ Window averages (1 of 14 days have data):
 
 Calendar-day rows preserve direction and clustering that window averages can hide. Steps are the completed D-1 total carried by that morning's snapshot. “—” means not recorded.
 
-| Date | Sleep | HRV | RHR | Resp | BB | Stress | Steps D-1 | Ready | Fatigue | Sore | Training / flags |
+| Date | Sleep score | HRV (ms) | RHR (bpm) | Resp (/min) | Body Battery | Stress | Steps D-1 | Ready | Fatigue | Sore | Training / flags |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
 | 2026-08-09 | — | — | — | — | — | — | — | — | — | — | — |
 | 2026-08-10 | — | — | — | — | — | — | — | — | — | — | — |
@@ -306,7 +289,7 @@ Use this exact day-block format so it remains compatible with 1-click plan impor
 exports[`ContextBriefService > golden service artifact: 14-day full export 1`] = `
 "# Training context brief
 
-Contract version: 2026-10-context-brief-contract-v10
+Contract version: 2026-10-context-brief-contract-v11
 Purpose: planning
 As-of date: 2026-08-15 (Europe/Warsaw calendar date)
 Retrospective detail window: 2026-08-02 → 2026-08-15 (14 days)
@@ -411,7 +394,7 @@ No check-ins in this window.
 
 Calendar-day rows preserve direction and clustering that window averages can hide. Steps are the completed D-1 total carried by that morning's snapshot. “—” means not recorded.
 
-| Date | Sleep | HRV | RHR | Resp | BB | Stress | Steps D-1 | Ready | Fatigue | Sore | Training / flags |
+| Date | Sleep score | HRV (ms) | RHR (bpm) | Resp (/min) | Body Battery | Stress | Steps D-1 | Ready | Fatigue | Sore | Training / flags |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
 | 2026-08-09 | — | — | — | — | — | — | — | — | — | — | — |
 | 2026-08-10 | — | — | — | — | — | — | — | — | — | — | — |

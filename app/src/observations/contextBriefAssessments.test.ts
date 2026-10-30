@@ -48,12 +48,30 @@ function render(sources = [source()], overrides: Partial<AssessmentBriefInput> =
 }
 
 describe('planning assessment benchmarks (#897 WP8.3)', () => {
+    it('reports an unknown protocol and metric as unsupported instead of failing the export', () => {
+        const text = render([{ ...source([]), binding: { protocolId: 'unknown-protocol', metricId: 'unknown-metric' } }]);
+        expect(text).toContain('Unrecognized assessment: unsupported assessment binding');
+        expect(text).not.toContain('unknown-metric');
+    });
+
+    it('distinguishes metrics with the same sprint protocol and unit using readable names', () => {
+        const sources = ['cycling_sprint_1s_peak_power_w', 'cycling_sprint_5s_mean_power_w'].map(metricId => ({
+            ...source([]), binding: { protocolId: 'cycling-6s-seated-sprint', metricId },
+        }));
+        const text = render(sources);
+        expect(text).toContain('Cycling sprint 1-second peak power');
+        expect(text).toContain('Cycling sprint 5-second mean power');
+        expect(text).not.toContain('cycling_sprint_1s_peak_power_w');
+    });
+
     it('renders an older measured baseline with no comparable repeat, date and protocol/source identity', () => {
         const text = render();
         expect(text).toContain('measured benchmark 150 kg (2026-08-01)');
         expect(text).toContain('no comparable repeat');
         expect(text).toContain('insufficient_evidence');
-        expect(text).toContain(`${PROTOCOL.id} r${PROTOCOL.revision}`);
+        expect(text).toContain(`protocol revision ${PROTOCOL.revision}`);
+        expect(text).not.toContain(PROTOCOL.id);
+        expect(text).not.toContain('series setup-a');
         expect(text).toContain('source manual');
         expect(text).not.toContain('e1RM');
     });

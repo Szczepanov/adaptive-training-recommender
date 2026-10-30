@@ -43,7 +43,7 @@ import { renderSensorEvidence } from './contextBriefSensorEvidence';
 import { synthesizeRecoveryEvidence } from './contextBriefRecoverySynthesis';
 import { briefContractHeaderLines } from './contextBriefContract';
 import type { PerformedExposureFact } from '../derived/training/performedTrainingFacts';
-import { renderAssessmentBrief, type AssessmentBriefInput } from '../observations/contextBriefAssessments';
+import type { AssessmentBriefInput } from '../observations/contextBriefAssessments';
 
 export const UPCOMING_CONTEXT_DAYS = 7;
 export const RECOVERY_TIMELINE_DAYS = 7;
@@ -131,7 +131,6 @@ function compactText(value: string): string {
 }
 
 type AdherenceDelta = 'ON_PLAN' | 'UNPLANNED_STRAIN' | 'MISSED_INTENSITY' | 'VOLUME_DISCREPANCY';
-type MorningRecoveryPattern = 'CONVERGENT_REASSURING' | 'DIVERGENT' | 'STRAINED' | 'INSUFFICIENT';
 
 interface AdherenceDeltaSummary {
     delta: AdherenceDelta;
@@ -315,12 +314,12 @@ function morningAdherenceEvidence(
     return { matched, unmatched, reason };
 }
 
-function mapMorningRecoveryPattern(pattern: ReturnType<typeof synthesizeRecoveryEvidence>['pattern']): MorningRecoveryPattern {
+function mapMorningRecoveryPattern(pattern: ReturnType<typeof synthesizeRecoveryEvidence>['pattern']): string {
     switch (pattern) {
-        case 'CONVERGENT_REASSURING': return 'CONVERGENT_REASSURING';
-        case 'CONVERGENT_ADVERSE': return 'STRAINED';
-        case 'MIXED': return 'DIVERGENT';
-        case 'INSUFFICIENT': return 'INSUFFICIENT';
+        case 'CONVERGENT_REASSURING': return 'available signals broadly reassuring';
+        case 'CONVERGENT_ADVERSE': return 'available signals indicate strain';
+        case 'MIXED': return 'mixed signals; consider the individual measurements';
+        case 'INSUFFICIENT': return 'insufficient evidence';
     }
 }
 
@@ -376,7 +375,7 @@ function resolveTodayAuthority(input: ContextBriefPlanningHandoffInput): { autho
         recommendationsReadable: input.recommendationsReadable,
         restDirectiveToday: input.restDirectiveToday,
     });
-    return { authority, block: renderBriefPlanAuthority(authority, input.asOfDate, recommendation) };
+    return { authority, block: renderBriefPlanAuthority(authority, input.asOfDate, recommendation, resolvePurpose(input) === 'morning') };
 }
 
 type TodayAuthority = ReturnType<typeof resolveTodayAuthority>;
@@ -384,8 +383,11 @@ type TodayAuthority = ReturnType<typeof resolveTodayAuthority>;
 function renderDevelopmentAuthority(input: ContextBriefPlanningHandoffInput): string[] {
     const development = input.recommendations.find(item => item.date === input.asOfDate)?.recommendationAudit?.development;
     if (!development) return [];
+    const eventTitle = input.recommendations.find(item => item.date === input.asOfDate)?.recommendationAudit?.season?.entries
+        .find(event => event.eventId === development.eventId)?.title
+        ?? 'Event (name unavailable)';
     return [
-        `- Long-horizon target: ${development.eventId} on ${development.eventDate}; event demand ${JSON.stringify(development.eventDemand)}.`,
+        `- Long-horizon target: ${eventTitle} on ${development.eventDate}; event demand ${JSON.stringify(development.eventDemand)}.`,
         development.blockId
             ? `- Executable development authority: ${development.blockId}@${development.blockRevision}, ${development.executableDates?.startDate}–${development.executableDates?.endDate}; review ${development.nextReviewDate}.${development.diagnostics.length ? ` Review should consider: ${development.diagnostics.join(', ')}.` : ''}`
             : `- Development authority withheld; Evergreen fallback: ${development.diagnostics.join(', ')}.`,
@@ -403,10 +405,13 @@ function renderSeasonRoadmap(input: ContextBriefPlanningHandoffInput): string[] 
     return [
         '- Season roadmap (planning context; one event owns each date):',
         ...describeSeasonRoadmap(season),
-        ...(season.supportingScale
-            ? [`- Supporting-event dose limit today: ${season.supportingScale.eventTitle} ${season.supportingScale.kind} (volume x${season.supportingScale.volumeScale.toFixed(2)}, intensity ${season.supportingScale.intensityScale === null ? 'unchanged' : `x${season.supportingScale.intensityScale.toFixed(2)}`}).`]
-            : []),
+        ...renderSupportingEventLimit(input),
     ];
+}
+
+function renderSupportingEventLimit(input: ContextBriefPlanningHandoffInput): string[] {
+    const scale = latestRecommendationFor(input.recommendations, input.asOfDate)?.recommendationAudit?.season?.supportingScale;
+    return scale ? [`- Supporting-event dose limit today: ${scale.eventTitle} ${scale.kind} (volume x${scale.volumeScale.toFixed(2)}, intensity ${scale.intensityScale === null ? 'unchanged' : `x${scale.intensityScale.toFixed(2)}`}).`] : [];
 }
 
 function renderDataHandoff(input: ContextBriefPlanningHandoffInput, today: TodayAuthority): string {
@@ -553,7 +558,7 @@ function renderRecoveryTimeline(input: ContextBriefPlanningHandoffInput): string
         '',
         'Calendar-day rows preserve direction and clustering that window averages can hide. Steps are the completed D-1 total carried by that morning\'s snapshot. “—” means not recorded.',
         '',
-        '| Date | Sleep | HRV | RHR | Resp | BB | Stress | Steps D-1 | Ready | Fatigue | Sore | Training / flags |',
+        '| Date | Sleep score | HRV (ms) | RHR (bpm) | Resp (/min) | Body Battery | Stress | Steps D-1 | Ready | Fatigue | Sore | Training / flags |',
         '|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|',
     ];
 
@@ -695,16 +700,58 @@ function renderUpcoming(input: ContextBriefPlanningHandoffInput, today: TodayAut
     return lines.join('\n');
 }
 
+function morningActivitySummary(activity: NormalizedGarminActivity): string {
+    const parts: string[] = [];
+    if (activity.activityTrainingLoad != null) parts.push(`load ${round(activity.activityTrainingLoad, 1)}`);
+    if (activity.averageHr != null) parts.push(`average HR ${activity.averageHr} bpm`);
+    if (activity.normalizedPower != null) parts.push(`normalized power ${Math.round(activity.normalizedPower)} W`);
+    if (activity.intensityFactor != null) parts.push(`IF ${round(activity.intensityFactor, 2)}`);
+    return parts.length ? ` · ${parts.join(' · ')}` : '';
+}
+
+function renderTodayTraining(input: ContextBriefPlanningHandoffInput, checkin: DailySubjectiveCheckin | undefined): string[] {
+    const facts = input.performedFacts?.filter(fact => fact.localDate === input.asOfDate)
+        .sort((a, b) => a.performedOccurrenceId.localeCompare(b.performedOccurrenceId)) ?? [];
+    const otherDateIds = new Set((input.performedFacts ?? []).filter(fact => fact.localDate !== input.asOfDate)
+        .flatMap(fact => fact.providerActivityIds ?? []));
+    const activities = input.activities.filter(activity => activity.date === input.asOfDate && !otherDateIds.has(activity.activityId))
+        .sort((a, b) => a.activityId.localeCompare(b.activityId));
+    const lines: string[] = [];
+    if (facts.length) {
+        const evidence = morningAdherenceEvidence(facts, input.performedFacts ?? [], input.activities, input.asOfDate);
+        const linkedActivities = new Map(evidence.matched.map(activity => [activity.activityId, activity]));
+        for (const fact of facts.slice(0, 6)) {
+            const linked = fact.providerActivityIds?.length === 1
+                ? linkedActivities.get(fact.providerActivityIds[0]) : undefined;
+            const state = fact.executionState ? ` · ${fact.executionState.replaceAll('_', ' ')}` : '';
+            const incomplete = fact.startedAt && !fact.endedAt ? ' · completion unrecorded' : '';
+            lines.push(`- Recorded today (canonical): ${fact.modality} · ${fact.durationMin === undefined ? 'duration unrecorded' : `${fact.durationMin} min`}${state}${incomplete}${linked ? morningActivitySummary(linked) : ''}`);
+        }
+        if (facts.length > 6) lines.push(`- ${facts.length - 6} additional canonical sessions today omitted.`);
+        const unmatched = evidence.unmatched;
+        if (unmatched.length) lines.push(`- ${unmatched.length} unmatched Garmin row(s) today; identity unresolved, excluded from canonical totals.`);
+    } else if (activities.length) {
+        lines.push('- Today uses Garmin-only fallback; canonical sessions are unavailable or not reconciled. Recordings may overlap.');
+        for (const activity of activities.slice(0, 6)) {
+            lines.push(`- Recorded today (Garmin fallback): ${formatActivityType(activity.type)} · ${activity.durationMin ?? 'unknown'} min${morningActivitySummary(activity)}`);
+        }
+        if (activities.length > 6) lines.push(`- ${activities.length - 6} additional Garmin rows today omitted.`);
+    } else if (checkin?.alreadyTrainedToday) {
+        lines.push('- Reported trained today; session details unavailable. Confirm what was performed before coaching any further training.');
+    } else if (input.performedFacts === null || input.activitiesReadable === false) {
+        lines.push('- Training already performed today: unknown (source read failed).');
+    }
+    return lines;
+}
+
 function renderMorningCoachInstructions(): string[] {
     return [
         '## 6. Morning Coach Instructions',
         '',
         '- Treat this brief as state/context for your ongoing morning conversation. Answer the athlete\'s actual question first.',
-        '- Acknowledge today\'s recovery metrics, check-in scores, and yesterday\'s debrief (flagging any notable strain deltas, soreness, or fatigue from manual labor).',
         '- Today\'s authoritative session is the one named in *Resolved planning authority*; do not choose between, or merge, the app recommendation and an imported session. If it is UNRESOLVED or UNKNOWN, ask the athlete.',
-        '- Review today\'s recommended session against how the athlete feels, their available time, and any sore areas. Confirm or suggest practical fine-tuning (e.g. cadence emphasis, intensity ceiling).',
-        '- Provide concrete execution guidance (power/HR zones, warmup emphasis for reported aches).',
-        '- Keep tomorrow\'s planned session in mind so today appropriately sets up the week.',
+        '- Continue the plan already agreed in this conversation, reconciling the app-held context with current symptoms, safety restrictions, reduced-dose limits and training already performed today. Do not add another session merely because a recommendation is shown.',
+        '- Explain any necessary adjustment. Give execution guidance only for a session still to be performed; on rest days, focus on recovery. Observed recovery changes do not establish their cause.',
         '- Do NOT output a multi-day schedule table or redesign the training block unless explicitly asked. Focus on coaching today.',
     ];
 }
@@ -749,20 +796,12 @@ export function buildMorningCoachBrief(input: ContextBriefPlanningHandoffInput):
         : null;
     const todayRecommendation = latestRecommendationFor(input.recommendations, targetDate);
     const yesterdayRecommendation = latestRecommendationFor(input.recommendations, yesterdayDate);
-    const todayAuthority = resolveTodayAuthority(input);
+    const todayAuthority = resolveTodayAuthority({ ...input, purpose: 'morning' });
 
     const settings = input.trainingSettings;
 
     const lines: string[] = [
         '# Morning Training & Readiness Brief',
-        '',
-        ...briefContractHeaderLines({
-            purpose: 'morning',
-            asOfDate: targetDate,
-            windowDays: 2,
-            recoveryTimelineDays: RECOVERY_TIMELINE_DAYS,
-            ...(input.generatedAt ? { generatedAt: input.generatedAt } : {}),
-        }),
         '',
         `Date: ${targetDate} (Europe/Warsaw) · Mode: Daily Morning Coach Handoff`,
         'Context: This brief is shared daily in an ongoing chat. Focus on today\'s session, yesterday\'s debrief, and acute adaptations.',
@@ -771,10 +810,6 @@ export function buildMorningCoachBrief(input: ContextBriefPlanningHandoffInput):
     if (input.unavailableSources.length > 0) {
         lines.push('', `> **DATA INCOMPLETE:** missing or unreadable source context: ${input.unavailableSources.join('; ')}. Absence from affected sections means "unknown", not "none".`);
     }
-
-    lines.push('', todayAuthority.block);
-    lines.push(...renderDevelopmentAuthority(input));
-    lines.push(...renderSeasonRoadmap(input));
 
     // 1. Today's Status & Check-in
     lines.push('', '## 1. Today\'s Status & Check-in', '');
@@ -802,17 +837,19 @@ export function buildMorningCoachBrief(input: ContextBriefPlanningHandoffInput):
         lines.push(`- Time & environment: ${timeAvail} min available · ${env}${prefMod}`);
 
         const flags: string[] = [];
+        if (todayCheckin.redFlags?.present) flags.push(`clinical red flag reported${todayCheckin.redFlags.categories?.length ? ` (${todayCheckin.redFlags.categories.join(', ')})` : ''}`);
         if (todayCheckin.painOrInjury) flags.push('pain/injury flagged');
         if (todayCheckin.illnessSymptoms) flags.push('illness symptoms flagged');
         if (todayCheckin.alreadyTrainedToday) flags.push('already trained today');
         if (todayCheckin.unusuallyLimitedTime) flags.push('unusually limited time');
         lines.push(`- Flags: ${flags.length > 0 ? flags.join(' · ') : 'no acute flags'}`);
+        if (todayCheckin.redFlags?.present && todayCheckin.redFlags.notes?.trim()) lines.push(`- Red-flag notes: ${todayCheckin.redFlags.notes.trim()}`);
 
         if (todayCheckin.hunger1To10 != null) {
             const timingLabel = todayCheckin.hungerTiming === 'morning_pre_breakfast' ? 'pre-breakfast' : 'non-preferred timing';
             lines.push(
                 `- Appetite (hunger 1–10, ${timingLabel}): ${textNumber(todayCheckin.hunger1To10)} `
-                + '— observation only, zero recommendation authority',
+                + '— not used in the app recommendation',
             );
         }
 
@@ -832,8 +869,10 @@ export function buildMorningCoachBrief(input: ContextBriefPlanningHandoffInput):
 
         if (todayCheckin.physicalWork?.performed) {
             lines.push(`- Unlogged physical work (yesterday D-1): ${formatPhysicalWork(todayCheckin.physicalWork)}`);
-        } else {
+        } else if (todayCheckin.physicalWork?.performed === false) {
             lines.push('- Unlogged physical work (yesterday D-1): none reported');
+        } else {
+            lines.push('- Unlogged physical work (yesterday D-1): not recorded');
         }
 
         if (todayCheckin.notes && todayCheckin.notes.trim().length > 0) {
@@ -895,7 +934,7 @@ export function buildMorningCoachBrief(input: ContextBriefPlanningHandoffInput):
         }
         if (adherenceEvidence?.matched.length) lines.push(`- Garmin detail: ${adherenceEvidence.matched.length} linked provider row(s), observational evidence for the canonical sessions above; not additional workouts.`);
         for (const activity of adherenceEvidence?.unmatched.slice(0, 6) ?? []) {
-            lines.push(`- Unmatched Garmin row: ${activity.date} · activity ${activity.activityId} · ${formatActivityType(activity.type)} · ${activity.durationMin ?? 'duration unknown'} min; identity unresolved, excluded from canonical totals.`);
+            lines.push(`- Unmatched Garmin row: ${activity.date} · ${formatActivityType(activity.type)} · ${activity.durationMin ?? 'duration unknown'} min; identity unresolved, excluded from canonical totals.`);
         }
         if ((adherenceEvidence?.unmatched.length ?? 0) > 6) lines.push(`- ${adherenceEvidence!.unmatched.length - 6} additional unmatched Garmin rows omitted (morning cap 6).`);
     } else if (yesterdayActivities.length > 0) {
@@ -922,18 +961,16 @@ export function buildMorningCoachBrief(input: ContextBriefPlanningHandoffInput):
     }
 
     if (crossDateProviderRows.length > 0) {
-        lines.push(`- Provider-local D-1 row(s) assigned to another canonical date: ${crossDateProviderRows.length}; excluded from D-1 training and adherence. ${crossDateProviderRows.slice(0, 6).map(activity => activity.activityId).join(', ')}${crossDateProviderRows.length > 6 ? `; ${crossDateProviderRows.length - 6} additional IDs omitted` : ''}.`);
+        lines.push(`- Provider-local D-1 row(s) assigned to another canonical date: ${crossDateProviderRows.length}; excluded from D-1 training and adherence.`);
     }
 
     if (yesterdayFacts?.length) {
-        for (const act of adherenceEvidence?.matched.slice(0, 6) ?? []) lines.push(...renderMorningQualityActivityTelemetry(act));
+        for (const act of adherenceEvidence?.matched.slice(0, 6) ?? []) {
+            const summary = morningActivitySummary(act);
+            if (summary) lines.push(`- Linked Garmin intensity evidence:${summary.slice(2)}`);
+            lines.push(...renderMorningQualityActivityTelemetry(act));
+        }
         if ((adherenceEvidence?.matched.length ?? 0) > 6) lines.push(`- ${adherenceEvidence!.matched.length - 6} additional linked Garmin detail rows omitted (morning cap 6).`);
-    }
-
-    if (todayCheckin?.physicalWork?.performed) {
-        lines.push(`- Manual physical work: ${formatPhysicalWork(todayCheckin.physicalWork)}`);
-    } else {
-        lines.push('- Manual physical work: none reported');
     }
 
     const importedAuthorityYesterday = input.yesterdayExternalSession != null
@@ -948,6 +985,7 @@ export function buildMorningCoachBrief(input: ContextBriefPlanningHandoffInput):
     );
     if (adherenceDelta) {
         lines.push(`- Adherence Delta: **${adherenceDelta.delta}**`);
+        lines.push(`- Comparison basis: yesterday's ${importedAuthorityYesterday ? 'imported prescription' : 'app recommendation'} only; adherence to a plan held in this conversation is unknown to the app.`);
         if (adherenceDelta.alert) lines.push(`> **⚠️ ADHERENCE ALERT:** ${adherenceDelta.alert}`);
     } else if (input.performedFacts === null) {
         lines.push('- Adherence Delta: not computable — canonical performed-training facts unreadable.');
@@ -969,6 +1007,9 @@ export function buildMorningCoachBrief(input: ContextBriefPlanningHandoffInput):
 
     // 4. Today's App Recommendation & Engine Stance
     lines.push('', '## 4. Today\'s App Recommendation & Engine Stance', '');
+    lines.push(todayAuthority.block);
+    lines.push(...renderSupportingEventLimit(input));
+    lines.push(...renderTodayTraining(input, todayCheckin));
     const recommendationIsAuthoritative = todayAuthority.authority.authoritative?.kind === 'app_recommendation'
         || RECOMMENDATION_IS_IMPORTED_SESSION.has(todayAuthority.authority.outcome);
     if (todayRecommendation && !recommendationIsAuthoritative) {
@@ -978,8 +1019,10 @@ export function buildMorningCoachBrief(input: ContextBriefPlanningHandoffInput):
         const engineConflict = renderEngineConflictWarning(todayRecommendation, yesterdayActivities);
         if (engineConflict) lines.push(engineConflict, '');
         lines.push(`- Mode: ${todayRecommendation.mode.toUpperCase()}`);
-        lines.push(`- Recommended workout: ${todayRecommendation.templateTitle} (${todayRecommendation.modality} · ${todayRecommendation.category})`);
-        lines.push(`- Engine rationale: "${todayRecommendation.rationale}"`);
+        if (!recommendationIsAuthoritative) lines.push(`- App recommendation (context only): ${todayRecommendation.templateTitle} (${todayRecommendation.modality} · ${todayRecommendation.category})`);
+        // The saved rationale may be the only persisted clinical escalation explanation.
+        if (todayRecommendation.mode !== 'train' && !todayAuthority.authority.override) lines.push(`- App safety/recovery explanation: ${todayRecommendation.rationale}`);
+        if (todayRecommendation.prescription?.rationale?.length) lines.push(`- Session notes: ${todayRecommendation.prescription.rationale.join('; ')}`);
 
         if (todayRecommendation.adjustment) {
             const adj = todayRecommendation.adjustment;
@@ -1004,24 +1047,25 @@ export function buildMorningCoachBrief(input: ContextBriefPlanningHandoffInput):
             }
         }
 
-        if (settings) {
-            const guardrails = Object.entries(settings.guardrails)
-                .filter(([, on]) => on)
-                .map(([k]) => k.replace(/_/g, ' '));
-            if (guardrails.length > 0) lines.push(`- Active safety limits: ${guardrails.join('; ')}`);
-            const injuries = (settings.injuries ?? [])
-                .filter(i => !i.reviewBy || i.reviewBy >= targetDate);
-            if (injuries.length > 0) {
-                const injLines = injuries.map(i => `${i.region} (${i.severity}${i.restrictedModalities?.length ? `, restricts ${i.restrictedModalities.join(', ')}` : ''})`);
-                lines.push(`- Active injuries: ${injLines.join('; ')}`);
-            }
+    } else if (todayAuthority.authority.recommendationUnknown) {
+        lines.push('Today’s app recommendation is unavailable; do not assume there is none.');
+    }
+
+    if (settings) {
+        const guardrails = Object.entries(settings.guardrails)
+            .filter(([, on]) => on)
+            .map(([k]) => k.replace(/_/g, ' '));
+        if (guardrails.length > 0) lines.push(`- Active safety limits: ${guardrails.join('; ')}`);
+        const injuries = (settings.injuries ?? [])
+            .filter(i => !i.reviewBy || i.reviewBy >= targetDate);
+        if (injuries.length > 0) {
+            const injLines = injuries.map(i => `${i.region} (${i.severity}${i.restrictedModalities?.length ? `, restricts ${i.restrictedModalities.join(', ')}` : ''})`);
+            lines.push(`- Active injuries: ${injLines.join('; ')}`);
         }
-    } else {
-        lines.push('No recommendation recorded for today yet (check-in may be pending or sync in progress).');
     }
 
     // 5. Short-Term Horizon (Next 48–72h)
-    lines.push('', '## 5. Short-Term Horizon (Next 48–72h)', '');
+    const horizon: string[] = [];
     const lookaheadDates = [
         addDaysToLocalDateString(targetDate, 1),
         addDaysToLocalDateString(targetDate, 2),
@@ -1045,18 +1089,17 @@ export function buildMorningCoachBrief(input: ContextBriefPlanningHandoffInput):
                 `Imported session: ${session.title} (${session.modality} · ${duration} · ${session.intensity} · priority: ${session.priority.toUpperCase()})`,
             );
         }
-        lines.push(
-            `- D+${index + 1} · ${date}: ${summaries.length > 0
-                ? summaries.join('; ')
-                : 'No app-held fixed activity, travel block, or imported session.'}`,
-        );
+        if (summaries.length) horizon.push(`- D+${index + 1} · ${date}: ${summaries.join('; ')}`);
     }
+    if (horizon.length) lines.push('', '## 5. Short-Term Horizon (Next 48–72h)', '', ...horizon);
 
     // 6. Morning Coach Instructions
-    if (input.assessmentEvidence) {
-        lines.push('', ...renderAssessmentBrief(input.assessmentEvidence, targetDate));
-    }
     lines.push('', ...renderMorningCoachInstructions());
+    lines.push('', '## Export metadata', '', ...briefContractHeaderLines({
+        purpose: 'morning', asOfDate: targetDate, windowDays: 2,
+        recoveryTimelineDays: RECOVERY_TIMELINE_DAYS,
+        ...(input.generatedAt ? { generatedAt: input.generatedAt } : {}),
+    }));
 
     return lines.join('\n');
 }

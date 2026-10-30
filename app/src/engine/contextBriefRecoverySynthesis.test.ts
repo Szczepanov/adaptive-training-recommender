@@ -326,7 +326,7 @@ describe('context brief integration (#812)', () => {
         } as ContextBriefPlanningHandoffInput;
         const text = buildMorningCoachBrief(input);
         expect(text).toContain('## 2. Overnight Recovery (Wearable)');
-        expect(text).toContain('Pattern: DIVERGENT');
+        expect(text).toContain('Pattern: mixed signals; consider the individual measurements');
         expect(text).not.toContain('### Recovery evidence synthesis');
         expect(text).not.toContain('Body battery on waking');
     });
