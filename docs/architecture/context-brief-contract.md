@@ -83,8 +83,9 @@ Planning includes app-held fixed activities, travel blocks and imported sessions
 14 calendar days, inclusive of the as-of date. This forward window is separate from the
 retrospective detail window. Diagnostic keeps seven days of forward context; morning renders
 only its next three days. The physical-capability exposure ledger retains its own seven-day
-planned-evidence window and does not count later commitments as completed work. Failed plan
-reads identify affected dates rather than implying those dates have no commitments.
+planned-evidence window: later commitments neither set `planned` status nor invalidate
+readable week-one plan evidence when their reads fail. No planned session counts as completed
+work. Failed plan reads identify affected dates rather than implying those dates have no commitments.
 
 Planning development context uses readable objective names, block dates/revision and review
 date, omitting raw demand vectors and opaque block/session identifiers from authority prose.

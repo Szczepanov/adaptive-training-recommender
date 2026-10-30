@@ -95,6 +95,17 @@ import { externalTemplateId } from '../engine/externalSessionProfiles';
 
 const AS_OF = '2026-08-15';
 
+function importedCyclingDay(date: string) {
+    return { status: 'AVAILABLE', data: {
+        header: { planId: 'horizon-plan', title: 'Two-week block', revision: 1 },
+        placed: [{ date, status: 'planned', moved: false, session: {
+            id: 'planned-ride', title: 'Planned aerobic ride', priority: 'supporting', placement: { flexibility: 'fixed' },
+            gating: { modality: 'cycling', intensity: 'easy', durationMin: 45, durationMax: 60 },
+            prescription: { summary: 'Easy aerobic work' },
+        } }],
+    } };
+}
+
 function snapshotWithWeight(date: string, weightKg: number): DailyRecoverySnapshot {
     return {
         userId: 'u1',
@@ -178,6 +189,34 @@ describe('ContextBriefService', () => {
         expect(result.text.indexOf('Source state and currency')).toBeGreaterThan(result.text.indexOf('## Export metadata'));
         expect(result.text).toContain(`Generated at: ${generatedAt}\nSource state and currency`);
         expect(result.text.match(/Source state and currency/g)).toHaveLength(1);
+    });
+
+    it.each([
+        [0, 'planned'], [6, 'planned'], [7, 'unknown'], [13, 'unknown'],
+    ] as const)('keeps a D+%i commitment in the handoff with exposure status %s', async (offset, expectedStatus) => {
+        const date = addDaysToLocalDateString(AS_OF, offset);
+        services.getActivePlanState.mockImplementation(async (_userId: string, day: string) => day === date
+            ? importedCyclingDay(day) : { status: 'MISSING' });
+        const result = await new ContextBriefService().build('u1', AS_OF, 14, 'full');
+        const exposure = result.text.split('\n').find(line => line.startsWith('- Aerobic endurance:'));
+        expect(exposure).toContain(`: ${expectedStatus}`);
+        expect(result.text).toContain(`${date} | Imported plan: Two-week block | Planned aerobic ride`);
+    });
+
+    it.each([
+        [0, 'unknown'], [6, 'unknown'], [7, 'planned'], [13, 'planned'],
+    ] as const)('scopes exposure completeness to week one when D+%i is unreadable', async (offset, expectedStatus) => {
+        const unreadableDate = addDaysToLocalDateString(AS_OF, offset);
+        const plannedDate = addDaysToLocalDateString(AS_OF, 2);
+        services.getActivePlanState.mockImplementation(async (_userId: string, date: string) => {
+            if (date === unreadableDate) return { status: 'UNAVAILABLE', operation: 'read plan', retryable: true };
+            return date === plannedDate ? importedCyclingDay(date) : { status: 'MISSING' };
+        });
+        const result = await new ContextBriefService().build('u1', AS_OF, 14, 'full');
+        const exposure = result.text.split('\n').find(line => line.startsWith('- Aerobic endurance:'));
+        expect(exposure).toContain(`: ${expectedStatus}`);
+        expect(result.unavailableSources.join(' ')).toContain(unreadableDate);
+        expect(result.text.includes('The future plan was not fully readable:')).toBe(expectedStatus === 'unknown');
     });
 
     it('loads and renders the full second week of planning commitments', async () => {

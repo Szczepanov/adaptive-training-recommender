@@ -16,4 +16,11 @@
 
 **Verification:** All 457 affected context-brief/service tests passed, as did TypeScript and ESLint. Independent review found no further actionable issues. `make verify` passed all required local gates, including unit suites, both Firestore-rule shards, all 65 browser tests, build, simulations, corpus/registry checks, policy drift and performance gates. Ledger JSON was audited separately without a confirmed defect; no ledger/workout schema or recommendation decision changed. No live account export or workout-export audit was performed.
 
+**PR review follow-up:** CodeRabbit identified that widening commitment reads also widened
+the input and read-completeness check for planned capability exposure. The service now bounds
+both to D0–D+6 using `PLANNED_HORIZON_DAYS`, while retaining D0–D+13 commitments and all
+read-failure diagnostics. Regression tests cover sessions and unreadable dates at D0, D+6,
+D+7 and D+13. The service/exposure suites passed all 132 tests, with TypeScript and ESLint clean.
+The follow-up `make verify` run also passed all required gates, including both browser shards.
+
 **Stop condition:** Confirmed findings fixed and verified, with no new planning engine, export preset, dependency, synchronization mechanism or unrelated cleanup.
