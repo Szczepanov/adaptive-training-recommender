@@ -3,7 +3,7 @@ import { HISTORICAL_POLICY_VERSIONS, POLICY_VERSION, isHistoricalPolicyVersion }
 
 describe('isHistoricalPolicyVersion', () => {
     it('records the current transition and the previous live policies exactly once', () => {
-        expect(POLICY_VERSION).toBe('2026-10-derived-activity-step-deduction-v1');
+        expect(POLICY_VERSION).toBe('2026-10-map-lookup-coverage-overrides-v1');
         expect(HISTORICAL_POLICY_VERSIONS[0]).toBe('2026-11-derived-provider-evidence-classifiers-v1');
         expect(
             HISTORICAL_POLICY_VERSIONS.filter(

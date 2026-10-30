@@ -1,6 +1,6 @@
 /** Increment whenever a change can alter a persisted recommendation decision. (Refactoring does not require a bump) */
 
-export const POLICY_VERSION = '2026-10-derived-activity-step-deduction-v1';
+export const POLICY_VERSION = '2026-10-map-lookup-coverage-overrides-v1';
 
 /** Historical versions are intentionally not re-executed by this build. Their compact
  * audits remain readable evidence, but replay is rejected explicitly because the old
