@@ -23,7 +23,7 @@ gaps, and omission counts. It escapes embedded text so values cannot inject Mark
 or headings. The ledger module boundary test forbids direct or transitive engine imports.
 
 During this transition, the existing Copy, Download Markdown and Download JSON actions
-retain the [Context Brief v10 contract](./context-brief-contract.md). They still include the
+retain the [Context Brief contract](./context-brief-contract.md). They still include the
 legacy brief's engine opinions. **OD5 explicitly reserves switching that Markdown path to
 the ledger renderer for Phase 2.** The additive ledger JSON has a separate schema version;
 it is not `context_brief_export_v2` and does not embed the legacy Markdown. No brief-contract

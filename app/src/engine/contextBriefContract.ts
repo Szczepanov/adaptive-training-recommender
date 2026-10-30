@@ -17,7 +17,7 @@ import type { BriefPurpose } from './contextBriefPurpose';
  * omit it for deterministic unit tests. `ContextBriefService.build` is the
  * complete export boundary and always supplies it.
  */
-export const CONTEXT_BRIEF_CONTRACT_VERSION = '2026-10-context-brief-contract-v11';
+export const CONTEXT_BRIEF_CONTRACT_VERSION = '2026-10-context-brief-contract-v12';
 
 export interface BriefContractMetadata {
     purpose: BriefPurpose;
@@ -64,7 +64,9 @@ export function briefContractHeaderLines(meta: BriefContractMetadata): string[] 
 
 /** Locate the explicit metadata section, excluding subsequent peer sections. */
 export function findBriefContractMetadata(text: string): { start: number; end: number } | null {
-    const heading = [...text.matchAll(/^## Export metadata[ \t]*\r?$/gm)].at(-1);
+    const headings = [...text.matchAll(/^## Export metadata[ \t]*\r?$/gm)];
+    // Planning/diagnostic own the header; morning owns the footer after athlete notes.
+    const heading = /^# Training context brief\r?\n/.test(text) ? headings[0] : headings.at(-1);
     if (!heading) return null;
     const start = heading.index + heading[0].length;
     const nextHeading = text.slice(start).search(/^#{1,2}[ \t]+/m);

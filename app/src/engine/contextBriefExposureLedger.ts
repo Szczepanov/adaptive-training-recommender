@@ -119,7 +119,7 @@ export interface ExposureLedger {
 
 /** Display bound only (issue #813 "compact and bounded"); carries no decision authority. */
 export const MAX_STRESSOR_ROWS = 10;
-/** Matches the brief's upcoming-plan horizon (`UPCOMING_CONTEXT_DAYS`); display only. */
+/** Planned exposure stays a seven-day view; later planning commitments are listed separately. */
 export const PLANNED_HORIZON_DAYS = 7;
 
 const MECHANICAL_MODALITIES: ReadonlySet<Modality> = new Set<Modality>(['Strength', 'Running', 'Field']);

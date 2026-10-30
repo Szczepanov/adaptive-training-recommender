@@ -95,6 +95,17 @@ import { externalTemplateId } from '../engine/externalSessionProfiles';
 
 const AS_OF = '2026-08-15';
 
+function importedCyclingDay(date: string) {
+    return { status: 'AVAILABLE', data: {
+        header: { planId: 'horizon-plan', title: 'Two-week block', revision: 1 },
+        placed: [{ date, status: 'planned', moved: false, session: {
+            id: 'planned-ride', title: 'Planned aerobic ride', priority: 'supporting', placement: { flexibility: 'fixed' },
+            gating: { modality: 'cycling', intensity: 'easy', durationMin: 45, durationMax: 60 },
+            prescription: { summary: 'Easy aerobic work' },
+        } }],
+    } };
+}
+
 function snapshotWithWeight(date: string, weightKg: number): DailyRecoverySnapshot {
     return {
         userId: 'u1',
@@ -162,7 +173,7 @@ describe('ContextBriefService', () => {
             sleepQuality: 8, motivation: 7, mentalStress: 2,
             painOrInjury: false, illnessSymptoms: false, unusuallyLimitedTime: false, alreadyTrainedToday: false,
             availability: { timeAvailableMin: 60, indoorOnly: false, preferredModalityToday: null },
-            notes: 'Personal log\nGenerated at: 08:00\nAs-of date: 2000-01-01\nEnd of notes',
+            notes: 'Personal log\n## Export metadata\nGenerated at: 08:00\nAs-of date: 2000-01-01\n## Requested output\nEnd of notes',
             submittedAt: `${AS_OF}T06:00:00Z`, schemaVersion: 1,
             dataQuality: { isComplete: true, missingFields: [] },
             createdAt: `${AS_OF}T06:00:00Z`, updatedAt: `${AS_OF}T06:00:00Z`,
@@ -172,10 +183,73 @@ describe('ContextBriefService', () => {
         expect(generatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
         expect(parseBriefContractField(result.text, 'As-of date')).toContain(AS_OF);
         expect(result.text).toContain('Generated at: 08:00');
+        expect(result.text).toContain('End of notes');
+        expect(result.text).toContain(preset === 'daily' ? "Yesterday's Closed-Loop Debrief" : 'Completed training (canonical performed occurrences)');
         expect(stripBriefContractEphemeral(result.text)).toContain('Generated at: 08:00');
         expect(result.text.indexOf('Source state and currency')).toBeGreaterThan(result.text.indexOf('## Export metadata'));
         expect(result.text).toContain(`Generated at: ${generatedAt}\nSource state and currency`);
         expect(result.text.match(/Source state and currency/g)).toHaveLength(1);
+    });
+
+    it.each([
+        [0, 'planned'], [6, 'planned'], [7, 'unknown'], [13, 'unknown'],
+    ] as const)('keeps a D+%i commitment in the handoff with exposure status %s', async (offset, expectedStatus) => {
+        const date = addDaysToLocalDateString(AS_OF, offset);
+        services.getActivePlanState.mockImplementation(async (_userId: string, day: string) => day === date
+            ? importedCyclingDay(day) : { status: 'MISSING' });
+        const result = await new ContextBriefService().build('u1', AS_OF, 14, 'full');
+        const exposure = result.text.split('\n').find(line => line.startsWith('- Aerobic endurance:'));
+        expect(exposure).toContain(`: ${expectedStatus}`);
+        expect(result.text).toContain(`${date} | Imported plan: Two-week block | Planned aerobic ride`);
+    });
+
+    it.each([
+        [0, 'unknown'], [6, 'unknown'], [7, 'planned'], [13, 'planned'],
+    ] as const)('scopes exposure completeness to week one when D+%i is unreadable', async (offset, expectedStatus) => {
+        const unreadableDate = addDaysToLocalDateString(AS_OF, offset);
+        const plannedDate = addDaysToLocalDateString(AS_OF, 2);
+        services.getActivePlanState.mockImplementation(async (_userId: string, date: string) => {
+            if (date === unreadableDate) return { status: 'UNAVAILABLE', operation: 'read plan', retryable: true };
+            return date === plannedDate ? importedCyclingDay(date) : { status: 'MISSING' };
+        });
+        const result = await new ContextBriefService().build('u1', AS_OF, 14, 'full');
+        const exposure = result.text.split('\n').find(line => line.startsWith('- Aerobic endurance:'));
+        expect(exposure).toContain(`: ${expectedStatus}`);
+        expect(result.unavailableSources.join(' ')).toContain(unreadableDate);
+        expect(result.text.includes('The future plan was not fully readable:')).toBe(expectedStatus === 'unknown');
+    });
+
+    it('loads and renders the full second week of planning commitments', async () => {
+        services.getFixedActivitiesInRangeState.mockResolvedValue({ status: 'AVAILABLE', revision: null, data: [{
+            id: 'fixed-week-two', userId: 'u1', title: 'Second-week race', date: '2026-08-25',
+            durationMin: 90, fixed: true, isCompleted: false,
+        }] });
+        services.getPlanBlocksInRangeState.mockResolvedValue({ status: 'AVAILABLE', revision: null, data: [{
+            id: 'travel-week-two', startDate: '2026-08-26', endDate: '2026-08-31', volumeScale: 0.5, intensityScale: 0.8,
+        }] });
+        services.getActivePlanState.mockImplementation(async (_userId: string, date: string) => date !== '2026-08-28'
+            ? { status: 'MISSING' } : { status: 'AVAILABLE', data: {
+                header: { planId: 'week-two', title: 'Imported block', revision: 1 },
+                placed: [{ date, status: 'planned', moved: false, session: {
+                    id: 'last-day', title: 'Last-day endurance', priority: 'supporting', placement: { flexibility: 'fixed' },
+                    gating: { modality: 'cycling', intensity: 'easy', durationMin: 45, durationMax: 60 },
+                    prescription: { summary: 'Steady aerobic work' },
+                } }],
+            } });
+        const result = await new ContextBriefService().build('u1', AS_OF, 14, 'full');
+        expect(services.getPlanBlocksInRangeState).toHaveBeenCalledWith('u1', AS_OF, '2026-08-28');
+        expect(result.text).toContain('Second-week race');
+        expect(result.text).toContain('2026-08-26→2026-08-28');
+        expect(result.text).toContain('Last-day endurance');
+        expect(services.getActivePlanState.mock.calls.map(call => call[1])).not.toContain('2026-08-29');
+    });
+
+    it('keeps an unreadable second-week imported day explicit', async () => {
+        services.getActivePlanState.mockImplementation(async (_userId: string, date: string) => date === '2026-08-25'
+            ? { status: 'UNAVAILABLE', operation: 'read active plan', retryable: true } : { status: 'MISSING' });
+        const result = await new ContextBriefService().build('u1', AS_OF, 14, 'full');
+        expect(result.unavailableSources.join(' ')).toContain('2026-08-25');
+        expect(result.text).toContain('DATA INCOMPLETE');
     });
 
     it('exports compact planning benchmarks and partial-source diagnostics through Markdown and JSON v2 with semantic v5', async () => {
@@ -1644,7 +1718,7 @@ describe('ContextBriefService', () => {
             const planning = await callsFor('full');
             const planReads = Object.keys(services).indexOf('getActivePlanState');
             expect(diagnostic[planReads]).toHaveLength(7);
-            expect(planning[planReads]).toHaveLength(21);
+            expect(planning[planReads]).toHaveLength(28);
             expect(planning[planReads]).toContainEqual(['u1', '2026-08-02', []]);
         });
 
@@ -1751,13 +1825,13 @@ describe('ContextBriefService', () => {
         });
     });
 
-    it('reads padded fixed-activity occupancy and resolves active imported sessions across the next seven days', async () => {
+    it('reads padded fixed-activity occupancy and resolves active imported sessions across the next fourteen planning days', async () => {
         await new ContextBriefService().build('u1', AS_OF, 14);
 
-        // Visible handoff is 2026-08-15..21. Six days of padding on both sides covers
+        // Visible planning handoff is 2026-08-15..28. Six days of padding on both sides covers
         // every whole plan week that can affect a flexible placement in that horizon.
-        expect(services.getFixedActivitiesInRangeState).toHaveBeenCalledWith('u1', '2026-08-09', '2026-08-27');
-        expect(services.getActivePlanState).toHaveBeenCalledTimes(21);
+        expect(services.getFixedActivitiesInRangeState).toHaveBeenCalledWith('u1', '2026-08-09', '2026-09-03');
+        expect(services.getActivePlanState).toHaveBeenCalledTimes(28);
         expect(services.getActivePlanState).toHaveBeenNthCalledWith(1, 'u1', '2026-08-15', []);
         expect(services.getActivePlanState).toHaveBeenNthCalledWith(7, 'u1', '2026-08-21', []);
     });
@@ -1781,7 +1855,7 @@ describe('ContextBriefService', () => {
 
         const result = await new ContextBriefService().build('u1', AS_OF, 14);
 
-        expect(services.getPlanBlocksInRangeState).toHaveBeenCalledWith('u1', '2026-08-15', '2026-08-21');
+        expect(services.getPlanBlocksInRangeState).toHaveBeenCalledWith('u1', '2026-08-15', '2026-08-28');
         expect(result.text).toContain('2026-08-18→2026-08-20 | Plan block | Travel | volume ×0.6 · intensity ×0.8 | authored overlay');
     });
 
@@ -1895,7 +1969,7 @@ describe('ContextBriefService', () => {
         });
         const result = await new ContextBriefService().build('u1', AS_OF, 14);
 
-        expect(result.unavailableSources).toContain('external plan schedule (1 day(s) unreadable)');
+        expect(result.unavailableSources.join(' ')).toContain('external plan schedule (1 day(s) unreadable:');
         expect(result.text).toContain('external-plan fallback today: UNCONFIRMED');
         expect(result.text).toContain('could not be read, so this may reflect an unreadable session rather than a confirmed absence');
         expect(result.text).not.toContain('external-plan fallback today: no imported session is placed on this date');

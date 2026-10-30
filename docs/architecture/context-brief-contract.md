@@ -9,7 +9,7 @@ The Context Brief is the read-only handoff between the athlete record and an ext
 It is treated as a versioned API even though the wire format remains human/LLM-readable
 Markdown.
 
-This document describes the current v11 contract. Issue #894 established the versioned export
+This document describes the current v12 contract. Issue #894 established the versioned export
 contract through v3: purpose/window identity, source state and currency, canonical performed
 training, missingness semantics, purpose budgets, golden fixtures and service-built regression
 coverage. Issue #893 advanced that contract to v4 for the planning-only external-plan execution
@@ -79,9 +79,22 @@ The existing UI presets remain compatibility names with one semantic purpose eac
 Purpose changes presentation only. It does not grant the exporter recommendation authority or
 create a second planning engine.
 
+Planning includes app-held fixed activities, travel blocks and imported sessions over the next
+14 calendar days, inclusive of the as-of date. This forward window is separate from the
+retrospective detail window. Diagnostic keeps seven days of forward context; morning renders
+only its next three days. The physical-capability exposure ledger retains its own seven-day
+planned-evidence window: later commitments neither set `planned` status nor invalidate
+readable week-one plan evidence when their reads fail. No planned session counts as completed
+work. Failed plan reads identify affected dates rather than implying those dates have no commitments.
+
+Planning development context uses readable objective names, block dates/revision and review
+date, omitting raw demand vectors and opaque block/session identifiers from authority prose.
+Diagnostic retains those forensic references, but its instructions focus on evidence,
+uncertainty and source interpretation rather than a plan-authoring template.
+
 ## Contract identity block
 
-Contract version `2026-10-context-brief-contract-v11` uses one field per line so
+Contract version `2026-10-context-brief-contract-v12` uses one field per line so
 each field is independently machine-readable. Planning and diagnostic exports expose:
 
 - `Contract version`;
@@ -98,13 +111,16 @@ Every purpose wraps identity fields and source freshness in an explicit `## Expo
 section. Planning and diagnostic keep it near the beginning; morning uses a footer. Metadata
 insertion and validation are bounded to that section, stopping at the next peer heading.
 Labels inside athlete notes (such as `Generated at: 08:00`) are content, not metadata, and are
-preserved by timestamp stripping used in determinism checks.
+preserved by timestamp stripping used in determinism checks. Planning/diagnostic metadata is
+selected from the canonical header and morning metadata from the footer, so an athlete note
+containing another metadata heading does not take ownership of the contract. The generated
+requested-output template is removed from the end of the base brief; a matching heading inside
+notes does not truncate the recorded evidence.
 
 Morning keeps the as-of date at the top and moves contract identity, generation metadata and
 source freshness to the footer. It omits unused horizon metadata and the engine policy version.
-The morning recovery timeline covers seven days. Planning and diagnostic horizons that the
-selected renderer does not use are written as `not used by this export`, rather than populated
-merely because the service fetched a wider source range.
+The morning recovery timeline covers seven days. Horizons unused by a renderer are omitted
+rather than populated merely because the service fetched a wider source range.
 
 The source-state section identifies the relevant recovery snapshot and wearable metric dates,
 check-in date, Garmin activity read, canonical completed-training read, current plan inputs,
@@ -400,6 +416,10 @@ Version history:
   prioritizes recovery and the D-1 debrief, then presents today’s app-held authority; empty
   future rows and an entirely empty future section are omitted. Planning retains assessment
   evidence, and diagnostic retains its forensic purpose.
+- v11 → v12: planning includes 14 days of forward commitments and readable development/authority
+  prose; diagnostic drops the planning template while preserving provenance. Header/footer
+  selection and template removal preserve section-like text in athlete notes. Provider row
+  counts are labelled as recordings, and unreadable plan dates remain explicit.
 
 Contract identity is asserted on every service-built artifact, and fixed-date semantic tests
 exclude only the generation timestamp. JSON's `context_brief_export_v2` transport version is

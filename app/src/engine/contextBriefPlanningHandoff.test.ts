@@ -17,6 +17,57 @@ import {
 
 const AS_OF = '2026-08-20';
 
+describe('planning and diagnostic export review', () => {
+    it('includes week-two commitments through D+13 only in planning', () => {
+        const external = { ...handoffInput().upcomingExternalSessions[0], date: '2026-09-02', title: 'Second-week key session' };
+        const input = handoffInput({
+            purpose: 'planning',
+            upcomingFixedActivities: [{ ...fixedActivity(), date: '2026-08-29', title: 'Week-two commitment' },
+                { ...fixedActivity(), date: '2026-09-03', title: 'Outside horizon' }],
+            upcomingPlanBlocks: [{ ...travelBlock(), startDate: '2026-08-30', endDate: '2026-09-04' }],
+            upcomingExternalSessions: [external],
+        });
+        const planning = enhanceContextBriefForPlanning(BASE, input);
+        expect(planning).toContain('2026-08-20 → 2026-09-02');
+        expect(planning).toContain('Week-two commitment');
+        expect(planning).toContain('Second-week key session');
+        expect(planning).toContain('2026-08-30→2026-09-02');
+        expect(planning).not.toContain('Outside horizon');
+        const diagnostic = enhanceContextBriefForPlanning(BASE, { ...input, purpose: 'diagnostic' });
+        expect(diagnostic).not.toContain('Week-two commitment');
+        expect(diagnostic).not.toContain('Second-week key session');
+    });
+
+    it('keeps diagnostic guidance focused on evidence rather than an importable plan', () => {
+        const diagnostic = enhanceContextBriefForPlanning(BASE, handoffInput({ purpose: 'diagnostic' }));
+        expect(diagnostic).toContain('Diagnostic handoff & data currency');
+        expect(diagnostic).toContain('respiration robust statistics');
+        expect(diagnostic).not.toContain('### Day YYYY-MM-DD:');
+        expect(diagnostic).not.toContain('### If the user asks for an importable schedule');
+        expect(enhanceContextBriefForPlanning(BASE, handoffInput({ purpose: 'planning' })))
+            .toContain('### If the user asks for an importable schedule');
+    });
+
+    it('keeps opaque authority identifiers in diagnostic rather than planning prose', () => {
+        const imported = { ...handoffInput().upcomingExternalSessions[0], date: AS_OF };
+        const input = handoffInput({ upcomingExternalSessions: [imported], effectivePlanningMode: 'externally_planned' });
+        expect(enhanceContextBriefForPlanning(BASE, { ...input, purpose: 'planning' }))
+            .not.toContain('plan p1 revision 2, session s1');
+        expect(enhanceContextBriefForPlanning(BASE, { ...input, purpose: 'diagnostic' }))
+            .toContain('plan p1 revision 2, session s1');
+    });
+
+    it('labels provider recordings without counting them as physical sessions', () => {
+        const input = handoffInput({ purpose: 'planning', activities: ['first', 'second'].map(activityId => ({
+            activityId, date: AS_OF, type: 'cycling', durationMin: 30, intensityTag: 'easy',
+            trainingEffectAerobic: null, trainingEffectAnaerobic: null, averageHr: null, activityTrainingLoad: null,
+        })) });
+        const text = enhanceContextBriefForPlanning(BASE, input);
+        expect(text).toContain('2 provider recording(s)');
+        expect(text).not.toContain('2 session(s)');
+    });
+});
+
 describe('daily conversation update', () => {
     it('omits empty horizons and repeated planning background, keeping only actual commitments', () => {
         const input = handoffInput({ preset: 'daily', recommendations: [recommendation()], upcomingFixedActivities: [], upcomingExternalSessions: [] });
@@ -346,6 +397,11 @@ it('exports persisted long-horizon development authority, authored purpose and e
     expect(text).toContain('Executable development authority: vo2-block@2');
     expect(text).toContain('vo2_max: develop; authored dose 1/2/2 sessions');
     expect(text).toContain('Follow-up tolerance and adaptation gaps unverified');
+    const planning = enhanceContextBriefForPlanning(BASE, handoffInput({ recommendations: [rec], purpose: 'planning' }));
+    expect(planning).not.toContain('event demand {');
+    expect(planning).not.toContain('vo2-block@2');
+    expect(planning).toContain('Development block: 2026-08-20–2026-09-01');
+    expect(planning).toContain('vo2 max: develop');
     const morning = enhanceContextBriefForPlanning(BASE, handoffInput({ recommendations: [rec], purpose: 'morning', effectivePlanningMode: 'event_directed', eventStrategy: 'development_block' }));
     expect(morning).not.toContain('Executable development authority:');
 });
@@ -373,7 +429,7 @@ it('explains each event role and the supporting-event dose limit from the persis
 
 describe('enhanceContextBriefForPlanning', () => {
     it('turns the copied brief into context rather than an unconditional plan command', () => {
-        const text = enhanceContextBriefForPlanning(BASE, handoffInput());
+        const text = enhanceContextBriefForPlanning(BASE, handoffInput({ purpose: 'planning' }));
 
         expect(text).toContain('Use this as context for the conversation, not as a standalone command');
         expect(text).toContain('Answer the user\'s actual question');
@@ -383,7 +439,7 @@ describe('enhanceContextBriefForPlanning', () => {
     });
 
     it('tells the planner to reconcile Day 1 of a new block against recently completed training instead of duplicating it', () => {
-        const text = enhanceContextBriefForPlanning(BASE, handoffInput());
+        const text = enhanceContextBriefForPlanning(BASE, handoffInput({ purpose: 'planning' }));
         expect(text).toContain('Day 1 of a new block is not a blank slate');
         expect(text).toContain('needs an explicit adjustment (lower end of the range, different modality, or rest), not a repeat of the same slot');
     });
@@ -429,7 +485,7 @@ describe('enhanceContextBriefForPlanning', () => {
             conservativeBias: true,
             extraRecoveryMargin: false,
         } as UserPreferences;
-        const text = enhanceContextBriefForPlanning(BASE, handoffInput({ trainingSettings, preferences }));
+        const text = enhanceContextBriefForPlanning(BASE, handoffInput({ trainingSettings, preferences, purpose: 'planning' }));
 
         expect(text).toContain('Power meter: configured available;');
         expect(text).toContain('Heart-rate monitor: configured available;');
