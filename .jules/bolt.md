@@ -127,3 +127,7 @@
 ## 2026-10-30 - Hoist O(N) array scans out of filter callbacks
 **Learning:** Calculating a static property using `.find()` inside a `.filter()` callback (e.g., finding the offset of an anchor date for every day being filtered) causes an O(N^2) array scan bottleneck.
 **Action:** When evaluating items in a `.filter()` based on a property of a single target item in the same array, calculate that property once outside the `.filter()` callback using a single `.find()` call.
+
+## 2026-10-31 - Hoist O(N) array scans out of map callbacks
+**Learning:** Calculating a static property using `.find()` inside a `.map()` callback (e.g., finding the override for every coverage role) causes an O(N^2) array scan bottleneck.
+**Action:** When evaluating items in a `.map()` based on a property of another array, build a Map for lookups outside the callback using `new Map()` instead of scanning with `.find()`.
