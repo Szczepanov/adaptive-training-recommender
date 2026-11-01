@@ -664,7 +664,10 @@ export function resolveMultiEventObjectives(
         });
 
     const roadmap = authorityResult.seasonRoadmap ?? resolveSeasonRoadmap(events, currentDateStr);
-    const roleByEventId = new Map(roadmap.entries.map(entry => [entry.eventId, entry.role]));
+    const roleByEventId = new Map<string, typeof roadmap.entries[0]['role']>();
+    for (const entry of roadmap.entries) {
+        roleByEventId.set(entry.eventId, entry.role);
+    }
 
     for (const { event, daysToEvent } of contributors) {
         // Issue #929 (ADR-0050 D3): a C race is race craft, never a layered objective set. A
