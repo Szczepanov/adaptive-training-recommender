@@ -725,7 +725,10 @@ function renderTodayTraining(input: ContextBriefPlanningHandoffInput, checkin: D
     const lines: string[] = [];
     if (facts.length) {
         const evidence = morningAdherenceEvidence(facts, input.performedFacts ?? [], input.activities, input.asOfDate);
-        const linkedActivities = new Map(evidence.matched.map(activity => [activity.activityId, activity]));
+        const linkedActivities = new Map<string, typeof evidence.matched[0]>();
+        for (const activity of evidence.matched) {
+            linkedActivities.set(activity.activityId, activity);
+        }
         for (const fact of facts.slice(0, 6)) {
             const linked = fact.providerActivityIds?.length === 1
                 ? linkedActivities.get(fact.providerActivityIds[0]) : undefined;

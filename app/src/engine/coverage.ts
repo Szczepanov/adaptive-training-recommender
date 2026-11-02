@@ -516,9 +516,13 @@ export function buildCoverageState(
         requirement.coverageKey === 'long_aerobic_anchor' && requirement.blockId === block.id)?.minimumDurationMinutes;
     const anchorPlanRequirement = planDefinition.coverageRequirements?.find(requirement =>
         requirement.coverageKey === 'long_aerobic_anchor' && requirement.blockId === block.id);
-    const overridesByKey = planDefinition.coverageOverrides
-        ? new Map(planDefinition.coverageOverrides.map(o => [o.key, o]))
-        : null;
+    let overridesByKey: Map<string, NonNullable<typeof planDefinition.coverageOverrides>[0]> | null = null;
+    if (planDefinition.coverageOverrides) {
+        overridesByKey = new Map();
+        for (const o of planDefinition.coverageOverrides) {
+            overridesByKey.set(o.key, o);
+        }
+    }
     const developmentDescriptor = overridesByKey ? {
         ...descriptor,
         coverage: descriptor.coverage.map(role => overridesByKey.get(role.key) ?? role),

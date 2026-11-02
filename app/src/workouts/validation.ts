@@ -420,7 +420,10 @@ export function validateWorkoutLibrary(
     for (const variant of workout.variants) {
       let totalSeconds = 0;
       let hasTimeBasedSteps = false;
-      const overrideMap = new Map(variant.stepOverrides.map((o) => [o.stepId, o]));
+      const overrideMap = new Map<string, typeof variant.stepOverrides[0]>();
+      for (const o of variant.stepOverrides) {
+        overrideMap.set(o.stepId, o);
+      }
       for (const block of workout.blocks) {
         for (const step of block.steps) {
           const override = overrideMap.get(step.id);
