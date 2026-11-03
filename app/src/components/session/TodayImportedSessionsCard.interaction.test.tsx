@@ -2,6 +2,7 @@ import { Children, isValidElement, type ReactElement, type ReactNode } from 'rea
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PlacedSession } from '../../engine/externalPlacement';
 import type { SessionExecution } from '../../sessions/models';
+import { WorkoutExportMenu } from '../WorkoutExportMenu';
 import { TodayImportedSessionsCard, type TodayImportedSessionsCardProps } from './TodayImportedSessionsCard';
 
 const mocks = vi.hoisted(() => ({ slots: [] as unknown[], cursor: 0, prepare: vi.fn() }));
@@ -16,7 +17,7 @@ vi.mock('react', async importOriginal => ({
 }));
 vi.mock('../../services/sessionAuthoringService', () => ({ prepareExternalPlanSessionLaunch: mocks.prepare }));
 
-type ElementProps = { children?: ReactNode; onClick?: () => void; 'aria-label'?: string };
+type ElementProps = { children?: ReactNode; onClick?: () => void; 'aria-label'?: string; garminSyncDisabled?: boolean };
 function walk(node: ReactNode): ReactElement<ElementProps>[] {
   if (!isValidElement<ElementProps>(node)) return [];
   return [node, ...Children.toArray(node.props.children).flatMap(walk)];
@@ -53,6 +54,13 @@ beforeEach(() => {
 });
 
 describe('TodayImportedSessionsCard launch wiring', () => {
+  it.each([undefined, 'skip', 'defer', 'advisory', 'scale', 'proceed'] as const)('gates only Garmin sync on the session verdict (%s)', decision => {
+    const menu = render({ verdictsBySessionId: { ride: decision }, onStartSession: undefined })
+      .find(element => element.type === WorkoutExportMenu);
+    expect(menu).toBeDefined();
+    expect(menu!.props.garminSyncDisabled).toBe(decision !== 'proceed');
+  });
+
   it.each(['completed', 'in_progress', undefined] as const)('forwards the correct launch options for %s', async state => {
     if (state) mocks.slots[1] = { ride: { ...binding, state } as SessionExecution };
     const button = launchButton(render());

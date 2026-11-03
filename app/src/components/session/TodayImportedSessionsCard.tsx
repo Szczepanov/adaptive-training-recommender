@@ -344,6 +344,7 @@ export function TodayImportedSessionsCard({
                     title={session.title}
                     modality={session.gating.modality}
                     externalSession={session}
+                    garminSyncDisabled={verdictsBySessionId?.[session.id] !== 'proceed'}
                   />
                 )}
                 {canLaunch && (

@@ -24,6 +24,12 @@ test('an additional imported session without its own verdict remains read-only',
   const additional = page.getByRole('region', { name: 'Planned sessions from imported plan today' });
   await expect(additional).toContainText('Unadjudicated second');
   await expect(additional.getByRole('button', { name: /^(Start|Resume|Redo) / })).toHaveCount(0);
+  await additional.getByRole('button', { name: /Export \/ Sync/ }).click();
+  await expect(additional.getByRole('menuitem', { name: /Sync to Garmin Connect/ })).toBeDisabled();
+  const download = page.waitForEvent('download');
+  await additional.getByRole('menuitem', { name: /Download Workout Data/ }).click();
+  expect((await download).suggestedFilename()).toMatch(/\.json$/);
+  expect(await readDocument(athlete, `garmin_workout_queue/${today}`)).toBeUndefined();
   expect(await readExecutions(athlete)).toHaveLength(0);
 });
 
