@@ -8,6 +8,7 @@ import { hashSessionDefinition } from '../../src/sessions/sessionDefinitionHash'
 import { resolvePlacement } from '../../src/engine/externalPlacement';
 import type { SessionDefinition } from '../../src/sessions/models';
 import { parseDailyRecommendation } from '../../src/persistence/parsers/trainingHistory';
+import { assertEffectiveTarget } from './support/mobileAssertions';
 
 test('an additional imported session without its own verdict remains read-only', async ({ page }) => {
   const athlete = await provisionAthlete();
@@ -26,8 +27,11 @@ test('an additional imported session without its own verdict remains read-only',
   await expect(additional.getByRole('button', { name: /^(Start|Resume|Redo) / })).toHaveCount(0);
   await additional.getByRole('button', { name: /Export \/ Sync/ }).click();
   await expect(additional.getByRole('menuitem', { name: /Sync to Garmin Connect/ })).toBeDisabled();
+  const downloadButton = additional.getByRole('menuitem', { name: /Download Workout Data/ });
+  await downloadButton.hover();
+  await assertEffectiveTarget(downloadButton);
   const download = page.waitForEvent('download');
-  await additional.getByRole('menuitem', { name: /Download Workout Data/ }).click();
+  await downloadButton.click();
   expect((await download).suggestedFilename()).toMatch(/\.json$/);
   expect(await readDocument(athlete, `garmin_workout_queue/${today}`)).toBeUndefined();
   expect(await readExecutions(athlete)).toHaveLength(0);

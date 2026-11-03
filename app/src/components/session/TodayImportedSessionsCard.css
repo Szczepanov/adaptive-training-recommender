@@ -4,6 +4,10 @@
   gap: 0.85rem;
 }
 
+.dashboard-card.today-imported-sessions-card:hover {
+  transform: none;
+}
+
 .today-imported-header {
   display: flex;
   flex-direction: column;
