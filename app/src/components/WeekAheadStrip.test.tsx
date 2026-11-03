@@ -158,3 +158,131 @@ describe('WeekAheadStrip clipped role reporting (#933)', () => {
     expect(html).not.toContain('1 still unresolved');
   });
 });
+
+describe('WeekAheadStrip imported plan Today + Next 7 Days multi-session view', () => {
+  const sampleExternalPlan = {
+    header: {
+      userId: 'u1',
+      planId: 'hybrid-block',
+      revision: 2,
+      title: 'Hybrid Build Block',
+      startDate: '2026-09-14',
+      weekCount: 2,
+      contentHash: 'hash-2',
+      importedAt: '2026-09-14T08:00:00Z',
+    },
+    plan: {
+      schema: 'adaptive-training-recommender/external-plan@4',
+      planId: 'hybrid-block',
+      revision: 2,
+      title: 'Hybrid Build Block',
+      startDate: '2026-09-14',
+      weekCount: 2,
+      restDays: [{ id: 'rest-fri', week: 1, day: 'friday' }],
+      sessions: [],
+    },
+    placement: null,
+    placed: [
+      {
+        session: {
+          id: 'mon-am-bike',
+          title: 'Morning Threshold Ride',
+          priority: 'key',
+          placement: { week: 1, preferredDay: 'monday', flexibility: 'fixed' },
+          gating: { modality: 'cycling', intensity: 'hard', durationMin: 50, durationMax: 65, environment: 'indoor', equipment: ['indoor_bike'] },
+          intraday: { bundleId: 'mon-bundle', order: 1, window: { startLocal: '07:00', endLocal: '08:15' } },
+          prescription: {
+            summary: '3x10 min threshold intervals.',
+            steps: [{ name: 'Threshold set', durationMin: 10, sets: 3, target: '95-100% FTP' }],
+          },
+        },
+        date: '2026-09-14',
+        status: 'planned',
+        moved: false,
+      },
+      {
+        session: {
+          id: 'mon-pm-lift',
+          title: 'Evening Lower Strength',
+          priority: 'supporting',
+          placement: { week: 1, preferredDay: 'monday', flexibility: 'fixed' },
+          gating: { modality: 'strength', intensity: 'moderate', durationMin: 35, durationMax: 45, environment: 'indoor', equipment: ['barbell'] },
+          intraday: { bundleId: 'mon-bundle', order: 2, window: { startLocal: '17:30', endLocal: '18:30' } },
+          prescription: {
+            summary: 'Trap-bar deadlift and split squats.',
+            steps: [{ name: 'Trap-bar deadlift', sets: 4, repeat: 5, target: 'RPE 7.5' }],
+          },
+          scaling: {
+            reducible: true,
+            reducedSummary: 'Cut to 2 working sets per lift.',
+          },
+        },
+        date: '2026-09-14',
+        status: 'planned',
+        moved: false,
+      },
+      {
+        session: {
+          id: 'tue-z2',
+          title: 'Easy Aerobic Spin',
+          priority: 'optional',
+          placement: { week: 1, preferredDay: 'tuesday', flexibility: 'preferred' },
+          gating: { modality: 'cycling', intensity: 'easy', durationMin: 45, durationMax: 60, environment: 'either', equipment: [] },
+          prescription: { summary: 'Steady Zone 2 recovery spin.' },
+        },
+        date: '2026-09-15',
+        status: 'planned',
+        moved: false,
+      },
+    ],
+  } as unknown as NonNullable<Parameters<typeof WeekAheadStrip>[0]['externalPlan']>;
+
+  it('renders Today and next 7 days from the imported plan with multi-session tiles and details', () => {
+    const html = renderToStaticMarkup(
+      <WeekAheadStrip
+        plan={null}
+        externalPlan={sampleExternalPlan}
+        today="2026-09-14"
+        userId="u1"
+      />,
+    );
+
+    expect(html).toContain('Today &amp; Next 7 Days · Hybrid Build Block');
+    expect(html).toContain('Imported plan schedule (r2)');
+    expect(html).toContain('Today (Mon)');
+    expect(html).toContain('Tomorrow (Tue)');
+    // Multi-session tile for Today (2 sessions, combined 85-110 m)
+    expect(html).toContain('2 sessions');
+    expect(html).toContain('85-110 m');
+    // Selected day (Today by default) lists both sessions in detail
+    expect(html).toContain('2 Sessions Planned');
+    expect(html).toContain('Session 1 of 2');
+    expect(html).toContain('07:00–08:15');
+    expect(html).toContain('Morning Threshold Ride');
+    expect(html).toContain('3x10 min threshold intervals.');
+    expect(html).toContain('Session 2 of 2');
+    expect(html).toContain('17:30–18:30');
+    expect(html).toContain('Evening Lower Strength');
+    expect(html).toContain('Trap-bar deadlift and split squats.');
+    expect(html).toContain('Cut to 2 working sets per lift.');
+    // Friday (2026-09-18) is an authored rest day in the 8-day strip
+    expect(html).toContain('Authored');
+  });
+
+  it('withholds workout steps and export menu when clinicalEscalationRequired is true', () => {
+    const html = renderToStaticMarkup(
+      <WeekAheadStrip
+        plan={null}
+        externalPlan={sampleExternalPlan}
+        today="2026-09-14"
+        userId="u1"
+        clinicalEscalationRequired={true}
+      />,
+    );
+
+    expect(html).toContain('Morning Threshold Ride');
+    expect(html).toContain('Evening Lower Strength');
+    expect(html).not.toContain('95-100% FTP');
+    expect(html).not.toContain('Workout steps');
+  });
+});

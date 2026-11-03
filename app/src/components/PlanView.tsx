@@ -471,13 +471,15 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
   const authorityBanner = useMemo((): AuthorityBannerInput | null => {
     // An unreadable overlay means today's coach session is not known; do not compare it.
     if (!activePlan || activePlan.placementOverlayInvalid || !adaptiveTodayRecommendation) return null;
-    const coachToday = activePlan.placed.find(
+    const coachTodaySessions = activePlan.placed.filter(
       (item) => item.date === today && occupiesDate(item.status),
     );
     return {
       hasImportedPlan: true,
-      coachSessionTitleToday: coachToday?.session.title ?? null,
-      coachHasExplicitRestToday: !coachToday && externalRestContextForDate(activePlan, today) !== null,
+      coachSessionTitleToday: coachTodaySessions.length > 0
+        ? coachTodaySessions.map(item => item.session.title).join(' + ')
+        : null,
+      coachHasExplicitRestToday: coachTodaySessions.length === 0 && externalRestContextForDate(activePlan, today) !== null,
       adaptiveModeToday: adaptiveTodayRecommendation.mode,
       adaptiveTitleToday: adaptiveTodayRecommendation.template.title ?? null,
       coachFlaggedToday: (critique?.findings ?? []).some((finding) => finding.date === today),

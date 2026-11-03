@@ -79,6 +79,7 @@ import { GarminSyncNowButton } from './GarminSyncNowButton';
 import { DataConfidenceIndicator } from './DataConfidenceIndicator';
 import { MorningDecisionCard } from './MorningDecisionCard';
 import { AdditionalSessionsCard } from './session/AdditionalSessionsCard';
+import { TodayImportedSessionsCard } from './session/TodayImportedSessionsCard';
 import { recordPredecessorConfirmation } from './session/predecessorConfirmationAction';
 import type { PredecessorConfirmationPrompt } from '../services/predecessorConfirmationGate';
 import {
@@ -167,7 +168,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
   const [activityOverrides, setActivityOverrides] = useState<Record<string, ActivityOverride>>({});
   const [reclassifyModalOpen, setReclassifyModalOpen] = useState(false);
   const [recentActivities, setRecentActivities] = useState<NormalizedGarminActivity[]>([]);
-  const [, setActiveExternalPlan] = useState<ActiveExternalPlan | null>(null);
+  const [activeExternalPlan, setActiveExternalPlan] = useState<ActiveExternalPlan | null>(null);
   const [bundleMemberStatuses, setBundleMemberStatuses] = useState<IntradayBundleMemberStatus[]>([]);
   /** The four dashboard-owned fingerprint fields from the evaluation that produced
    * `bundleMemberStatuses`. Kept so the launch claim can prove nothing they cover moved
@@ -497,6 +498,25 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
           : null
       );
 
+      const planWeekActivitiesState = await fixedActivityService.getActivitiesInRangeState(
+        userId, input.date, addDaysToLocalDateString(input.date, WEEK_AHEAD_DAYS),
+      );
+      if (!isCurrent()) return;
+      if (planWeekActivitiesState.status !== 'AVAILABLE') {
+        console.warn(`Fixed activities for the plan week could not be read (${planWeekActivitiesState.status}); placement falls back to the dates the plan itself implies.`);
+      }
+      const planWeekActivities = planWeekActivitiesState.status === 'AVAILABLE' ? planWeekActivitiesState.data : [];
+
+      const activeExternalState = await activeExternalPlanService.getActivePlanState(
+        userId, input.date, planWeekActivities,
+      );
+      if (!isCurrent()) return;
+      const activeExternal = activeExternalState.status === 'AVAILABLE' ? activeExternalState.data : null;
+      setActiveExternalPlan(activeExternal);
+      if (activeExternalState.status === 'INVALID' || activeExternalState.status === 'UNAVAILABLE') {
+        console.warn(`External plan could not be read (${activeExternalState.status}); today falls back to the ranked path.`);
+      }
+
       const safetyStatus = getMinimumSafetyCheckinStatus(input.subjectiveCheckin);
       if (safetyStatus !== 'complete') {
         void recommendationService.saveNotApplicableContext(userId, input.date, safetyStatus);
@@ -516,25 +536,6 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
           throw new Error('A revisioned training history snapshot is required for a normal recommendation.');
         }
         setHistorySnapshot(preparedSnapshot);
-
-        const planWeekActivitiesState = await fixedActivityService.getActivitiesInRangeState(
-          userId, input.date, addDaysToLocalDateString(input.date, 6),
-        );
-        if (!isCurrent()) return;
-        if (planWeekActivitiesState.status !== 'AVAILABLE') {
-          console.warn(`Fixed activities for the plan week could not be read (${planWeekActivitiesState.status}); placement falls back to the dates the plan itself implies.`);
-        }
-        const planWeekActivities = planWeekActivitiesState.status === 'AVAILABLE' ? planWeekActivitiesState.data : [];
-
-        const activeExternalState = await activeExternalPlanService.getActivePlanState(
-          userId, input.date, planWeekActivities,
-        );
-        if (!isCurrent()) return;
-        const activeExternal = activeExternalState.status === 'AVAILABLE' ? activeExternalState.data : null;
-        setActiveExternalPlan(activeExternal);
-        if (activeExternalState.status === 'INVALID' || activeExternalState.status === 'UNAVAILABLE') {
-          console.warn(`External plan could not be read (${activeExternalState.status}); today falls back to the ranked path.`);
-        }
 
         // ADR-0036 (H4) D-PLACEMENT: only relevant when the active plan is v4 with an
         // intraday bundle placed today; resolveIntradayBundlePlacement returns null
@@ -1029,13 +1030,15 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
         setAdjustmentDirection(null);
         setNextDayPlan(null);
         setHistorySnapshot(null);
-        clearExternalPlanState();
+        setBundleMemberStatuses([]);
+        setBundleMemberInputRevision(null);
       } else {
         setDecisionContextCapture(null);
         setRecommendation(null);
         setNextDayPlan(null);
         setHistorySnapshot(null);
-        clearExternalPlanState();
+        setBundleMemberStatuses([]);
+        setBundleMemberInputRevision(null);
       }
     } catch (err) {
       if (!isCurrent()) return;
@@ -1410,6 +1413,39 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
     ).mode;
   }, [decisionInput, eventPeriodization]);
 
+  const allTodayImportedSessions = useMemo(() => {
+    if (!activeExternalPlan || !decisionInput?.date) return [];
+    return activeExternalPlan.placed
+      .filter(item => item.date === decisionInput.date && item.status !== 'dropped' && item.status !== 'superseded')
+      .slice()
+      .sort((a, b) => {
+        const aOrder = 'intraday' in a.session && a.session.intraday ? a.session.intraday.order : Number.MAX_SAFE_INTEGER;
+        const bOrder = 'intraday' in b.session && b.session.intraday ? b.session.intraday.order : Number.MAX_SAFE_INTEGER;
+        return aOrder - bOrder;
+      });
+  }, [activeExternalPlan, decisionInput]);
+
+  const primaryDisplayedExternalSessionId = useMemo(() => {
+    if (!canGenerateNormalPlan || !recommendationEffectivelyRevealed || !activeRec?.externalPrescription) {
+      return null;
+    }
+    return activeRec.externalPrescription.sessionId;
+  }, [canGenerateNormalPlan, recommendationEffectivelyRevealed, activeRec]);
+
+  const remainingTodayImportedSessions = useMemo(() => {
+    if (allTodayImportedSessions.length === 0) return [];
+    const bundleMemberIds = new Set(bundleMemberStatuses.map(m => m.sessionId));
+    return allTodayImportedSessions.filter(item => {
+      if (primaryDisplayedExternalSessionId && item.session.id === primaryDisplayedExternalSessionId) {
+        return false;
+      }
+      if (bundleMemberIds.has(item.session.id)) {
+        return false;
+      }
+      return true;
+    });
+  }, [allTodayImportedSessions, primaryDisplayedExternalSessionId, bundleMemberStatuses]);
+
 
   const [fixedActivitiesState, setFixedActivitiesState] = useState<DataState<FixedActivity[]>>({ status: 'AVAILABLE', data: [], revision: null });
   useEffect(() => {
@@ -1693,6 +1729,30 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
             </>
           )}
 
+          {activeExternalPlan && decisionInput && remainingTodayImportedSessions.length > 0 && (
+            <TodayImportedSessionsCard
+              userId={userId}
+              date={decisionInput.date}
+              planId={activeExternalPlan.plan.planId}
+              revision={activeExternalPlan.plan.revision}
+              planTitle={activeExternalPlan.plan.title}
+              contentHash={activeExternalPlan.header.contentHash}
+              sessions={remainingTodayImportedSessions}
+              allTodaySessions={allTodayImportedSessions}
+              primaryDisplayedSessionId={primaryDisplayedExternalSessionId}
+              clinicalEscalationRequired={recommendation?.envelopes?.safety.clinicalEscalationRequired === true}
+              verdictsBySessionId={
+                recommendationEffectivelyRevealed && !adjustmentDirection && !activeAlternativeId &&
+                activeRec?.externalVerdict && activeRec.externalPrescription &&
+                activeRec.externalPrescription.planId === activeExternalPlan.plan.planId &&
+                activeRec.externalPrescription.revision === activeExternalPlan.plan.revision
+                  ? { [activeRec.externalPrescription.sessionId]: activeRec.externalVerdict.decision }
+                  : undefined
+              }
+              onStartSession={canGenerateNormalPlan ? onStartSession : undefined}
+            />
+          )}
+
           {!canGenerateNormalPlan && (
             <MinimumSafetyCheckin
               userId={userId}
@@ -1731,6 +1791,10 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
               trainingIntentProfile={decisionInput?.trainingIntentProfile}
               scheduleOverlays={decisionInput?.scheduleOverlays}
               planningMode={resolvedPlanningMode}
+              externalPlan={activeExternalPlan}
+              today={decisionInput?.date}
+              userId={userId}
+              clinicalEscalationRequired={recommendation?.envelopes?.safety.clinicalEscalationRequired === true}
             />
           </div>
         </div>

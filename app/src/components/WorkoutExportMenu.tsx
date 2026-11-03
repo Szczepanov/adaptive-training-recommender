@@ -21,6 +21,7 @@ export interface WorkoutExportMenuProps {
     modality: string;
     prescription?: WorkoutPrescription;
     externalSession?: AnyExternalPlanSession;
+    garminSyncDisabled?: boolean;
     onSyncQueued?: () => void;
 }
 
@@ -31,6 +32,7 @@ export function WorkoutExportMenu({
     modality,
     prescription,
     externalSession,
+    garminSyncDisabled = false,
     onSyncQueued,
 }: WorkoutExportMenuProps) {
     const [isOpen, setIsOpen] = useState(false);
@@ -99,6 +101,7 @@ export function WorkoutExportMenu({
     };
 
     const handleQueueGarminSync = async () => {
+        if (garminSyncDisabled) return;
         const payload = getCanonicalExport();
         const blockingIssues = validateGarminExportFidelity(payload).filter(issue => issue.level === 'error');
         if (blockingIssues.length > 0) {
@@ -173,14 +176,15 @@ export function WorkoutExportMenu({
                         className="workout-export-item primary-action"
                         role="menuitem"
                         onClick={handleQueueGarminSync}
-                        disabled={syncState === 'queuing' || fidelityErrors.length > 0}
-                        title={fidelityErrors.length > 0 ? 'Fix the fidelity issue(s) above before syncing' : undefined}
+                        disabled={garminSyncDisabled || syncState === 'queuing' || fidelityErrors.length > 0}
+                        title={garminSyncDisabled ? 'This session is not approved for Garmin sync' : fidelityErrors.length > 0 ? 'Fix the fidelity issue(s) above before syncing' : undefined}
                     >
                         <span className="export-icon">⚡</span>
                         <div className="export-text">
                             <strong>Sync to Garmin Connect</strong>
                             <span>
-                                {syncState === 'queuing' ? 'Queuing sync...' :
+                                {garminSyncDisabled ? 'Sync unavailable for this session' :
+                                 syncState === 'queuing' ? 'Queuing sync...' :
                                  syncState === 'queued' ? '✓ Queued for Garmin push!' :
                                  syncState === 'error' && fidelityErrors.length > 0 ? 'Blocked: fix fidelity issue(s) above' :
                                  syncState === 'error' ? 'Failed to queue sync' :

@@ -305,3 +305,224 @@
   font-size: 0.75rem;
   margin-left: auto;
 }
+
+/* Imported Plan Today + 7-Day Multi-Session Strip & Details */
+.week-ahead-tile.multi-session-tile {
+  padding-top: 0.45rem;
+  padding-bottom: 0.45rem;
+}
+
+.tile-session-count-badge {
+  font-size: 0.65rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 0.1rem 0.35rem;
+  border-radius: 999px;
+  background: rgba(96, 165, 250, 0.18);
+  color: #93c5fd;
+  border: 1px solid rgba(96, 165, 250, 0.35);
+  white-space: nowrap;
+}
+
+.tile-multi-session-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  width: 100%;
+  margin: 0.15rem 0;
+}
+
+.tile-session-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.12rem 0.3rem;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tile-session-pill-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tile-mode-dot.mode-completed {
+  background: #34d399;
+}
+
+.imported-outlook-session-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 0.65rem;
+}
+
+.imported-outlook-session-card {
+  background: rgba(15, 23, 42, 0.45);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 10px;
+  padding: 0.75rem 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.imported-outlook-session-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.imported-outlook-session-title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.imported-outlook-session-order {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.12rem 0.4rem;
+  border-radius: 6px;
+  background: rgba(96, 165, 250, 0.15);
+  color: #93c5fd;
+}
+
+.imported-outlook-window-badge {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.12rem 0.4rem;
+  border-radius: 6px;
+  background: rgba(148, 163, 184, 0.14);
+  color: var(--text-secondary);
+}
+
+.imported-outlook-session-title {
+  font-size: 0.95rem;
+  color: var(--text-primary);
+}
+
+.imported-outlook-session-badges {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.imported-outlook-priority-badge,
+.imported-outlook-status-badge {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.12rem 0.4rem;
+  border-radius: 999px;
+}
+
+.imported-outlook-priority-badge.priority-key {
+  background: rgba(251, 191, 36, 0.16);
+  color: #fcd34d;
+  border: 1px solid rgba(251, 191, 36, 0.35);
+}
+
+.imported-outlook-priority-badge.priority-supporting {
+  background: rgba(96, 165, 250, 0.14);
+  color: #93c5fd;
+  border: 1px solid rgba(96, 165, 250, 0.3);
+}
+
+.imported-outlook-priority-badge.priority-optional {
+  background: rgba(148, 163, 184, 0.14);
+  color: #cbd5e1;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+}
+
+.imported-outlook-status-badge.status-planned {
+  background: rgba(59, 130, 246, 0.14);
+  color: #93c5fd;
+}
+
+.imported-outlook-status-badge.status-moved {
+  background: rgba(245, 158, 11, 0.16);
+  color: #fcd34d;
+}
+
+.imported-outlook-status-badge.status-completed {
+  background: rgba(16, 185, 129, 0.18);
+  color: #6ee7b7;
+}
+
+.imported-outlook-session-meta {
+  margin: 0;
+}
+
+.imported-outlook-reduced-note {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.03);
+  border-left: 2px solid rgba(96, 165, 250, 0.5);
+  padding: 0.3rem 0.55rem;
+  border-radius: 0 6px 6px 0;
+}
+
+.imported-outlook-steps-details {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+}
+
+.imported-outlook-steps-details summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: #93c5fd;
+  user-select: none;
+}
+
+.imported-outlook-steps-details .external-prescription-steps {
+  margin: 0.4rem 0 0;
+  padding-left: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.imported-outlook-steps-details .external-prescription-steps li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: baseline;
+}
+
+.imported-outlook-steps-details .step-name {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.imported-outlook-steps-details .step-target,
+.imported-outlook-steps-details .step-duration {
+  font-size: 0.78rem;
+  color: #93c5fd;
+}
+
+.imported-outlook-steps-details .step-notes {
+  font-size: 0.76rem;
+  color: var(--text-secondary);
+}
+
+.imported-outlook-export-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 0.2rem;
+}
