@@ -9,6 +9,24 @@ import { resolvePlacement } from '../../src/engine/externalPlacement';
 import type { SessionDefinition } from '../../src/sessions/models';
 import { parseDailyRecommendation } from '../../src/persistence/parsers/trainingHistory';
 
+test('an additional imported session without its own verdict remains read-only', async ({ page }) => {
+  const athlete = await provisionAthlete();
+  const today = await seedRecoverySnapshot(athlete);
+  const plan = buildV6Plan(today, { sessions: [
+    coachSession(today, { id: 'primary', title: 'Adjudicated primary' }),
+    coachSession(today, { id: 'second', title: 'Unadjudicated second', priority: 'supporting' }),
+  ] });
+  await seedExternalPlanRevision(athlete, plan, today);
+  await signInThroughUi(page, athlete);
+  await checkIn(page);
+
+  await expect(page.getByRole('region', { name: 'Imported plan session' })).toBeVisible();
+  const additional = page.getByRole('region', { name: 'Planned sessions from imported plan today' });
+  await expect(additional).toContainText('Unadjudicated second');
+  await expect(additional.getByRole('button', { name: /^(Start|Resume|Redo) / })).toHaveCount(0);
+  expect(await readExecutions(athlete)).toHaveLength(0);
+});
+
 // Fixed in #949 (Home starts the prepared exact v6 reduced binding under scale)
 test('V4 scale freezes the exact reduced definition and reports app dose modified', async ({ page }) => {
   const athlete = await provisionAthlete();

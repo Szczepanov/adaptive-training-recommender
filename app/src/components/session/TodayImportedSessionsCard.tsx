@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { ExternalPlacementStatus, ExternalPrescriptionStep } from '../../engine/models';
 import type { PlacedSession } from '../../engine/externalPlacement';
+import type { ExternalSessionDecision } from '../../engine/externalSession';
 import {
   externalSessionDisplayPrescription,
   sessionDefinitionToDisplayPrescription,
@@ -8,7 +9,6 @@ import {
 import { prepareExternalPlanSessionLaunch } from '../../services/sessionAuthoringService';
 import { sessionExecutionService } from '../../services/sessionExecutionService';
 import { sessionOccurrenceService } from '../../services/sessionOccurrenceService';
-import { isDefinitionBearingExternalSession } from '../../sessions/externalPlanV2';
 import { canLaunchExternalPlanSession } from '../../sessions/sessionLaunch';
 import type { SessionExecution, SessionReferenceBinding } from '../../sessions/models';
 import { WorkoutExportMenu } from '../WorkoutExportMenu';
@@ -71,8 +71,10 @@ export interface TodayImportedSessionsCardProps {
   primaryDisplayedSessionId?: string | null;
   /** Whether clinical safety escalation blocks workout details, export, and session launch. */
   clinicalEscalationRequired?: boolean;
+  /** Only individually adjudicated proceed sessions can launch from this authored-dose view. */
+  verdictsBySessionId?: Readonly<Record<string, ExternalSessionDecision | undefined>>;
   /** Callback to open SessionRunner for a launched or resumed session. */
-  onStartSession?: (binding: SessionReferenceBinding) => void;
+  onStartSession?: (binding: SessionReferenceBinding, options?: { allowDuplicateCompleted?: boolean }) => void | Promise<void>;
 }
 
 export function TodayImportedSessionsCard({
@@ -86,6 +88,7 @@ export function TodayImportedSessionsCard({
   allTodaySessions,
   primaryDisplayedSessionId = null,
   clinicalEscalationRequired = false,
+  verdictsBySessionId,
   onStartSession,
 }: TodayImportedSessionsCardProps) {
   const [selectedVariants, setSelectedVariants] = useState<Record<string, 'full' | 'reduced'>>({});
@@ -133,6 +136,8 @@ export function TodayImportedSessionsCard({
   const handleLaunch = async (item: PlacedSession) => {
     if (!onStartSession || clinicalEscalationRequired) return;
     const session = item.session;
+    if (verdictsBySessionId?.[session.id] !== 'proceed' ||
+      !canLaunchExternalPlanSession(session, { verdictDecision: verdictsBySessionId[session.id], isEvent: session.isEvent })) return;
     const existingExec = executionsBySessionId[session.id];
     if (existingExec?.state === 'in_progress' && existingExec.occurrenceId && existingExec.prescriptionHash) {
       onStartSession({
@@ -140,10 +145,6 @@ export function TodayImportedSessionsCard({
         occurrenceId: existingExec.occurrenceId,
         prescriptionHash: existingExec.prescriptionHash,
       });
-      return;
-    }
-
-    if (!isDefinitionBearingExternalSession(session)) {
       return;
     }
 
@@ -170,7 +171,10 @@ export function TodayImportedSessionsCard({
           allowPreviouslyLaunchedOccurrence: true,
         },
       );
-      onStartSession(launch.binding);
+      await onStartSession(
+        launch.binding,
+        existingExec?.state === 'completed' ? { allowDuplicateCompleted: true } : undefined,
+      );
     } catch (err) {
       console.warn('Failed to prepare imported session launch:', err);
       setLaunchError(`Could not start ${session.title}. Please try again.`);
@@ -237,7 +241,8 @@ export function TodayImportedSessionsCard({
           const canLaunch = Boolean(
             onStartSession &&
             !clinicalEscalationRequired &&
-            canLaunchExternalPlanSession(session, { verdictDecision: 'proceed', isEvent: session.isEvent }),
+            verdictsBySessionId?.[session.id] === 'proceed' &&
+            canLaunchExternalPlanSession(session, { verdictDecision: verdictsBySessionId[session.id], isEvent: session.isEvent }),
           );
 
           const durationMin = activeVariant === 'reduced' && reducedDef?.duration

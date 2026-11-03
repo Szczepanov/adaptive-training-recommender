@@ -76,6 +76,20 @@ const sampleSessions: PlacedSession[] = [
 ];
 
 describe('TodayImportedSessionsCard', () => {
+  it.each([undefined, 'skip', 'defer', 'advisory', 'scale'] as const)('withholds launch without a proceed verdict for this session (%s)', decision => {
+    const html = renderToStaticMarkup(
+      <TodayImportedSessionsCard
+        userId="u1" date="2026-09-14" planId="hybrid-block" revision={2}
+        planTitle="Hybrid Build Block" contentHash="hash-2"
+        sessions={sampleSessions} allTodaySessions={sampleSessions}
+        verdictsBySessionId={{ 'am-ride': 'proceed', 'pm-strength': decision }}
+        onStartSession={() => undefined}
+      />,
+    );
+    expect(html).toContain('aria-label="Start Morning Threshold Intervals"');
+    expect(html).not.toContain('aria-label="Start Evening Lower Strength"');
+  });
+
   it('renders additional today sessions alongside an overview pill bar when Session 1 is shown in the primary card above', () => {
     const html = renderToStaticMarkup(
       <TodayImportedSessionsCard
@@ -88,6 +102,7 @@ describe('TodayImportedSessionsCard', () => {
         sessions={[sampleSessions[1]]}
         allTodaySessions={sampleSessions}
         primaryDisplayedSessionId="am-ride"
+        verdictsBySessionId={{ 'pm-strength': 'proceed' }}
         onStartSession={() => undefined}
       />,
     );

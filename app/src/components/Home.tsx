@@ -1741,6 +1741,14 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
               allTodaySessions={allTodayImportedSessions}
               primaryDisplayedSessionId={primaryDisplayedExternalSessionId}
               clinicalEscalationRequired={recommendation?.envelopes?.safety.clinicalEscalationRequired === true}
+              verdictsBySessionId={
+                recommendationEffectivelyRevealed && !adjustmentDirection && !activeAlternativeId &&
+                activeRec?.externalVerdict && activeRec.externalPrescription &&
+                activeRec.externalPrescription.planId === activeExternalPlan.plan.planId &&
+                activeRec.externalPrescription.revision === activeExternalPlan.plan.revision
+                  ? { [activeRec.externalPrescription.sessionId]: activeRec.externalVerdict.decision }
+                  : undefined
+              }
               onStartSession={canGenerateNormalPlan ? onStartSession : undefined}
             />
           )}
