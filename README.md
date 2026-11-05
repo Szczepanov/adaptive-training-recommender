@@ -101,7 +101,8 @@ Adaptive Training Recommendations & Native Session Execution
 36. **Fixed-Load Mean Velocity Assessment Series (ADR-0047)**: Dedicated fixed-load velocity protocols per exercise with exact load, measurement method (including importer parser version) and equipment setup as series-defining identity; no observation-key change.
 37. **Explicit Event-Bound Development Authority (ADR-0049)**: Optional event-bound snapshots for intent blocks separating event-directed development from an unrelated imported block, with inclusive review dates.
 38. **Season Roadmap Event Roles (ADR-0050)**: A pure roadmap classifying A/B/C event roles and date conflicts that grants no execution authority.
-39. **Firestore Rules Scope (ADR-0053)**: Rules enforce access, immutability/lifecycle, bounds and irreparable cross-document integrity; nested domain-value validation belongs in the shared TypeScript validators, with a size budget guarding the compiled-rules limit.
+39. **User Ledger with External-AI Planning Authority (ADR-0052)**: The app acts as a provenance-preserving user ledger (tracking, user context, export), with planning moved to an external AI, adjudication replaced by advisory flags, and the engine and its CI gates frozen, extracted and retired in gated phases.
+40. **Firestore Rules Scope (ADR-0053)**: Rules enforce access, immutability/lifecycle, bounds and irreparable cross-document integrity; nested domain-value validation belongs in the shared TypeScript validators, with a size budget guarding the compiled-rules limit.
 
 ---
 
