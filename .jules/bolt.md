@@ -131,3 +131,7 @@
 ## 2026-10-31 - Hoist O(N) array scans out of map callbacks
 **Learning:** Calculating a static property using `.find()` inside a `.map()` callback (e.g., finding the override for every coverage role) causes an O(N^2) array scan bottleneck.
 **Action:** When evaluating items in a `.map()` based on a property of another array, build a Map for lookups outside the callback using `new Map()` instead of scanning with `.find()`.
+
+## 2026-10-31 - Hoist O(N) array scans out of flatMap callbacks
+**Learning:** Calculating a static property using `.filter()` inside a `.flatMap()` callback (e.g., finding the required roles length for every requirement) causes an O(N^2) array scan bottleneck.
+**Action:** When evaluating items in a `.flatMap()` based on a property of another array, build a Map for lookups outside the callback using `new Map()` instead of scanning with `.filter()`.
