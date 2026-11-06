@@ -409,14 +409,18 @@ export function buildEvergreenPlanDefinition(
   void capacity;
   const allRoles = [...packedBudget.requiredRoles, ...packedBudget.targetRoles, ...packedBudget.optionalRoles];
   const countByAdaptation = new Map<AdaptationKey, number>();
-  allRoles.forEach(role => role.adaptations.forEach(adaptation =>
-    countByAdaptation.set(adaptation, (countByAdaptation.get(adaptation) ?? 0) + 1)
-  ));
+  const requiredCountByAdaptation = new Map<AdaptationKey, number>();
+  allRoles.forEach(role => role.adaptations.forEach(adaptation => {
+    countByAdaptation.set(adaptation, (countByAdaptation.get(adaptation) ?? 0) + 1);
+    if (role.priority === 'required') {
+      requiredCountByAdaptation.set(adaptation, (requiredCountByAdaptation.get(adaptation) ?? 0) + 1);
+    }
+  }));
   const objectives: PlanObjectiveDefinition[] = packedBudget.requirements.flatMap(requirement => {
     const mapping = EVERGREEN_OBJECTIVE_BY_ADAPTATION[requirement.adaptation];
     const count = countByAdaptation.get(requirement.adaptation) ?? 0;
     if (!mapping || count === 0) return [];
-    const requiredCount = allRoles.filter(role => role.priority === 'required' && role.adaptations.includes(requirement.adaptation)).length;
+    const requiredCount = requiredCountByAdaptation.get(requirement.adaptation) ?? 0;
     return [{
       key: mapping.key,
       coverageKey: mapping.coverageKey,
