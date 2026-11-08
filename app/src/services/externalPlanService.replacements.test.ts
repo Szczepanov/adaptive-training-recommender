@@ -148,25 +148,41 @@ describe('ExternalPlanService import records declared session replacements (#117
         await expect(service.getPlacementHistoryState('u1', 'v6-block', 1)).resolves.toMatchObject({ status: 'AVAILABLE' });
     });
 
-    it('rejects replacing a session before the activation date without writing', async () => {
-        await expect(service.import('u1', revision2(), '2026-11-16')).resolves.toMatchObject({
-            status: 'INVALID', issues: [{ code: 'replaced-session-before-effective-date' }],
+    it('supersedes a session dated before the activation date, keeping its past date (#1189)', async () => {
+        await expect(service.import('u1', revision2(), '2026-11-16')).resolves.toMatchObject({ status: 'AVAILABLE' });
+
+        expect(writesOf(0)).toEqual([
+            REV1_PLACEMENT,
+            `${REV1_HISTORY}/event`,
+            `${PLAN_PATH}/revisions/2`,
+            `${PLAN_PATH}/activations/2`,
+            PLAN_PATH,
+        ]);
+        expect(firestore.committedDocs.get(REV1_PLACEMENT)).toMatchObject({
+            assignments: [{ sessionId: 'old-a', date: '2026-11-10', status: 'superseded' }],
+            successors: { 'old-a': { revision: 2, sessionId: 'new-a' } },
         });
-        expect(writesOf(0)).toEqual([]);
-        expect(firestore.committedDocs.has(REV1_PLACEMENT)).toBe(false);
+        expect(historyEvents()).toEqual([expect.objectContaining({
+            revision: 1, previous: [],
+            assignments: [{ sessionId: 'old-a', date: '2026-11-10', status: 'superseded' }],
+            successors: { 'old-a': { revision: 2, sessionId: 'new-a' } },
+        })]);
     });
 
-    it('rejects a moved session before the activation date even when its authored date is later', async () => {
+    it('supersedes a session moved before the activation date on its moved date (#1189)', async () => {
         await service.savePlacement('u1', { planId: 'v6-block', revision: 1, assignments: [
             { sessionId: 'old-b', date: '2026-11-10', status: 'moved' },
         ] });
         firestore.transactions.length = 0;
         await expect(service.import('u1', v6Plan(2, [session('new-b', 'wednesday', { replacesSessionId: 'old-b' })]), '2026-11-11'))
-            .resolves.toMatchObject({ status: 'INVALID', issues: [{ code: 'replaced-session-before-effective-date' }] });
-        expect(writesOf(0)).toEqual([]);
+            .resolves.toMatchObject({ status: 'AVAILABLE' });
+        expect(firestore.committedDocs.get(REV1_PLACEMENT)).toMatchObject({
+            assignments: [{ sessionId: 'old-b', date: '2026-11-10', status: 'superseded' }],
+            successors: { 'old-b': { revision: 2, sessionId: 'new-b' } },
+        });
     });
 
-    it('uses the moved date when checking the activation boundary', async () => {
+    it('supersedes on the moved date', async () => {
         await service.savePlacement('u1', { planId: 'v6-block', revision: 1, assignments: [
             { sessionId: 'old-a', date: '2026-11-16', status: 'moved' },
         ] });
@@ -359,14 +375,14 @@ describe('ExternalPlanService import records declared session replacements (#117
             firestore.transactions.length = 0;
         });
 
-        it('rejects replacing a session the plan view shows before the activation date', async () => {
+        it('supersedes a session the plan view shows before the activation date on that past date (#1189)', async () => {
             const next = v6Plan(2, [session('new-a', 'thursday', { replacesSessionId: 'old-a' }), session('old-b', 'wednesday')]);
 
-            await expect(service.import('u1', next, '2026-11-11')).resolves.toMatchObject({
-                status: 'INVALID', issues: [{ code: 'replaced-session-before-effective-date' }],
-            });
+            await expect(service.import('u1', next, '2026-11-11')).resolves.toMatchObject({ status: 'AVAILABLE' });
             expect(context.fixed).toHaveBeenCalledWith('u1', '2026-11-11', '2026-11-17');
-            expect(writesOf(0)).toEqual([]);
+            expect(firestore.committedDocs.get(REV1_PLACEMENT)).toMatchObject({ assignments: [
+                { sessionId: 'old-a', date: '2026-11-09', status: 'superseded' },
+            ] });
         });
 
         it('supersedes a session on the date the plan view shows', async () => {
@@ -388,6 +404,49 @@ describe('ExternalPlanService import records declared session replacements (#117
             code: 'replaced-session-successor-conflict', field: 'sessions[0].replacesSessionId', documentPath: REV1_PLACEMENT,
         }] });
         expect(writesOf(0)).toEqual([]);
+    });
+
+    it('still refuses a past-dated replacement of a completed session (#1189)', async () => {
+        await service.savePlacement('u1', { planId: 'v6-block', revision: 1, assignments: [
+            { sessionId: 'old-a', date: '2026-11-10', status: 'completed' },
+        ] });
+        firestore.transactions.length = 0;
+
+        await expect(service.import('u1', revision2(), '2026-11-16')).resolves.toMatchObject({ status: 'INVALID', issues: [{
+            code: 'replaced-session-completed' }] });
+        expect(writesOf(0)).toEqual([]);
+    });
+
+    it('still refuses a past-dated replacement with a conflicting recorded successor (#1189)', async () => {
+        firestore.committedDocs.set(REV1_PLACEMENT, { userId: 'u1', planId: 'v6-block', revision: 1,
+            assignments: [{ sessionId: 'old-a', date: '2026-11-10', status: 'superseded' }],
+            successors: { 'old-a': { revision: 5, sessionId: 'elsewhere' } }, updatedAt: '2026-11-09T00:00:00.000Z' });
+
+        await expect(service.import('u1', revision2(), '2026-11-16')).resolves.toMatchObject({ status: 'INVALID', issues: [{
+            code: 'replaced-session-successor-conflict' }] });
+        expect(writesOf(0)).toEqual([]);
+    });
+
+    it('exports a past-dated replaced session with its past date and successor (#1189)', async () => {
+        await service.savePlacement('u1', { planId: 'v6-block', revision: 1, assignments: [
+            { sessionId: 'old-a', date: '2026-11-09', status: 'moved' },
+        ] });
+        await expect(service.import('u1', revision2(), '2026-11-16')).resolves.toMatchObject({ status: 'AVAILABLE' });
+        const placement = await service.getPlacementState('u1', 'v6-block', 1);
+        const history = await service.getPlacementHistoryState('u1', 'v6-block', 1);
+        if (placement.status !== 'AVAILABLE' || history.status !== 'AVAILABLE') throw new Error('placement reads failed');
+
+        const records = fullRecords();
+        records.placements = [{ planId: 'v6-block', revision: 1, updatedAt: placement.data.updatedAt, assignments: placement.data.assignments }];
+        records.placementHistory = history.data;
+        const result = buildLedgerExport({ records, asOfDate: '2026-11-20', purpose: 'planning', exportedAt: '2026-11-20T12:00:00Z' });
+
+        const row = result.coachingHistory.placements.items.find(item => item.id === 'v6-block@1:old-a');
+        expect(row?.fields.status.value).toBe('superseded');
+        expect(row?.fields.statusHistory.value).toContainEqual(expect.objectContaining({
+            assignment: { sessionId: 'old-a', date: '2026-11-09', status: 'superseded' },
+            successor: { revision: 2, sessionId: 'new-a' },
+        }));
     });
 
     it('exports the successor in the replaced placement statusHistory', async () => {
