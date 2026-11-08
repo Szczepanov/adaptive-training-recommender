@@ -40,6 +40,7 @@ const structuredView: CompletedWorkoutView = {
                     {
                         entryId: 'e2', setNumber: 2, isWarmup: false, completedAt: '2026-08-26T07:04:00.000Z', payload: set2,
                         exerciseRef: { kind: 'catalog', exerciseId: 'safety_bar_squat' },
+                        rest: { prescribedSeconds: 180, actualSeconds: 1500, endReason: 'session_ended' },
                     },
                 ],
             },
@@ -91,9 +92,11 @@ describe('exportCompletedWorkoutToJson', () => {
                 setNumber: 2, isWarmup: false, completedAt: '2026-08-26T07:04:00.000Z', kind: 'repetition', reps: 4, weightKg: 120,
                 effort: { rir: 1 },
                 performedExercise: { kind: 'catalog', exerciseId: 'safety_bar_squat' },
+                rest: { actualSeconds: 1500, prescribedSeconds: 180, endReason: 'session_ended' },
             },
         ]);
         expect(result.exercises[1]!.performed.sets[0]).toMatchObject({ kind: 'duration', durationSeconds: 45 });
+        // Trailing session_ended rest stays on the set row with its endReason, but never inflates totalPerformedRestSeconds.
         expect(result.summary).toEqual({ exercises: 2, workSets: 3, totalReps: 9, tonnageKg: 1080, totalPerformedRestSeconds: 205 });
         expect(result.performedRest).toBe('recorded');
     });

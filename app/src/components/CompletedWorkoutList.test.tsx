@@ -98,6 +98,27 @@ describe('CompletedWorkoutList', () => {
         expect(html).not.toContain('>Strength sets & reps<');
     });
 
+    it('prefers app execution duration in the card header over reconciled occurrence window and Garmin watch duration', () => {
+        const matchedWithAppDuration: CompletedWorkoutView = {
+            ...matched,
+            // Reconciled window is 120 min, Garmin watch is 40 min, app execution is 33 min.
+            startedAt: '2026-08-26T06:00:00.000Z',
+            endedAt: '2026-08-26T08:00:00.000Z',
+            structured: {
+                ...matched.structured!,
+                execution: {
+                    executionId: 'exec-1',
+                    state: 'completed',
+                    startedAt: '2026-08-26T06:50:00.000Z',
+                    completedAt: '2026-08-26T07:23:00.000Z',
+                },
+            },
+        };
+        const html = renderToStaticMarkup(<CompletedWorkoutList workouts={[matchedWithAppDuration]} />);
+        expect(html).toContain('· 33 min</p>');
+        expect(html).toContain('40 min recorded on watch');
+    });
+
     it('renders the prescription, every logged set with load and effort, and actual vs target rest', () => {
         const html = renderToStaticMarkup(<CompletedWorkoutList workouts={[structuredOnly]} />);
         expect(html).toContain('Target: 5 × 5 @ 120 kg · RIR 2 · rest 3:00');

@@ -360,7 +360,7 @@ export function CompletedWorkoutList({ workouts, exportWindow, windowSweep, onRe
     try {
       await navigator.clipboard.writeText(formatCompletedWorkoutJson(workout, new Date().toISOString()));
       setCopiedId(workout.performedOccurrenceId);
-      window.setTimeout(() => setCopiedId(curr => (curr === workout.performedOccurrenceId ? null : curr)), 2000);
+      setTimeout(() => setCopiedId(curr => (curr === workout.performedOccurrenceId ? null : curr)), 2000);
     } catch (err) {
       console.error('Failed to copy activity JSON', err);
     }
