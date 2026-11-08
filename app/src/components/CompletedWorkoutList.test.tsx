@@ -115,8 +115,8 @@ describe('CompletedWorkoutList', () => {
             },
         };
         const html = renderToStaticMarkup(<CompletedWorkoutList workouts={[matchedWithAppDuration]} />);
-        expect(html).toContain('08:50 · 33 min</p>');
-        expect(html).not.toContain('08:00 · 33 min');
+        expect(html).toMatch(/08:50(?:\s*AM)? · 33 min<\/p>/);
+        expect(html).not.toContain('08:00');
         expect(html).toContain('40 min recorded on watch');
     });
 
