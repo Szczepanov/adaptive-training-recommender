@@ -358,10 +358,12 @@ Residual not proven by this inventory: the reserved-identity hydration path hard
 
 ## Completion-evidence missingness (#896)
 
-`SessionCompletionSheet` opens with every subjective field unanswered. `buildCompletionPayload`
+`SessionCompletionSheet` opens with every subjective field unanswered. The summary shows the
+count of unfinished required steps and expands to show the individual steps. Finish & Save Session
+and Keep Training stay visible while feedback scrolls. `buildCompletionPayload`
 (`sessionCompletionOptions.ts`) emits only what the athlete answered:
 
-* `sessionRpe` is persisted only after an explicit selection (tapping the selected value again
+* `sessionRpe` offers scores 1–10 and is persisted only after an explicit selection (tapping the selected value again
   clears it). An untouched sheet persists none; selecting 7 persists 7.
 * `completedFraction` is persisted only when chosen. "All of it (100%)" is disabled, and never
   persisted, while required planned steps are unfinished. The fraction is not derived from

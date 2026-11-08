@@ -94,9 +94,26 @@ test('session runner logs both hold sides before rotating and keeps controls usa
   await finish.click();
   const completion = page.getByRole('dialog', { name: 'Complete Session' });
   await expect(completion).toBeVisible();
+  const title = completion.getByRole('heading', { name: 'Complete Session' });
+  await expect(title).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(completion.getByRole('button', { name: 'Keep Training' })).toBeFocused();
+  const effort = completion.getByRole('group', { name: /Whole-session effort/i });
+  for (let score = 1; score <= 10; score++) {
+    await assertEffectiveTarget(effort.getByRole('button', { name: String(score), exact: true }));
+  }
+  const easy = effort.getByRole('button', { name: '1', exact: true });
+  await easy.click();
+  await expect(easy).toHaveAttribute('aria-pressed', 'true');
+  await easy.click();
+  await expect(easy).toHaveAttribute('aria-pressed', 'false');
   const fatigue = completion.getByRole('group', { name: /Unexpected fatigue during or after this session/ });
   for (const answer of ['No', 'Yes']) await assertEffectiveTarget(fatigue.getByRole('button', { name: answer, exact: true }));
   await expect(fatigue.getByRole('button', { pressed: true })).toHaveCount(0);
   await assertEffectiveTarget(completion.getByRole('button', { name: 'Finish & Save Session' }));
+  await expect(completion.getByRole('button', { name: 'Finish & Save Session' })).toBeInViewport();
   await assertNoBodyHorizontalOverflow(page);
+  await page.keyboard.press('Escape');
+  await expect(completion).toBeHidden();
+  await expect(finish).toBeFocused();
 });

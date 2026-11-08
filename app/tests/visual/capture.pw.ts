@@ -481,6 +481,7 @@ test('captures per-side hold controls without horizontal overflow', async ({ pag
 test('captures the primary catalog strength warm-up journey', async ({ page }) => {
   const scenario = VISUAL_SCENARIOS.find(candidate => candidate.id === 'session-runner-primary-strength-warmup');
   if (!scenario) throw new Error('Missing primary strength warm-up visual scenario');
+  await page.clock.setFixedTime('2026-09-12T00:40:00Z');
   await visitScenario(page, scenario);
 
   await expect(page.locator('.session-title-text')).toHaveText('Primary Full-body Strength Maintenance');
@@ -516,7 +517,16 @@ test('captures the primary catalog strength warm-up journey', async ({ page }) =
   await expect(page.getByText('Total Sets')).toBeVisible();
   await expect(page.getByText('Exercises')).toBeVisible();
   await capture(page, scenario, 'completion-summary', [
-    'The completion summary remains available after partial warm-up execution.',
+    'The summary, unfinished-step count, and primary action are visible after a partial session.',
+  ]);
+
+  const completion = page.getByRole('dialog', { name: 'Complete Session' });
+  await completion.getByRole('group', { name: 'Whole-session effort' }).getByRole('button', { name: '3', exact: true }).click();
+  await completion.getByRole('group', { name: /Unexpected fatigue/ }).getByRole('button', { name: 'No', exact: true }).click();
+  await completion.getByRole('textbox', { name: /Session Notes/ }).scrollIntoViewIfNeeded();
+  await expect(completion.getByRole('button', { name: 'Finish & Save Session' })).toBeInViewport();
+  await capture(page, scenario, 'completion-feedback', [
+    'Feedback scrolls independently of the save and keep-training actions.',
   ]);
 
   await page.getByRole('button', { name: 'Abandon Session...' }).click();

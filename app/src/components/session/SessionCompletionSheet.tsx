@@ -1,4 +1,7 @@
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
+import { useOverlayDialog } from '../useOverlayDialog';
+import '../overlayContract.css';
+import './SessionCompletionSheet.css';
 import type { BodyRegion, TissueResponseLevel } from '../../engine/models';
 import type { SessionStepSummary } from '../../workouts/strengthSessionEntry';
 import {
@@ -76,6 +79,15 @@ export const SessionCompletionSheet: React.FC<SessionCompletionSheetProps> = ({
     const [reportedPain, setReportedPain] = useState<TissueResponseLevel>('mild');
     const [tissueFeedback, setTissueFeedback] = useState<CompletionTissueFeedback[]>([]);
     const [showAbandonConfirm, setShowAbandonConfirm] = useState(openAbandonConfirmation);
+    const panelRef = useRef<HTMLDivElement>(null);
+    const titleRef = useRef<HTMLHeadingElement>(null);
+    const dismiss = showAbandonConfirm && !openAbandonConfirmation
+        ? () => setShowAbandonConfirm(false)
+        : onCancel;
+    useOverlayDialog(true, panelRef, saving || hidden ? undefined : dismiss, '#completion-title');
+    useEffect(() => {
+        titleRef.current?.focus();
+    }, [showAbandonConfirm]);
     const [elapsedMinutes] = useState(() => Math.max(1, Math.round((Date.now() - Date.parse(startedAt)) / 60000)));
 
     // ⚡ Bolt: Memoize step array filters to prevent redundant O(N) operations on every form state change (e.g. typing in notes)
@@ -114,19 +126,19 @@ export const SessionCompletionSheet: React.FC<SessionCompletionSheetProps> = ({
 
     return (
         <div
-            className="session-completion-modal-overlay"
+            className="session-completion-modal-overlay overlay-viewport"
             role="dialog"
             aria-modal={hidden ? undefined : true}
             aria-labelledby="completion-title"
             hidden={hidden}
         >
-            <div className="session-completion-sheet">
-                {error && <p className="session-runner-error" role="alert">{error}</p>}
+            <div ref={panelRef} className="session-completion-sheet overlay-panel" tabIndex={-1}>
                 {showAbandonConfirm ? (
                     <div className="abandon-confirmation-view">
-                        <h3 id="completion-title" className="danger-text">
+                        <h2 ref={titleRef} id="completion-title" tabIndex={-1} className="completion-sheet-title">
                             {abandoningAssessment ? 'Abandon Locked Assessment?' : 'Abandon Session?'}
-                        </h3>
+                        </h2>
+                        {error && <p className="session-runner-error" role="alert">{error}</p>}
                         {abandoningAssessment ? (
                             <p>
                                 This permanently abandons the locked AssessmentAttempt. It is terminal, cannot be resumed, and will never produce a benchmark observation. To test again, you must start a fresh attempt.
@@ -162,228 +174,219 @@ export const SessionCompletionSheet: React.FC<SessionCompletionSheetProps> = ({
                     </div>
                 ) : (
                     <>
-                        <h2 id="completion-title" className="completion-sheet-title">Complete Session</h2>
-                        <p className="completion-record-provenance">
-                            {recordKind === 'AssessmentAttempt'
-                                ? 'Finishing saves a SessionExecution for this AssessmentAttempt. The AssessmentAttempt is completed only after its observations are saved.'
-                                : 'Finishing saves a SessionExecution record.'}
-                        </p>
+                        <div className="completion-sheet-body">
+                            <h2 ref={titleRef} id="completion-title" tabIndex={-1} className="completion-sheet-title">Complete Session</h2>
+                            <p className="completion-record-provenance">
+                                {recordKind === 'AssessmentAttempt'
+                                    ? 'Finishing saves a SessionExecution for this AssessmentAttempt. The AssessmentAttempt is completed only after its observations are saved.'
+                                    : 'Add any feedback you want to save with your workout.'}
+                            </p>
 
-                        <div className="completion-summary-metrics">
-                            <div className="metric-pill">
-                                <span className="metric-label">Duration</span>
-                                <span className="metric-value">{elapsedMinutes} min</span>
+                            <div className="completion-summary-metrics">
+                                <div className="metric-pill">
+                                    <span className="metric-label">Duration</span>
+                                    <span className="metric-value">{elapsedMinutes} min</span>
+                                </div>
+                                <div className="metric-pill">
+                                    <span className="metric-label">Total Sets</span>
+                                    <span className="metric-value">{totalSets}</span>
+                                </div>
+                                <div className="metric-pill">
+                                    <span className="metric-label">Exercises</span>
+                                    <span className="metric-value">{completedExercisesCount}</span>
+                                </div>
                             </div>
-                            <div className="metric-pill">
-                                <span className="metric-label">Total Sets</span>
-                                <span className="metric-value">{totalSets}</span>
-                            </div>
-                            <div className="metric-pill">
-                                <span className="metric-label">Exercises</span>
-                                <span className="metric-value">{completedExercisesCount}</span>
-                            </div>
-                        </div>
 
-                        {missingRequiredSteps.length > 0 && (
-                            <div className="completion-warning-box">
-                                <strong>Incomplete Required Steps ({missingRequiredSteps.length}):</strong>
-                                <ul>
-                                    {missingRequiredSteps.map(step => (
-                                        <li key={step.exerciseId ?? step.displayName}>
-                                            {step.displayName} ({step.loggedSetsCount}/{step.targetSets} sets)
-                                        </li>
+                            {missingRequiredSteps.length > 0 && (
+                                <details className="completion-warning-box">
+                                    <summary><strong>Incomplete Required Steps ({missingRequiredSteps.length})</strong></summary>
+                                    <ul>
+                                        {missingRequiredSteps.map(step => (
+                                            <li key={step.exerciseId ?? step.displayName}>
+                                                {step.displayName} ({step.loggedSetsCount}/{step.targetSets} sets)
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </details>
+                            )}
+
+                            <div className="form-group rpe-picker-group">
+                                <div className="completion-field-heading">
+                                    <strong id="session-rpe-label">Whole-session effort</strong>
+                                    <span className="helper-text" id="session-rpe-status" data-testid="srpe-status" aria-live="polite">
+                                        {sessionRpe === undefined ? 'Not answered' : `Selected: ${sessionRpe}`}
+                                    </span>
+                                </div>
+                                <span className="helper-text" id="session-rpe-guide">1 = very easy · 5 = moderate · 10 = maximum effort. Select again to clear.</span>
+                                <div className="rpe-button-row" role="group" aria-labelledby="session-rpe-label" aria-describedby="session-rpe-guide session-rpe-status">
+                                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(val => (
+                                        <button
+                                            key={val}
+                                            type="button"
+                                            className={`rpe-pill-btn ${sessionRpe === val ? 'selected' : ''}`}
+                                            aria-pressed={sessionRpe === val}
+                                            onClick={() => setSessionRpe(previous => (previous === val ? undefined : val))}
+                                        >
+                                            {val}
+                                        </button>
                                     ))}
-                                </ul>
+                                </div>
                             </div>
-                        )}
 
-                        <div className="form-group rpe-picker-group">
-                            <div id="session-rpe-label">
-                                <strong>Whole-Session Effort (sRPE 1–10)</strong>
-                                <span className="helper-text">1 = Rest, 5 = Moderate, 7 = Hard, 10 = Max Effort. Optional: tap a value again to clear it.</span>
-                                <span className="helper-text" id="session-rpe-status" data-testid="srpe-status" aria-live="polite">
-                                    {sessionRpe === undefined ? 'Not answered' : `Selected: ${sessionRpe}`}
-                                </span>
-                            </div>
-                            <div className="rpe-button-row" role="group" aria-labelledby="session-rpe-label" aria-describedby="session-rpe-status">
-                                {[4, 5, 6, 7, 8, 9, 10].map(val => (
-                                    <button
-                                        key={val}
-                                        type="button"
-                                        className={`rpe-pill-btn ${sessionRpe === val ? 'selected' : ''}`}
-                                        aria-pressed={sessionRpe === val}
-                                        onClick={() => setSessionRpe(previous => (previous === val ? undefined : val))}
-                                    >
-                                        {val}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-
-                        <div className="form-group tissue-feedback-group">
-                            <label htmlFor="tissue-region-select">
-                                <strong>Any unusual pain or joint irritation? (Optional)</strong>
-                            </label>
-                            <div className="tissue-inputs-row">
-                                <select
-                                    id="tissue-region-select"
-                                    value={selectedRegion}
-                                    onChange={e => setSelectedRegion(e.target.value as BodyRegion | '')}
-                                    className="select-input"
-                                >
-                                    <option value="">No joint/tissue issues</option>
-                                    {availableRegions.map(r => (
-                                        <option key={r.id} value={r.id}>{r.label}</option>
-                                    ))}
-                                </select>
-
-                                {selectedRegion && (
+                            <div className="form-group tissue-feedback-group">
+                                <label htmlFor="tissue-region-select">
+                                    <strong>Any unusual pain or joint irritation? (Optional)</strong>
+                                </label>
+                                <div className="tissue-inputs-row">
                                     <select
-                                        value={reportedPain}
-                                        onChange={e => setReportedPain(e.target.value as TissueResponseLevel)}
-                                        className="select-input pain-level-select"
-                                        aria-label="Pain severity level"
+                                        id="tissue-region-select"
+                                        value={selectedRegion}
+                                        onChange={e => setSelectedRegion(e.target.value as BodyRegion | '')}
+                                        className="select-input"
                                     >
-                                        {COMPLETION_TISSUE_LEVEL_OPTIONS.map(option => (
-                                            <option key={option.value} value={option.value}>{option.label}</option>
+                                        <option value="">Select an affected area</option>
+                                        {availableRegions.map(r => (
+                                            <option key={r.id} value={r.id}>{r.label}</option>
                                         ))}
                                     </select>
-                                )}
-                                {selectedRegion && (
-                                    <button type="button" className="btn-secondary" onClick={addTissueFeedback}>
-                                        Add region
-                                    </button>
+
+                                    {selectedRegion && (
+                                        <select
+                                            value={reportedPain}
+                                            onChange={e => setReportedPain(e.target.value as TissueResponseLevel)}
+                                            className="select-input pain-level-select"
+                                            aria-label="Pain severity level"
+                                        >
+                                            {COMPLETION_TISSUE_LEVEL_OPTIONS.map(option => (
+                                                <option key={option.value} value={option.value}>{option.label}</option>
+                                            ))}
+                                        </select>
+                                    )}
+                                    {selectedRegion && (
+                                        <button type="button" className="btn-secondary" onClick={addTissueFeedback}>
+                                            Add region
+                                        </button>
+                                    )}
+                                </div>
+                                {tissueFeedback.length > 0 && (
+                                    <ul className="tissue-feedback-list">
+                                        {tissueFeedback.map(item => (
+                                            <li key={item.region}>
+                                                <span>
+                                                    {COMMON_REGIONS.find(region => region.id === item.region)?.label ?? item.region}
+                                                    {` — ${item.painDuringTraining}`}
+                                                </span>
+                                                <button
+                                                    type="button"
+                                                    className="btn-link-danger"
+                                                    onClick={() => setTissueFeedback(previous => previous.filter(entry => entry.region !== item.region))}
+                                                >
+                                                    Remove
+                                                </button>
+                                            </li>
+                                        ))}
+                                    </ul>
                                 )}
                             </div>
-                            {tissueFeedback.length > 0 && (
-                                <ul className="tissue-feedback-list">
-                                    {tissueFeedback.map(item => (
-                                        <li key={item.region}>
-                                            <span>
-                                                {COMMON_REGIONS.find(region => region.id === item.region)?.label ?? item.region}
-                                                {` — ${item.painDuringTraining}`}
-                                            </span>
-                                            <button
-                                                type="button"
-                                                className="btn-link-danger"
-                                                onClick={() => setTissueFeedback(previous => previous.filter(entry => entry.region !== item.region))}
-                                            >
-                                                Remove
-                                            </button>
-                                        </li>
+
+                            <div className="form-group completion-evidence-group">
+                                <label htmlFor="completed-fraction-input">
+                                    <strong>How much of the planned session did you complete?</strong>
+                                </label>
+                                <select
+                                    id="completed-fraction-input"
+                                    value={completedFraction ?? ''}
+                                    onChange={e => setCompletedFraction(e.target.value === '' ? undefined : Number(e.target.value))}
+                                    className="select-input"
+                                >
+                                    <option value="">Not answered</option>
+                                    <option value={1} disabled={missingRequiredSteps.length > 0}>All of it (100%)</option>
+                                    <option value={0.75}>Most of it (75%)</option>
+                                    <option value={0.5}>About half (50%)</option>
+                                    <option value={0.25}>Only a little (25%)</option>
+                                    <option value={0}>None (0%)</option>
+                                </select>
+                                {missingRequiredSteps.length > 0 && (
+                                    <span className="helper-text">100% isn't available while required steps are unfinished.</span>
+                                )}
+                            </div>
+
+                            <div className="form-group fatigue-answer-group">
+                                <div className="completion-field-heading">
+                                    <strong id="unexpected-fatigue-label">Unexpected fatigue during or after this session?</strong>
+                                    <span className="helper-text" id="unexpected-fatigue-status" data-testid="fatigue-status" aria-live="polite">
+                                        {unexpectedFatigue === undefined ? 'Not answered' : `Selected: ${unexpectedFatigue ? 'Yes' : 'No'}`}
+                                    </span>
+                                </div>
+                                <span className="helper-text" id="unexpected-fatigue-guide">Select again to clear.</span>
+                                <div className="fatigue-button-row" role="group" aria-labelledby="unexpected-fatigue-label" aria-describedby="unexpected-fatigue-guide unexpected-fatigue-status">
+                                    {([false, true] as const).map(value => (
+                                        <button
+                                            key={String(value)}
+                                            type="button"
+                                            className={`rpe-pill-btn ${unexpectedFatigue === value ? 'selected' : ''}`}
+                                            aria-pressed={unexpectedFatigue === value}
+                                            onClick={() => setUnexpectedFatigue(previous => (previous === value ? undefined : value))}
+                                        >
+                                            {value ? 'Yes' : 'No'}
+                                        </button>
                                     ))}
-                                </ul>
-                            )}
-                        </div>
-
-                        <div className="form-group completion-evidence-group">
-                            <label htmlFor="completed-fraction-input">
-                                <strong>How much of the planned session did you complete?</strong>
-                            </label>
-                            <select
-                                id="completed-fraction-input"
-                                value={completedFraction ?? ''}
-                                onChange={e => setCompletedFraction(e.target.value === '' ? undefined : Number(e.target.value))}
-                                className="select-input"
-                            >
-                                <option value="">Not answered</option>
-                                <option value={1} disabled={missingRequiredSteps.length > 0}>All of it (100%)</option>
-                                <option value={0.75}>Most of it (75%)</option>
-                                <option value={0.5}>About half (50%)</option>
-                                <option value={0.25}>Only a little (25%)</option>
-                                <option value={0}>None (0%)</option>
-                            </select>
-                            {missingRequiredSteps.length > 0 && (
-                                <span className="helper-text">100% isn't available while required steps are unfinished.</span>
-                            )}
-                        </div>
-
-                        <div className="form-group fatigue-answer-group">
-                            <div id="unexpected-fatigue-label">
-                                <strong>Unexpected fatigue during or after this session?</strong>
-                                <span className="helper-text">Optional: tap an answer again to clear it.</span>
-                                <span className="helper-text" id="unexpected-fatigue-status" data-testid="fatigue-status" aria-live="polite">
-                                    {unexpectedFatigue === undefined ? 'Not answered' : `Selected: ${unexpectedFatigue ? 'Yes' : 'No'}`}
-                                </span>
+                                </div>
                             </div>
-                            <div className="rpe-button-row" role="group" aria-labelledby="unexpected-fatigue-label" aria-describedby="unexpected-fatigue-status">
-                                {([false, true] as const).map(value => (
+
+                            <div className="form-group">
+                                <label htmlFor="session-notes-input">
+                                    <strong>Session Notes (Optional)</strong>
+                                </label>
+                                <textarea
+                                    id="session-notes-input"
+                                    rows={2}
+                                    value={notes}
+                                    onChange={e => setNotes(e.target.value)}
+                                    placeholder="E.g. Bar felt fast today, clean catch was crisp."
+                                    className="notes-textarea"
+                                />
+                            </div>
+
+                            {recordKind === 'AssessmentAttempt' && (
+                                <div className="assessment-completion-guidance" role="status">
+                                    <span>🏁 <strong>Physical session complete!</strong> Next, enter the measurements from your attempts to calculate your new benchmark.</span>
+                                </div>
+                            )}
+
+                            <div className="completion-secondary-actions">
+                                {onSaveTemplate && (
                                     <button
-                                        key={String(value)}
                                         type="button"
-                                        className={`rpe-pill-btn fatigue-answer-btn ${unexpectedFatigue === value ? 'selected' : ''}`}
-                                        aria-pressed={unexpectedFatigue === value}
-                                        onClick={() => setUnexpectedFatigue(previous => (previous === value ? undefined : value))}
+                                        className="completion-text-action"
+                                        onClick={onSaveTemplate}
+                                        disabled={saving}
+                                        title="Save adjusted workout as a new template"
+                                        data-testid="completion-save-template-button"
                                     >
-                                        {value ? 'Yes' : 'No'}
+                                        Save as template
                                     </button>
-                                ))}
-                            </div>
-                        </div>
-
-                        <div className="form-group">
-                            <label htmlFor="session-notes-input">
-                                <strong>Session Notes (Optional)</strong>
-                            </label>
-                            <textarea
-                                id="session-notes-input"
-                                rows={2}
-                                value={notes}
-                                onChange={e => setNotes(e.target.value)}
-                                placeholder="E.g. Bar felt fast today, clean catch was crisp."
-                                className="notes-textarea"
-                            />
-                        </div>
-
-                        {recordKind === 'AssessmentAttempt' && (
-                            <div className="assessment-completion-guidance" role="status">
-                                <span>🏁 <strong>Physical session complete!</strong> Next, enter the measurements from your attempts to calculate your new benchmark.</span>
-                            </div>
-                        )}
-
-                        <div className="sheet-actions main-actions">
-                            <button
-                                type="button"
-                                className="btn-primary btn-finalize"
-                                onClick={handleConfirmComplete}
-                                disabled={saving}
-                            >
-                                {saving ? 'Saving...' : 'Finish & Save Session'}
-                            </button>
-                            <button
-                                type="button"
-                                className="btn-secondary"
-                                onClick={onCancel}
-                                disabled={saving}
-                            >
-                                Keep Training
-                            </button>
-                        </div>
-
-                        {onSaveTemplate && (
-                            <div className="sheet-actions">
+                                )}
                                 <button
                                     type="button"
-                                    className="btn-secondary"
-                                    onClick={onSaveTemplate}
+                                    className="btn-link-danger"
+                                    onClick={() => setShowAbandonConfirm(true)}
                                     disabled={saving}
-                                    title="Save adjusted workout as a new template"
-                                    data-testid="completion-save-template-button"
                                 >
-                                    💾 Save as template
+                                    Abandon Session...
                                 </button>
                             </div>
-                        )}
-
-                        <div className="danger-zone-divider">
-                            <button
-                                type="button"
-                                className="btn-link-danger"
-                                onClick={() => setShowAbandonConfirm(true)}
-                                disabled={saving}
-                            >
-                                Abandon Session...
-                            </button>
+                        </div>
+                        <div className="completion-footer">
+                            {error && <p className="session-runner-error" role="alert">{error}</p>}
+                            <div className="sheet-actions">
+                                <button type="button" className="btn-primary" onClick={handleConfirmComplete} disabled={saving}>
+                                    {saving ? 'Saving...' : 'Finish & Save Session'}
+                                </button>
+                                <button type="button" className="btn-secondary" onClick={onCancel} disabled={saving}>
+                                    Keep Training
+                                </button>
+                            </div>
                         </div>
                     </>
                 )}

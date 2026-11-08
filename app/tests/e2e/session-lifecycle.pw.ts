@@ -47,7 +47,7 @@ for (const feedback of ['untouched', 'answered', 'cleared'] as const) {
     await expect(sheet).toBeVisible();
     await expect(sheet.getByText(/Incomplete Required Steps/)).toBeVisible();
     await expect(sheet.locator('option[value="1"]')).toBeDisabled();
-    const effort = sheet.getByRole('group', { name: /Whole-Session Effort/ }).getByRole('button', { name: '7', exact: true });
+    const effort = sheet.getByRole('group', { name: 'Whole-session effort' }).getByRole('button', { name: '3', exact: true });
     const fatigue = sheet.getByRole('group', { name: /Unexpected fatigue/ }).getByRole('button', { name: 'No', exact: true });
     const fraction = sheet.getByLabel('How much of the planned session did you complete?');
     if (feedback !== 'untouched') {
@@ -77,10 +77,10 @@ for (const feedback of ['untouched', 'answered', 'cleared'] as const) {
     const [execution] = stored.executions;
     expect(execution.completionEvidence.submittedAt).toEqual(expect.any(String));
     if (feedback === 'answered') {
-      expect(execution.sessionRpe).toBe(7);
-      expect(execution.completionEvidence).toMatchObject({ sessionRpe: 7, completedFraction: 0.75, unexpectedFatigue: false });
+      expect(execution.sessionRpe).toBe(3);
+      expect(execution.completionEvidence).toMatchObject({ sessionRpe: 3, completedFraction: 0.75, unexpectedFatigue: false });
       expect(stored.responses).toHaveLength(1);
-      expect(stored.responses[0]).toMatchObject({ sessionRpe: 7, completedFraction: 0.75, unexpectedFatigue: false });
+      expect(stored.responses[0]).toMatchObject({ sessionRpe: 3, completedFraction: 0.75, unexpectedFatigue: false });
     } else {
       expect(execution).not.toHaveProperty('sessionRpe');
       expect(Object.keys(execution.completionEvidence)).toEqual(['submittedAt']);
@@ -88,6 +88,63 @@ for (const feedback of ['untouched', 'answered', 'cleared'] as const) {
     }
   });
 }
+
+test('completion actions preserve the live workout until abandonment is confirmed', async ({ page }) => {
+  const athlete = await provisionAthlete();
+  await signInThroughUi(page, athlete);
+  await openFixturePicker(page);
+  await page.getByRole('button', { name: 'Start Session →', exact: true }).first().click();
+  await page.getByRole('button', { name: 'Log repetition set' }).click();
+
+  const finish = page.getByRole('button', { name: /Finish Session \(/ });
+  const sheet = page.getByRole('dialog', { name: 'Complete Session' });
+  const notes = sheet.getByRole('textbox', { name: /Session Notes/ });
+  const abandon = page.getByRole('dialog', { name: 'Abandon Session?' });
+  const template = page.getByRole('dialog', { name: 'Save as Custom Template' });
+  const openTemplate = sheet.getByRole('button', { name: 'Save as template' });
+  const templateTitle = 'Completion wiring template';
+
+  await finish.click();
+  await sheet.getByRole('button', { name: 'Keep Training' }).click();
+  await expect(finish).toBeFocused();
+  await finish.click();
+  await notes.fill('Keep this draft through the dialogs.');
+
+  await openTemplate.click();
+  await expect(sheet).toBeHidden();
+  await expect(template.getByRole('textbox', { name: 'Template Title' })).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(template).toBeHidden();
+  await expect(openTemplate).toBeFocused();
+  await expect(notes).toHaveValue('Keep this draft through the dialogs.');
+
+  await openTemplate.click();
+  await template.getByRole('textbox', { name: 'Template Title' }).fill(templateTitle);
+  await template.getByRole('button', { name: 'Save Template', exact: true }).click();
+  await expect(template.getByRole('status')).toContainText(templateTitle);
+  await expect(notes).toHaveValue('Keep this draft through the dialogs.');
+  const savedTitles = await inspectAthlete(athlete, async db => {
+    const definitions = await getDocs(collection(db, 'users', athlete.userId, 'session_definitions'));
+    return definitions.docs.map(definition => definition.data().title);
+  });
+  expect(savedTitles).toContain(templateTitle);
+
+  await sheet.getByRole('button', { name: 'Abandon Session...' }).click();
+  await abandon.getByRole('button', { name: 'Go Back' }).click();
+  await expect(notes).toHaveValue('Keep this draft through the dialogs.');
+  const [active] = await readSessionExecutions(athlete);
+  expect(active.state).toBe('in_progress');
+
+  await sheet.getByRole('button', { name: 'Abandon Session...' }).click();
+  await abandon.getByRole('button', { name: 'Yes, Abandon Session' }).click();
+  await expect(abandon).toBeHidden();
+  await expect.poll(async () => (await readSessionExecutions(athlete))[0]?.state).toBe('abandoned');
+  const retainedEntryCount = await inspectAthlete(athlete, async db => {
+    const entries = await getDocs(collection(db, 'users', athlete.userId, 'session_executions', active.executionId, 'entries'));
+    return entries.size;
+  });
+  expect(retainedEntryCount).toBe(1);
+});
 
 test('the live session clock is wall-clock correct after a background-style time jump (#908)', async ({ page }) => {
   const athlete = await provisionAthlete();

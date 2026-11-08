@@ -1,6 +1,6 @@
 import { useEffect, useRef, type RefObject } from 'react';
 
-const FOCUSABLE = 'button:not([disabled]), a[href], input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+const FOCUSABLE = 'button:not([disabled]), a[href], input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), details > summary:first-of-type, [tabindex]:not([tabindex="-1"])';
 let activeScrollLocks = 0;
 let previousBodyOverflow = '';
 let previousRootOverflow = '';
@@ -111,7 +111,9 @@ export function useOverlayDialog(
             }
             const first = items[0];
             const last = items[items.length - 1];
-            if (event.shiftKey && (document.activeElement === first || !panel.contains(document.activeElement))) {
+            const active = document.activeElement;
+            const beforeFirst = active && (active.compareDocumentPosition(first) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+            if (event.shiftKey && (active === first || !panel.contains(active) || beforeFirst)) {
                 event.preventDefault();
                 last.focus();
             } else if (!event.shiftKey && (document.activeElement === last || !panel.contains(document.activeElement))) {

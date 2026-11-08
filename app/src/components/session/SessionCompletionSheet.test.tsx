@@ -86,6 +86,7 @@ describe('SessionCompletionSheet', () => {
         expect(html).toContain('Not answered');
         expect(html).not.toContain('Selected:');
         expect(html).not.toContain('rpe-pill-btn selected');
+        expect(html).toMatch(/aria-pressed="false">1<\/button>/);
         expect(html).not.toMatch(/<option value="\d(\.\d+)?" selected/);
         expect(html).not.toContain('checked=""');
         expect(html).toContain('Unexpected fatigue during or after this session?');
@@ -315,7 +316,7 @@ describe('SessionCompletionSheet', () => {
         expect(html).not.toContain('Save as template');
     });
 
-    it('labels the completion sheet with the SessionExecution record by default (#496)', () => {
+    it('explains that session feedback is optional', () => {
         const html = renderToStaticMarkup(
             <SessionCompletionSheet
                 startedAt={new Date().toISOString()}
@@ -328,7 +329,7 @@ describe('SessionCompletionSheet', () => {
             />,
         );
 
-        expect(html).toContain('Finishing saves a SessionExecution record.');
+        expect(html).toContain('Add any feedback you want to save with your workout.');
         expect(html).not.toContain('AssessmentAttempt');
     });
 
