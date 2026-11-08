@@ -389,6 +389,9 @@ describe('SessionCompletionSheet', () => {
         );
 
         expect(html).toContain('Add any feedback you want to save with your workout.');
+        expect(html).toContain('aria-describedby="tissue-region-hint"');
+        expect(html).toContain('id="tissue-region-hint"');
+        expect(html).toContain('Select Add region before choosing another area to log multiple regions.');
         expect(html).not.toContain('AssessmentAttempt');
     });
 

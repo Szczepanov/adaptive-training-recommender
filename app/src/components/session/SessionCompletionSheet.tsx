@@ -59,6 +59,7 @@ interface SessionCompletionSheetProps {
     error?: string | null;
 }
 
+/** Modal completion and abandon confirmation sheet for in-progress workout sessions and assessments. */
 export const SessionCompletionSheet: React.FC<SessionCompletionSheetProps> = ({
     startedAt,
     elapsedSeconds,
@@ -246,6 +247,7 @@ export const SessionCompletionSheet: React.FC<SessionCompletionSheetProps> = ({
                                 <div className="tissue-inputs-row">
                                     <select
                                         id="tissue-region-select"
+                                        aria-describedby="tissue-region-hint"
                                         value={selectedRegion}
                                         onChange={e => setSelectedRegion(e.target.value as BodyRegion | '')}
                                         className="select-input"
@@ -274,11 +276,11 @@ export const SessionCompletionSheet: React.FC<SessionCompletionSheetProps> = ({
                                         </button>
                                     )}
                                 </div>
-                                {selectedRegion && (
-                                    <span className="helper-text">
-                                        Selected area will be saved when you finish, or select Add region to log another.
-                                    </span>
-                                )}
+                                <span id="tissue-region-hint" className="helper-text" role="status" aria-live="polite">
+                                    {selectedRegion
+                                        ? 'Selected area will be saved when you finish, or select Add region to log another.'
+                                        : 'Select Add region before choosing another area to log multiple regions.'}
+                                </span>
                                 {tissueFeedback.length > 0 && (
                                     <ul className="tissue-feedback-list">
                                         {tissueFeedback.map(item => (

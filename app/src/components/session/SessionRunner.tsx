@@ -591,9 +591,10 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
     useEffect(() => {
         if (!focusNextStep) return;
         setFocusNextStep(false);
+        if (showSwapModal || showCompletionSheet || showSaveTemplateModal) return;
         activeHeadingRef.current?.focus();
         activeHeadingRef.current?.scrollIntoView?.({ behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
-    }, [focusNextStep, runner.activeBlockIndex, runner.activeStepIndex]);
+    }, [focusNextStep, runner.activeBlockIndex, runner.activeStepIndex, showCompletionSheet, showSaveTemplateModal, showSwapModal]);
 
     // A choice-driven end_session (D-MCHOICE) routes straight to the completion sheet
     // rather than requiring the athlete to step through every now-optional block.

@@ -21,6 +21,7 @@ interface ExerciseSwapModalProps {
     onClose: () => void;
 }
 
+/** Modal dialog for substituting an active session step with a catalog or custom free-text exercise. */
 export const ExerciseSwapModal: React.FC<ExerciseSwapModalProps> = ({
     step,
     onSwap,

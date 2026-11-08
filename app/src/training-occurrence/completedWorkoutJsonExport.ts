@@ -230,6 +230,7 @@ function exportPrescription(target: PrescribedStepTarget): ExportedPrescription 
     };
 }
 
+/** Projects a structured session step and its logged sets into the exported exercise summary. */
 function exportExercise(step: StructuredStepDetail): ExportedExercise {
     const sets = step.sets.map(exportSet);
     const work = sets.filter(set => !set.isWarmup);
@@ -272,6 +273,7 @@ function workoutTitle(view: CompletedWorkoutView): string {
     return view.structured?.title ?? view.garmin?.type.replaceAll('_', ' ') ?? 'Workout';
 }
 
+/** Builds a portable JSON export record for a completed workout occurrence. */
 export function exportCompletedWorkoutToJson(view: CompletedWorkoutView, exportedAt: string): CompletedWorkoutExport {
     const exercises = view.structured ? view.structured.steps.map(exportExercise) : [];
     const duration = resolveCompletedWorkoutDuration(view);

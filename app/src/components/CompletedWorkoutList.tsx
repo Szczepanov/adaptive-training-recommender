@@ -339,6 +339,7 @@ function ProvenanceDisclosure({ workout, onUnlinkSource }: { workout: CompletedW
   );
 }
 
+/** Renders reconciled completed workouts with source badges, structured set comparisons, and provider telemetry. */
 export function CompletedWorkoutList({ workouts, exportWindow, windowSweep, onReclassify, onUnlinkSource, onLinkSources, userId, activityOverrides, onDetailsFetched }: CompletedWorkoutListProps) {
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
