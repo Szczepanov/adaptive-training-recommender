@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { deriveTrialObservationRevisions } from './assessmentDerivation';
 import { reduceAssessmentTrials } from './assessmentReducers';
-import { assertValidAssessmentTrial } from './assessmentTrials';
+import { assertValidAssessmentTrial, readableAssessmentTrialSubset } from './assessmentTrials';
 import { buildComparisonSeries } from './comparability';
 import { makeTrial, trialAttempt } from './fixtures/assessmentTrialFixtures';
 import { buildOpenBarAnalysis } from './fixtures/openBarAnalysisFixtures';
@@ -187,5 +187,15 @@ describe('fixed-load write-path guards owned by TypeScript (issue #1201)', () =>
         expect(() => assertFixedLoadObservationEvidence(revision, { ...source, values: { ...source.values, successful: false } })).toThrow(/eligible source trial/);
         expect(() => assertFixedLoadObservationEvidence(revision, { ...source, values: { ...source.values, load_kg: 70 } })).toThrow(/eligible source trial/);
         expect(() => assertFixedLoadObservationEvidence(revision, { ...source, context: { ...context, equipment_setup_id: 'bench-b' } })).toThrow(/context equipment_setup_id/);
+    });
+});
+
+describe('readableAssessmentTrialSubset with fixed-load context (#1202)', () => {
+    it('returns nothing when individually valid trials disagree on the locked context', () => {
+        const wl = trial(1, 0.8, { sourceRef: `wl-analysis-csv:sha256:${'a'.repeat(64)}`, device: { provider: 'WL Analysis' }, context: { ...context, measurement_method_id: 'wl-analysis-csv-v2', wl_parser_version: 'wl-analysis-csv-v2' } });
+        const manual = trial(2, 0.9);
+        const attemptId = manual.assessmentAttemptId;
+        expect(readableAssessmentTrialSubset([wl, manual], protocol, attemptId)).toEqual({ trials: [], unreadableCount: 2 });
+        expect(readableAssessmentTrialSubset([manual, trial(3, 0.85)], protocol, attemptId)).toEqual({ trials: [manual, trial(3, 0.85)], unreadableCount: 0 });
     });
 });

@@ -25,6 +25,8 @@ export interface HealthAnomalyLoadResult {
   userId: string;
   date: string;
   status: HealthAnomalyLoadStatus;
+  /** #1202: stored revisions for the date that could not be read. */
+  unreadableCount?: number;
 }
 
 /**
@@ -39,4 +41,33 @@ export function selectHealthAnomalyLoadState(
   result: HealthAnomalyLoadResult | null,
 ): 'loading' | HealthAnomalyLoadStatus {
   return result && result.userId === userId && result.date === date ? result.status : 'loading';
+}
+
+/**
+ * #1202: how many stored revisions for the active user/date could not be read, when that
+ * makes the shown revision possibly not the latest. Zero when everything was readable, when
+ * the result belongs to another target, or when the shown revision is this session's own live
+ * one. A non-zero result means the panel says so and withholds follow-up outcomes.
+ */
+export function selectHealthAnomalyUncertainLatestCount(
+  userId: string,
+  date: string,
+  result: HealthAnomalyLoadResult | null,
+  shown: HealthAnomalyAssessmentRevision | null,
+  live: HealthAnomalyAssessmentRevision | null | undefined,
+): number {
+  if (!result || result.userId !== userId || result.date !== date) return 0;
+  const count = result.unreadableCount ?? 0;
+  return count > 0 && shown !== null && shown !== live ? count : 0;
+}
+
+/**
+ * #1202: the load status for a diagnostics read. Nothing readable but something stored is an
+ * error, not "missing": a tampered record must not read as "no assessment yet".
+ */
+export function healthAnomalyLoadStatusFor(
+  revision: HealthAnomalyAssessmentRevision | null,
+  unreadableCount: number,
+): HealthAnomalyLoadStatus {
+  return revision ? 'ready' : unreadableCount > 0 ? 'error' : 'missing';
 }

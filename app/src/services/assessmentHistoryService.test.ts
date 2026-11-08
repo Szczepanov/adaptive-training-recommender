@@ -152,12 +152,12 @@ describe('AssessmentHistoryService', () => {
         };
 
         const mockTrialService = {
-            listTrialsForAttempt: vi.fn().mockResolvedValue([trial]),
+            listTrialsForAttemptWithDiagnostics: vi.fn().mockResolvedValue({ trials: [trial], unreadableCount: 0 }),
         } as unknown as AssessmentTrialService;
 
         const mockObservationService = {
             getHead: vi.fn().mockResolvedValue(head),
-            listRevisionsForObservation: vi.fn().mockResolvedValue([revision]),
+            listRevisionsForObservationWithDiagnostics: vi.fn().mockResolvedValue({ revisions: [revision], unreadableCount: 0 }),
         } as unknown as MetricObservationService;
 
         const mockProtocolService = {
@@ -177,8 +177,19 @@ describe('AssessmentHistoryService', () => {
         expect(detail).not.toBeNull();
         expect(detail?.trials).toHaveLength(1);
         expect(detail?.trials[0].id).toBe('trial-1');
-        expect(mockTrialService.listTrialsForAttempt).toHaveBeenCalledTimes(1);
-        expect(mockObservationService.listRevisionsForObservation).toHaveBeenCalledTimes(1);
+        expect(detail).toMatchObject({ unreadableTrialCount: 0, unreadableRevisionCount: 0 });
+        expect(detail?.metricRevisions[0]?.currentRevision).toEqual(revision);
+        expect(mockTrialService.listTrialsForAttemptWithDiagnostics).toHaveBeenCalledTimes(1);
+        expect(mockObservationService.listRevisionsForObservationWithDiagnostics).toHaveBeenCalledTimes(1);
+
+        // #1202: unreadable records are reported, and an older revision never stands in for an
+        // unreadable head.
+        vi.mocked(mockTrialService.listTrialsForAttemptWithDiagnostics).mockResolvedValueOnce({ trials: [trial as never], unreadableCount: 1 });
+        vi.mocked(mockObservationService.getHead).mockResolvedValueOnce({ ...head, headRevision: 2 });
+        vi.mocked(mockObservationService.listRevisionsForObservationWithDiagnostics).mockResolvedValueOnce({ revisions: [revision], unreadableCount: 1 });
+        const degraded = await service.loadAttemptDetail('user-123', attempt);
+        expect(degraded).toMatchObject({ unreadableTrialCount: 1, unreadableRevisionCount: 1, metricRevisions: [] });
+        expect(degraded?.trials).toHaveLength(1);
     });
 
     it('reads the provider lookback and refuses to substitute manual weight after a failed provider read (D8)', async () => {

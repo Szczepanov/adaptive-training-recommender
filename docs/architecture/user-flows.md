@@ -530,7 +530,9 @@ also remains available.
    - Clicking "Details" on an attempt row opens the attempt detail modal (`AssessmentAttemptDetail`), showing attempt
      metadata, locked comparison context, canonical benchmark observations (including revision history and same-day
      body-mass-relative sprint W/kg or relative 1RM under D8), and the complete raw trials table with superseded
-     trials clearly distinguished.
+     trials clearly distinguished. A stored trial or benchmark revision that cannot be read is skipped and counted
+     in a notice instead of failing the whole modal; an older revision never stands in for an unreadable head, so
+     that benchmark is left out (#1202). Capture, correction and the diagnostic export still fail closed.
    - The toolbar provides one-click normalized CSV export (`assessment-history.csv`, 24 canonical columns) and
      offline diagnostic evidence export (`assessment_diagnostic_export_v2`).
    - The athlete can explicitly choose **Review block evidence** to list eligible block/evaluation

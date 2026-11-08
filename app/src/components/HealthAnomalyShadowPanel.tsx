@@ -4,7 +4,7 @@ import type { HealthAnomalyAssessmentRevision } from '../derived/flags/illnessAn
 import { healthAnomalyAssessmentRepository } from '../services/healthAnomalyPersistence';
 import { configuredHealthAnomalyShadowPolicy } from '../services/healthAnomalyRuntime';
 import { HealthAnomalyFollowupCard } from './HealthAnomalyFollowupCard';
-import { selectHealthAnomalyLoadState, selectHealthAnomalyShadowRevision } from './healthAnomalyShadowView';
+import { healthAnomalyLoadStatusFor, selectHealthAnomalyLoadState, selectHealthAnomalyShadowRevision, selectHealthAnomalyUncertainLatestCount } from './healthAnomalyShadowView';
 import type { HealthAnomalyLoadResult } from './healthAnomalyShadowView';
 
 interface HealthAnomalyShadowPanelProps {
@@ -132,11 +132,11 @@ export function HealthAnomalyShadowPanel({ userId, decisionInput, liveRevision }
   useEffect(() => {
     if (!shadowEnabled) return;
     let cancelled = false;
-    healthAnomalyAssessmentRepository.getLatestForDate(userId, date)
-      .then(value => {
+    healthAnomalyAssessmentRepository.getLatestForDateWithDiagnostics(userId, date)
+      .then(({ revision, unreadableCount }) => {
         if (cancelled) return;
-        setPersistedRevision(value);
-        setLoadResult({ userId, date, status: value ? 'ready' : 'missing' });
+        setPersistedRevision(revision);
+        setLoadResult({ userId, date, status: healthAnomalyLoadStatusFor(revision, unreadableCount), unreadableCount });
       })
       .catch(() => {
         if (!cancelled) setLoadResult({ userId, date, status: 'error' });
@@ -151,11 +151,21 @@ export function HealthAnomalyShadowPanel({ userId, decisionInput, liveRevision }
   // from a superseded target is never rendered either.
   const loadState = selectHealthAnomalyLoadState(userId, date, loadResult);
   const revisionForDate = selectHealthAnomalyShadowRevision(userId, date, liveRevision, persistedRevision);
+  // #1202: with an unreadable stored revision the shown one may not be the latest, unless it
+  // is this session's own live revision. Follow-up outcomes are then withheld, so none is
+  // recorded against a possibly superseded revision.
+  const unreadableCount = selectHealthAnomalyUncertainLatestCount(userId, date, loadResult, revisionForDate, liveRevision);
+  const latestUncertain = unreadableCount > 0;
   if (revisionForDate) {
     return (
       <div className="data-view-container">
+        {latestUncertain && (
+          <p className="data-state-notice">
+            {unreadableCount} stored shadow assessment revision(s) for {date} could not be read. This may not be the latest one, so follow-up is unavailable.
+          </p>
+        )}
         <HealthAnomalyShadowTrace revision={revisionForDate} decisionInput={decisionInput} />
-        <HealthAnomalyFollowupCard userId={userId} date={date} currentRevision={revisionForDate} />
+        {!latestUncertain && <HealthAnomalyFollowupCard userId={userId} date={date} currentRevision={revisionForDate} />}
       </div>
     );
   }

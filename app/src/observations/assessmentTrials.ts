@@ -151,6 +151,64 @@ export function assertValidAssessmentTrialSet(
     if (trials.length > 0) assertFixedLoadComparisonContext(protocol, trials, trials[0].context);
 }
 
+/**
+ * #1202: the largest readable subset of an attempt's stored trials, for read-only views.
+ *
+ * A record that fails `assertValidAssessmentTrial`, belongs to another attempt or repeats an
+ * id is dropped, then any correction whose superseded trial was dropped (repeated until
+ * stable, since corrections chain). Every other trial of an ordinal that an unreadable record
+ * belongs to is dropped too, so an older trial never shows as current when its correction
+ * could not be read. The ordinal comes from the record's id (`assessmentTrialIdFor`), including
+ * `unreadableIds` for records the caller rejected before this check (for example a path
+ * mismatch); an id that does not follow that format cannot be attributed and is only counted.
+ * If the remaining set still fails the set-level checks (for example inconsistent fixed-load
+ * context, where no single record is to blame), nothing is returned. The result always passes
+ * `assertValidAssessmentTrialSet`; `unreadableCount` is every input record not returned.
+ *
+ * Write and derivation paths must not use this: dropping a stored trial there would change
+ * benchmark evidence. They keep the throwing `assertValidAssessmentTrialSet`.
+ */
+export function readableAssessmentTrialSubset(
+    trials: readonly AssessmentTrial[],
+    protocol: MeasurementProtocol,
+    assessmentAttemptId: string,
+    unreadableIds: readonly string[] = [],
+): { trials: AssessmentTrial[]; unreadableCount: number } {
+    const ids = new Set<string>();
+    const rejectedIds = [...unreadableIds];
+    let kept = trials.filter(trial => {
+        try {
+            assertValidAssessmentTrial(trial, protocol);
+        } catch {
+            rejectedIds.push(trial.id);
+            return false;
+        }
+        if (trial.assessmentAttemptId !== assessmentAttemptId || ids.has(trial.id)) {
+            rejectedIds.push(trial.id);
+            return false;
+        }
+        ids.add(trial.id);
+        return true;
+    });
+    for (let changed = true; changed;) {
+        const keptIds = new Set(kept.map(trial => trial.id));
+        const next = kept.filter(trial => trial.supersedesTrialId === undefined || keptIds.has(trial.supersedesTrialId));
+        changed = next.length !== kept.length;
+        kept = next;
+    }
+    const uncertainOrdinals = new Set(rejectedIds.flatMap(id => {
+        const match = typeof id === 'string' ? /^trial-(\d+)(?:-c\d+)?$/.exec(id) : null;
+        return match ? [Number(match[1])] : [];
+    }));
+    kept = kept.filter(trial => !uncertainOrdinals.has(trial.ordinal));
+    try {
+        assertValidAssessmentTrialSet(kept, protocol, assessmentAttemptId);
+    } catch {
+        return { trials: [], unreadableCount: trials.length };
+    }
+    return { trials: kept, unreadableCount: trials.length - kept.length };
+}
+
 /** The current (latest unsuperseded) trial for each ordinal, in ordinal order. */
 export function resolveActiveAssessmentTrials(
     trials: readonly AssessmentTrial[],

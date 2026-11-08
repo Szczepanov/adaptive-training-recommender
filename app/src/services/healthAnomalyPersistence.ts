@@ -247,6 +247,31 @@ export class HealthAnomalyAssessmentRepository {
         });
     }
 
+    /**
+     * #1202: read-only variant of `getLatestForDate` for display. An unparseable revision is
+     * skipped and counted instead of making the date unreadable. When `unreadableCount > 0`
+     * the returned revision is only the latest readable one, which may not be the latest
+     * stored, so callers must say so. `HealthAnomalyService` and the follow-up lookup keep
+     * `getLatestForDate`, which fails closed, because they chain episodes from it.
+     */
+    async getLatestForDateWithDiagnostics(userId: string, date: string):
+        Promise<{ revision: HealthAnomalyAssessmentRevision | null; unreadableCount: number }> {
+        const ref = collection(getDb(), 'users', userId, 'health_anomaly_assessments', date, 'revisions');
+        const result = await getDocs(ref);
+        const revisions: HealthAnomalyAssessmentRevision[] = [];
+        let unreadableCount = 0;
+        for (const item of result.docs) {
+            try {
+                revisions.push(parseHealthAnomalyAssessmentRevision(item.data(), userId, date));
+            } catch {
+                unreadableCount++;
+            }
+        }
+        revisions.sort((left, right) => right.computedAt.localeCompare(left.computedAt)
+            || right.revisionId.localeCompare(left.revisionId));
+        return { revision: revisions[0] ?? null, unreadableCount };
+    }
+
     async getLatestForDate(userId: string, date: string): Promise<HealthAnomalyAssessmentRevision | null> {
         const ref = collection(getDb(), 'users', userId, 'health_anomaly_assessments', date, 'revisions');
         const result = await getDocs(ref);

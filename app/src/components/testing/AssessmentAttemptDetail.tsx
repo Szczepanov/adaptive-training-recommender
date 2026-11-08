@@ -93,6 +93,16 @@ export const AssessmentAttemptDetail: React.FC<AssessmentAttemptDetailProps> = (
                 {loading && <p>Loading attempt details, raw trials and revision history…</p>}
                 {error && <p className="testing-error" role="alert">{error}</p>}
 
+                {detail && (detail.unreadableTrialCount > 0 || detail.unreadableRevisionCount > 0) && (
+                    <p className="testing-error" role="status">
+                        Some stored records for this attempt could not be read and are not shown:
+                        {' '}{[
+                            detail.unreadableTrialCount > 0 && `${detail.unreadableTrialCount} trial record(s)`,
+                            detail.unreadableRevisionCount > 0 && `${detail.unreadableRevisionCount} benchmark revision(s)`,
+                        ].filter(Boolean).join(', ')}.
+                    </p>
+                )}
+
                 {detail && (
                     <div className="attempt-detail-body">
                         <section className="attempt-metadata-grid">
