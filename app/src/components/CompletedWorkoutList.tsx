@@ -13,7 +13,7 @@ import type { StepComparison } from '../sessions/performedComparison';
 import { manualLinkCandidatesFor, type CompletedWorkoutView, type ManualLinkCandidate, type ReconciliationSweepStatus } from '../training-occurrence/completedWorkoutView';
 import type { PerformedRestDetail, PrescribedStepTarget } from '../training-occurrence/structuredSetDetail';
 import { sourceKeyForRef } from '../training-occurrence/sourceIdentity';
-import { copyActivityJsonToClipboard } from '../utils/activityJsonExport';
+import { formatCompletedWorkoutJson, resolveCompletedWorkoutDuration } from '../training-occurrence/completedWorkoutJsonExport';
 import {
   formatRunningPower,
   formatTrainingEffectDescriptor,
@@ -357,9 +357,8 @@ export function CompletedWorkoutList({ workouts, exportWindow, windowSweep, onRe
   }
 
   const handleCopy = async (workout: CompletedWorkoutView) => {
-    if (!workout.garmin) return;
     try {
-      await copyActivityJsonToClipboard(workout.garmin);
+      await navigator.clipboard.writeText(formatCompletedWorkoutJson(workout, new Date().toISOString()));
       setCopiedId(workout.performedOccurrenceId);
       window.setTimeout(() => setCopiedId(curr => (curr === workout.performedOccurrenceId ? null : curr)), 2000);
     } catch (err) {
@@ -373,9 +372,7 @@ export function CompletedWorkoutList({ workouts, exportWindow, windowSweep, onRe
     <div className="activity-telemetry-list">
       {workouts.map(workout => {
         const startTime = formatLocalTime(workout.startedAt);
-        const durationMin = workout.startedAt && workout.endedAt
-          ? Math.round((Date.parse(workout.endedAt) - Date.parse(workout.startedAt)) / 60000)
-          : workout.garmin?.durationMin ?? null;
+        const durationMin = resolveCompletedWorkoutDuration(workout)?.minutes ?? null;
 
         return (
           <article className="activity-telemetry-card" key={workout.performedOccurrenceId}>
@@ -391,10 +388,11 @@ export function CompletedWorkoutList({ workouts, exportWindow, windowSweep, onRe
               </div>
               <div className="activity-header-right">
                 <div className="activity-card-actions">
-                  {workout.garmin && (
+                  {(workout.structured || workout.garmin) && (
                     <button
                       type="button"
                       className="btn-copy-activity-json"
+                      title="Copy what was performed: exercises, sets, weights, RPE, rest and actual duration"
                       onClick={() => handleCopy(workout)}
                     >
                       {copiedId === workout.performedOccurrenceId ? '✓ Copied JSON' : '📋 Copy JSON'}

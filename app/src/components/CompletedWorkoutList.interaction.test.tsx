@@ -119,6 +119,30 @@ describe('CompletedWorkoutList click wiring (#895 criterion 12)', () => {
         expect(onLinkSources).toHaveBeenCalledWith('pto-1', 'pto-garmin');
     });
 
+    it('"Copy JSON" on a structured-only workout copies the performed export, not Garmin telemetry', async () => {
+        const writeText = vi.fn().mockResolvedValue(undefined);
+        vi.stubGlobal('navigator', { clipboard: { writeText } });
+        try {
+            const withExecution: CompletedWorkoutView = {
+                ...structuredOnly,
+                structured: {
+                    ...structuredOnly.structured!,
+                    execution: { executionId: 'exec-1', state: 'completed', startedAt: '2026-08-26T06:50:00.000Z', completedAt: '2026-08-26T07:35:00.000Z', sessionRpe: 8 },
+                },
+            };
+            const copy = collectButtons(<CompletedWorkoutList workouts={[withExecution]} />).filter(b => b.text.includes('Copy JSON'));
+            expect(copy).toHaveLength(1);
+            await copy[0].onClick();
+            expect(writeText).toHaveBeenCalledTimes(1);
+            const payload = JSON.parse(writeText.mock.calls[0][0] as string);
+            expect(payload.schemaVersion).toBe('completed_workout_v1');
+            expect(payload.duration).toMatchObject({ seconds: 2700, source: 'app_execution' });
+            expect(payload.session.sessionRpe).toBe(8);
+        } finally {
+            vi.unstubAllGlobals();
+        }
+    });
+
     it('renders no link or unlink control when the handlers are omitted', () => {
         const buttons = collectButtons(<CompletedWorkoutList workouts={[structuredOnly, matched, garminOnly]} />);
         expect(buttons.some(b => b.text.startsWith('Link Garmin'))).toBe(false);
