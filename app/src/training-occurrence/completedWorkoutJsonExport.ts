@@ -75,8 +75,12 @@ export interface ExportedExercise {
     performed: {
         workSets: number;
         warmupSets: number;
+        /** Work-set repetitions only (warm-ups are reported in `warmupReps` when present). */
         totalReps: number;
+        warmupReps?: number;
         tonnageKg: number;
+        totalDurationSeconds?: number;
+        totalDistanceMeters?: number;
         sets: ExportedPerformedSet[];
     };
 }
@@ -103,8 +107,12 @@ export interface CompletedWorkoutExport {
     summary?: {
         exercises: number;
         workSets: number;
+        /** Work-set repetitions only (warm-ups are reported in `warmupReps` when present). */
         totalReps: number;
+        warmupReps?: number;
         tonnageKg: number;
+        totalDurationSeconds?: number;
+        totalDistanceMeters?: number;
         totalPerformedRestSeconds: number;
     };
     /** `not_recorded` means no rest events exist, not zero rest; `unavailable` means unknown. */
@@ -225,6 +233,10 @@ function exportPrescription(target: PrescribedStepTarget): ExportedPrescription 
 function exportExercise(step: StructuredStepDetail): ExportedExercise {
     const sets = step.sets.map(exportSet);
     const work = sets.filter(set => !set.isWarmup);
+    const warmup = sets.filter(set => set.isWarmup);
+    const warmupReps = warmup.reduce((sum, set) => sum + (set.reps ?? 0), 0);
+    const totalDurationSeconds = work.reduce((sum, set) => sum + (set.durationSeconds ?? 0), 0);
+    const totalDistanceMeters = work.reduce((sum, set) => sum + (set.distanceMeters ?? 0), 0);
     return {
         stepId: step.stepId,
         name: step.title,
@@ -233,9 +245,12 @@ function exportExercise(step: StructuredStepDetail): ExportedExercise {
         prescribed: exportPrescription(step.prescribed),
         performed: {
             workSets: work.length,
-            warmupSets: sets.length - work.length,
+            warmupSets: warmup.length,
             totalReps: work.reduce((sum, set) => sum + (set.reps ?? 0), 0),
+            ...(warmupReps > 0 ? { warmupReps } : {}),
             tonnageKg: work.reduce((sum, set) => sum + (set.reps ?? 0) * (set.weightKg ?? 0), 0),
+            ...(totalDurationSeconds > 0 ? { totalDurationSeconds } : {}),
+            ...(totalDistanceMeters > 0 ? { totalDistanceMeters } : {}),
             sets,
         },
     };
@@ -273,19 +288,27 @@ export function exportCompletedWorkoutToJson(view: CompletedWorkoutView, exporte
         ...(duration ? { duration } : {}),
         ...(execution ? { session: exportSession(execution) } : {}),
         ...(view.structured
-            ? {
-                summary: {
-                    exercises: exercises.filter(exercise => exercise.performed.sets.length > 0).length,
-                    workSets: exercises.reduce((sum, exercise) => sum + exercise.performed.workSets, 0),
-                    totalReps: exercises.reduce((sum, exercise) => sum + exercise.performed.totalReps, 0),
-                    tonnageKg: exercises.reduce((sum, exercise) => sum + exercise.performed.tonnageKg, 0),
-                    totalPerformedRestSeconds: allSets.reduce(
-                        (sum, set) => sum + (set.rest && set.rest.endReason !== 'session_ended' ? set.rest.actualSeconds : 0),
-                        0,
-                    ),
-                },
-                performedRest: view.structured.performedRest,
-            }
+            ? (() => {
+                const warmupReps = exercises.reduce((sum, exercise) => sum + (exercise.performed.warmupReps ?? 0), 0);
+                const totalDurationSeconds = exercises.reduce((sum, exercise) => sum + (exercise.performed.totalDurationSeconds ?? 0), 0);
+                const totalDistanceMeters = exercises.reduce((sum, exercise) => sum + (exercise.performed.totalDistanceMeters ?? 0), 0);
+                return {
+                    summary: {
+                        exercises: exercises.filter(exercise => exercise.performed.sets.length > 0).length,
+                        workSets: exercises.reduce((sum, exercise) => sum + exercise.performed.workSets, 0),
+                        totalReps: exercises.reduce((sum, exercise) => sum + exercise.performed.totalReps, 0),
+                        ...(warmupReps > 0 ? { warmupReps } : {}),
+                        tonnageKg: exercises.reduce((sum, exercise) => sum + exercise.performed.tonnageKg, 0),
+                        ...(totalDurationSeconds > 0 ? { totalDurationSeconds } : {}),
+                        ...(totalDistanceMeters > 0 ? { totalDistanceMeters } : {}),
+                        totalPerformedRestSeconds: allSets.reduce(
+                            (sum, set) => sum + (set.rest && set.rest.endReason !== 'session_ended' ? set.rest.actualSeconds : 0),
+                            0,
+                        ),
+                    },
+                    performedRest: view.structured.performedRest,
+                };
+            })()
             : {}),
         exercises,
         ...(view.garmin ? { providerActivity: view.garmin } : {}),

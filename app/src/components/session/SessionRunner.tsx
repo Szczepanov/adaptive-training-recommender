@@ -1343,6 +1343,7 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
             {showCompletionSheet && (
                 <SessionCompletionSheet
                     startedAt={runner.execution.startedAt}
+                    elapsedSeconds={runner.elapsedSeconds}
                     totalSets={entries.length}
                     steps={stepSummaries}
                     saving={isFinishing}

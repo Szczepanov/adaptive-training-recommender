@@ -39,6 +39,8 @@ export type SessionCompletionRecordKind = 'SessionExecution' | 'AssessmentAttemp
 
 interface SessionCompletionSheetProps {
     startedAt: string;
+    /** Optional live wall-clock elapsed seconds from the session runner; falls back to `startedAt` delta on mount. */
+    elapsedSeconds?: number;
     totalSets: number;
     steps: SessionStepSummary[];
     onComplete: (payload: SessionCompletionPayload) => Promise<void>;
@@ -59,6 +61,7 @@ interface SessionCompletionSheetProps {
 
 export const SessionCompletionSheet: React.FC<SessionCompletionSheetProps> = ({
     startedAt,
+    elapsedSeconds,
     totalSets,
     steps,
     onComplete,
@@ -88,7 +91,10 @@ export const SessionCompletionSheet: React.FC<SessionCompletionSheetProps> = ({
     useEffect(() => {
         titleRef.current?.focus();
     }, [showAbandonConfirm]);
-    const [elapsedMinutes] = useState(() => Math.max(1, Math.round((Date.now() - Date.parse(startedAt)) / 60000)));
+    const [fallbackElapsedMinutes] = useState(() => Math.max(1, Math.round((Date.now() - Date.parse(startedAt)) / 60000)));
+    const elapsedMinutes = elapsedSeconds !== undefined
+        ? Math.max(1, Math.round(elapsedSeconds / 60))
+        : fallbackElapsedMinutes;
 
     // ⚡ Bolt: Memoize step array filters to prevent redundant O(N) operations on every form state change (e.g. typing in notes)
     const missingRequiredSteps = useMemo(() => steps.filter(s => s.isPlanned && !s.optional && !s.isComplete), [steps]);
@@ -268,6 +274,11 @@ export const SessionCompletionSheet: React.FC<SessionCompletionSheetProps> = ({
                                         </button>
                                     )}
                                 </div>
+                                {selectedRegion && (
+                                    <span className="helper-text">
+                                        Selected area will be saved when you finish, or select Add region to log another.
+                                    </span>
+                                )}
                                 {tissueFeedback.length > 0 && (
                                     <ul className="tissue-feedback-list">
                                         {tissueFeedback.map(item => (

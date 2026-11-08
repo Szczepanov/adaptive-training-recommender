@@ -79,7 +79,7 @@ describe('exportCompletedWorkoutToJson', () => {
             name: 'Back Squat',
             exercise: { kind: 'catalog', exerciseId: 'barbell_back_squat' },
             prescribed: { sets: 3, reps: { min: 4, max: 6 }, load: { kind: 'mass', kg: 120 }, targetRpe: 8, restSeconds: 180 },
-            performed: { workSets: 2, warmupSets: 1, totalReps: 9, tonnageKg: 1080 },
+            performed: { workSets: 2, warmupSets: 1, totalReps: 9, warmupReps: 5, tonnageKg: 1080 },
         });
         expect(squat.performed.sets).toEqual([
             { setNumber: 1, isWarmup: true, completedAt: '2026-08-26T06:55:00.000Z', kind: 'repetition', reps: 5, weightKg: 60 },
@@ -95,9 +95,24 @@ describe('exportCompletedWorkoutToJson', () => {
                 rest: { actualSeconds: 1500, prescribedSeconds: 180, endReason: 'session_ended' },
             },
         ]);
+        expect(result.exercises[1]!.performed).toMatchObject({
+            workSets: 1,
+            warmupSets: 0,
+            totalReps: 0,
+            tonnageKg: 0,
+            totalDurationSeconds: 45,
+        });
         expect(result.exercises[1]!.performed.sets[0]).toMatchObject({ kind: 'duration', durationSeconds: 45 });
         // Trailing session_ended rest stays on the set row with its endReason, but never inflates totalPerformedRestSeconds.
-        expect(result.summary).toEqual({ exercises: 2, workSets: 3, totalReps: 9, tonnageKg: 1080, totalPerformedRestSeconds: 205 });
+        expect(result.summary).toEqual({
+            exercises: 2,
+            workSets: 3,
+            totalReps: 9,
+            warmupReps: 5,
+            tonnageKg: 1080,
+            totalDurationSeconds: 45,
+            totalPerformedRestSeconds: 205,
+        });
         expect(result.performedRest).toBe('recorded');
     });
 

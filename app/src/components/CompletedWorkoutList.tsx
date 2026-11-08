@@ -371,8 +371,11 @@ export function CompletedWorkoutList({ workouts, exportWindow, windowSweep, onRe
     {exportWindow && <DiagnosticsExportButton range={exportWindow} result={{ status: 'available', workouts }} sweep={windowSweep} />}
     <div className="activity-telemetry-list">
       {workouts.map(workout => {
-        const startTime = formatLocalTime(workout.startedAt);
-        const durationMin = resolveCompletedWorkoutDuration(workout)?.minutes ?? null;
+        const duration = resolveCompletedWorkoutDuration(workout);
+        const startTime = formatLocalTime(
+          duration?.startedAt ?? workout.structured?.execution?.startedAt ?? workout.startedAt ?? workout.garmin?.startedAt,
+        );
+        const durationMin = duration?.minutes ?? null;
 
         return (
           <article className="activity-telemetry-card" key={workout.performedOccurrenceId}>
