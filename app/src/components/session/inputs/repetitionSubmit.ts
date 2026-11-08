@@ -79,11 +79,32 @@ export async function runSingleFlight(guard: SingleFlightGuard, work: () => Prom
     }
 }
 
-export interface SelectableField { focus(): void; select(): void }
+export interface SelectableField {
+    focus(): void;
+    select(): void;
+    readonly ownerDocument?: { readonly activeElement: Element | null; readonly body: HTMLElement | null } | null;
+}
 
 /** Focuses a field and selects its content so the next weight overwrites the previous one. */
 export function focusAndSelect(field: SelectableField | null | undefined): void {
     if (!field) return;
     field.focus();
     field.select();
+}
+
+/**
+ * Post-write refocus for the next set. A set write can settle after the user has already moved
+ * on (opened Abandon/Finish, a dialog, another control); taking focus back then would yank it
+ * out of that dialog or off the control the dialog restored it to. So focus is reclaimed only
+ * while it is still inside `container` or unowned (the document body / nothing).
+ */
+export function refocusIfStillOwned(
+    field: SelectableField | null | undefined,
+    container: Pick<Node, 'contains'> | null | undefined,
+): void {
+    if (!field) return;
+    const doc = field.ownerDocument;
+    const active = doc?.activeElement ?? null;
+    const unowned = !doc || active === null || active === doc.body;
+    if (unowned || container?.contains(active)) focusAndSelect(field);
 }

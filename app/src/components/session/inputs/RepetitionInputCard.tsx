@@ -3,6 +3,7 @@ import type { SessionStep, RepetitionEntryPayload } from '../../../sessions/mode
 import {
     buildRepetitionPayload,
     focusAndSelect,
+    refocusIfStillOwned,
     runSingleFlight,
     type GaugeScaleType,
 } from './repetitionSubmit';
@@ -45,6 +46,7 @@ export const RepetitionInputCard: React.FC<RepetitionInputCardProps> = ({
             : 'e.g. 7';
 
     const weightRef = useRef<HTMLInputElement>(null);
+    const formRef = useRef<HTMLFormElement>(null);
     // React state is not synchronous enough to guard two submit events in the same tick. The ref
     // serializes writes so two rapid Enter/click events cannot receive the same persisted setIndex.
     const submitInFlightRef = useRef(false);
@@ -74,8 +76,9 @@ export const RepetitionInputCard: React.FC<RepetitionInputCardProps> = ({
                 setGaugeVal('');
                 setTechnicalNote('');
 
-                // Refocus weight input for next set.
-                focusAndSelect(weightRef.current);
+                // Refocus weight input for next set, unless the user moved focus elsewhere
+                // (e.g. into the Abandon/Finish dialog) while the write was in flight.
+                refocusIfStillOwned(weightRef.current, formRef.current);
             } finally {
                 setIsSubmitting(false);
             }
@@ -83,7 +86,7 @@ export const RepetitionInputCard: React.FC<RepetitionInputCardProps> = ({
     };
 
     return (
-        <form className="repetition-input-card" onSubmit={handleSubmit}>
+        <form ref={formRef} className="repetition-input-card" onSubmit={handleSubmit}>
             {step.laterality === 'per_side' && (
                 <div className="unilateral-cue-banner">
                     <span>💡 <strong>Unilateral Movement</strong>: Perform prescribed reps on Left, then repeat on Right.</span>
