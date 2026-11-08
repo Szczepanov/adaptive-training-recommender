@@ -95,7 +95,7 @@ export const AssessmentAttemptDetail: React.FC<AssessmentAttemptDetailProps> = (
 
                 {detail && (detail.unreadableTrialCount > 0 || detail.unreadableRevisionCount > 0) && (
                     <p className="testing-error" role="status">
-                        Some stored records for this attempt could not be read and are not shown:
+                        Some stored records for this attempt are not shown because they, or records they depend on, could not be read:
                         {' '}{[
                             detail.unreadableTrialCount > 0 && `${detail.unreadableTrialCount} trial record(s)`,
                             detail.unreadableRevisionCount > 0 && `${detail.unreadableRevisionCount} benchmark revision(s)`,

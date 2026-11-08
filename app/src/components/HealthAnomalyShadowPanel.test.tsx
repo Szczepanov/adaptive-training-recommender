@@ -148,21 +148,21 @@ describe('selectHealthAnomalyUncertainLatestCount (#1202)', () => {
     const unreadable = { userId: 'u1', date: '2026-08-21', status: 'ready' as const, unreadableCount: 2 };
 
     it('reports unreadable revisions when a persisted revision is shown', () => {
-        expect(selectHealthAnomalyUncertainLatestCount('u1', '2026-08-21', unreadable, revision, null)).toBe(2);
+        expect(selectHealthAnomalyUncertainLatestCount('u1', '2026-08-21', unreadable, revision)).toBe(2);
     });
 
     it('is zero when every revision was readable', () => {
-        expect(selectHealthAnomalyUncertainLatestCount('u1', '2026-08-21', { ...unreadable, unreadableCount: 0 }, revision, null)).toBe(0);
-        expect(selectHealthAnomalyUncertainLatestCount('u1', '2026-08-21', { userId: 'u1', date: '2026-08-21', status: 'ready' }, revision, null)).toBe(0);
+        expect(selectHealthAnomalyUncertainLatestCount('u1', '2026-08-21', { ...unreadable, unreadableCount: 0 }, revision)).toBe(0);
+        expect(selectHealthAnomalyUncertainLatestCount('u1', '2026-08-21', { userId: 'u1', date: '2026-08-21', status: 'ready' }, revision)).toBe(0);
     });
 
-    it('is zero when the shown revision is this session’s live one', () => {
-        expect(selectHealthAnomalyUncertainLatestCount('u1', '2026-08-21', unreadable, live, live)).toBe(0);
+    it('still reports when the shown revision is this session’s live one', () => {
+        expect(selectHealthAnomalyUncertainLatestCount('u1', '2026-08-21', unreadable, live)).toBe(2);
     });
 
     it('ignores a result for another user or date, and nothing shown', () => {
-        expect(selectHealthAnomalyUncertainLatestCount('u1', '2026-08-22', unreadable, revision, null)).toBe(0);
-        expect(selectHealthAnomalyUncertainLatestCount('u2', '2026-08-21', unreadable, revision, null)).toBe(0);
-        expect(selectHealthAnomalyUncertainLatestCount('u1', '2026-08-21', unreadable, null, null)).toBe(0);
+        expect(selectHealthAnomalyUncertainLatestCount('u1', '2026-08-22', unreadable, revision)).toBe(0);
+        expect(selectHealthAnomalyUncertainLatestCount('u2', '2026-08-21', unreadable, revision)).toBe(0);
+        expect(selectHealthAnomalyUncertainLatestCount('u1', '2026-08-21', unreadable, null)).toBe(0);
     });
 });

@@ -151,10 +151,9 @@ export function HealthAnomalyShadowPanel({ userId, decisionInput, liveRevision }
   // from a superseded target is never rendered either.
   const loadState = selectHealthAnomalyLoadState(userId, date, loadResult);
   const revisionForDate = selectHealthAnomalyShadowRevision(userId, date, liveRevision, persistedRevision);
-  // #1202: with an unreadable stored revision the shown one may not be the latest, unless it
-  // is this session's own live revision. Follow-up outcomes are then withheld, so none is
-  // recorded against a possibly superseded revision.
-  const unreadableCount = selectHealthAnomalyUncertainLatestCount(userId, date, loadResult, revisionForDate, liveRevision);
+  // #1202: with an unreadable stored revision the shown one may not be the latest. Follow-up
+  // outcomes are then withheld, so none is recorded against a possibly superseded revision.
+  const unreadableCount = selectHealthAnomalyUncertainLatestCount(userId, date, loadResult, revisionForDate);
   const latestUncertain = unreadableCount > 0;
   if (revisionForDate) {
     return (
