@@ -165,7 +165,7 @@ export const SessionCompletionSheet: React.FC<SessionCompletionSheetProps> = ({
                             <button
                                 type="button"
                                 className="btn-secondary"
-                                onClick={() => setShowAbandonConfirm(false)}
+                                onClick={dismiss}
                                 disabled={saving}
                             >
                                 Go Back
@@ -201,8 +201,8 @@ export const SessionCompletionSheet: React.FC<SessionCompletionSheetProps> = ({
                                 <details className="completion-warning-box">
                                     <summary><strong>Incomplete Required Steps ({missingRequiredSteps.length})</strong></summary>
                                     <ul>
-                                        {missingRequiredSteps.map(step => (
-                                            <li key={step.exerciseId ?? step.displayName}>
+                                        {missingRequiredSteps.map((step, idx) => (
+                                            <li key={step.exerciseId ?? `${step.exerciseIndex ?? idx}-${step.displayName}`}>
                                                 {step.displayName} ({step.loggedSetsCount}/{step.targetSets} sets)
                                             </li>
                                         ))}

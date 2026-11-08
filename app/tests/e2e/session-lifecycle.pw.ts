@@ -104,6 +104,14 @@ test('completion actions preserve the live workout until abandonment is confirme
   const openTemplate = sheet.getByRole('button', { name: 'Save as template' });
   const templateTitle = 'Completion wiring template';
 
+  const runnerAbandon = page.getByRole('button', { name: 'Abandon', exact: true });
+  await runnerAbandon.click();
+  await expect(abandon).toBeVisible();
+  await abandon.getByRole('button', { name: 'Go Back' }).click();
+  await expect(abandon).toBeHidden();
+  await expect(sheet).toBeHidden();
+  await expect(runnerAbandon).toBeFocused();
+
   await finish.click();
   await sheet.getByRole('button', { name: 'Keep Training' }).click();
   await expect(finish).toBeFocused();

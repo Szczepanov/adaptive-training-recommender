@@ -113,10 +113,11 @@ export function useOverlayDialog(
             const last = items[items.length - 1];
             const active = document.activeElement;
             const beforeFirst = active && (active.compareDocumentPosition(first) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+            const afterLast = active && (active.compareDocumentPosition(last) & Node.DOCUMENT_POSITION_PRECEDING) !== 0;
             if (event.shiftKey && (active === first || !panel.contains(active) || beforeFirst)) {
                 event.preventDefault();
                 last.focus();
-            } else if (!event.shiftKey && (document.activeElement === last || !panel.contains(document.activeElement))) {
+            } else if (!event.shiftKey && (active === last || !panel.contains(active) || afterLast)) {
                 event.preventDefault();
                 first.focus();
             }

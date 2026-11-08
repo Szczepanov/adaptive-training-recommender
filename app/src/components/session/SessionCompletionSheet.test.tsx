@@ -158,6 +158,51 @@ describe('SessionCompletionSheet', () => {
         expect(html).not.toContain('Plank (0/2 sets)');
     });
 
+    it('renders multiple incomplete required steps that share a displayName when exerciseId is null', () => {
+        const steps: SessionStepSummary[] = [
+            {
+                exerciseIndex: 0,
+                exerciseId: null,
+                displayName: 'Mobility Flow',
+                isPlanned: true,
+                optional: false,
+                targetSets: 1,
+                targetReps: null,
+                targetGauge: null,
+                loggedSetsCount: 0,
+                isComplete: false,
+            },
+            {
+                exerciseIndex: 1,
+                exerciseId: null,
+                displayName: 'Mobility Flow',
+                isPlanned: true,
+                optional: false,
+                targetSets: 2,
+                targetReps: null,
+                targetGauge: null,
+                loggedSetsCount: 1,
+                isComplete: false,
+            },
+        ];
+
+        const html = renderToStaticMarkup(
+            <SessionCompletionSheet
+                startedAt={new Date().toISOString()}
+                totalSets={1}
+                steps={steps}
+                onComplete={vi.fn()}
+                onAbandon={vi.fn()}
+                onCancel={vi.fn()}
+                saving={false}
+            />,
+        );
+
+        expect(html).toContain('Incomplete Required Steps (2)');
+        expect(html).toContain('Mobility Flow (0/1 sets)');
+        expect(html).toContain('Mobility Flow (1/2 sets)');
+    });
+
     it('does not render warning box when all required steps are completed', () => {
         const steps: SessionStepSummary[] = [
             {
