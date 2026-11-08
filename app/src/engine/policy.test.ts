@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { HISTORICAL_POLICY_VERSIONS, POLICY_VERSION, isHistoricalPolicyVersion } from './policy';
 
 describe('isHistoricalPolicyVersion', () => {
-        it('records the current transition and the previous live policies exactly once', () => {
+    it('records the current transition and the previous live policies exactly once', () => {
         expect(POLICY_VERSION).toBe('2026-11-map-lookup-coverage-overrides-v3');
         expect(HISTORICAL_POLICY_VERSIONS[0]).toBe('2026-11-map-lookup-coverage-overrides-v2');
         expect(
