@@ -60,8 +60,9 @@ test('V4 scale freezes the exact reduced definition and reports app dose modifie
   await expect(page.getByRole('region', { name: 'Imported plan session' })).toContainText('Do the reduced version');
   await page.getByRole('button', { name: 'Start Scaled spin', exact: true }).click();
   await page.getByRole('button', { name: 'Log hold', exact: true }).click();
-  await page.getByRole('button', { name: /Finish Session \(/ }).click();
-  await page.getByRole('button', { name: 'Finish & Save Session', exact: true }).click();
+  // The only required step is complete, so the runner opens the sheet automatically.
+  const completion = page.getByRole('dialog', { name: 'Complete Session' });
+  await completion.getByRole('button', { name: 'Finish & Save Session', exact: true }).click();
   const execution = await terminalExecution(athlete);
   const prescription = await readExecutionPrescription(athlete, execution.prescriptionHash!);
   const reducedHash = await hashSessionDefinition({ ...reduced, id: 'session-today', revision: 1 });

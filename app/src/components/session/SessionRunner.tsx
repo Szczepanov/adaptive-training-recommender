@@ -19,6 +19,7 @@ import { DurationInputCard } from './inputs/DurationInputCard';
 import { DistanceInputCard } from './inputs/DistanceInputCard';
 import { CheckoffInputCard } from './inputs/CheckoffInputCard';
 import { SessionCompletionSheet } from './SessionCompletionSheet';
+import { useOverlayDialog } from '../useOverlayDialog';
 
 import { sessionDefinitionService, type SessionDefinitionHeader } from '../../services/sessionDefinitionService';
 import { prepareUnplannedSessionLaunch } from '../../services/sessionAuthoringService';
@@ -292,6 +293,13 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
     const [saveTemplateSuccess, setSaveTemplateSuccess] = useState<string | null>(null);
     const [saveTemplateError, setSaveTemplateError] = useState<string | null>(null);
     const [isSavingTemplate, setIsSavingTemplate] = useState<boolean>(false);
+    const saveTemplatePanelRef = useRef<HTMLDivElement>(null);
+    useOverlayDialog(
+        showSaveTemplateModal,
+        saveTemplatePanelRef,
+        isSavingTemplate || saveTemplateSuccess ? undefined : () => setShowSaveTemplateModal(false),
+        'input',
+    );
     const [pendingAdvance, setPendingAdvance] = useState<{
         blockIndex: number;
         stepIndex: number;
@@ -1378,8 +1386,8 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
 
             {/* Save Custom Template Modal */}
             {showSaveTemplateModal && (
-                <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="save-template-modal-title">
-                    <div className="exercise-swap-modal save-template-modal">
+                <div className="modal-overlay overlay-viewport" role="dialog" aria-modal="true" aria-labelledby="save-template-modal-title">
+                    <div ref={saveTemplatePanelRef} className="exercise-swap-modal save-template-modal overlay-panel" tabIndex={-1}>
                         <div className="swap-modal-header">
                             <h3 id="save-template-modal-title">Save as Custom Template</h3>
                             <button
@@ -1407,7 +1415,6 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                                 value={customTemplateTitle}
                                 onChange={e => setCustomTemplateTitle(e.target.value)}
                                 placeholder="e.g. Upper-Body Absorption (Single Dumbbell)"
-                                autoFocus
                             />
                         </label>
                         <div className="swap-modal-actions">

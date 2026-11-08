@@ -86,6 +86,7 @@ describe('SessionCompletionSheet', () => {
         expect(html).toContain('Not answered');
         expect(html).not.toContain('Selected:');
         expect(html).not.toContain('rpe-pill-btn selected');
+        expect(html).toMatch(/aria-pressed="false">1<\/button>/);
         expect(html).not.toMatch(/<option value="\d(\.\d+)?" selected/);
         expect(html).not.toContain('checked=""');
         expect(html).toContain('Unexpected fatigue during or after this session?');
@@ -155,6 +156,51 @@ describe('SessionCompletionSheet', () => {
         expect(html).toContain('Incomplete Required Steps (1)');
         expect(html).toContain('Back Squat (1/3 sets)');
         expect(html).not.toContain('Plank (0/2 sets)');
+    });
+
+    it('renders multiple incomplete required steps that share a displayName when exerciseId is null', () => {
+        const steps: SessionStepSummary[] = [
+            {
+                exerciseIndex: 0,
+                exerciseId: null,
+                displayName: 'Mobility Flow',
+                isPlanned: true,
+                optional: false,
+                targetSets: 1,
+                targetReps: null,
+                targetGauge: null,
+                loggedSetsCount: 0,
+                isComplete: false,
+            },
+            {
+                exerciseIndex: 1,
+                exerciseId: null,
+                displayName: 'Mobility Flow',
+                isPlanned: true,
+                optional: false,
+                targetSets: 2,
+                targetReps: null,
+                targetGauge: null,
+                loggedSetsCount: 1,
+                isComplete: false,
+            },
+        ];
+
+        const html = renderToStaticMarkup(
+            <SessionCompletionSheet
+                startedAt={new Date().toISOString()}
+                totalSets={1}
+                steps={steps}
+                onComplete={vi.fn()}
+                onAbandon={vi.fn()}
+                onCancel={vi.fn()}
+                saving={false}
+            />,
+        );
+
+        expect(html).toContain('Incomplete Required Steps (2)');
+        expect(html).toContain('Mobility Flow (0/1 sets)');
+        expect(html).toContain('Mobility Flow (1/2 sets)');
     });
 
     it('does not render warning box when all required steps are completed', () => {
@@ -315,7 +361,7 @@ describe('SessionCompletionSheet', () => {
         expect(html).not.toContain('Save as template');
     });
 
-    it('labels the completion sheet with the SessionExecution record by default (#496)', () => {
+    it('explains that session feedback is optional', () => {
         const html = renderToStaticMarkup(
             <SessionCompletionSheet
                 startedAt={new Date().toISOString()}
@@ -328,7 +374,7 @@ describe('SessionCompletionSheet', () => {
             />,
         );
 
-        expect(html).toContain('Finishing saves a SessionExecution record.');
+        expect(html).toContain('Add any feedback you want to save with your workout.');
         expect(html).not.toContain('AssessmentAttempt');
     });
 

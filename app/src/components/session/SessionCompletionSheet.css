@@ -1,0 +1,225 @@
+.session-completion-modal-overlay {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgb(0 0 0 / 72%);
+}
+
+.session-completion-modal-overlay[hidden] {
+    display: none;
+}
+
+.session-completion-sheet.overlay-panel {
+    display: flex;
+    flex-direction: column;
+    width: min(100%, 36rem);
+    padding: 0;
+    overflow: hidden;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-card);
+    background: var(--bg-color);
+    color: var(--text-primary);
+}
+
+.completion-sheet-body,
+.abandon-confirmation-view {
+    display: grid;
+    gap: 1rem;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scroll-padding-block: 1rem;
+    padding: 1rem;
+}
+
+.completion-sheet-title,
+.completion-sheet-body p,
+.abandon-confirmation-view p {
+    margin: 0;
+}
+
+.completion-sheet-title {
+    font-size: 1.4rem;
+    line-height: 1.2;
+}
+
+.session-completion-sheet .form-group,
+.session-completion-sheet .tissue-inputs-row {
+    display: grid;
+    gap: 0.4rem;
+    margin: 0;
+    min-width: 0;
+}
+
+.session-completion-sheet .helper-text,
+.session-completion-sheet .completion-record-provenance,
+.session-completion-sheet .metric-label {
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+}
+
+.completion-field-heading,
+.completion-secondary-actions,
+.session-completion-sheet .tissue-feedback-list li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.25rem 0.75rem;
+}
+
+.completion-summary-metrics,
+.session-completion-sheet .rpe-button-row,
+.session-completion-sheet .fatigue-button-row,
+.session-completion-sheet .sheet-actions {
+    display: grid;
+    gap: 0.4rem;
+}
+
+.completion-summary-metrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.session-completion-sheet .metric-pill {
+    display: grid;
+    gap: 0.125rem;
+    padding: 0.5rem;
+    border-radius: var(--radius-control);
+    background: var(--surface-card);
+    text-align: center;
+}
+
+.session-completion-sheet .metric-value {
+    font-weight: 700;
+}
+
+.session-completion-sheet .rpe-button-row {
+    grid-template-columns: repeat(10, minmax(44px, 1fr));
+}
+
+.session-completion-sheet .fatigue-button-row {
+    grid-template-columns: repeat(2, minmax(44px, 5rem));
+}
+
+.session-completion-sheet :is(.rpe-pill-btn, .select-input, .notes-textarea) {
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-control);
+    background: var(--surface-card);
+    color: inherit;
+    font: inherit;
+}
+
+.session-completion-sheet :is(.select-input, .notes-textarea) {
+    padding: 0.5rem 0.65rem;
+}
+
+.session-completion-sheet .notes-textarea {
+    resize: vertical;
+}
+
+.session-completion-sheet .rpe-pill-btn.selected {
+    background: #1d4ed8;
+    border-color: #bfdbfe;
+    box-shadow: inset 0 0 0 1px #bfdbfe;
+    font-weight: 700;
+}
+
+.session-completion-sheet :is(button, select, textarea, summary):focus-visible {
+    outline: 2px solid #93c5fd;
+    outline-offset: 2px;
+}
+
+.completion-warning-box {
+    padding: 0.75rem;
+    border-radius: var(--radius-control);
+    background: var(--tier-yellow-bg);
+    color: #fef3c7;
+    overflow-wrap: anywhere;
+}
+
+.completion-warning-box ul {
+    margin: 0.25rem 0 0;
+    padding-inline-start: 1.25rem;
+}
+
+.completion-warning-box summary {
+    display: list-item;
+    min-height: 44px;
+    align-content: center;
+    cursor: pointer;
+}
+
+.session-completion-sheet .tissue-feedback-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.completion-secondary-actions,
+.completion-footer {
+    border-top: 1px solid var(--border-color);
+}
+
+.completion-footer {
+    padding: 0.75rem 1rem;
+}
+
+.completion-footer .session-runner-error {
+    margin: 0 0 0.5rem;
+}
+
+.session-completion-sheet .sheet-actions {
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+}
+
+.session-completion-sheet .sheet-actions button {
+    margin: 0;
+    padding: 0.5rem;
+    font-size: 0.9375rem;
+}
+
+.session-completion-sheet .sheet-actions .btn-secondary {
+    border-color: var(--border-color);
+    background: var(--surface-card);
+    color: var(--text-primary);
+}
+
+.session-completion-sheet .form-group > label {
+    color: inherit;
+    font-size: inherit;
+    letter-spacing: normal;
+    text-transform: none;
+}
+
+.session-completion-sheet :is(.btn-link-danger, .completion-text-action) {
+    padding: 0.5rem;
+    border: 0;
+    border-radius: var(--radius-control);
+    background: transparent;
+    color: #bfdbfe;
+    font: inherit;
+    text-decoration: underline;
+}
+
+.session-completion-sheet .btn-link-danger {
+    color: #fecaca;
+}
+
+.session-completion-sheet .btn-danger-confirm {
+    border: 1px solid #fca5a5;
+    border-radius: var(--radius-control);
+    background: #991b1b;
+    color: #fff;
+    font: inherit;
+}
+
+@media (max-width: 580px) {
+    .session-completion-sheet .rpe-button-row {
+        grid-template-columns: repeat(5, minmax(44px, 1fr));
+    }
+}
