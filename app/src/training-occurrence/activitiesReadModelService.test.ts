@@ -61,9 +61,64 @@ describe('getCompletedWorkoutsInRange', () => {
 
         expect(view.structured?.title).toBe('Heavy Squat Day');
         expect(view.structured?.performedRest).toBe('not_recorded');
+        expect(view.structured?.execution).toEqual({
+            executionId: 'exec-1',
+            state: 'completed',
+            startedAt: '2026-08-26T06:52:00.000Z',
+            completedAt: '2026-08-26T07:32:00.000Z',
+        });
         expect(view.garmin).toBeUndefined();
         expect(view.garminExerciseSetsAreDiagnosticOnly).toBe(true);
         expect(view.sourceBadge).toEqual({ hasStructured: true, hasProvider: false, providers: [] });
+    });
+
+    it('summarizes completionEvidence (sessionRpe, completedFraction, unexpectedFatigue, note) onto structured.execution', async () => {
+        vi.mocked(repo.queryActiveInDateWindow).mockResolvedValue([occurrence()]);
+        vi.mocked(sessionExecutionService.getExecution).mockResolvedValue({
+            status: 'AVAILABLE',
+            data: {
+                userId: 'user-1',
+                executionId: 'exec-1',
+                sessionSource: { kind: 'catalog', workoutId: 'w', catalogVersion: '1' },
+                date: '2026-08-26',
+                startedAt: '2026-08-26T06:50:00.000Z',
+                completedAt: '2026-08-26T07:35:00.000Z',
+                updatedAt: '2026-08-26T07:35:00.000Z',
+                state: 'completed',
+                executedDefinition: 'reduced',
+                sessionRpe: 6,
+                notes: 'legacy note',
+                completionEvidence: {
+                    submittedAt: '2026-08-26T07:35:00.000Z',
+                    sessionRpe: 8,
+                    completedFraction: 0.75,
+                    unexpectedFatigue: true,
+                    note: 'felt heavy',
+                },
+                schemaVersion: 1,
+            },
+            revision: null,
+        });
+        vi.mocked(resolveSessionDefinition).mockResolvedValue({
+            status: 'AVAILABLE',
+            data: { schemaVersion: 1, id: 'w', revision: 1, title: 'Heavy Squat Day', intent: 'training', blocks: [] },
+            revision: null,
+        });
+        vi.mocked(sessionExecutionService.getEntries).mockResolvedValue([]);
+
+        const [view] = await getCompletedWorkoutsInRange('user-1', '2026-08-20', '2026-08-27');
+
+        expect(view.structured?.execution).toEqual({
+            executionId: 'exec-1',
+            state: 'completed',
+            startedAt: '2026-08-26T06:50:00.000Z',
+            completedAt: '2026-08-26T07:35:00.000Z',
+            executedDefinition: 'reduced',
+            sessionRpe: 8,
+            completedFraction: 0.75,
+            unexpectedFatigue: true,
+            note: 'felt heavy',
+        });
     });
 
     it('hydrates a matched occurrence with both structured detail and the Garmin activity', async () => {

@@ -279,7 +279,10 @@ export function exportCompletedWorkoutToJson(view: CompletedWorkoutView, exporte
                     workSets: exercises.reduce((sum, exercise) => sum + exercise.performed.workSets, 0),
                     totalReps: exercises.reduce((sum, exercise) => sum + exercise.performed.totalReps, 0),
                     tonnageKg: exercises.reduce((sum, exercise) => sum + exercise.performed.tonnageKg, 0),
-                    totalPerformedRestSeconds: allSets.reduce((sum, set) => sum + (set.rest?.actualSeconds ?? 0), 0),
+                    totalPerformedRestSeconds: allSets.reduce(
+                        (sum, set) => sum + (set.rest && set.rest.endReason !== 'session_ended' ? set.rest.actualSeconds : 0),
+                        0,
+                    ),
                 },
                 performedRest: view.structured.performedRest,
             }
