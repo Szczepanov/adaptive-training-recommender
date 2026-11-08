@@ -3,6 +3,7 @@ import {
     buildIntensityGauge,
     buildRepetitionPayload,
     focusAndSelect,
+    refocusIfStillOwned,
     runSingleFlight,
     type RepetitionDraft,
 } from './repetitionSubmit';
@@ -97,5 +98,44 @@ describe('focusAndSelect', () => {
 
     it('is a no-op without a field', () => {
         expect(() => focusAndSelect(null)).not.toThrow();
+    });
+});
+
+describe('refocusIfStillOwned', () => {
+    const body = { id: 'body' } as unknown as HTMLElement;
+    const inside = { id: 'inside' } as unknown as Element;
+    const elsewhere = { id: 'abandon-button' } as unknown as Element;
+    const form = { contains: (node: Node | null) => node === (inside as unknown) } as Pick<Node, 'contains'>;
+    const fieldWith = (activeElement: Element | null) => ({
+        focus: vi.fn(),
+        select: vi.fn(),
+        ownerDocument: { activeElement, body },
+    });
+
+    it('reclaims focus while it is still inside the form', () => {
+        const field = fieldWith(inside);
+        refocusIfStillOwned(field, form);
+        expect(field.focus).toHaveBeenCalledTimes(1);
+        expect(field.select).toHaveBeenCalledTimes(1);
+    });
+
+    it('reclaims focus when nothing owns it (body or null)', () => {
+        const onBody = fieldWith(body);
+        const onNothing = fieldWith(null);
+        refocusIfStillOwned(onBody, form);
+        refocusIfStillOwned(onNothing, form);
+        expect(onBody.focus).toHaveBeenCalledTimes(1);
+        expect(onNothing.focus).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not steal focus the user moved elsewhere while the write was in flight', () => {
+        const field = fieldWith(elsewhere);
+        refocusIfStillOwned(field, form);
+        expect(field.focus).not.toHaveBeenCalled();
+        expect(field.select).not.toHaveBeenCalled();
+    });
+
+    it('is a no-op without a field', () => {
+        expect(() => refocusIfStillOwned(null, form)).not.toThrow();
     });
 });
