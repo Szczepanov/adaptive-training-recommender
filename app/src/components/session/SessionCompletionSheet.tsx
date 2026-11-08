@@ -39,6 +39,8 @@ export type SessionCompletionRecordKind = 'SessionExecution' | 'AssessmentAttemp
 
 interface SessionCompletionSheetProps {
     startedAt: string;
+    /** Optional live wall-clock elapsed seconds from the session runner; falls back to `startedAt` delta on mount. */
+    elapsedSeconds?: number;
     totalSets: number;
     steps: SessionStepSummary[];
     onComplete: (payload: SessionCompletionPayload) => Promise<void>;
@@ -57,8 +59,10 @@ interface SessionCompletionSheetProps {
     error?: string | null;
 }
 
+/** Modal completion and abandon confirmation sheet for in-progress workout sessions and assessments. */
 export const SessionCompletionSheet: React.FC<SessionCompletionSheetProps> = ({
     startedAt,
+    elapsedSeconds,
     totalSets,
     steps,
     onComplete,
@@ -88,7 +92,10 @@ export const SessionCompletionSheet: React.FC<SessionCompletionSheetProps> = ({
     useEffect(() => {
         titleRef.current?.focus();
     }, [showAbandonConfirm]);
-    const [elapsedMinutes] = useState(() => Math.max(1, Math.round((Date.now() - Date.parse(startedAt)) / 60000)));
+    const [fallbackElapsedMinutes] = useState(() => Math.max(1, Math.round((Date.now() - Date.parse(startedAt)) / 60000)));
+    const elapsedMinutes = elapsedSeconds !== undefined
+        ? Math.max(1, Math.round(elapsedSeconds / 60))
+        : fallbackElapsedMinutes;
 
     // ⚡ Bolt: Memoize step array filters to prevent redundant O(N) operations on every form state change (e.g. typing in notes)
     const missingRequiredSteps = useMemo(() => steps.filter(s => s.isPlanned && !s.optional && !s.isComplete), [steps]);
@@ -240,6 +247,7 @@ export const SessionCompletionSheet: React.FC<SessionCompletionSheetProps> = ({
                                 <div className="tissue-inputs-row">
                                     <select
                                         id="tissue-region-select"
+                                        aria-describedby="tissue-region-hint"
                                         value={selectedRegion}
                                         onChange={e => setSelectedRegion(e.target.value as BodyRegion | '')}
                                         className="select-input"
@@ -268,6 +276,11 @@ export const SessionCompletionSheet: React.FC<SessionCompletionSheetProps> = ({
                                         </button>
                                     )}
                                 </div>
+                                <span id="tissue-region-hint" className="helper-text" role="status" aria-live="polite">
+                                    {selectedRegion
+                                        ? 'Selected area will be saved when you finish, or select Add region to log another.'
+                                        : 'Select Add region before choosing another area to log multiple regions.'}
+                                </span>
                                 {tissueFeedback.length > 0 && (
                                     <ul className="tissue-feedback-list">
                                         {tissueFeedback.map(item => (

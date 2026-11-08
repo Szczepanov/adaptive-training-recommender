@@ -68,6 +68,20 @@ describe('SessionCompletionSheet', () => {
         expect(html).toContain('1'); // Only 1 exercise has loggedSetsCount > 0
         expect(html).toContain('How much of the planned session did you complete?');
         expect(html).toContain('Unexpected fatigue during or after this session');
+
+        const withExplicitElapsed = renderToStaticMarkup(
+            <SessionCompletionSheet
+                startedAt={startedAt}
+                elapsedSeconds={45 * 60}
+                totalSets={3}
+                steps={steps}
+                onComplete={vi.fn()}
+                onAbandon={vi.fn()}
+                onCancel={vi.fn()}
+                saving={false}
+            />,
+        );
+        expect(withExplicitElapsed).toContain('45 min');
     });
 
     it('opens with sRPE and completion fraction unanswered rather than preselected (#896)', () => {
@@ -375,6 +389,9 @@ describe('SessionCompletionSheet', () => {
         );
 
         expect(html).toContain('Add any feedback you want to save with your workout.');
+        expect(html).toContain('aria-describedby="tissue-region-hint"');
+        expect(html).toContain('id="tissue-region-hint"');
+        expect(html).toContain('Select Add region before choosing another area to log multiple regions.');
         expect(html).not.toContain('AssessmentAttempt');
     });
 

@@ -84,14 +84,24 @@ export function useOverlayDialog(
         const dialogId = Symbol('overlay dialog');
         activeDialogs.push(dialogId);
         const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        const focusInitialControl = () => {
+            const panel = panelRef.current;
+            if (!panel) return;
+            (initialFocusSelector ? panel.querySelector<HTMLElement>(initialFocusSelector) : null)?.focus();
+            if (!panel.contains(document.activeElement)) {
+                (panel.querySelector<HTMLElement>(FOCUSABLE) ?? panel).focus();
+            }
+        };
         const frame = window.requestAnimationFrame(() => {
             if (activeDialogs[activeDialogs.length - 1] !== dialogId) return;
-            const panel = panelRef.current;
-            (initialFocusSelector ? panel?.querySelector<HTMLElement>(initialFocusSelector) : null)?.focus();
-            if (!panel?.contains(document.activeElement)) {
-                (panel?.querySelector<HTMLElement>(FOCUSABLE) ?? panel)?.focus();
-            }
+            focusInitialControl();
         });
+        const handleFocusIn = (event: FocusEvent) => {
+            if (activeDialogs[activeDialogs.length - 1] !== dialogId) return;
+            const panel = panelRef.current;
+            if (!panel || !(event.target instanceof Node) || panel.contains(event.target)) return;
+            focusInitialControl();
+        };
         const handleKeyDown = (event: KeyboardEvent) => {
             if (activeDialogs[activeDialogs.length - 1] !== dialogId || event.defaultPrevented) return;
             const panel = panelRef.current;
@@ -122,9 +132,11 @@ export function useOverlayDialog(
                 first.focus();
             }
         };
+        document.addEventListener('focusin', handleFocusIn);
         document.addEventListener('keydown', handleKeyDown);
         return () => {
             window.cancelAnimationFrame(frame);
+            document.removeEventListener('focusin', handleFocusIn);
             document.removeEventListener('keydown', handleKeyDown);
             const index = activeDialogs.indexOf(dialogId);
             const wasTopmost = index !== -1 && index === activeDialogs.length - 1;

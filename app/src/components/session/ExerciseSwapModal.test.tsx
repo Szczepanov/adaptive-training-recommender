@@ -10,10 +10,13 @@ const step = {
 } as unknown as SessionStep;
 
 describe('ExerciseSwapModal accessibility', () => {
-    it('gives the catalog search input a programmatic label, not only a placeholder', () => {
+    it('gives the catalog search input a programmatic label and applies the shared overlay dialog classes', () => {
         const html = renderToStaticMarkup(<ExerciseSwapModal step={step} onSwap={() => {}} onClose={() => {}} />);
         expect(html).toContain('<label class="swap-label" for="swap-exercise-search">Search exercises</label>');
         expect(html).toContain('id="swap-exercise-search"');
         expect(html).toContain('type="search"');
+        expect(html).toContain('modal-overlay overlay-viewport');
+        expect(html).toContain('exercise-swap-modal overlay-panel');
+        expect(html).toContain('tabindex="-1"');
     });
 });

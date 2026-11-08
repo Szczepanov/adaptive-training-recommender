@@ -98,10 +98,10 @@ describe('CompletedWorkoutList', () => {
         expect(html).not.toContain('>Strength sets & reps<');
     });
 
-    it('prefers app execution duration in the card header over reconciled occurrence window and Garmin watch duration', () => {
+    it('prefers app execution duration and start time in the card header over reconciled occurrence window and Garmin watch duration', () => {
         const matchedWithAppDuration: CompletedWorkoutView = {
             ...matched,
-            // Reconciled window is 120 min, Garmin watch is 40 min, app execution is 33 min.
+            // Reconciled window starts at 06:00Z (120 min), Garmin watch is 40 min, app execution starts at 06:50Z (33 min).
             startedAt: '2026-08-26T06:00:00.000Z',
             endedAt: '2026-08-26T08:00:00.000Z',
             structured: {
@@ -115,7 +115,18 @@ describe('CompletedWorkoutList', () => {
             },
         };
         const html = renderToStaticMarkup(<CompletedWorkoutList workouts={[matchedWithAppDuration]} />);
-        expect(html).toContain('· 33 min</p>');
+        const expectedAppStart = new Date('2026-08-26T06:50:00.000Z').toLocaleTimeString([], {
+            hour: '2-digit',
+            minute: '2-digit',
+            timeZone: 'Europe/Warsaw',
+        });
+        const expectedWindowStart = new Date('2026-08-26T06:00:00.000Z').toLocaleTimeString([], {
+            hour: '2-digit',
+            minute: '2-digit',
+            timeZone: 'Europe/Warsaw',
+        });
+        expect(html).toContain(`${expectedAppStart} · 33 min</p>`);
+        expect(html).not.toContain(`${expectedWindowStart} · 33 min`);
         expect(html).toContain('40 min recorded on watch');
     });
 

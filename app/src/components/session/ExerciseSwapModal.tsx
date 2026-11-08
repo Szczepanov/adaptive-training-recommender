@@ -1,4 +1,6 @@
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
+import { useOverlayDialog } from '../useOverlayDialog';
+import '../overlayContract.css';
 import type { SessionStep } from '../../sessions/models';
 import { EXERCISES, EXERCISES_BY_ID } from '../../workouts/exercises';
 import { stepName } from '../../sessions/stepDisplay';
@@ -19,6 +21,7 @@ interface ExerciseSwapModalProps {
     onClose: () => void;
 }
 
+/** Modal dialog for substituting an active session step with a catalog or custom free-text exercise. */
 export const ExerciseSwapModal: React.FC<ExerciseSwapModalProps> = ({
     step,
     onSwap,
@@ -31,6 +34,12 @@ export const ExerciseSwapModal: React.FC<ExerciseSwapModalProps> = ({
     const [customName, setCustomName] = useState<string>('');
     const [customTempo, setCustomTempo] = useState<string>(step.tempo ?? '');
     const [customNotes, setCustomNotes] = useState<string>(step.notes ?? '');
+    const panelRef = useRef<HTMLDivElement>(null);
+    useOverlayDialog(true, panelRef, onClose, '#swap-exercise-search, #swap-custom-exercise-name');
+    useEffect(() => {
+        const selector = isCustom ? '#swap-custom-exercise-name' : '#swap-exercise-search';
+        panelRef.current?.querySelector<HTMLInputElement>(selector)?.focus();
+    }, [isCustom]);
 
     const filteredExercises = useMemo(() => {
         const query = searchQuery.trim().toLowerCase();
@@ -75,8 +84,8 @@ export const ExerciseSwapModal: React.FC<ExerciseSwapModalProps> = ({
     };
 
     return (
-        <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="swap-modal-title">
-            <div className="exercise-swap-modal">
+        <div className="modal-overlay overlay-viewport" role="dialog" aria-modal="true" aria-labelledby="swap-modal-title">
+            <div ref={panelRef} className="exercise-swap-modal overlay-panel" tabIndex={-1}>
                 <div className="swap-modal-header">
                     <h3 id="swap-modal-title">Swap Exercise</h3>
                     <button type="button" className="close-btn" onClick={onClose} aria-label="Close">✕</button>
@@ -112,7 +121,6 @@ export const ExerciseSwapModal: React.FC<ExerciseSwapModalProps> = ({
                             placeholder="Search exercises by name, equipment, muscle..."
                             value={searchQuery}
                             onChange={e => setSearchQuery(e.target.value)}
-                            autoFocus
                         />
                         <div className="exercise-picker-list">
                             {filteredExercises.map(ex => {
@@ -151,7 +159,6 @@ export const ExerciseSwapModal: React.FC<ExerciseSwapModalProps> = ({
                                 placeholder="e.g. Single-arm Dumbbell Floor Press"
                                 value={customName}
                                 onChange={e => setCustomName(e.target.value)}
-                                autoFocus
                             />
                         </div>
                     </div>
