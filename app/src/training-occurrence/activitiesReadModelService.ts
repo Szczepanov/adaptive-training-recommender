@@ -18,8 +18,10 @@ import type {
     PerformedRestAvailability,
     ProviderSourceRead,
     ReconciliationSweepStatus,
+    StructuredExecutionSummary,
     StructuredSourceRead,
 } from './completedWorkoutView';
+import type { SessionExecution } from '../sessions/models';
 import { sourceBadgeFor } from './completedWorkoutView';
 import { buildStructuredStepDetails } from './structuredSetDetail';
 import { compareActivitiesReadModels, recordActivitiesReadModelComparison } from './activitiesReadModelDiagnostics';
@@ -92,8 +94,26 @@ async function resolveStructuredDetail(
             comparison: comparePlannedVsPerformed(definitionState.data, entries),
             steps: buildStructuredStepDetails(definitionState.data, entries, restEvents ?? []),
             performedRest,
+            execution: summarizeExecution(execution),
         },
         ...fit,
+    };
+}
+
+function summarizeExecution(execution: SessionExecution): StructuredExecutionSummary {
+    const evidence = execution.completionEvidence;
+    const sessionRpe = evidence?.sessionRpe ?? execution.sessionRpe;
+    const note = evidence?.note ?? execution.notes;
+    return {
+        executionId: execution.executionId,
+        state: execution.state,
+        startedAt: execution.startedAt,
+        ...(execution.completedAt ? { completedAt: execution.completedAt } : {}),
+        ...(execution.executedDefinition ? { executedDefinition: execution.executedDefinition } : {}),
+        ...(sessionRpe !== undefined ? { sessionRpe } : {}),
+        ...(evidence?.completedFraction !== undefined ? { completedFraction: evidence.completedFraction } : {}),
+        ...(evidence?.unexpectedFatigue !== undefined ? { unexpectedFatigue: evidence.unexpectedFatigue } : {}),
+        ...(note ? { note } : {}),
     };
 }
 

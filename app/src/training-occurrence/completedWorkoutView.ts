@@ -13,6 +13,7 @@
  */
 import type { NormalizedGarminActivity } from '../engine/models';
 import type { PerformedSessionComparison } from '../sessions/performedComparison';
+import type { SessionExecutionState } from '../sessions/models';
 import type { StructuredStepDetail } from './structuredSetDetail';
 import type { FitWorkoutIdentityObservation, SingleSourceFitEvidence } from './fitWorkoutIdentityDiagnostics';
 import { isProviderActivityRef, isStructuredExecutionRef, type PerformedTrainingOccurrence, type ReconciliationProvenance } from './models';
@@ -35,6 +36,22 @@ export interface CompletedWorkoutStructuredDetail {
      * says so rather than implying zero rest. `unavailable`: the read itself failed, so
      * nothing may be inferred about whether rest was recorded. */
     performedRest: PerformedRestAvailability;
+    /** What the app itself recorded about the execution: actual start/finish and the
+     * athlete's session RPE. Absent on views built before it was hydrated. */
+    execution?: StructuredExecutionSummary;
+}
+
+/** The app-recorded execution facts behind a structured workout -- never the prescription. */
+export interface StructuredExecutionSummary {
+    executionId: string;
+    state: SessionExecutionState;
+    startedAt: string;
+    completedAt?: string;
+    executedDefinition?: 'authored' | 'reduced';
+    sessionRpe?: number;
+    completedFraction?: number;
+    unexpectedFatigue?: boolean;
+    note?: string;
 }
 
 /**
