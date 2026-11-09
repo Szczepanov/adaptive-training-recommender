@@ -13,8 +13,9 @@ function storedScheduleOverlayPayload(overlay: ScheduleOverlay): DocumentData {
     return payload;
 }
 
-/** Firestore requires whole minutes for this field. Reject fractional values before
- * attempting a write so client validation and persistence cannot disagree. */
+/** Whole minutes are required for this field. Since #1202 (ADR-0053) the Firestore rules
+ * no longer check it, so this pre-write guard is its only owner; validateScheduleOverlay
+ * checks the 0..1440 range. */
 function assertWholeMinuteAvailability(value: number): void {
     if (!Number.isInteger(value)) {
         throw new Error('Validation failed: dailyAvailabilityMinutes must be a whole number of minutes');

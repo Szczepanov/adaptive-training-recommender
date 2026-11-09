@@ -1,18 +1,19 @@
 
 
     match /users/{userId}/decision_journal/{date} {
+      // Issue #1202 (ADR-0053): the verdict enums, the sawEngineVerdictFirst type and
+      // schemaVersion are owned by validateDecisionJournalEntry, which
+      // DecisionJournalService.write runs before every write. That write merges, but its
+      // payload is the whole validated entry (absent optional keys are deleted), so the
+      // merged document is the validated payload.
       function hasValidDecisionJournalEntry(userId, date) {
+        let data = request.resource.data;
         return hasOwnedUserId(userId)
           && isDateDocument(date)
-          && request.resource.data.keys().hasOnly(['userId', 'date', 'externalVerdict', 'externalNote', 'sawEngineVerdictFirst', 'actualVerdict', 'createdAt', 'updatedAt', 'schemaVersion'])
-          && request.resource.data.keys().hasAll(['userId', 'date', 'externalVerdict', 'sawEngineVerdictFirst', 'createdAt', 'updatedAt', 'schemaVersion'])
-          && request.resource.data.externalVerdict in ['proceed', 'scale', 'defer', 'skip', 'advisory']
-          && (!('externalNote' in request.resource.data) || (request.resource.data.externalNote is string && request.resource.data.externalNote.size() <= 2000))
-          && request.resource.data.sawEngineVerdictFirst is bool
-          && (!('actualVerdict' in request.resource.data) || request.resource.data.actualVerdict in ['proceed', 'scale', 'defer', 'skip', 'advisory'])
-          && request.resource.data.createdAt is string
-          && request.resource.data.updatedAt is string
-          && request.resource.data.schemaVersion == 1;
+          && data.keys().hasOnly(['userId', 'date', 'externalVerdict', 'externalNote', 'sawEngineVerdictFirst', 'actualVerdict', 'createdAt', 'updatedAt', 'schemaVersion'])
+          && data.keys().hasAll(['userId', 'date', 'externalVerdict', 'sawEngineVerdictFirst', 'createdAt', 'updatedAt', 'schemaVersion'])
+          && (!('externalNote' in data) || (data.externalNote is string && data.externalNote.size() <= 2000))
+          && hasStringTimestamps(data);
       }
 
       allow read: if isOwner(userId);
@@ -105,22 +106,12 @@
     match /users/{userId}/fixed_activities/{activityId} {
       function hasValidExpectedStimulus(m) {
         return m is map
-          && m.keys().hasOnly(['aerobicEndurance', 'thresholdPower', 'vo2MaxPower', 'repeatedSurges', 'sprintPower', 'fatigueResistance', 'maxStrength', 'hypertrophy'])
-          && m.size() <= 8
-          && hasValidAxisValue(m, 'aerobicEndurance')
-          && hasValidAxisValue(m, 'thresholdPower')
-          && hasValidAxisValue(m, 'vo2MaxPower')
-          && hasValidAxisValue(m, 'repeatedSurges')
-          && hasValidAxisValue(m, 'sprintPower')
-          && hasValidAxisValue(m, 'fatigueResistance')
-          && hasValidAxisValue(m, 'maxStrength')
-          && hasValidAxisValue(m, 'hypertrophy');
+          && m.keys().hasOnly(['aerobicEndurance', 'thresholdPower', 'vo2MaxPower', 'repeatedSurges', 'sprintPower', 'fatigueResistance', 'maxStrength', 'hypertrophy']);
       }
 
       function hasValidAvailabilityContextOverride(m) {
         return m is map
           && m.keys().hasOnly(['environment', 'equipment'])
-          && (!('environment' in m) || m.environment in ['indoor', 'outdoor', 'either'])
           && (!('equipment' in m) || hasValidEquipmentList(m.equipment));
       }
 
@@ -128,24 +119,23 @@
         return !(key in data) || (data[key] is string && data[key].size() > 0 && data[key].size() <= 120);
       }
 
+      // Issue #1202 (ADR-0053): date, durationMin, the fixed/isCompleted flags, the
+      // environment enums, startTime, the stimulus/cost axis values and availabilityOverride
+      // are owned by validateFixedActivity, which FixedActivityService.createActivity and
+      // updateActivity run before every write. updateActivity merges, but every check that
+      // moved is per-field, and nested stimulus/cost/context maps merge key by key, so each
+      // merged value was validated on the write that set it. createdAt stays: the validator
+      // passes a stored createdAt through without type-checking it.
       function hasValidFixedActivity(userId) {
         let data = request.resource.data;
         return hasOwnedUserId(userId)
-          && isValidActivityDate(data.date)
           && data.keys().hasOnly(['userId', 'title', 'date', 'startTime', 'durationMin', 'fixed', 'expectedStimulus', 'expectedCost', 'environment', 'equipment', 'availabilityOverride', 'availabilityContextOverride', 'templateId', 'workoutId', 'isCompleted', 'createdAt', 'updatedAt'])
           && data.keys().hasAll(['userId', 'title', 'date', 'durationMin', 'fixed', 'environment', 'isCompleted', 'createdAt', 'updatedAt'])
           && data.title is string && data.title.size() <= 200
-          && data.durationMin is int && data.durationMin > 0 && data.durationMin <= 1440
-          && data.fixed is bool
-          && data.environment in ['indoor', 'outdoor', 'either']
-          && data.isCompleted is bool
-          && data.createdAt is string
-          && data.updatedAt is string
-          && (!('startTime' in data) || data.startTime is string)
+          && hasStringTimestamps(data)
           && (!('expectedStimulus' in data) || hasValidExpectedStimulus(data.expectedStimulus))
           && (!('expectedCost' in data) || hasValidExpectedCost(data.expectedCost))
           && (!('equipment' in data) || hasValidEquipmentList(data.equipment))
-          && (!('availabilityOverride' in data) || (data.availabilityOverride is number && data.availabilityOverride >= 0 && data.availabilityOverride <= 1440))
           && (!('availabilityContextOverride' in data) || hasValidAvailabilityContextOverride(data.availabilityContextOverride))
           && hasValidOptionalCatalogId(data, 'templateId')
           && hasValidOptionalCatalogId(data, 'workoutId');
@@ -160,20 +150,22 @@
     }
 
     match /users/{userId}/training_intent/profile {
-      // Issue #805: optional, default-off capability-maintenance opt-in. Absent = opted out;
-      // mirrors validationCore.ts validateTrainingIntentProfile.
+      // Issue #805: optional, default-off capability-maintenance opt-in. Absent = opted out.
+      // Issue #1202 (ADR-0053): the capability enum, uniqueness, the enabled type and the
+      // enabled-needs-a-capability rule are owned by validateTrainingIntentProfile.
       function hasValidCapabilityMaintenance(value) {
         return value is map
           && value.keys().hasOnly(['enabled', 'capabilities'])
           && value.keys().hasAll(['enabled', 'capabilities'])
-          && value.enabled is bool
           && value.capabilities is list
-          && value.capabilities.size() <= 4
-          && value.capabilities.hasOnly(['linear_speed_skill', 'acceleration_deceleration', 'multidirectional_change_of_direction', 'sport_skill'])
-          && value.capabilities.toSet().size() == value.capabilities.size()
-          && (value.enabled == false || value.capabilities.size() > 0);
+          && value.capabilities.size() <= 4;
       }
 
+      // Issue #1202 (ADR-0053): planningMode, the weeklyCommitment counts and ordering,
+      // organizationPreference and schemaVersion are owned by validateTrainingIntentProfile,
+      // which TrainingIntentProfileService.upsert runs before every write. upsert merges,
+      // but the validator requires all three weeklyCommitment keys and both
+      // capabilityMaintenance keys, so each nested map it writes is replaced whole.
       function hasValidTrainingIntentProfile(userId) {
         let data = request.resource.data;
         let commitment = data.weeklyCommitment;
@@ -181,16 +173,10 @@
           && data.keys().hasOnly(['userId', 'planningMode', 'priorities', 'weeklyCommitment', 'organizationPreference', 'schemaVersion', 'createdAt', 'updatedAt', 'capabilityMaintenance'])
           && (!('capabilityMaintenance' in data) || hasValidCapabilityMaintenance(data.capabilityMaintenance))
           && data.keys().hasAll(['userId', 'planningMode', 'priorities', 'weeklyCommitment', 'organizationPreference', 'schemaVersion', 'createdAt', 'updatedAt'])
-          && data.planningMode in ['evergreen', 'event_directed', 'externally_planned']
           && data.priorities is list && data.priorities.size() <= 6
           && data.weeklyCommitment is map
           && commitment.keys().hasOnly(['minSessions', 'targetSessions', 'maxSessions'])
           && commitment.keys().hasAll(['minSessions', 'targetSessions', 'maxSessions'])
-          && isPositiveInt(commitment.minSessions) && commitment.minSessions <= 14
-          && commitment.targetSessions is int && commitment.targetSessions >= commitment.minSessions && commitment.targetSessions <= 14
-          && commitment.maxSessions is int && commitment.maxSessions >= commitment.targetSessions && commitment.maxSessions <= 14
-          && data.organizationPreference == 'auto'
-          && isPositiveInt(data.schemaVersion)
           && hasStringTimestamps(data);
       }
 

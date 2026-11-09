@@ -130,9 +130,9 @@ emulatorDescribe('ScheduleWindow manifest persistence boundary (#430)', () => {
         const db = environment.authenticatedContext(USER_ID).firestore();
         const manifestRef = doc(db, 'users', USER_ID, 'schedule_window_manifests', DATE);
 
-        await assertFails(setDoc(manifestRef, manifest([window('bad-time', '07:00', '07:00')])));
+        await assertFails(setDoc(manifestRef, manifest([window('bad-time', '7:00', '08:00')])));
         await assertFails(setDoc(manifestRef, manifest([
-            { ...window('bad-environment', '06:00', '07:00'), environment: 'space' } as ReturnType<typeof window>,
+            { ...window('extra-field', '06:00', '07:00'), surprise: true } as ReturnType<typeof window>,
         ])));
         await assertFails(setDoc(manifestRef, manifest([
             window('duplicate', '06:00', '07:00'),
@@ -147,6 +147,36 @@ emulatorDescribe('ScheduleWindow manifest persistence boundary (#430)', () => {
             window('first', '06:00', '08:00'),
             window('second', '07:00', '09:00'),
         ])));
+    });
+
+    // Issue #1202 (ADR-0053): a window's positive duration and environment enum are owned by
+    // validateScheduleWindow, which ScheduleWindowService.buildManifest runs before every
+    // write (scheduleWindows.test.ts). The rules keep the HH:mm pattern, the key allow-lists,
+    // the caps, duplicate ids and overlap.
+    it('accepts a zero-length window or unknown environment at the rules boundary (validateScheduleWindow owns them)', async () => {
+        const db = environment.authenticatedContext(USER_ID).firestore();
+        await assertSucceeds(setDoc(
+            doc(db, 'users', USER_ID, 'schedule_window_manifests', DATE),
+            manifest([window('zero-length', '07:00', '07:00')]),
+        ));
+        await assertSucceeds(setDoc(
+            doc(db, 'users', USER_ID, 'schedule_window_manifests', '2026-09-11'),
+            manifest([{ ...window('bad-environment', '06:00', '07:00', { date: '2026-09-11' }), environment: 'space' } as ReturnType<typeof window>], 1, '2026-09-11'),
+        ));
+    });
+
+    it('accepts a valid four-window manifest through the eight-position path and rejects an overlap there', async () => {
+        const db = environment.authenticatedContext(USER_ID).firestore();
+        const manifestRef = doc(db, 'users', USER_ID, 'schedule_window_manifests', DATE);
+        const four = [
+            window('early', '05:00', '06:00'),
+            window('morning', '06:00', '09:00'),
+            window('afternoon', '12:00', '16:00'),
+            window('evening', '17:30', '18:30'),
+        ];
+        await assertFails(setDoc(manifestRef, manifest([...four.slice(0, 3), window('evening', '15:30', '18:30')])));
+        await assertFails(setDoc(manifestRef, manifest([...four.slice(0, 3), { ...window('evening', '17:30', '18:30'), surprise: true } as ReturnType<typeof window>])));
+        await assertSucceeds(setDoc(manifestRef, manifest(four)));
     });
 
     it('accepts a valid three-window AM, PM, and evening manifest through the rules fast path', async () => {

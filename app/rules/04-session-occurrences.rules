@@ -17,6 +17,11 @@
           && hasStringTimestamps(data);
       }
 
+      // Issue #1202 (ADR-0053): schemaVersion, the intent enum and the blocks list type are
+      // owned by validateSessionDefinition, which SessionDefinitionService.saveDefinitionRevision
+      // runs before the create-only revision write. The path bindings, contentHash (computed
+      // by the service, not validated) and the companionSessions list type (no TypeScript
+      // check) stay.
       function hasValidSessionDefinitionRevision(userId, definitionId, revId) {
         let data = request.resource.data;
         return hasOwnedUserId(userId)
@@ -25,11 +30,8 @@
           && data.definitionId == definitionId
           && data.id == definitionId
           && data.revision is int && string(data.revision) == revId
-          && data.schemaVersion == 1
           && data.contentHash is string && data.contentHash.size() > 0
-          && data.intent in ['training', 'testing', 'competition', 'rehab_return', 'recovery', 'skill_technical']
-          && (!('companionSessions' in data) || data.companionSessions is list)
-          && data.blocks is list;
+          && (!('companionSessions' in data) || data.companionSessions is list);
       }
 
       allow read: if isOwner(userId);

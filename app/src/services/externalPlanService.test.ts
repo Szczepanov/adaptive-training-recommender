@@ -122,6 +122,21 @@ describe('ExternalPlanService', () => {
         expect(firestore.committedDocs.size).toBe(0);
     });
 
+    // Issue #1202: the rules no longer check a rest directive's week or weekday, so the
+    // import must refuse them before the transaction starts.
+    it('rejects an external-plan@3 import with an out-of-range rest week or unknown weekday, writing nothing', async () => {
+        const service = new ExternalPlanService();
+        for (const [restDay, field] of [
+            [{ id: 'late', week: 5, day: 'friday' }, 'restDays[0].week'],
+            [{ id: 'odd', week: 1, day: 'holiday' }, 'restDays[0].day'],
+        ] as const) {
+            const result = await service.import('u1', plan({ schema: 'adaptive-training-recommender/external-plan@3', restDays: [restDay] }));
+            expect(result).toMatchObject({ status: 'INVALID', issues: expect.arrayContaining([expect.objectContaining({ field })]) });
+        }
+        expect(firestore.runTransaction).not.toHaveBeenCalled();
+        expect(firestore.committedDocs.size).toBe(0);
+    });
+
     it('writes revision, immutable activation and latest header atomically', async () => {
         const result = await new ExternalPlanService().import('u1', plan());
 

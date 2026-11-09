@@ -126,8 +126,8 @@ export function deriveStrengthExposure(session: StrengthSession): CompletedExpos
     const weightedUpperFraction = signals.reduce((sum, signal) => sum + signal.upperFraction * signal.weight, 0) / totalWeight;
 
     // Every WorkoutCostProfile axis is canonically 0.0-1.0 (see the field comments on the
-    // type itself, and firestore.rules' hasValidAxisValue for the same bound enforced
-    // elsewhere). A fully lower-body-weighted split of the hard-intensity combined budget
+    // type itself, and validateFixedActivity / validateScheduleOverlay for the same bound
+    // enforced elsewhere). A fully lower-body-weighted split of the hard-intensity combined budget
     // (0.8 + 0.7 = 1.5) would otherwise redistribute past 1.0 into a single axis -- the
     // redistribution reallocates the budget, but each resulting axis still needs its own cap.
     const costProfile = {

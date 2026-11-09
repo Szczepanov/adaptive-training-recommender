@@ -33,6 +33,18 @@ describe('PlanBlockService persistence shape', () => {
         expect(payload).toMatchObject({ userId: 'u1', phase: 'travel', startDate: '2026-08-19' });
     });
 
+    // Issue #1202: the rules no longer check plan-block values, so create and the merge
+    // update must refuse them before writing.
+    it('rejects an inverted range or out-of-range dose on create and update without writing', async () => {
+        const service = new PlanBlockService();
+        await expect(service.create('u1', { ...travel, endDate: '2026-08-18' })).rejects.toThrow(/Validation failed/);
+        await expect(service.create('u1', { ...travel, volumeScale: 1.5 })).rejects.toThrow(/Validation failed/);
+        await expect(service.update('u1', 'trip-august', { ...travel, phase: 'taper' as never, createdAt: '2026-08-01T00:00:00.000Z' }))
+            .rejects.toThrow(/Validation failed/);
+        expect(firestore.addDoc).not.toHaveBeenCalled();
+        expect(firestore.setDoc).not.toHaveBeenCalled();
+    });
+
     it('fails closed when persisted plan blocks are malformed', async () => {
         firestore.getDocs.mockResolvedValue({ docs: [{ id: 'bad', data: () => ({ userId: 'u1', phase: 'travel', startDate: '2026-08-22', endDate: '2026-08-19', volumeScale: 0.6, intensityScale: 0.5 }) }] });
         const state = await new PlanBlockService().getBlocksInRangeState('u1', '2026-08-01', '2026-08-31');

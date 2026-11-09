@@ -53,7 +53,9 @@ function parseActivity(raw: DocumentData): ParsedActivity | null {
 /**
  * Persists `FixedActivity` at `users/{userId}/fixed_activities/{activityId}` (ADR-0002
  * user-owned path) -- see docs/plans/phase-5-sequence-planning.md 5.3. Every write is
- * validated client-side against the same base shape firestore.rules enforces server-side;
+ * validated client-side by validateFixedActivity, which since #1202 (ADR-0053) is the only
+ * write-time owner of the field values; firestore.rules enforces ownership, key allow-lists
+ * and size caps only.
  * Phase 6.2c additionally validates optional template/workout identity against the live
  * catalog before it can earn objective/coverage credit.
  */

@@ -102,6 +102,17 @@ describe('external-plan@3 (ADR-0035)', () => {
         expect(result.errors.some(e => e.field === 'restDays[0].week')).toBe(true);
     });
 
+    // Issue #1202: the Firestore rules no longer check week/day values or presence.
+    it('rejects a rest directive with a zero week or with week and day missing', () => {
+        const zero = validateExternalTrainingPlanV3(planV3({ restDays: [{ id: 'a', week: 0, day: 'friday' }] }));
+        expect(zero.isValid).toBe(false);
+        expect(zero.errors.some(e => e.field === 'restDays[0].week')).toBe(true);
+        const missing = validateExternalTrainingPlanV3(planV3({ restDays: [{ id: 'a' }] }));
+        expect(missing.isValid).toBe(false);
+        expect(missing.errors.some(e => e.field === 'restDays[0].week')).toBe(true);
+        expect(missing.errors.some(e => e.field === 'restDays[0].day')).toBe(true);
+    });
+
     it('rejects a rest directive with an unsupported weekday', () => {
         const result = validateExternalTrainingPlanV3(planV3({ restDays: [{ id: 'a', week: 1, day: 'holiday' }] }));
         expect(result.isValid).toBe(false);

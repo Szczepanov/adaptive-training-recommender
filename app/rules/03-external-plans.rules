@@ -15,42 +15,44 @@
           && (!('supersededFrom' in data) || data.supersededFrom == null || isValidActivityDate(data.supersededFrom));
       }
 
-      function isValidExternalRestDirective(directive, weekCount) {
+      // Issue #1202 (ADR-0053): the week range (1..weekCount), the weekday enum and the
+      // required week/day presence are owned by validateRestDays (externalPlanV3.ts), which
+      // validateExternalPlanImport runs in ExternalPlanService.import before the revision is
+      // written. Revisions are create-only, full-document writes.
+      function isValidExternalRestDirective(directive) {
         return directive is map
           && directive.keys().hasOnly(['id', 'week', 'day'])
-          && isBoundedString(directive.id, 64)
-          && isPositiveInt(directive.week) && directive.week <= weekCount
-          && directive.day in ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+          && isBoundedString(directive.id, 64);
       }
 
-      function hasValidExternalRestDirectives(restDays, weekCount) {
+      function hasValidExternalRestDirectives(restDays) {
         return restDays is list && restDays.size() <= 26
-          && (restDays.size() < 1 || isValidExternalRestDirective(restDays[0], weekCount))
-          && (restDays.size() < 2 || isValidExternalRestDirective(restDays[1], weekCount))
-          && (restDays.size() < 3 || isValidExternalRestDirective(restDays[2], weekCount))
-          && (restDays.size() < 4 || isValidExternalRestDirective(restDays[3], weekCount))
-          && (restDays.size() < 5 || isValidExternalRestDirective(restDays[4], weekCount))
-          && (restDays.size() < 6 || isValidExternalRestDirective(restDays[5], weekCount))
-          && (restDays.size() < 7 || isValidExternalRestDirective(restDays[6], weekCount))
-          && (restDays.size() < 8 || isValidExternalRestDirective(restDays[7], weekCount))
-          && (restDays.size() < 9 || isValidExternalRestDirective(restDays[8], weekCount))
-          && (restDays.size() < 10 || isValidExternalRestDirective(restDays[9], weekCount))
-          && (restDays.size() < 11 || isValidExternalRestDirective(restDays[10], weekCount))
-          && (restDays.size() < 12 || isValidExternalRestDirective(restDays[11], weekCount))
-          && (restDays.size() < 13 || isValidExternalRestDirective(restDays[12], weekCount))
-          && (restDays.size() < 14 || isValidExternalRestDirective(restDays[13], weekCount))
-          && (restDays.size() < 15 || isValidExternalRestDirective(restDays[14], weekCount))
-          && (restDays.size() < 16 || isValidExternalRestDirective(restDays[15], weekCount))
-          && (restDays.size() < 17 || isValidExternalRestDirective(restDays[16], weekCount))
-          && (restDays.size() < 18 || isValidExternalRestDirective(restDays[17], weekCount))
-          && (restDays.size() < 19 || isValidExternalRestDirective(restDays[18], weekCount))
-          && (restDays.size() < 20 || isValidExternalRestDirective(restDays[19], weekCount))
-          && (restDays.size() < 21 || isValidExternalRestDirective(restDays[20], weekCount))
-          && (restDays.size() < 22 || isValidExternalRestDirective(restDays[21], weekCount))
-          && (restDays.size() < 23 || isValidExternalRestDirective(restDays[22], weekCount))
-          && (restDays.size() < 24 || isValidExternalRestDirective(restDays[23], weekCount))
-          && (restDays.size() < 25 || isValidExternalRestDirective(restDays[24], weekCount))
-          && (restDays.size() < 26 || isValidExternalRestDirective(restDays[25], weekCount));
+          && (restDays.size() < 1 || isValidExternalRestDirective(restDays[0]))
+          && (restDays.size() < 2 || isValidExternalRestDirective(restDays[1]))
+          && (restDays.size() < 3 || isValidExternalRestDirective(restDays[2]))
+          && (restDays.size() < 4 || isValidExternalRestDirective(restDays[3]))
+          && (restDays.size() < 5 || isValidExternalRestDirective(restDays[4]))
+          && (restDays.size() < 6 || isValidExternalRestDirective(restDays[5]))
+          && (restDays.size() < 7 || isValidExternalRestDirective(restDays[6]))
+          && (restDays.size() < 8 || isValidExternalRestDirective(restDays[7]))
+          && (restDays.size() < 9 || isValidExternalRestDirective(restDays[8]))
+          && (restDays.size() < 10 || isValidExternalRestDirective(restDays[9]))
+          && (restDays.size() < 11 || isValidExternalRestDirective(restDays[10]))
+          && (restDays.size() < 12 || isValidExternalRestDirective(restDays[11]))
+          && (restDays.size() < 13 || isValidExternalRestDirective(restDays[12]))
+          && (restDays.size() < 14 || isValidExternalRestDirective(restDays[13]))
+          && (restDays.size() < 15 || isValidExternalRestDirective(restDays[14]))
+          && (restDays.size() < 16 || isValidExternalRestDirective(restDays[15]))
+          && (restDays.size() < 17 || isValidExternalRestDirective(restDays[16]))
+          && (restDays.size() < 18 || isValidExternalRestDirective(restDays[17]))
+          && (restDays.size() < 19 || isValidExternalRestDirective(restDays[18]))
+          && (restDays.size() < 20 || isValidExternalRestDirective(restDays[19]))
+          && (restDays.size() < 21 || isValidExternalRestDirective(restDays[20]))
+          && (restDays.size() < 22 || isValidExternalRestDirective(restDays[21]))
+          && (restDays.size() < 23 || isValidExternalRestDirective(restDays[22]))
+          && (restDays.size() < 24 || isValidExternalRestDirective(restDays[23]))
+          && (restDays.size() < 25 || isValidExternalRestDirective(restDays[24]))
+          && (restDays.size() < 26 || isValidExternalRestDirective(restDays[25]));
       }
 
       function hasValidExternalPlanRevision() {
@@ -92,7 +94,7 @@
           && isValidActivityDate(data.startDate)
           && isPositiveInt(data.weekCount) && data.weekCount <= 26
           && (!(data.schema in restDaySchemas)
-            || hasValidExternalRestDirectives(data.restDays, data.weekCount))
+            || hasValidExternalRestDirectives(data.restDays))
           && (!isV5OrV6
             || !('intentBlocks' in data.keys())
             || (data.intentBlocks is list && data.intentBlocks.size() <= 26))
@@ -302,17 +304,18 @@
     }
 
     match /users/{userId}/plan_blocks/{blockId} {
+      // Issue #1202 (ADR-0053): phase, the dates and their order, the volume/intensity scales
+      // and the eventId type are owned by validateAuthoredPlanBlock, which
+      // PlanBlockService.create and update run before every write. update merges, but the
+      // validated payload always carries phase, both dates and both scales, so the merged
+      // date order is the payload's. The hasAll list is exactly the keys the validator requires
+      // and both writes always send (eventId is omitted when empty; the timestamps are already
+      // required by hasStringTimestamps).
       function hasValidPlanBlock(userId) {
         let data = request.resource.data;
         return hasOwnedUserId(userId)
           && data.keys().hasOnly(['userId', 'eventId', 'phase', 'startDate', 'endDate', 'volumeScale', 'intensityScale', 'createdAt', 'updatedAt'])
-          && data.phase == 'travel'
-          && isValidActivityDate(data.startDate)
-          && isValidActivityDate(data.endDate)
-          && data.startDate <= data.endDate
-          && data.volumeScale is number && data.volumeScale >= 0 && data.volumeScale <= 1
-          && data.intensityScale is number && data.intensityScale >= 0 && data.intensityScale <= 1
-          && (!('eventId' in data) || data.eventId is string)
+          && data.keys().hasAll(['userId', 'phase', 'startDate', 'endDate', 'volumeScale', 'intensityScale'])
           && hasStringTimestamps(data);
       }
 
@@ -325,23 +328,19 @@
     }
 
     match /users/{userId}/schedule_overlays/{overlayId} {
+      // Issue #1202 (ADR-0053): category, sport, the dates and their order, the
+      // availability minutes (range in validateScheduleOverlay, whole minutes in
+      // assertWholeMinuteAvailability), the scales, the expectedCost axis values and the
+      // environment enum are owned by ScheduleOverlayService.create and update, which run
+      // both before every write. Both writes replace the whole document.
       function hasValidScheduleOverlay(userId) {
         let data = request.resource.data;
         return hasOwnedUserId(userId)
           && data.keys().hasOnly(['userId', 'title', 'category', 'sport', 'startDate', 'endDate', 'dailyAvailabilityMinutes', 'volumeScale', 'intensityScale', 'expectedCost', 'equipment', 'environment', 'notes', 'createdAt', 'updatedAt'])
           && data.keys().hasAll(['userId', 'title', 'category', 'startDate', 'endDate', 'dailyAvailabilityMinutes', 'volumeScale', 'intensityScale', 'expectedCost', 'createdAt', 'updatedAt'])
           && isBoundedString(data.title, 200)
-          && data.category in ['active_sport', 'sedentary_rest', 'high_step_walking', 'limited_availability']
-          && (!('sport' in data) || data.sport in ['skiing', 'volleyball', 'hiking', 'court_sport', 'field_sport', 'general'])
-          && isValidActivityDate(data.startDate)
-          && isValidActivityDate(data.endDate)
-          && data.startDate <= data.endDate
-          && data.dailyAvailabilityMinutes is int && data.dailyAvailabilityMinutes >= 0 && data.dailyAvailabilityMinutes <= 1440
-          && data.volumeScale is number && data.volumeScale >= 0 && data.volumeScale <= 1
-          && data.intensityScale is number && data.intensityScale >= 0 && data.intensityScale <= 1
           && hasValidExpectedCost(data.expectedCost)
           && (!('equipment' in data) || hasValidEquipmentList(data.equipment))
-          && (!('environment' in data) || data.environment in ['indoor', 'outdoor', 'either'])
           && (!('notes' in data) || (data.notes is string && data.notes.size() <= 1000))
           && hasStringTimestamps(data);
       }

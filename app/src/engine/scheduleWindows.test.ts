@@ -162,6 +162,18 @@ describe('validateScheduleWindowManifest', () => {
         expect(validateScheduleWindowManifest(makeManifest({ windows: [makeWindow({ date: '2026-09-11' })] })).isValid).toBe(false);
     });
 
+    // Issue #1202: the Firestore rules no longer check these per-window values;
+    // ScheduleWindowService.buildManifest runs this validator before every manifest write.
+    it.each([
+        ['a zero-length window', { startLocal: '07:00', endLocal: '07:00' }],
+        ['a cross-midnight window', { startLocal: '22:00', endLocal: '02:00' }],
+        ['an unknown environment', { environment: 'space' as never }],
+        ['a zero window revision', { revision: 0 }],
+        ['a non-string window createdAt', { createdAt: 42 as never }],
+    ])('rejects a manifest whose window has %s', (_label, override) => {
+        expect(validateScheduleWindowManifest(makeManifest({ windows: [makeWindow(override)] })).isValid).toBe(false);
+    });
+
     it('rejects more than the rule-verifiable maximum of eight windows', () => {
         const windows = Array.from({ length: 9 }, (_, index) => makeWindow({
             id: `w-${index}`,

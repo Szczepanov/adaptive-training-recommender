@@ -73,6 +73,15 @@ describe('validateDecisionJournalEntry', () => {
         expect(validateDecisionJournalEntry(withoutFlag).isValid).toBe(false);
     });
 
+    // Issue #1202: the Firestore rules no longer check these values; this validator, run by
+    // DecisionJournalService before every write, is their only write-time owner.
+    it('rejects a non-boolean sawEngineVerdictFirst, an unsupported schemaVersion and non-string timestamps', () => {
+        expect(validateDecisionJournalEntry({ ...validEntry(), sawEngineVerdictFirst: 'no' }).isValid).toBe(false);
+        expect(validateDecisionJournalEntry({ ...validEntry(), schemaVersion: 2 }).isValid).toBe(false);
+        expect(validateDecisionJournalEntry({ ...validEntry(), createdAt: 42 }).isValid).toBe(false);
+        expect(validateDecisionJournalEntry({ ...validEntry(), updatedAt: 42 }).isValid).toBe(false);
+    });
+
     it('rejects an unrecognized field -- closed key set, this is evidence not a free-form document', () => {
         const result = validateDecisionJournalEntry({ ...validEntry(), surprise: true });
         expect(result.isValid).toBe(false);

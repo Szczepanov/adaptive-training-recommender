@@ -52,36 +52,28 @@ service cloud.firestore {
       return month >= 1 && month <= 12 && day >= 1 && day <= daysInMonth;
     }
 
-    function hasValidAxisValue(m, key) {
-      return !(key in m) || (m[key] is number && m[key] >= 0 && m[key] <= 1);
-    }
-
+    // Issue #1202 (ADR-0053): bounded keys only. The 0..1 axis values are owned by
+    // validateFixedActivity / validateScheduleOverlay on their write paths.
     function hasValidExpectedCost(m) {
       return m is map
-        && m.keys().hasOnly(['systemic', 'cardiovascular', 'lowerBody', 'upperBody', 'impactTissue', 'neuromuscular'])
-        && m.size() <= 6
-        && hasValidAxisValue(m, 'systemic')
-        && hasValidAxisValue(m, 'cardiovascular')
-        && hasValidAxisValue(m, 'lowerBody')
-        && hasValidAxisValue(m, 'upperBody')
-        && hasValidAxisValue(m, 'impactTissue')
-        && hasValidAxisValue(m, 'neuromuscular');
+        && m.keys().hasOnly(['systemic', 'cardiovascular', 'lowerBody', 'upperBody', 'impactTissue', 'neuromuscular']);
     }
 
 
     match /users/{userId}/decision_journal/{date} {
+      // Issue #1202 (ADR-0053): the verdict enums, the sawEngineVerdictFirst type and
+      // schemaVersion are owned by validateDecisionJournalEntry, which
+      // DecisionJournalService.write runs before every write. That write merges, but its
+      // payload is the whole validated entry (absent optional keys are deleted), so the
+      // merged document is the validated payload.
       function hasValidDecisionJournalEntry(userId, date) {
+        let data = request.resource.data;
         return hasOwnedUserId(userId)
           && isDateDocument(date)
-          && request.resource.data.keys().hasOnly(['userId', 'date', 'externalVerdict', 'externalNote', 'sawEngineVerdictFirst', 'actualVerdict', 'createdAt', 'updatedAt', 'schemaVersion'])
-          && request.resource.data.keys().hasAll(['userId', 'date', 'externalVerdict', 'sawEngineVerdictFirst', 'createdAt', 'updatedAt', 'schemaVersion'])
-          && request.resource.data.externalVerdict in ['proceed', 'scale', 'defer', 'skip', 'advisory']
-          && (!('externalNote' in request.resource.data) || (request.resource.data.externalNote is string && request.resource.data.externalNote.size() <= 2000))
-          && request.resource.data.sawEngineVerdictFirst is bool
-          && (!('actualVerdict' in request.resource.data) || request.resource.data.actualVerdict in ['proceed', 'scale', 'defer', 'skip', 'advisory'])
-          && request.resource.data.createdAt is string
-          && request.resource.data.updatedAt is string
-          && request.resource.data.schemaVersion == 1;
+          && data.keys().hasOnly(['userId', 'date', 'externalVerdict', 'externalNote', 'sawEngineVerdictFirst', 'actualVerdict', 'createdAt', 'updatedAt', 'schemaVersion'])
+          && data.keys().hasAll(['userId', 'date', 'externalVerdict', 'sawEngineVerdictFirst', 'createdAt', 'updatedAt', 'schemaVersion'])
+          && (!('externalNote' in data) || (data.externalNote is string && data.externalNote.size() <= 2000))
+          && hasStringTimestamps(data);
       }
 
       allow read: if isOwner(userId);
@@ -174,22 +166,12 @@ service cloud.firestore {
     match /users/{userId}/fixed_activities/{activityId} {
       function hasValidExpectedStimulus(m) {
         return m is map
-          && m.keys().hasOnly(['aerobicEndurance', 'thresholdPower', 'vo2MaxPower', 'repeatedSurges', 'sprintPower', 'fatigueResistance', 'maxStrength', 'hypertrophy'])
-          && m.size() <= 8
-          && hasValidAxisValue(m, 'aerobicEndurance')
-          && hasValidAxisValue(m, 'thresholdPower')
-          && hasValidAxisValue(m, 'vo2MaxPower')
-          && hasValidAxisValue(m, 'repeatedSurges')
-          && hasValidAxisValue(m, 'sprintPower')
-          && hasValidAxisValue(m, 'fatigueResistance')
-          && hasValidAxisValue(m, 'maxStrength')
-          && hasValidAxisValue(m, 'hypertrophy');
+          && m.keys().hasOnly(['aerobicEndurance', 'thresholdPower', 'vo2MaxPower', 'repeatedSurges', 'sprintPower', 'fatigueResistance', 'maxStrength', 'hypertrophy']);
       }
 
       function hasValidAvailabilityContextOverride(m) {
         return m is map
           && m.keys().hasOnly(['environment', 'equipment'])
-          && (!('environment' in m) || m.environment in ['indoor', 'outdoor', 'either'])
           && (!('equipment' in m) || hasValidEquipmentList(m.equipment));
       }
 
@@ -197,24 +179,23 @@ service cloud.firestore {
         return !(key in data) || (data[key] is string && data[key].size() > 0 && data[key].size() <= 120);
       }
 
+      // Issue #1202 (ADR-0053): date, durationMin, the fixed/isCompleted flags, the
+      // environment enums, startTime, the stimulus/cost axis values and availabilityOverride
+      // are owned by validateFixedActivity, which FixedActivityService.createActivity and
+      // updateActivity run before every write. updateActivity merges, but every check that
+      // moved is per-field, and nested stimulus/cost/context maps merge key by key, so each
+      // merged value was validated on the write that set it. createdAt stays: the validator
+      // passes a stored createdAt through without type-checking it.
       function hasValidFixedActivity(userId) {
         let data = request.resource.data;
         return hasOwnedUserId(userId)
-          && isValidActivityDate(data.date)
           && data.keys().hasOnly(['userId', 'title', 'date', 'startTime', 'durationMin', 'fixed', 'expectedStimulus', 'expectedCost', 'environment', 'equipment', 'availabilityOverride', 'availabilityContextOverride', 'templateId', 'workoutId', 'isCompleted', 'createdAt', 'updatedAt'])
           && data.keys().hasAll(['userId', 'title', 'date', 'durationMin', 'fixed', 'environment', 'isCompleted', 'createdAt', 'updatedAt'])
           && data.title is string && data.title.size() <= 200
-          && data.durationMin is int && data.durationMin > 0 && data.durationMin <= 1440
-          && data.fixed is bool
-          && data.environment in ['indoor', 'outdoor', 'either']
-          && data.isCompleted is bool
-          && data.createdAt is string
-          && data.updatedAt is string
-          && (!('startTime' in data) || data.startTime is string)
+          && hasStringTimestamps(data)
           && (!('expectedStimulus' in data) || hasValidExpectedStimulus(data.expectedStimulus))
           && (!('expectedCost' in data) || hasValidExpectedCost(data.expectedCost))
           && (!('equipment' in data) || hasValidEquipmentList(data.equipment))
-          && (!('availabilityOverride' in data) || (data.availabilityOverride is number && data.availabilityOverride >= 0 && data.availabilityOverride <= 1440))
           && (!('availabilityContextOverride' in data) || hasValidAvailabilityContextOverride(data.availabilityContextOverride))
           && hasValidOptionalCatalogId(data, 'templateId')
           && hasValidOptionalCatalogId(data, 'workoutId');
@@ -229,20 +210,22 @@ service cloud.firestore {
     }
 
     match /users/{userId}/training_intent/profile {
-      // Issue #805: optional, default-off capability-maintenance opt-in. Absent = opted out;
-      // mirrors validationCore.ts validateTrainingIntentProfile.
+      // Issue #805: optional, default-off capability-maintenance opt-in. Absent = opted out.
+      // Issue #1202 (ADR-0053): the capability enum, uniqueness, the enabled type and the
+      // enabled-needs-a-capability rule are owned by validateTrainingIntentProfile.
       function hasValidCapabilityMaintenance(value) {
         return value is map
           && value.keys().hasOnly(['enabled', 'capabilities'])
           && value.keys().hasAll(['enabled', 'capabilities'])
-          && value.enabled is bool
           && value.capabilities is list
-          && value.capabilities.size() <= 4
-          && value.capabilities.hasOnly(['linear_speed_skill', 'acceleration_deceleration', 'multidirectional_change_of_direction', 'sport_skill'])
-          && value.capabilities.toSet().size() == value.capabilities.size()
-          && (value.enabled == false || value.capabilities.size() > 0);
+          && value.capabilities.size() <= 4;
       }
 
+      // Issue #1202 (ADR-0053): planningMode, the weeklyCommitment counts and ordering,
+      // organizationPreference and schemaVersion are owned by validateTrainingIntentProfile,
+      // which TrainingIntentProfileService.upsert runs before every write. upsert merges,
+      // but the validator requires all three weeklyCommitment keys and both
+      // capabilityMaintenance keys, so each nested map it writes is replaced whole.
       function hasValidTrainingIntentProfile(userId) {
         let data = request.resource.data;
         let commitment = data.weeklyCommitment;
@@ -250,16 +233,10 @@ service cloud.firestore {
           && data.keys().hasOnly(['userId', 'planningMode', 'priorities', 'weeklyCommitment', 'organizationPreference', 'schemaVersion', 'createdAt', 'updatedAt', 'capabilityMaintenance'])
           && (!('capabilityMaintenance' in data) || hasValidCapabilityMaintenance(data.capabilityMaintenance))
           && data.keys().hasAll(['userId', 'planningMode', 'priorities', 'weeklyCommitment', 'organizationPreference', 'schemaVersion', 'createdAt', 'updatedAt'])
-          && data.planningMode in ['evergreen', 'event_directed', 'externally_planned']
           && data.priorities is list && data.priorities.size() <= 6
           && data.weeklyCommitment is map
           && commitment.keys().hasOnly(['minSessions', 'targetSessions', 'maxSessions'])
           && commitment.keys().hasAll(['minSessions', 'targetSessions', 'maxSessions'])
-          && isPositiveInt(commitment.minSessions) && commitment.minSessions <= 14
-          && commitment.targetSessions is int && commitment.targetSessions >= commitment.minSessions && commitment.targetSessions <= 14
-          && commitment.maxSessions is int && commitment.maxSessions >= commitment.targetSessions && commitment.maxSessions <= 14
-          && data.organizationPreference == 'auto'
-          && isPositiveInt(data.schemaVersion)
           && hasStringTimestamps(data);
       }
 
@@ -491,6 +468,13 @@ service cloud.firestore {
       // ADR-0036 D-WINDOW: a date's windows share one authoritative manifest. The
       // eight-entry bound is intentional: rules cannot iterate arbitrary lists, but this
       // lets them validate every entry and every adjacent pair, including direct SDK writes.
+      //
+      // Issue #1202 (ADR-0053): the positive duration (endLocal after startLocal), the
+      // environment enum, the per-window revision and timestamps are owned by
+      // validateScheduleWindow (via validateScheduleWindowManifest), which
+      // ScheduleWindowService.buildManifest runs before every transaction.set; the writes
+      // replace the whole manifest. The HH:mm patterns stay: the overlap check below
+      // compares the times as strings, which is only time order for that fixed format.
       function hasValidScheduleWindowManifestEntry(userId, date, window) {
         return window is map
           && window.keys().hasOnly(['id', 'userId', 'date', 'startLocal', 'endLocal', 'label', 'equipment', 'environment', 'revision', 'createdAt', 'updatedAt'])
@@ -500,12 +484,8 @@ service cloud.firestore {
           && window.date == date
           && window.startLocal is string && window.startLocal.matches('^([01][0-9]|2[0-3]):[0-5][0-9]$')
           && window.endLocal is string && window.endLocal.matches('^([01][0-9]|2[0-3]):[0-5][0-9]$')
-          && window.endLocal > window.startLocal
-          && isPositiveInt(window.revision)
-          && window.createdAt is string && window.updatedAt is string
           && (!('label' in window) || (isBoundedString(window.label, 100)))
-          && (!('equipment' in window) || hasValidEquipmentList(window.equipment))
-          && (!('environment' in window) || window.environment in ['indoor', 'outdoor', 'either']);
+          && (!('equipment' in window) || hasValidEquipmentList(window.equipment));
       }
 
       function hasValidScheduleWindowManifestEntries(userId, date, windows) {
@@ -541,6 +521,8 @@ service cloud.firestore {
       // The service stores each manifest in start-time order. Checking adjacent entries is
       // sufficient for interval overlap once that ordering is part of the persisted boundary,
       // and keeps a three-window (AM / PM / evening) create below the rules expression budget.
+      // It does not need a positive duration per window: starts strictly increase and each
+      // end is at most the next start, so every end is at most every later start.
       function scheduleWindowManifestAdjacentPairIsValid(windows, left, right) {
         return windows.size() <= right || (
           windows[left].id != windows[right].id
@@ -557,10 +539,6 @@ service cloud.firestore {
           && scheduleWindowManifestAdjacentPairIsValid(windows, 4, 5)
           && scheduleWindowManifestAdjacentPairIsValid(windows, 5, 6)
           && scheduleWindowManifestAdjacentPairIsValid(windows, 6, 7);
-      }
-
-      function hasDistinctScheduleWindowManifestIds(windows) {
-        return hasDistinctScheduleWindowManifestIdsUpToThree(windows);
       }
 
       // Per-window identity/revision transition validation (stable id/createdAt retained,
@@ -589,6 +567,9 @@ service cloud.firestore {
       // cross-date move test, and the delete-retains-manifest test) -- unit tests that don't
       // depend on the rules layer at all.
 
+      // One manifest validator for every size: a list of at most three windows takes the
+      // three-position fast path, a longer one the eight-position path. Duplicate ids are
+      // checked over the first three positions for both, as before the two were merged.
       function hasValidScheduleWindowManifest(userId, date) {
         let data = request.resource.data;
         return hasOwnedUserId(userId)
@@ -597,43 +578,19 @@ service cloud.firestore {
           && data.date == date && isValidActivityDate(data.date)
           && isPositiveInt(data.revision)
           && hasStringTimestamps(data)
-          && hasValidScheduleWindowManifestEntries(userId, date, data.windows)
-          && hasDistinctScheduleWindowManifestIds(data.windows)
-          && hasNonOverlappingScheduleWindowManifestEntries(data.windows);
-      }
-
-      function hasValidSmallScheduleWindowManifest(userId, date) {
-        let data = request.resource.data;
-        return hasOwnedUserId(userId)
-          && data.keys().hasOnly(['userId', 'date', 'revision', 'windows', 'createdAt', 'updatedAt'])
-          && data.keys().hasAll(['userId', 'date', 'revision', 'windows', 'createdAt', 'updatedAt'])
-          && data.date == date && isValidActivityDate(data.date)
-          && isPositiveInt(data.revision)
-          && hasStringTimestamps(data)
-          && hasValidScheduleWindowManifestEntriesUpToThree(userId, date, data.windows)
+          && (data.windows.size() <= 3
+            ? hasValidScheduleWindowManifestEntriesUpToThree(userId, date, data.windows)
+            : hasValidScheduleWindowManifestEntries(userId, date, data.windows))
           && hasDistinctScheduleWindowManifestIdsUpToThree(data.windows)
           && hasNonOverlappingScheduleWindowManifestEntries(data.windows);
       }
 
       allow read: if isOwner(userId);
-      allow create: if (
-        (request.resource.data.windows.size() <= 3
-          && hasValidSmallScheduleWindowManifest(userId, date)
-          && request.resource.data.revision == 1)
-        || (request.resource.data.windows.size() > 3
-          && hasValidScheduleWindowManifest(userId, date)
-          && request.resource.data.revision == 1)
-      );
-      allow update: if (
-        (request.resource.data.windows.size() <= 3
-          && hasValidSmallScheduleWindowManifest(userId, date)
-          && keepsCreatedAt()
-          && request.resource.data.revision == resource.data.revision + 1)
-        || (request.resource.data.windows.size() > 3
-          && hasValidScheduleWindowManifest(userId, date)
-          && keepsCreatedAt()
-          && request.resource.data.revision == resource.data.revision + 1)
-      );
+      allow create: if hasValidScheduleWindowManifest(userId, date)
+        && request.resource.data.revision == 1;
+      allow update: if hasValidScheduleWindowManifest(userId, date)
+        && keepsCreatedAt()
+        && request.resource.data.revision == resource.data.revision + 1;
     }
 
     // Retired sibling documents remain readable for forensic/migration purposes but no
@@ -658,42 +615,44 @@ service cloud.firestore {
           && (!('supersededFrom' in data) || data.supersededFrom == null || isValidActivityDate(data.supersededFrom));
       }
 
-      function isValidExternalRestDirective(directive, weekCount) {
+      // Issue #1202 (ADR-0053): the week range (1..weekCount), the weekday enum and the
+      // required week/day presence are owned by validateRestDays (externalPlanV3.ts), which
+      // validateExternalPlanImport runs in ExternalPlanService.import before the revision is
+      // written. Revisions are create-only, full-document writes.
+      function isValidExternalRestDirective(directive) {
         return directive is map
           && directive.keys().hasOnly(['id', 'week', 'day'])
-          && isBoundedString(directive.id, 64)
-          && isPositiveInt(directive.week) && directive.week <= weekCount
-          && directive.day in ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+          && isBoundedString(directive.id, 64);
       }
 
-      function hasValidExternalRestDirectives(restDays, weekCount) {
+      function hasValidExternalRestDirectives(restDays) {
         return restDays is list && restDays.size() <= 26
-          && (restDays.size() < 1 || isValidExternalRestDirective(restDays[0], weekCount))
-          && (restDays.size() < 2 || isValidExternalRestDirective(restDays[1], weekCount))
-          && (restDays.size() < 3 || isValidExternalRestDirective(restDays[2], weekCount))
-          && (restDays.size() < 4 || isValidExternalRestDirective(restDays[3], weekCount))
-          && (restDays.size() < 5 || isValidExternalRestDirective(restDays[4], weekCount))
-          && (restDays.size() < 6 || isValidExternalRestDirective(restDays[5], weekCount))
-          && (restDays.size() < 7 || isValidExternalRestDirective(restDays[6], weekCount))
-          && (restDays.size() < 8 || isValidExternalRestDirective(restDays[7], weekCount))
-          && (restDays.size() < 9 || isValidExternalRestDirective(restDays[8], weekCount))
-          && (restDays.size() < 10 || isValidExternalRestDirective(restDays[9], weekCount))
-          && (restDays.size() < 11 || isValidExternalRestDirective(restDays[10], weekCount))
-          && (restDays.size() < 12 || isValidExternalRestDirective(restDays[11], weekCount))
-          && (restDays.size() < 13 || isValidExternalRestDirective(restDays[12], weekCount))
-          && (restDays.size() < 14 || isValidExternalRestDirective(restDays[13], weekCount))
-          && (restDays.size() < 15 || isValidExternalRestDirective(restDays[14], weekCount))
-          && (restDays.size() < 16 || isValidExternalRestDirective(restDays[15], weekCount))
-          && (restDays.size() < 17 || isValidExternalRestDirective(restDays[16], weekCount))
-          && (restDays.size() < 18 || isValidExternalRestDirective(restDays[17], weekCount))
-          && (restDays.size() < 19 || isValidExternalRestDirective(restDays[18], weekCount))
-          && (restDays.size() < 20 || isValidExternalRestDirective(restDays[19], weekCount))
-          && (restDays.size() < 21 || isValidExternalRestDirective(restDays[20], weekCount))
-          && (restDays.size() < 22 || isValidExternalRestDirective(restDays[21], weekCount))
-          && (restDays.size() < 23 || isValidExternalRestDirective(restDays[22], weekCount))
-          && (restDays.size() < 24 || isValidExternalRestDirective(restDays[23], weekCount))
-          && (restDays.size() < 25 || isValidExternalRestDirective(restDays[24], weekCount))
-          && (restDays.size() < 26 || isValidExternalRestDirective(restDays[25], weekCount));
+          && (restDays.size() < 1 || isValidExternalRestDirective(restDays[0]))
+          && (restDays.size() < 2 || isValidExternalRestDirective(restDays[1]))
+          && (restDays.size() < 3 || isValidExternalRestDirective(restDays[2]))
+          && (restDays.size() < 4 || isValidExternalRestDirective(restDays[3]))
+          && (restDays.size() < 5 || isValidExternalRestDirective(restDays[4]))
+          && (restDays.size() < 6 || isValidExternalRestDirective(restDays[5]))
+          && (restDays.size() < 7 || isValidExternalRestDirective(restDays[6]))
+          && (restDays.size() < 8 || isValidExternalRestDirective(restDays[7]))
+          && (restDays.size() < 9 || isValidExternalRestDirective(restDays[8]))
+          && (restDays.size() < 10 || isValidExternalRestDirective(restDays[9]))
+          && (restDays.size() < 11 || isValidExternalRestDirective(restDays[10]))
+          && (restDays.size() < 12 || isValidExternalRestDirective(restDays[11]))
+          && (restDays.size() < 13 || isValidExternalRestDirective(restDays[12]))
+          && (restDays.size() < 14 || isValidExternalRestDirective(restDays[13]))
+          && (restDays.size() < 15 || isValidExternalRestDirective(restDays[14]))
+          && (restDays.size() < 16 || isValidExternalRestDirective(restDays[15]))
+          && (restDays.size() < 17 || isValidExternalRestDirective(restDays[16]))
+          && (restDays.size() < 18 || isValidExternalRestDirective(restDays[17]))
+          && (restDays.size() < 19 || isValidExternalRestDirective(restDays[18]))
+          && (restDays.size() < 20 || isValidExternalRestDirective(restDays[19]))
+          && (restDays.size() < 21 || isValidExternalRestDirective(restDays[20]))
+          && (restDays.size() < 22 || isValidExternalRestDirective(restDays[21]))
+          && (restDays.size() < 23 || isValidExternalRestDirective(restDays[22]))
+          && (restDays.size() < 24 || isValidExternalRestDirective(restDays[23]))
+          && (restDays.size() < 25 || isValidExternalRestDirective(restDays[24]))
+          && (restDays.size() < 26 || isValidExternalRestDirective(restDays[25]));
       }
 
       function hasValidExternalPlanRevision() {
@@ -735,7 +694,7 @@ service cloud.firestore {
           && isValidActivityDate(data.startDate)
           && isPositiveInt(data.weekCount) && data.weekCount <= 26
           && (!(data.schema in restDaySchemas)
-            || hasValidExternalRestDirectives(data.restDays, data.weekCount))
+            || hasValidExternalRestDirectives(data.restDays))
           && (!isV5OrV6
             || !('intentBlocks' in data.keys())
             || (data.intentBlocks is list && data.intentBlocks.size() <= 26))
@@ -945,17 +904,18 @@ service cloud.firestore {
     }
 
     match /users/{userId}/plan_blocks/{blockId} {
+      // Issue #1202 (ADR-0053): phase, the dates and their order, the volume/intensity scales
+      // and the eventId type are owned by validateAuthoredPlanBlock, which
+      // PlanBlockService.create and update run before every write. update merges, but the
+      // validated payload always carries phase, both dates and both scales, so the merged
+      // date order is the payload's. The hasAll list is exactly the keys the validator requires
+      // and both writes always send (eventId is omitted when empty; the timestamps are already
+      // required by hasStringTimestamps).
       function hasValidPlanBlock(userId) {
         let data = request.resource.data;
         return hasOwnedUserId(userId)
           && data.keys().hasOnly(['userId', 'eventId', 'phase', 'startDate', 'endDate', 'volumeScale', 'intensityScale', 'createdAt', 'updatedAt'])
-          && data.phase == 'travel'
-          && isValidActivityDate(data.startDate)
-          && isValidActivityDate(data.endDate)
-          && data.startDate <= data.endDate
-          && data.volumeScale is number && data.volumeScale >= 0 && data.volumeScale <= 1
-          && data.intensityScale is number && data.intensityScale >= 0 && data.intensityScale <= 1
-          && (!('eventId' in data) || data.eventId is string)
+          && data.keys().hasAll(['userId', 'phase', 'startDate', 'endDate', 'volumeScale', 'intensityScale'])
           && hasStringTimestamps(data);
       }
 
@@ -968,23 +928,19 @@ service cloud.firestore {
     }
 
     match /users/{userId}/schedule_overlays/{overlayId} {
+      // Issue #1202 (ADR-0053): category, sport, the dates and their order, the
+      // availability minutes (range in validateScheduleOverlay, whole minutes in
+      // assertWholeMinuteAvailability), the scales, the expectedCost axis values and the
+      // environment enum are owned by ScheduleOverlayService.create and update, which run
+      // both before every write. Both writes replace the whole document.
       function hasValidScheduleOverlay(userId) {
         let data = request.resource.data;
         return hasOwnedUserId(userId)
           && data.keys().hasOnly(['userId', 'title', 'category', 'sport', 'startDate', 'endDate', 'dailyAvailabilityMinutes', 'volumeScale', 'intensityScale', 'expectedCost', 'equipment', 'environment', 'notes', 'createdAt', 'updatedAt'])
           && data.keys().hasAll(['userId', 'title', 'category', 'startDate', 'endDate', 'dailyAvailabilityMinutes', 'volumeScale', 'intensityScale', 'expectedCost', 'createdAt', 'updatedAt'])
           && isBoundedString(data.title, 200)
-          && data.category in ['active_sport', 'sedentary_rest', 'high_step_walking', 'limited_availability']
-          && (!('sport' in data) || data.sport in ['skiing', 'volleyball', 'hiking', 'court_sport', 'field_sport', 'general'])
-          && isValidActivityDate(data.startDate)
-          && isValidActivityDate(data.endDate)
-          && data.startDate <= data.endDate
-          && data.dailyAvailabilityMinutes is int && data.dailyAvailabilityMinutes >= 0 && data.dailyAvailabilityMinutes <= 1440
-          && data.volumeScale is number && data.volumeScale >= 0 && data.volumeScale <= 1
-          && data.intensityScale is number && data.intensityScale >= 0 && data.intensityScale <= 1
           && hasValidExpectedCost(data.expectedCost)
           && (!('equipment' in data) || hasValidEquipmentList(data.equipment))
-          && (!('environment' in data) || data.environment in ['indoor', 'outdoor', 'either'])
           && (!('notes' in data) || (data.notes is string && data.notes.size() <= 1000))
           && hasStringTimestamps(data);
       }
@@ -1015,6 +971,11 @@ service cloud.firestore {
           && hasStringTimestamps(data);
       }
 
+      // Issue #1202 (ADR-0053): schemaVersion, the intent enum and the blocks list type are
+      // owned by validateSessionDefinition, which SessionDefinitionService.saveDefinitionRevision
+      // runs before the create-only revision write. The path bindings, contentHash (computed
+      // by the service, not validated) and the companionSessions list type (no TypeScript
+      // check) stay.
       function hasValidSessionDefinitionRevision(userId, definitionId, revId) {
         let data = request.resource.data;
         return hasOwnedUserId(userId)
@@ -1023,11 +984,8 @@ service cloud.firestore {
           && data.definitionId == definitionId
           && data.id == definitionId
           && data.revision is int && string(data.revision) == revId
-          && data.schemaVersion == 1
           && data.contentHash is string && data.contentHash.size() > 0
-          && data.intent in ['training', 'testing', 'competition', 'rehab_return', 'recovery', 'skill_technical']
-          && (!('companionSessions' in data) || data.companionSessions is list)
-          && data.blocks is list;
+          && (!('companionSessions' in data) || data.companionSessions is list);
       }
 
       allow read: if isOwner(userId);

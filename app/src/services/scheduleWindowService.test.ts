@@ -74,6 +74,19 @@ describe('ScheduleWindowService manifest persistence', () => {
         expect(stored.revision).toBe(1);
     });
 
+    // Issue #1202: the rules no longer check a window's duration or environment, so the
+    // service must refuse them before any manifest write.
+    it('rejects a zero-length window or unknown environment on create and update without writing', async () => {
+        await expect(service().createWindow('u1', { ...validInput, endLocal: '06:00' })).rejects.toThrow(/Validation failed/);
+        await expect(service().createWindow('u1', { ...validInput, environment: 'space' as never })).rejects.toThrow(/Validation failed/);
+        expect(stored).toBeUndefined();
+
+        stored = manifest([window()]);
+        await expect(service().updateWindow('u1', DATE, 'window-1', { endLocal: '05:00' })).rejects.toThrow(/Validation failed/);
+        await expect(service().updateWindow('u1', DATE, 'window-1', { environment: 'space' as never })).rejects.toThrow(/Validation failed/);
+        expect(stored).toEqual(manifest([window()]));
+    });
+
     it('expands and persists a repeating schedule across date manifests', async () => {
         const manifests = new Map<string, ScheduleWindowManifest>();
         firestore.getDoc.mockImplementation(async (ref: { path: string }) => snapshot(manifests.get(ref.path)));
