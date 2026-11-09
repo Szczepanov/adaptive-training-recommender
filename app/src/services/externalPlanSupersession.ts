@@ -83,6 +83,13 @@ export function previousSessionDates(previousPlan: AnyExternalTrainingPlan, over
     return new Map(plan.sessions.map(session => [session.id, placed.get(session.id) ?? impliedDate(plan, session)]));
 }
 
+/**
+ * The previous revision's placement overlay after the declared replacements: every replaced
+ * session is marked `superseded` (added at its shown date when it had no assignment) and
+ * linked to its successor in `newRevision`. A replaced session with performed work fails with
+ * `replaced-session-completed`. Sessions dated before the effective date are not rejected
+ * here (#1189); preflight warns about them instead.
+ */
 export function supersedeDeclaredSessions(
     previousPlan: AnyExternalTrainingPlan,
     previousOverlay: ExternalPlanPlacement | null,
