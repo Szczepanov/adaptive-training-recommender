@@ -346,7 +346,9 @@ export class AssessmentTrialService {
         const snapshots = await getDocs(collection(this.db, 'users', userId, 'assessment_attempts', attemptId, 'trials'));
         const records = snapshots.docs.map(snapshot => ({ id: snapshot.id, trial: snapshot.data() as AssessmentTrial }));
         const pathMatched = records.filter(record => record.trial?.id === record.id).map(record => record.trial);
-        const mismatchedIds = records.filter(record => record.trial?.id !== record.id).map(record => record.id);
+        const mismatchedIds = records
+            .filter(record => record.trial?.id !== record.id)
+            .flatMap(record => [record.id, record.trial?.id].filter((id): id is string => typeof id === 'string'));
         const readable = readableAssessmentTrialSubset(pathMatched, protocol, attemptId, mismatchedIds);
         return {
             trials: readable.trials.sort(compareTrials),
