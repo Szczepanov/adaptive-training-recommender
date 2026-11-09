@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
+    assertValidSessionOccurrence,
     validateSessionDefinition,
     validateSessionOccurrence,
     validateSessionExecution,
@@ -529,5 +530,69 @@ describe('validateSessionRestEvent (PR 3, training-occurrence plan)', () => {
 
     it('rejects a non-finite adjustmentSeconds', () => {
         expect(validateSessionRestEvent(validRestEvent({ adjustmentSeconds: Number.NaN })).ok).toBe(false);
+    });
+});
+
+// Issue #1202 (ADR-0053): one case per value check the session_occurrences rules no longer
+// make. Every occurrence writer calls assertValidSessionOccurrence before its write.
+describe('session occurrence write-side ownership (#1202)', () => {
+    const manualOccurrence = {
+        userId: 'user-1',
+        occurrenceId: 'occ-1',
+        date: '2026-08-18',
+        authority: 'schedule',
+        definitionRef: { definitionId: 'def-1', revision: 1, contentHash: 'hash-1' },
+        state: 'scheduled',
+        createdAt: '2026-08-18T10:00:00Z',
+        updatedAt: '2026-08-18T10:00:00Z',
+    };
+    const externalPlanRef = { planId: 'plan-1', revision: 1, sessionId: 'session-1', contentHash: 'c'.repeat(64) };
+    const windowBinding = {
+        windowId: 'pm', bundleId: 'bundle-1', order: 1,
+        boundStartLocal: '17:00', boundEndLocal: '19:00',
+        startInstant: '2026-08-18T15:00:00.000Z', endInstant: '2026-08-18T17:00:00.000Z',
+    };
+    const externalOccurrence = {
+        ...manualOccurrence,
+        occurrenceId: 'occ-ext-1',
+        authority: 'external_plan',
+        definitionRef: undefined,
+        externalPlanRef,
+        placementOrder: 1,
+        windowBinding,
+    };
+
+    it('accepts a manual and a bound external-plan occurrence', () => {
+        expect(() => assertValidSessionOccurrence(manualOccurrence)).not.toThrow();
+        expect(() => assertValidSessionOccurrence(externalOccurrence)).not.toThrow();
+        expect(() => assertValidSessionOccurrence({ ...manualOccurrence, placementOrder: 0 })).not.toThrow();
+    });
+
+    it.each([
+        ['an impossible date', { date: '2026-02-30' }, 'date: date must be Warsaw YYYY-MM-DD string'],
+        ['an unknown authority', { authority: 'coach' }, 'authority: Invalid authority: coach'],
+        ['external_plan authority with a definitionRef', { authority: 'external_plan' }, 'authority: definitionRef cannot have authority external_plan'],
+        ['both refs', { externalPlanRef }, 'ref: Session occurrence cannot have both definitionRef and externalPlanRef'],
+        ['neither ref', { definitionRef: undefined }, 'ref: Session occurrence must have either definitionRef or externalPlanRef'],
+        ['an empty definitionId', { definitionRef: { definitionId: '', revision: 1, contentHash: 'h' } }, 'definitionRef: Invalid definitionRef'],
+        ['a zero definition revision', { definitionRef: { definitionId: 'd', revision: 0, contentHash: 'h' } }, 'definitionRef: Invalid definitionRef'],
+        ['an empty definition contentHash', { definitionRef: { definitionId: 'd', revision: 1, contentHash: '' } }, 'definitionRef: Invalid definitionRef'],
+        ['a negative placementOrder', { placementOrder: -1 }, 'placementOrder: placementOrder must be a non-negative integer'],
+        ['a fractional placementOrder', { placementOrder: 1.5 }, 'placementOrder: placementOrder must be a non-negative integer'],
+        ['a windowBinding without externalPlanRef', { windowBinding }, 'windowBinding: windowBinding requires externalPlanRef'],
+    ])('rejects a manual occurrence with %s', (_label, override, message) => {
+        expect(() => assertValidSessionOccurrence({ ...manualOccurrence, ...override }))
+            .toThrow(`Invalid session occurrence: ${message}`);
+    });
+
+    it.each([
+        ['a manual authority with externalPlanRef', { authority: 'schedule' }, 'authority: externalPlanRef requires authority external_plan'],
+        ['a zero plan revision', { externalPlanRef: { ...externalPlanRef, revision: 0 } }, 'externalPlanRef: Invalid externalPlanRef'],
+        ['a negative window order', { windowBinding: { ...windowBinding, order: -1 } }, 'windowBinding: Invalid windowBinding'],
+        ['an empty window bound', { windowBinding: { ...windowBinding, boundStartLocal: '' } }, 'windowBinding: Invalid windowBinding'],
+        ['an empty window instant', { windowBinding: { ...windowBinding, endInstant: '' } }, 'windowBinding: Invalid windowBinding'],
+    ])('rejects an external-plan occurrence with %s', (_label, override, message) => {
+        expect(() => assertValidSessionOccurrence({ ...externalOccurrence, ...override }))
+            .toThrow(`Invalid session occurrence: ${message}`);
     });
 });

@@ -231,3 +231,18 @@ describe('ManualRecommendationReplacementService', () => {
         expect(tx.delete).not.toHaveBeenCalled();
     });
 });
+
+// Issue #1202 (ADR-0053): the replacement occurrence is validated by
+// assertValidSessionOccurrence before the transaction opens.
+describe('ManualRecommendationReplacementService write-side validation (#1202)', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+    });
+
+    it('rejects a replacement with an invalid definitionRef before any transaction', async () => {
+        const service = new ManualRecommendationReplacementService({} as never);
+        await expect(service.replaceRecommendationOccurrence('u1', '2026-10-05', { ...definitionRef, revision: 0 }))
+            .rejects.toThrow('Invalid session occurrence: definitionRef: Invalid definitionRef');
+        expect(firestore.runTransaction).not.toHaveBeenCalled();
+    });
+});

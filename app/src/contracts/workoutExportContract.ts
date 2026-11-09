@@ -102,6 +102,51 @@ export function validateQueuedWorkoutContract(entry: unknown): WorkoutExportCont
     return { valid: errors.length === 0, errors };
 }
 
+const QUEUED_WORKOUT_STATUSES = ['pending', 'synced', 'failed'];
+
+function isNullableString(value: unknown): boolean {
+    return value === undefined || value === null || typeof value === 'string';
+}
+
+/**
+ * Write-side check for a `GarminQueuedWorkout` document, run by
+ * `GarminWorkoutQueueService.queueWorkout` before every write (issue #1202, ADR-0053). It
+ * owns the value checks the Firestore rules no longer make: the status enum, the timestamp
+ * and optional-field types, and that `payload` is an object.
+ *
+ * Deliberately narrower than {@link validateQueuedWorkoutContract}. That contract also
+ * requires a non-empty title and the full `CanonicalWorkoutExport` payload shape, which
+ * would reject payloads the app queues today (for example the fallback export with no
+ * blocks). The rules never enforced either, so wiring them in would change behaviour;
+ * the Garmin export fidelity check in `WorkoutExportMenu` remains the payload gate.
+ */
+export function validateQueuedWorkoutWrite(entry: unknown): WorkoutExportContractResult {
+    const errors: string[] = [];
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+        return { valid: false, errors: ['GarminQueuedWorkout must be a non-null object'] };
+    }
+
+    const e = entry as Record<string, any>;
+    if (typeof e.userId !== 'string' || !e.userId.trim()) errors.push('userId is required');
+    if (typeof e.date !== 'string' || !/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(e.date)) errors.push('date is required (YYYY-MM-DD)');
+    if (typeof e.workoutTitle !== 'string') errors.push('workoutTitle must be a string');
+    if (typeof e.modality !== 'string') errors.push('modality must be a string');
+    if (!QUEUED_WORKOUT_STATUSES.includes(e.status)) {
+        errors.push('status must be pending, synced, or failed, got ' + e.status);
+    }
+    if (typeof e.queuedAt !== 'string' || !e.queuedAt.trim()) errors.push('queuedAt ISO timestamp is required');
+    if (!isNullableString(e.syncedAt)) errors.push('syncedAt must be a string or null');
+    if (!isNullableString(e.error)) errors.push('error must be a string or null');
+    if (e.garminWorkoutId !== undefined && typeof e.garminWorkoutId !== 'string') {
+        errors.push('garminWorkoutId must be a string');
+    }
+    if (!e.payload || typeof e.payload !== 'object' || Array.isArray(e.payload)) {
+        errors.push('payload must be a non-null object');
+    }
+
+    return { valid: errors.length === 0, errors };
+}
+
 /**
  * Validates the app's own authoring-time `WorkoutDefinition` catalog shape
  * (app/src/workouts/catalog). This is upstream of export -- catalog entries get

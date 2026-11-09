@@ -72,6 +72,22 @@ describe('SessionDefinitionService', () => {
         });
     });
 
+    // Issue #1202: movementComposition is part of the schema, so validateSessionDefinition
+    // accepts it and saveDefinitionRevision keeps it in the batched revision payload. The rules
+    // side (the revision key allow-list) is covered in firestoreRules.emulator.test.ts.
+    it('keeps a valid movementComposition contract in the batched revision payload', async () => {
+        firestore.getDoc.mockResolvedValue({ exists: () => false });
+        const service = new SessionDefinitionService({} as never);
+        const movementComposition: SessionDefinition['movementComposition'] = [
+            { id: 'push', pattern: 'upper_push', stepIds: ['s1'], status: 'relaxed', reason: 'not evidenced' },
+        ];
+
+        await service.saveDefinitionRevision('user-1', { ...definition, movementComposition });
+
+        const [, revisionPayload] = firestore.batchSet.mock.calls[0];
+        expect(revisionPayload.movementComposition).toEqual(movementComposition);
+    });
+
     it('writes the immutable revision and mutable header in one batch', async () => {
         firestore.getDoc.mockResolvedValue({ exists: () => false });
         const service = new SessionDefinitionService({} as never);

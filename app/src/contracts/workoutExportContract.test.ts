@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import {
     validateQueuedWorkoutContract,
+    validateQueuedWorkoutWrite,
     validateCatalogWorkoutStructure,
     validateCanonicalWorkoutExportContract,
 } from './workoutExportContract';
@@ -146,5 +147,41 @@ describe('WorkoutExportContract', () => {
             const result = validateCatalogWorkoutStructure(workout);
             expect(result.valid, 'Workout ' + workout.id + ' failed catalog structure contract: ' + result.errors.join(', ')).toBe(true);
         }
+    });
+
+    // Issue #1202 (ADR-0053): the value checks the garmin_workout_queue rules no longer make.
+    describe('validateQueuedWorkoutWrite', () => {
+        it('accepts the shared fixture and a payload with no blocks (the fallback export the app queues today)', () => {
+            expect(validateQueuedWorkoutWrite(sharedFixture.queueEntry)).toEqual({ valid: true, errors: [] });
+            const noBlocks = { ...sharedFixture.queueEntry, payload: { ...workoutPayload, blocks: [] } };
+            expect(validateQueuedWorkoutWrite(noBlocks)).toEqual({ valid: true, errors: [] });
+        });
+
+        it('accepts the optional fields the Python sync writes back', () => {
+            const synced = {
+                ...sharedFixture.queueEntry,
+                status: 'synced',
+                syncedAt: '2026-08-26T07:00:00Z',
+                error: 'transient',
+                garminWorkoutId: '12345',
+            };
+            expect(validateQueuedWorkoutWrite(synced)).toEqual({ valid: true, errors: [] });
+        });
+
+        it.each([
+            ['an unknown status', { status: 'in_flight' }, 'status must be pending, synced, or failed, got in_flight'],
+            ['a non-string queuedAt', { queuedAt: 1724650000 }, 'queuedAt ISO timestamp is required'],
+            ['a numeric syncedAt', { syncedAt: 5 }, 'syncedAt must be a string or null'],
+            ['a non-string error', { error: { message: 'x' } }, 'error must be a string or null'],
+            ['a numeric garminWorkoutId', { garminWorkoutId: 12345 }, 'garminWorkoutId must be a string'],
+            ['a list payload', { payload: [] }, 'payload must be a non-null object'],
+            ['a missing payload', { payload: undefined }, 'payload must be a non-null object'],
+            ['a malformed date', { date: '2026-8-26' }, 'date is required (YYYY-MM-DD)'],
+            ['a non-string workoutTitle', { workoutTitle: 7 }, 'workoutTitle must be a string'],
+        ])('rejects %s', (_label, override, message) => {
+            const result = validateQueuedWorkoutWrite({ ...sharedFixture.queueEntry, ...override });
+            expect(result.valid).toBe(false);
+            expect(result.errors).toContain(message);
+        });
     });
 });

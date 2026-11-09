@@ -779,3 +779,56 @@ describe('SessionOccurrenceService authority methods (M3.3)', () => {
         });
     });
 });
+
+// Issue #1202 (ADR-0053): assertValidSessionOccurrence (sessions/validation.ts) owns the value
+// checks the session_occurrences rules no longer make, so a rejected occurrence never reaches
+// Firestore.
+describe('SessionOccurrenceService write-side validation (#1202)', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        firestore.doc.mockReturnValue({ path: 'session_occurrences/x' });
+        firestore.setDoc.mockResolvedValue(undefined);
+        firestore.collection.mockReturnValue({ path: 'session_occurrences' });
+        firestore.query.mockReturnValue({});
+    });
+
+    it('saveOccurrence rejects an impossible date without writing', async () => {
+        firestore.getDoc.mockResolvedValue({ exists: () => false });
+        const service = new SessionOccurrenceService();
+        await expect(service.scheduleOccurrence('u1', '2026-02-30', definitionRef))
+            .rejects.toThrow('Invalid session occurrence: date: date must be Warsaw YYYY-MM-DD string');
+        expect(firestore.setDoc).not.toHaveBeenCalled();
+        expect(notifyFlagInputsChanged).not.toHaveBeenCalled();
+    });
+
+    it('saveOccurrence rejects a negative placementOrder without writing', async () => {
+        firestore.getDoc.mockResolvedValue({ exists: () => false });
+        const service = new SessionOccurrenceService();
+        await expect(service.addAdditionalSessionOccurrence('u1', '2026-08-18', definitionRef, -1))
+            .rejects.toThrow('Invalid session occurrence: placementOrder: placementOrder must be a non-negative integer');
+        expect(firestore.setDoc).not.toHaveBeenCalled();
+    });
+
+    it('saveOccurrence rejects a manual authority paired with an externalPlanRef', async () => {
+        firestore.getDoc.mockResolvedValue({ exists: () => false });
+        const service = new SessionOccurrenceService();
+        const mismatched = occurrenceDoc({
+            authority: 'schedule',
+            definitionRef: undefined,
+            externalPlanRef: { planId: 'p', revision: 1, sessionId: 's', contentHash: 'h' },
+        } as unknown as Partial<SessionOccurrence>);
+        await expect(service.saveOccurrence(mismatched))
+            .rejects.toThrow('Invalid session occurrence: authority: externalPlanRef requires authority external_plan');
+        expect(firestore.setDoc).not.toHaveBeenCalled();
+    });
+
+    it('getOrCreateExternalPlanOccurrence rejects an invalid plan revision before its query and transaction', async () => {
+        firestore.getDoc.mockResolvedValue({ exists: () => false });
+        const service = new SessionOccurrenceService();
+        await expect(service.getOrCreateExternalPlanOccurrence('u1', '2026-08-18', {
+            planId: 'plan-1', revision: 0, sessionId: 'session-1', contentHash: 'c'.repeat(64),
+        })).rejects.toThrow('Invalid session occurrence: externalPlanRef: Invalid externalPlanRef');
+        expect(firestore.getDocs).not.toHaveBeenCalled();
+        expect(firestore.runTransaction).not.toHaveBeenCalled();
+    });
+});

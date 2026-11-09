@@ -14,6 +14,7 @@ import { getDb } from '../firebase';
 import type { DataState } from '../engine/dataState';
 import type { ResponseWindow, SessionResponse, SessionResponseSourceRef } from '../responses/models';
 import { parseSessionResponseDocument } from '../persistence/parsers/sessionResponse';
+import { assertValidSessionResponse, assertValidSessionResponseFacts } from '../responses/validation';
 
 // Explicit chronological order -- not left to `ResponseWindow` values sorting correctly by
 // coincidence (they currently do, alphabetically, but nothing enforces that: a future added
@@ -171,11 +172,6 @@ export class SessionResponseService {
         now: string = new Date().toISOString(),
     ): Promise<SessionResponse> {
         const responseId = this.responseIdFor(sourceSession, window);
-        const responseRef = this.responseRef(userId, responseId);
-        const existing = await getDoc(responseRef);
-        if (existing.exists()) {
-            throw new Error(`A response already exists for this session's ${window} window; call updateResponseFacts instead.`);
-        }
         const response = this.buildResponse(
             userId,
             responseId,
@@ -187,6 +183,13 @@ export class SessionResponseService {
             occurrenceId,
             now,
         );
+        // Issue #1202 (ADR-0053): the value and window/date checks live here, not in the rules.
+        assertValidSessionResponse(response);
+        const responseRef = this.responseRef(userId, responseId);
+        const existing = await getDoc(responseRef);
+        if (existing.exists()) {
+            throw new Error(`A response already exists for this session's ${window} window; call updateResponseFacts instead.`);
+        }
         await setDoc(responseRef, response);
         return response;
     }
@@ -200,7 +203,9 @@ export class SessionResponseService {
         patch: ResponseFacts,
         now: string = new Date().toISOString(),
     ): Promise<void> {
-        await updateDoc(this.responseRef(userId, responseId), { ...definedResponseFacts(patch), updatedAt: now });
+        const definedPatch = definedResponseFacts(patch);
+        assertValidSessionResponseFacts(definedPatch);
+        await updateDoc(this.responseRef(userId, responseId), { ...definedPatch, updatedAt: now });
     }
 
     /**
@@ -230,6 +235,7 @@ export class SessionResponseService {
     ): Promise<void> {
         const definedFacts = definedResponseFacts(facts);
         if (Object.keys(definedFacts).length === 0) return;
+        assertValidSessionResponseFacts(definedFacts);
 
         const existing = await this.getResponseForWindow(userId, sourceSession, window);
         if (existing) {
@@ -250,6 +256,9 @@ export class SessionResponseService {
             occurrenceId,
             now,
         );
+        // Validated before the create transaction only: on the update path above the stored
+        // provenance is kept, so these arguments are never written there.
+        assertValidSessionResponse(response);
 
         await runTransaction(this.db, async transaction => {
             const raced = await transaction.get(responseRef);

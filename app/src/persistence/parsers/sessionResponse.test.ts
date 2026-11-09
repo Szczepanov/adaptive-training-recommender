@@ -35,3 +35,37 @@ describe('parseSessionResponseDocument', () => {
         }
     });
 });
+
+// Issue #1202: the sessionRpe/completedFraction range checks now also reject non-finite
+// numbers on read. They must accept exactly what the former rules accepted:
+// `!('sessionRpe' in data) || (data.sessionRpe is number && data.sessionRpe >= 0 && data.sessionRpe <= 10)`
+// and the same for completedFraction over 0..1. NaN and Infinity always failed those bounds.
+describe('parseSessionResponseDocument range back-compat (#1202)', () => {
+    const responsePath = 'users/u1/session_responses/resp-1';
+
+    it.each([
+        ['absent facts', {}],
+        ['sessionRpe 0', { sessionRpe: 0 }],
+        ['sessionRpe 10', { sessionRpe: 10 }],
+        ['a fractional sessionRpe', { sessionRpe: 6.5 }],
+        ['completedFraction 0', { completedFraction: 0 }],
+        ['completedFraction 1', { completedFraction: 1 }],
+        ['a fractional completedFraction', { completedFraction: 0.75 }],
+    ])('still parses a stored response with %s (the former rule accepted it)', (_label, overrides) => {
+        expect(parseSessionResponseDocument({ ...response(), ...overrides }, responsePath).status).toBe('AVAILABLE');
+    });
+
+    it.each([
+        ['sessionRpe', Number.NaN, 'sessionRpe must be a number between 0 and 10'],
+        ['sessionRpe', Number.POSITIVE_INFINITY, 'sessionRpe must be a number between 0 and 10'],
+        ['sessionRpe', null, 'sessionRpe must be a number between 0 and 10'],
+        ['completedFraction', Number.NaN, 'completedFraction must be a number between 0 and 1'],
+        ['completedFraction', Number.NEGATIVE_INFINITY, 'completedFraction must be a number between 0 and 1'],
+        ['completedFraction', null, 'completedFraction must be a number between 0 and 1'],
+    ])('reports %s = %s as INVALID (the former rule rejected it)', (field, value, message) => {
+        expect(parseSessionResponseDocument({ ...response(), [field]: value }, responsePath)).toMatchObject({
+            status: 'INVALID',
+            issues: [{ field, message }],
+        });
+    });
+});

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseSessionDefinitionRevisionDocument } from './sessionDefinition';
+import { parseSessionDefinitionRevisionDocument, parseSessionOccurrenceDocument } from './sessionDefinition';
 
 const expected = { userId: 'user-1', definitionId: 'custom-1', revision: 1 };
 const path = 'users/user-1/session_definitions/custom-1/revisions/1';
@@ -59,5 +59,41 @@ describe('parseSessionDefinitionRevisionDocument', () => {
     it('still rejects an invented executable field after stripping transport metadata', () => {
         const result = parseSessionDefinitionRevisionDocument(persistedRevision({ systemicCost: 99 }), expected, path);
         expect(result).toMatchObject({ status: 'INVALID', issues: [{ code: 'invalid-session-definition-revision' }] });
+    });
+});
+
+// Issue #1202: validateSessionOccurrence gained a placementOrder check that also runs on read.
+// It must accept exactly what the former rule accepted:
+// `!('placementOrder' in data) || (data.placementOrder is int && data.placementOrder >= 0)`.
+describe('parseSessionOccurrenceDocument placementOrder back-compat (#1202)', () => {
+    const occurrencePath = 'users/user-1/session_occurrences/occ-1';
+    function storedOccurrence(overrides: Record<string, unknown> = {}) {
+        return {
+            userId: 'user-1', occurrenceId: 'occ-1', date: '2026-08-18', authority: 'additional_session',
+            definitionRef: { definitionId: 'def-1', revision: 1, contentHash: 'h' }, state: 'scheduled',
+            createdAt: '2026-08-18T10:00:00Z', updatedAt: '2026-08-18T10:00:00Z',
+            ...overrides,
+        };
+    }
+
+    it.each([
+        ['absent', {}],
+        ['zero', { placementOrder: 0 }],
+        ['a positive integer', { placementOrder: 3 }],
+        ['a large integer', { placementOrder: 2 ** 31 }],
+    ])('still parses a stored occurrence whose placementOrder is %s (the former rule accepted it)', (_label, overrides) => {
+        expect(parseSessionOccurrenceDocument(storedOccurrence(overrides), occurrencePath).status).toBe('AVAILABLE');
+    });
+
+    it.each([
+        ['negative', -1],
+        ['fractional', 0.5],
+        ['null', null],
+        ['a string', '1'],
+    ])('reports a %s placementOrder as INVALID (the former rule rejected it)', (_label, placementOrder) => {
+        expect(parseSessionOccurrenceDocument(storedOccurrence({ placementOrder }), occurrencePath)).toMatchObject({
+            status: 'INVALID',
+            issues: [{ field: 'placementOrder', message: 'placementOrder must be a non-negative integer' }],
+        });
     });
 });

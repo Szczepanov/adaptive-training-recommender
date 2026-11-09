@@ -1715,20 +1715,40 @@ emulatorDescribe('Firestore security rules', () => {
         await expect(assertSucceeds(setDoc(doc(ownerDb, garminQueuePath), updated))).resolves.toBeUndefined();
     });
 
-    it('rejects a malformed or foreign-owned garmin workout queue item', async () => {
+    // Every case writes to the real date-document path, so each fails only for the check it names.
+    it.each([
+        ['an extra field', { unexpectedField: true }],
+        ['a foreign userId', { userId: otherUserId }],
+        ['a date that does not match its document', { date: '2026-08-18' }],
+        ['a missing payload', { payload: undefined }],
+        ['a workoutTitle over 200 characters', { workoutTitle: 'x'.repeat(201) }],
+        ['a modality over 64 characters', { modality: 'x'.repeat(65) }],
+        ['an error over 2000 characters', { error: 'x'.repeat(2001) }],
+    ])('rejects a garmin workout queue item with %s', async (_label, override) => {
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
-        await assertFails(setDoc(doc(ownerDb, `${garminQueuePath}-bad-status`), {
-            ...validGarminQueuedWorkout(), status: 'unknown',
-        }));
-        await assertFails(setDoc(doc(ownerDb, `${garminQueuePath}-extra-field`), {
-            ...validGarminQueuedWorkout(), unexpectedField: true,
-        }));
-        await assertFails(setDoc(doc(ownerDb, garminQueuePath), {
-            ...validGarminQueuedWorkout(), userId: otherUserId,
-        }));
+        const item: Record<string, unknown> = { ...validGarminQueuedWorkout(), ...override };
+        for (const key of Object.keys(item)) if (item[key] === undefined) delete item[key];
+        await assertFails(setDoc(doc(ownerDb, garminQueuePath), item));
+    });
+
+    it('rejects a cross-user garmin workout queue read or write', async () => {
         const otherDb = testEnvironment.authenticatedContext(otherUserId).firestore();
         await assertFails(getDoc(doc(otherDb, garminQueuePath)));
         await assertFails(setDoc(doc(otherDb, garminQueuePath), validGarminQueuedWorkout()));
+    });
+
+    // Issue #1202 (ADR-0053): these value checks are owned by validateQueuedWorkoutWrite
+    // (contracts/workoutExportContract.ts), which GarminWorkoutQueueService.queueWorkout runs
+    // before every write -- see workoutExportContract.test.ts and garminWorkoutQueueService.test.ts.
+    it.each([
+        ['an unknown status', { status: 'unknown' }],
+        ['a numeric queuedAt', { queuedAt: 1724650000 }],
+        ['a numeric syncedAt', { syncedAt: 5 }],
+        ['a numeric garminWorkoutId', { garminWorkoutId: 12345 }],
+        ['a non-map payload', { payload: 'not-a-map' }],
+    ])('accepts a garmin workout queue item with %s at the rules boundary (validateQueuedWorkoutWrite owns it)', async (_label, override) => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertSucceeds(setDoc(doc(ownerDb, garminQueuePath), { ...validGarminQueuedWorkout(), ...override }));
     });
 
     it('allows an owner to delete a queued workout item', async () => {
@@ -1992,6 +2012,18 @@ emulatorDescribe('Firestore security rules', () => {
         await assertSucceeds(setDoc(doc(ownerDb, sessionDefRevPath), { ...validSessionDefRevision(), ...override }));
     });
 
+    // Issue #1202: movementComposition is part of the SessionDefinition schema
+    // (sessions/models.ts, covered by sessionDefinitionHash) and ManualSessionBuilder carries it
+    // over from a catalog base definition, but the revision key allow-list used to omit it, so
+    // saving such a revision was denied. validateSessionDefinition owns its content.
+    it('accepts a session definition revision carrying movementComposition', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertSucceeds(setDoc(doc(ownerDb, sessionDefRevPath), {
+            ...validSessionDefRevision(),
+            movementComposition: [{ id: 'push', pattern: 'upper_push', stepIds: ['s1'], status: 'relaxed', reason: 'not evidenced' }],
+        }));
+    });
+
     it('keeps the session definition revision bound to its path and owner', async () => {
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
         await assertFails(setDoc(doc(ownerDb, sessionDefRevPath), { ...validSessionDefRevision(), revision: 2 }));
@@ -2063,7 +2095,7 @@ emulatorDescribe('Firestore security rules', () => {
         }));
     });
 
-    it('allows valid occurrence authorities in M3 (unplanned_log, schedule, replace, additional) and rejects invalid ones', async () => {
+    it('allows valid occurrence authorities in M3 (unplanned_log, schedule, replace, additional)', async () => {
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
         // unplanned_log succeeds
         await expect(assertSucceeds(setDoc(doc(ownerDb, sessionOccPath), validSessionOccurrence()))).resolves.toBeUndefined();
@@ -2095,15 +2127,17 @@ emulatorDescribe('Firestore security rules', () => {
             occurrenceId: 'occ-unplanned-1-ext',
         }))).resolves.toBeUndefined();
 
-        // unknown authority is rejected
-        await assertFails(setDoc(doc(ownerDb, `${sessionOccPath}-unknown`), {
+        // Issue #1202 (ADR-0053): the authority enum is owned by validateSessionOccurrence
+        // (assertValidSessionOccurrence runs before every occurrence write), so an unknown
+        // authority is accepted at the rules boundary.
+        await expect(assertSucceeds(setDoc(doc(ownerDb, `${sessionOccPath}-unknown`), {
             ...validSessionOccurrence(),
             occurrenceId: 'occ-unplanned-1-unknown',
             authority: 'bogus_authority',
-        }));
+        }))).resolves.toBeUndefined();
     });
 
-    it('allows external-plan occurrence lifecycle (scheduled -> active -> completed / skipped) and enforces mutual exclusivity of refs', async () => {
+    it('allows external-plan occurrence lifecycle (scheduled -> active -> completed / skipped) and leaves ref exclusivity to validateSessionOccurrence', async () => {
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
         const occPath = `users/${ownerId}/session_occurrences/occ-ext-lifecycle`;
         const baseOcc = {
@@ -2173,9 +2207,11 @@ emulatorDescribe('Firestore security rules', () => {
             updatedAt: '2026-08-18T11:05:00Z',
         }));
 
-        // 5. Rejects an occurrence with both definitionRef and externalPlanRef
+        // 5, 7, 8. Issue #1202 (ADR-0053): ref exclusivity and the authority/ref pairing are
+        // owned by validateSessionOccurrence (assertValidSessionOccurrence runs before every
+        // occurrence write; see sessions/validation.test.ts), so the rules accept these shapes.
         const bothPath = `users/${ownerId}/session_occurrences/occ-ext-both`;
-        await assertFails(setDoc(doc(ownerDb, bothPath), {
+        await assertSucceeds(setDoc(doc(ownerDb, bothPath), {
             ...validExternalPlanSessionOccurrence(),
             occurrenceId: 'occ-ext-both',
             definitionRef: {
@@ -2185,23 +2221,21 @@ emulatorDescribe('Firestore security rules', () => {
             },
         }));
 
-        // 6. Rejects an occurrence with neither ref
+        // 6. At least one ref is a kept required key, so an occurrence with neither is rejected.
         const neitherPath = `users/${ownerId}/session_occurrences/occ-ext-neither`;
         const noRef = { ...validExternalPlanSessionOccurrence(), occurrenceId: 'occ-ext-neither' };
         delete (noRef as { externalPlanRef?: unknown }).externalPlanRef;
         await assertFails(setDoc(doc(ownerDb, neitherPath), noRef));
 
-        // 7. Rejects externalPlanRef paired with non-external_plan authority
         const mismatchedExtPath = `users/${ownerId}/session_occurrences/occ-ext-mismatched`;
-        await assertFails(setDoc(doc(ownerDb, mismatchedExtPath), {
+        await assertSucceeds(setDoc(doc(ownerDb, mismatchedExtPath), {
             ...validExternalPlanSessionOccurrence(),
             occurrenceId: 'occ-ext-mismatched',
             authority: 'replace_recommendation',
         }));
 
-        // 8. Rejects definitionRef paired with external_plan authority
         const mismatchedDefPath = `users/${ownerId}/session_occurrences/occ-def-mismatched`;
-        await assertFails(setDoc(doc(ownerDb, mismatchedDefPath), {
+        await assertSucceeds(setDoc(doc(ownerDb, mismatchedDefPath), {
             ...validSessionOccurrence(),
             occurrenceId: 'occ-def-mismatched',
             authority: 'external_plan',
@@ -2226,15 +2260,16 @@ emulatorDescribe('Firestore security rules', () => {
             windowBinding: validWindowBinding(),
         }))).resolves.toBeUndefined();
 
-        // 2. Rejects windowBinding on a manual (non-external-plan) occurrence.
+        // 2. Issue #1202 (ADR-0053): windowBinding-needs-externalPlanRef is owned by
+        // validateSessionOccurrence, so a manual occurrence with a binding is accepted here.
         const manualWithWindowPath = `users/${ownerId}/session_occurrences/occ-manual-window`;
-        await assertFails(setDoc(doc(ownerDb, manualWithWindowPath), {
+        await assertSucceeds(setDoc(doc(ownerDb, manualWithWindowPath), {
             ...validSessionOccurrence(),
             occurrenceId: 'occ-manual-window',
             windowBinding: validWindowBinding(),
         }));
 
-        // 3. Rejects a windowBinding missing a required field.
+        // 3. Rejects a windowBinding missing a required field (the kept hasAll key check).
         const incompletePath = `users/${ownerId}/session_occurrences/occ-ext-incomplete-window`;
         const incompleteBinding = validWindowBinding() as Partial<ReturnType<typeof validWindowBinding>>;
         delete incompleteBinding.order;
@@ -2855,6 +2890,76 @@ emulatorDescribe('Firestore security rules', () => {
         }
     });
 
+    function boundExternalOccurrence(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+        return {
+            ...validExternalPlanSessionOccurrence(),
+            occurrenceId: 'occ-ext-values',
+            placementOrder: 0,
+            windowBinding: {
+                windowId: 'window-1', bundleId: 'bundle-1', order: 0,
+                boundStartLocal: '07:00', boundEndLocal: '08:00',
+                startInstant: '2026-08-18T05:00:00Z', endInstant: '2026-08-18T06:00:00Z',
+            },
+            ...overrides,
+        };
+    }
+
+    function occurrenceWith(base: Record<string, unknown>, field: string, nested: Record<string, unknown>) {
+        return { ...base, [field]: { ...(base[field] as Record<string, unknown>), ...nested } };
+    }
+
+    // Each case creates the document at its own path, so it fails only for the kept check it names.
+    it.each([
+        ['an unknown state (kept: the transition table and cross-document reads depend on it)', () => ({ ...validSessionOccurrence(), state: 'paused' })],
+        ['an occurrenceId that does not match its path', () => ({ ...validSessionOccurrence(), occurrenceId: 'occ-other' })],
+        ['a foreign userId', () => ({ ...validSessionOccurrence(), userId: otherUserId })],
+        ['a missing updatedAt', () => { const o: Record<string, unknown> = { ...validSessionOccurrence() }; delete o.updatedAt; return o; }],
+        ['a missing date', () => { const o: Record<string, unknown> = { ...validSessionOccurrence() }; delete o.date; return o; }],
+        ['a missing authority', () => { const o: Record<string, unknown> = { ...validSessionOccurrence() }; delete o.authority; return o; }],
+        ['neither ref', () => { const o: Record<string, unknown> = { ...validSessionOccurrence() }; delete o.definitionRef; return o; }],
+        ['a definitionRef missing revision', () => {
+            const ref: Record<string, unknown> = { ...validSessionOccurrence().definitionRef }; delete ref.revision;
+            return { ...validSessionOccurrence(), definitionRef: ref };
+        }],
+        ['an externalPlanRef missing revision', () => {
+            const o = boundExternalOccurrence();
+            const ref: Record<string, unknown> = { ...(o.externalPlanRef as Record<string, unknown>) }; delete ref.revision;
+            return { ...o, externalPlanRef: ref };
+        }],
+        ['an extra definitionRef key', () => occurrenceWith(validSessionOccurrence(), 'definitionRef', { extra: 1 })],
+        ['an extra externalPlanRef key', () => occurrenceWith(boundExternalOccurrence(), 'externalPlanRef', { extra: 1 })],
+        ['a planId over 64 characters', () => occurrenceWith(boundExternalOccurrence(), 'externalPlanRef', { planId: 'p'.repeat(65) })],
+        ['a sessionId over 64 characters', () => occurrenceWith(boundExternalOccurrence(), 'externalPlanRef', { sessionId: 's'.repeat(65) })],
+        ['a plan contentHash over 128 characters', () => occurrenceWith(boundExternalOccurrence(), 'externalPlanRef', { contentHash: 'c'.repeat(129) })],
+        ['an extra windowBinding key', () => occurrenceWith(boundExternalOccurrence(), 'windowBinding', { extra: 1 })],
+        ['a windowId over 128 characters', () => occurrenceWith(boundExternalOccurrence(), 'windowBinding', { windowId: 'w'.repeat(129) })],
+        ['a bundleId over 128 characters', () => occurrenceWith(boundExternalOccurrence(), 'windowBinding', { bundleId: 'b'.repeat(129) })],
+    ])('rejects a session occurrence with %s', async (_label, build) => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        const occurrence: Record<string, unknown> = build();
+        const pathId = occurrence.occurrenceId === 'occ-other' ? 'occ-unplanned-1' : String(occurrence.occurrenceId);
+        await assertFails(setDoc(doc(ownerDb, `users/${ownerId}/session_occurrences/${pathId}`), occurrence));
+    });
+
+    // Issue #1202 (ADR-0053): these value checks are owned by validateSessionOccurrence, which
+    // every occurrence writer runs through assertValidSessionOccurrence before its write -- see
+    // sessions/validation.test.ts, sessionOccurrenceService.test.ts and
+    // manualRecommendationReplacementService.test.ts.
+    it.each([
+        ['an impossible date', () => ({ ...validSessionOccurrence(), date: '2026-02-30' })],
+        ['an empty definitionId', () => occurrenceWith(validSessionOccurrence(), 'definitionRef', { definitionId: '' })],
+        ['a zero definition revision', () => occurrenceWith(validSessionOccurrence(), 'definitionRef', { revision: 0 })],
+        ['a zero plan revision', () => occurrenceWith(boundExternalOccurrence(), 'externalPlanRef', { revision: 0 })],
+        ['a negative placementOrder', () => boundExternalOccurrence({ placementOrder: -1 })],
+        ['a negative window order', () => occurrenceWith(boundExternalOccurrence(), 'windowBinding', { order: -1 })],
+        ['an empty window bound', () => occurrenceWith(boundExternalOccurrence(), 'windowBinding', { boundStartLocal: '' })],
+        ['an empty window instant', () => occurrenceWith(boundExternalOccurrence(), 'windowBinding', { endInstant: '' })],
+    ])('accepts a session occurrence with %s at the rules boundary (validateSessionOccurrence owns it)', async (_label, build) => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        const occurrence = build();
+        await assertSucceeds(setDoc(doc(ownerDb, `users/${ownerId}/session_occurrences/${String(occurrence.occurrenceId)}`), occurrence));
+    });
+
     it('requires every external plan placement field', async () => {
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
         const placement = validExternalPlacement();
@@ -3213,44 +3318,50 @@ emulatorDescribe('Firestore security rules', () => {
             sourceSession: { kind: 'strength', id: 'strength-1', date: '2026-08-18' },
         }));
         await assertFails(setDoc(doc(ownerDb, sessionResponsePath), { ...validSessionResponse(), date: '2026-08-19' }));
+        // A window change that is valid on its own (same-day later_day) still fails: the
+        // update rule keeps window equal to the create-validated value.
+        await assertFails(setDoc(doc(ownerDb, sessionResponsePath), { ...validSessionResponse(), window: 'later_day' }));
         await assertFails(setDoc(doc(ownerDb, sessionResponsePath), { ...validSessionResponse(), createdAt: '2026-08-19T00:00:00Z' }));
     });
 
-    it('allows a same-day later_day response but rejects a same-day next_morning response', async () => {
+    // Issue #1202 (ADR-0053): the window/date ordering, the window enum, the dates, the
+    // sourceSession values and the sessionRpe/completedFraction/unexpectedFatigue values are
+    // owned by validateSessionResponse and validateSessionResponseFacts
+    // (responses/validation.ts), which SessionResponseService runs before every write -- see
+    // responses/validation.test.ts and sessionResponseService.test.ts.
+    it.each([
+        ['a same-day next_morning response', { window: 'next_morning' }],
+        ['a next-day later_day response', { window: 'later_day', date: '2026-08-19' }],
+        ['an unknown window', { window: 'next_week' }],
+        ['an impossible date', { date: '2026-02-30' }],
+        ['an unknown sourceSession kind', { sourceSession: { kind: 'manual', id: 'exec-1', date: '2026-08-18' } }],
+        ['an empty sourceSession id', { sourceSession: { kind: 'execution', id: '', date: '2026-08-18' } }],
+        ['a malformed checkinRef date', { checkinRef: { date: '18-08-2026' } }],
+        ['an out-of-range sessionRpe', { sessionRpe: 11 }],
+        ['an out-of-range completedFraction', { completedFraction: 1.5 }],
+        ['a non-boolean unexpectedFatigue', { unexpectedFatigue: 'yes' }],
+    ])('accepts %s at the rules boundary (validateSessionResponse owns it)', async (_label, override) => {
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
-        await expect(assertSucceeds(setDoc(doc(ownerDb, `${sessionResponsePath}-later-day`), {
-            ...validSessionResponse(),
-            responseId: 'resp-1-later-day',
-            window: 'later_day',
+        await expect(assertSucceeds(setDoc(doc(ownerDb, sessionResponsePath), {
+            ...validSessionResponse(), ...override,
         }))).resolves.toBeUndefined();
-        await assertFails(setDoc(doc(ownerDb, `${sessionResponsePath}-next-morning-same-day`), {
-            ...validSessionResponse(),
-            responseId: 'resp-1-next-morning-same-day',
-            window: 'next_morning',
-        }));
-        await assertFails(setDoc(doc(ownerDb, `${sessionResponsePath}-later-day-next-day`), {
-            ...validSessionResponse(),
-            responseId: 'resp-1-later-day-next-day',
-            window: 'later_day',
-            date: '2026-08-19',
-        }));
     });
 
-    it('rejects a malformed session response: bad window, out-of-range sessionRpe/completedFraction, extra field, foreign userId', async () => {
+    // Each case creates resp-1 directly, so it fails only for the kept check it names.
+    it.each([
+        ['an extra field', { unexpectedField: true }],
+        ['a foreign userId', { userId: otherUserId }],
+        ['a responseId that does not match its path', { responseId: 'resp-2' }],
+        ['an extra sourceSession key', { sourceSession: { kind: 'execution', id: 'exec-1', date: '2026-08-18', extra: 1 } }],
+        ['a missing sourceSession key', { sourceSession: { kind: 'execution', id: 'exec-1' } }],
+        ['an extra checkinRef key', { checkinRef: { date: '2026-08-18', extra: 1 } }],
+        ['an empty checkinRef', { checkinRef: {} }],
+        ['a note over 2000 characters', { note: 'x'.repeat(2001) }],
+        ['a techniqueNote over 2000 characters', { techniqueNote: 'x'.repeat(2001) }],
+        ['a non-string updatedAt (the launch claim compares it)', { updatedAt: 5 }],
+    ])('rejects a session response with %s', async (_label, override) => {
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
-        await assertFails(setDoc(doc(ownerDb, `${sessionResponsePath}-bad-window`), {
-            ...validSessionResponse(), responseId: 'resp-1-bad-window', window: 'next_week',
-        }));
-        await assertFails(setDoc(doc(ownerDb, `${sessionResponsePath}-bad-rpe`), {
-            ...validSessionResponse(), responseId: 'resp-1-bad-rpe', sessionRpe: 11,
-        }));
-        await assertFails(setDoc(doc(ownerDb, `${sessionResponsePath}-bad-fraction`), {
-            ...validSessionResponse(), responseId: 'resp-1-bad-fraction', completedFraction: 1.5,
-        }));
-        await assertFails(setDoc(doc(ownerDb, `${sessionResponsePath}-extra`), {
-            ...validSessionResponse(), responseId: 'resp-1-extra', unexpectedField: true,
-        }));
-        await assertFails(setDoc(doc(ownerDb, sessionResponsePath), { ...validSessionResponse(), userId: otherUserId }));
+        await assertFails(setDoc(doc(ownerDb, sessionResponsePath), { ...validSessionResponse(), ...override }));
     });
 
     it('rejects an edit that adds or changes occurrenceId after creation (provenance)', async () => {

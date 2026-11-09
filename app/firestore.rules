@@ -406,6 +406,10 @@ service cloud.firestore {
     }
 
     match /users/{userId}/garmin_workout_queue/{date} {
+      // Issue #1202 (ADR-0053): the status enum, the queuedAt/syncedAt/garminWorkoutId types
+      // and the payload map type are owned by validateQueuedWorkoutWrite, which
+      // GarminWorkoutQueueService.queueWorkout runs before every client write. Ownership, the
+      // date-document binding, the key allow-lists and the size caps stay.
       function hasValidGarminQueuedWorkout(userId, date) {
         let data = request.resource.data;
         return hasOwnedUserId(userId)
@@ -414,12 +418,7 @@ service cloud.firestore {
           && data.keys().hasAll(['userId', 'date', 'workoutTitle', 'modality', 'status', 'queuedAt', 'payload'])
           && data.workoutTitle is string && data.workoutTitle.size() <= 200
           && data.modality is string && data.modality.size() <= 64
-          && data.status in ['pending', 'synced', 'failed']
-          && data.queuedAt is string
-          && (!('syncedAt' in data) || data.syncedAt == null || data.syncedAt is string)
-          && (!('error' in data) || data.error == null || (data.error is string && data.error.size() <= 2000))
-          && (!('garminWorkoutId' in data) || data.garminWorkoutId is string)
-          && data.payload is map;
+          && (!('error' in data) || data.error == null || (data.error is string && data.error.size() <= 2000));
       }
 
       allow read: if isOwner(userId);
@@ -975,11 +974,12 @@ service cloud.firestore {
       // owned by validateSessionDefinition, which SessionDefinitionService.saveDefinitionRevision
       // runs before the create-only revision write. The path bindings, contentHash (computed
       // by the service, not validated) and the companionSessions list type (no TypeScript
-      // check) stay.
+      // check) stay. movementComposition is part of the SessionDefinition schema (catalog-based
+      // manual sessions carry it); validateSessionDefinition owns its content.
       function hasValidSessionDefinitionRevision(userId, definitionId, revId) {
         let data = request.resource.data;
         return hasOwnedUserId(userId)
-          && data.keys().hasOnly(['userId', 'definitionId', 'schemaVersion', 'id', 'revision', 'title', 'summary', 'intent', 'modalities', 'dominantModality', 'duration', 'defaultScheduledDate', 'sessionTargets', 'prohibitedAdditions', 'importWarnings', 'companionSessions', 'blocks', 'contentHash', 'createdAt'])
+          && data.keys().hasOnly(['userId', 'definitionId', 'schemaVersion', 'id', 'revision', 'title', 'summary', 'intent', 'modalities', 'dominantModality', 'duration', 'defaultScheduledDate', 'sessionTargets', 'prohibitedAdditions', 'importWarnings', 'companionSessions', 'movementComposition', 'blocks', 'contentHash', 'createdAt'])
           && data.keys().hasAll(['userId', 'definitionId', 'id', 'revision', 'schemaVersion', 'title', 'intent', 'contentHash', 'blocks', 'createdAt'])
           && data.definitionId == definitionId
           && data.id == definitionId
@@ -1003,51 +1003,53 @@ service cloud.firestore {
     }
 
     match /users/{userId}/session_occurrences/{occurrenceId} {
-      function hasValidOccurrenceWindowBinding(binding) {
+      function hasBoundedOccurrenceWindowBinding(binding) {
         return binding is map
           && binding.keys().hasOnly(['windowId', 'bundleId', 'order', 'boundStartLocal', 'boundEndLocal', 'startInstant', 'endInstant'])
+          && binding.keys().hasAll(['windowId', 'bundleId', 'order', 'boundStartLocal', 'boundEndLocal', 'startInstant', 'endInstant'])
           && isBoundedString(binding.windowId, 128)
-          && isBoundedString(binding.bundleId, 128)
-          && binding.order is int && binding.order >= 0
-          && binding.boundStartLocal is string && binding.boundStartLocal.size() > 0
-          && binding.boundEndLocal is string && binding.boundEndLocal.size() > 0
-          && binding.startInstant is string && binding.startInstant.size() > 0
-          && binding.endInstant is string && binding.endInstant.size() > 0;
+          && isBoundedString(binding.bundleId, 128);
       }
 
       // H4 (#434) PR 3 / ADR-0036 D-WINDOW: `windowBinding` on its own records the resolved
       // window an intraday member sits in but enforces nothing across documents -- real
       // exclusivity comes from `session_occurrence_windows` below, whose document id *is*
       // `(date, windowId)`.
+      //
+      // Issue #1202 (ADR-0053): the date value, the authority enum and its pairing with
+      // exactly one ref, the definitionRef values, the externalPlanRef revision, the
+      // window-binding order, local bounds and instants, the windowBinding-needs-externalPlanRef
+      // rule and placementOrder are owned by validateSessionOccurrence
+      // (assertValidSessionOccurrence), which every client writer runs before its
+      // whole-document set. Ownership, the path binding, the key allow-lists, the id/hash caps,
+      // the timestamps and the state enum stay, as do the required keys the removed value
+      // checks used to imply, now explicit: `date`, `authority`, at least one ref, and every
+      // key of each ref map and windowBinding. (userId, occurrenceId, state, createdAt and
+      // updatedAt are already required by the kept checks.) The state enum is the domain of
+      // the kept transition table, and the strength-session and session-execution rules read
+      // `state` across documents.
       function hasValidSessionOccurrence(userId, occurrenceId) {
         let data = request.resource.data;
         return hasOwnedUserId(userId)
           && data.keys().hasOnly(['userId', 'occurrenceId', 'date', 'authority', 'definitionRef', 'externalPlanRef', 'windowBinding', 'state', 'placementOrder', 'createdAt', 'updatedAt'])
-          && (!('windowBinding' in data) || ('externalPlanRef' in data && hasValidOccurrenceWindowBinding(data.windowBinding)))
-          && (('definitionRef' in data) != ('externalPlanRef' in data))
+          && data.keys().hasAll(['date', 'authority'])
+          && ('definitionRef' in data || 'externalPlanRef' in data)
+          && (!('windowBinding' in data) || hasBoundedOccurrenceWindowBinding(data.windowBinding))
           && data.occurrenceId == occurrenceId
-          && isValidActivityDate(data.date)
           && data.state in ['scheduled', 'active', 'superseded', 'completed', 'abandoned', 'missed', 'skipped']
-          && (
-            ('externalPlanRef' in data && data.authority == 'external_plan')
-            || ('definitionRef' in data && data.authority in ['unplanned_log', 'schedule', 'replace_recommendation', 'additional_session'])
-          )
           && (!('definitionRef' in data) || (
             data.definitionRef is map
             && data.definitionRef.keys().hasOnly(['definitionId', 'revision', 'contentHash'])
-            && data.definitionRef.definitionId is string && data.definitionRef.definitionId.size() > 0
-            && isPositiveInt(data.definitionRef.revision)
-            && data.definitionRef.contentHash is string && data.definitionRef.contentHash.size() > 0
+            && data.definitionRef.keys().hasAll(['definitionId', 'revision', 'contentHash'])
           ))
           && (!('externalPlanRef' in data) || (
             data.externalPlanRef is map
             && data.externalPlanRef.keys().hasOnly(['planId', 'revision', 'sessionId', 'contentHash'])
+            && data.externalPlanRef.keys().hasAll(['planId', 'revision', 'sessionId', 'contentHash'])
             && isBoundedString(data.externalPlanRef.planId, 64)
-            && isPositiveInt(data.externalPlanRef.revision)
             && isBoundedString(data.externalPlanRef.sessionId, 64)
             && isBoundedString(data.externalPlanRef.contentHash, 128)
           ))
-          && (!('placementOrder' in data) || (data.placementOrder is int && data.placementOrder >= 0))
           && hasStringTimestamps(data);
       }
 
@@ -2496,6 +2498,17 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
     }
 
     match /users/{userId}/session_responses/{responseId} {
+      // Issue #1202 (ADR-0053): the sourceSession kind/id/date values, the window enum, the
+      // response and check-in dates, the window/date ordering and the sessionRpe,
+      // completedFraction and unexpectedFatigue values are owned by validateSessionResponse
+      // (creates) and validateSessionResponseFacts (partial fact updates), which
+      // SessionResponseService runs before every write. A fact update is per field, and the
+      // update rule keeps sourceSession, window and date equal to the create-validated values,
+      // so the ordering cannot change after create. Ownership, the path binding, every key
+      // allow-list and required key (checkinRef.date made explicit with hasAll, since the
+      // removed date check used to imply it), the note caps, the occurrence existence
+      // binding, the timestamps (the intraday launch claim compares updatedAt) and the
+      // provenance immutability stay.
       function hasValidSessionResponse(userId, responseId) {
         let data = request.resource.data;
         return hasOwnedUserId(userId)
@@ -2505,24 +2518,13 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
           && data.sourceSession is map
           && data.sourceSession.keys().hasOnly(['kind', 'id', 'date'])
           && data.sourceSession.keys().hasAll(['kind', 'id', 'date'])
-          && data.sourceSession.kind in ['strength', 'execution']
-          && data.sourceSession.id is string && data.sourceSession.id.size() > 0
-          && isValidActivityDate(data.sourceSession.date)
-          && data.window in ['immediate', 'later_day', 'next_morning']
-          && isValidActivityDate(data.date)
-          && ((data.window == 'immediate' && data.date == data.sourceSession.date)
-            || (data.window == 'later_day' && data.date == data.sourceSession.date)
-            || (data.window == 'next_morning' && data.date > data.sourceSession.date))
           && data.checkinRef is map
           && data.checkinRef.keys().hasOnly(['date'])
-          && isValidActivityDate(data.checkinRef.date)
+          && data.checkinRef.keys().hasAll(['date'])
           && (!('occurrenceId' in data) || (
             data.occurrenceId is string && data.occurrenceId.size() > 0
             && exists(/databases/$(database)/documents/users/$(userId)/session_occurrences/$(data.occurrenceId))
           ))
-          && (!('sessionRpe' in data) || (data.sessionRpe is number && data.sessionRpe >= 0 && data.sessionRpe <= 10))
-          && (!('completedFraction' in data) || (data.completedFraction is number && data.completedFraction >= 0 && data.completedFraction <= 1))
-          && (!('unexpectedFatigue' in data) || data.unexpectedFatigue is bool)
           && (!('techniqueNote' in data) || (data.techniqueNote is string && data.techniqueNote.size() <= 2000))
           && (!('note' in data) || (data.note is string && data.note.size() <= 2000))
           && hasStringTimestamps(data);

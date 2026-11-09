@@ -594,8 +594,29 @@ export function validateSessionOccurrence(raw: unknown): ValidationResult<Sessio
         }
     }
 
+    // Issue #1202 (ADR-0053): formerly enforced only by the Firestore rules.
+    if (raw.placementOrder !== undefined
+        && (typeof raw.placementOrder !== 'number' || !Number.isInteger(raw.placementOrder) || raw.placementOrder < 0)) {
+        issues.push({ path: 'placementOrder', message: 'placementOrder must be a non-negative integer' });
+    }
+
     if (issues.length > 0) return { ok: false, issues };
     return { ok: true, value: raw as unknown as SessionOccurrence };
+}
+
+/**
+ * Write-path guard (issue #1202, ADR-0053): every client write of a `session_occurrences`
+ * document calls this first. It owns the value checks the Firestore rules no longer make
+ * (date, authority and its pairing with exactly one ref, the ref values, the window-binding
+ * values and `placementOrder`). Every writer replaces the whole document, so the payload
+ * checked here is the stored document.
+ */
+export function assertValidSessionOccurrence(raw: unknown): asserts raw is SessionOccurrence {
+    const result = validateSessionOccurrence(raw);
+    if (!result.ok) {
+        const detail = result.issues.map(issue => (issue.path ? `${issue.path}: ${issue.message}` : issue.message)).join('; ');
+        throw new Error(`Invalid session occurrence: ${detail}`);
+    }
 }
 
 export function validateSessionExecution(raw: unknown): ValidationResult<SessionExecution> {

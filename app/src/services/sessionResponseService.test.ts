@@ -272,6 +272,97 @@ describe('SessionResponseService (M5.1)', () => {
 
 });
 
+// Issue #1202 (ADR-0053): validateSessionResponse / validateSessionResponseFacts own the value
+// and window/date checks the session_responses rules no longer make, so nothing reaches
+// Firestore when they fail.
+describe('SessionResponseService write-side validation (#1202)', () => {
+    const source = { kind: 'execution' as const, id: 'exec-1', date: '2026-08-18' };
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        firestore.doc.mockReturnValue({ path: 'session_responses/x' });
+        firestore.getDoc.mockResolvedValue({ exists: () => false });
+        firestore.getDocs.mockResolvedValue({ docs: [] });
+        firestore.runTransaction.mockImplementation(async (_db, callback) => callback({
+            get: firestore.transactionGet,
+            set: firestore.transactionSet,
+            update: firestore.transactionUpdate,
+        }));
+        firestore.transactionGet.mockResolvedValue({ exists: () => false });
+    });
+
+    function expectNothingWritten() {
+        expect(firestore.getDoc).not.toHaveBeenCalled();
+        expect(firestore.setDoc).not.toHaveBeenCalled();
+        expect(firestore.updateDoc).not.toHaveBeenCalled();
+        expect(firestore.runTransaction).not.toHaveBeenCalled();
+    }
+
+    it('recordResponse rejects a next_morning response dated on the source day before any Firestore call', async () => {
+        const service = new SessionResponseService();
+        await expect(service.recordResponse('u1', source, 'next_morning', source.date, source.date, {}))
+            .rejects.toThrow('date must be strictly later than sourceSession.date for a next_morning response');
+        expectNothingWritten();
+    });
+
+    it('recordResponse rejects an out-of-range sessionRpe before any Firestore call', async () => {
+        const service = new SessionResponseService();
+        await expect(service.recordResponse('u1', source, 'immediate', source.date, source.date, { sessionRpe: 11 }))
+            .rejects.toThrow('sessionRpe: sessionRpe must be a number between 0 and 10');
+        expectNothingWritten();
+    });
+
+    it('updateResponseFacts rejects an out-of-range completedFraction without writing', async () => {
+        const service = new SessionResponseService();
+        await expect(service.updateResponseFacts('u1', 'resp-1', { completedFraction: 1.5 }))
+            .rejects.toThrow('completedFraction: completedFraction must be a number between 0 and 1');
+        expectNothingWritten();
+    });
+
+    it('updateResponseFacts rejects a NaN sessionRpe without writing', async () => {
+        const service = new SessionResponseService();
+        await expect(service.updateResponseFacts('u1', 'resp-1', { sessionRpe: Number.NaN }))
+            .rejects.toThrow('sessionRpe must be a number between 0 and 10');
+        expectNothingWritten();
+    });
+
+    it('recordOrUpdateResponse rejects invalid facts before its query', async () => {
+        const service = new SessionResponseService();
+        await expect(service.recordOrUpdateResponse('u1', source, 'immediate', source.date, source.date,
+            { unexpectedFatigue: 'yes' as unknown as boolean }))
+            .rejects.toThrow('unexpectedFatigue: unexpectedFatigue must be boolean');
+        expect(firestore.getDocs).not.toHaveBeenCalled();
+        expectNothingWritten();
+    });
+
+    it('recordOrUpdateResponse rejects an invalid new document before its create transaction', async () => {
+        const service = new SessionResponseService();
+        await expect(service.recordOrUpdateResponse('u1', source, 'immediate', '2026-08-19', '2026-08-19', { sessionRpe: 6 }))
+            .rejects.toThrow('date must equal sourceSession.date for an immediate-window response');
+        expect(firestore.runTransaction).not.toHaveBeenCalled();
+        expect(firestore.transactionSet).not.toHaveBeenCalled();
+    });
+
+    it('recordOrUpdateResponse still revises an existing answer (only the validated facts are written)', async () => {
+        const existing = { ...source, responseId: 'resp-existing' };
+        firestore.getDocs.mockResolvedValue({
+            docs: [{
+                data: () => ({
+                    userId: 'u1', responseId: existing.responseId, sourceSession: source, window: 'immediate',
+                    date: source.date, checkinRef: { date: source.date },
+                    createdAt: '2026-08-18T10:45:00.000Z', updatedAt: '2026-08-18T10:45:00.000Z',
+                }),
+                ref: { path: 'users/u1/session_responses/resp-existing' },
+            }],
+        });
+        const service = new SessionResponseService();
+        await service.recordOrUpdateResponse('u1', source, 'immediate', source.date, source.date, { sessionRpe: 6 },
+            undefined, '2026-08-18T11:00:00.000Z');
+        expect(firestore.updateDoc).toHaveBeenCalledWith(expect.anything(), { sessionRpe: 6, updatedAt: '2026-08-18T11:00:00.000Z' });
+        expect(firestore.runTransaction).not.toHaveBeenCalled();
+    });
+});
+
 
 describe('ledger response range', () => {
     it('reads only user-scoped dated responses and rejects corrupt rows', async () => {
