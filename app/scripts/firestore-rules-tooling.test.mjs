@@ -154,7 +154,7 @@ describe('readable rules assembly', () => {
     const source = await buildRules({ check: true });
     // Root helpers are compiled into every child match; new shared helpers need review.
     expect([...source.matchAll(/^    function (\w+)\(/gm)].map((match) => match[1]).sort()).toEqual([
-      'assessmentTrialIdFor', 'hasOwnedUserId', 'hasStringTimestamps', 'hasValidAxisValue',
+      'assessmentTrialIdFor', 'hasOwnedUserId', 'hasStringTimestamps',
       'hasValidEquipmentList', 'hasValidExpectedCost', 'hasValidObservationDevice',
       'hasValidProtocolRef', 'hasValidSessionSource', 'isBoundedString', 'isDateDocument',
       'isFixedLoadProtocol', 'isOwner', 'isPositiveInt', 'isRealCalendarDate', 'isValidActivityDate',

@@ -52,18 +52,9 @@ service cloud.firestore {
       return month >= 1 && month <= 12 && day >= 1 && day <= daysInMonth;
     }
 
-    function hasValidAxisValue(m, key) {
-      return !(key in m) || (m[key] is number && m[key] >= 0 && m[key] <= 1);
-    }
-
+    // Issue #1202 (ADR-0053): bounded keys only. The 0..1 axis values are owned by
+    // validateFixedActivity / validateScheduleOverlay on their write paths.
     function hasValidExpectedCost(m) {
       return m is map
-        && m.keys().hasOnly(['systemic', 'cardiovascular', 'lowerBody', 'upperBody', 'impactTissue', 'neuromuscular'])
-        && m.size() <= 6
-        && hasValidAxisValue(m, 'systemic')
-        && hasValidAxisValue(m, 'cardiovascular')
-        && hasValidAxisValue(m, 'lowerBody')
-        && hasValidAxisValue(m, 'upperBody')
-        && hasValidAxisValue(m, 'impactTissue')
-        && hasValidAxisValue(m, 'neuromuscular');
+        && m.keys().hasOnly(['systemic', 'cardiovascular', 'lowerBody', 'upperBody', 'impactTissue', 'neuromuscular']);
     }

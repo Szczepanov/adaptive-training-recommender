@@ -610,7 +610,8 @@ here even before the default-off gate is reached.**
    whole session; only the `lowerBody`/`upperBody` *split* of that one budget is weighted
    across exercises. The failing test is now a permanent regression guard.
 2. *Bound violation.* `WorkoutCostProfile` axes are canonically 0.0–1.0 (the type's own field
-   comments; `firestore.rules`' `hasValidAxisValue` enforces the same bound elsewhere). A
+   comments; `validateFixedActivity` and `validateScheduleOverlay` enforce the same bound
+   elsewhere, on write). A
    fully one-sided exercise (e.g. `front_squat`, no matched upper-body muscle at all) at
    `hard` intensity redistributes the combined `0.8 + 0.7 = 1.5` budget entirely onto
    `lowerBody`, which a test caught exceeding 1.0 before a cap was added. Now clamped per

@@ -94,6 +94,21 @@ describe('DecisionJournalService', () => {
             expect(firestore.setDoc).not.toHaveBeenCalled();
         });
 
+        // Issue #1202: the rules no longer check the verdict enum or the flag type, so this
+        // write-side validation is the only gate before Firestore.
+        it('rejects an unknown verdict or a non-boolean anchoring flag before attempting a write', async () => {
+            const service = new DecisionJournalService();
+            missingDoc();
+            await expect(service.recordMorningEntry(USER_ID, DATE, {
+                externalVerdict: 'maybe' as never, sawEngineVerdictFirst: false,
+            })).rejects.toThrow(/Validation failed: externalVerdict/);
+            missingDoc();
+            await expect(service.recordMorningEntry(USER_ID, DATE, {
+                externalVerdict: 'proceed', sawEngineVerdictFirst: 'no' as never,
+            })).rejects.toThrow(/Validation failed: sawEngineVerdictFirst/);
+            expect(firestore.setDoc).not.toHaveBeenCalled();
+        });
+
         it('rejects a note beyond the Firestore 2000-character contract before attempting a write', async () => {
             missingDoc();
             const service = new DecisionJournalService();
@@ -132,6 +147,13 @@ describe('DecisionJournalService', () => {
             existingDoc({ ...validEntry(), surprise: true });
             const service = new DecisionJournalService();
             await expect(service.recordActualVerdict(USER_ID, DATE, 'scale')).rejects.toThrow(/stored decision journal entry is invalid/i);
+            expect(firestore.setDoc).not.toHaveBeenCalled();
+        });
+
+        it('rejects an unknown actualVerdict before attempting a write (#1202: no rules backstop)', async () => {
+            existingDoc(validEntry());
+            const service = new DecisionJournalService();
+            await expect(service.recordActualVerdict(USER_ID, DATE, 'maybe' as never)).rejects.toThrow(/Validation failed: actualVerdict/);
             expect(firestore.setDoc).not.toHaveBeenCalled();
         });
 

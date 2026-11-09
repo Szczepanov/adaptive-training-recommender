@@ -1181,10 +1181,9 @@ const TRAINING_ENVIRONMENTS: TrainingEnvironment[] = ['indoor', 'outdoor', 'eith
 const MAX_EQUIPMENT_ITEMS = 20;
 const MAX_EQUIPMENT_ITEM_LENGTH = 50;
 
-/** Every key must be a recognized axis and every value a finite 0..1 number -- mirrors
- *  firestore.rules' hasValidExpectedStimulus/hasValidExpectedCost, which can bound a
- *  map's keys and size but (per the 5.3 storage contract) cannot iterate a list to type
- *  check items, so equipment item type/length is enforced here, not just at the rule. */
+/** Every key must be a recognized axis and every value a finite 0..1 number. Since
+ *  #1202 (ADR-0053) firestore.rules' hasValidExpectedStimulus/hasValidExpectedCost bound
+ *  only the map keys and size, so this is the write-time owner of the 0..1 axis values. */
 function validateProfileMap<K extends string>(
     raw: any,
     axes: readonly K[],
@@ -1215,8 +1214,9 @@ function validateProfileMap<K extends string>(
 
 /** Phase 6.2b / D6-B: a TRUE day-wide restriction, deliberately separate from and
  *  independently validated from the activity's own `environment`/`equipment` above --
- *  see FixedActivity's own doc comment in models.ts. Mirrors firestore.rules'
- *  hasValidAvailabilityContextOverride, which this must stay aligned with. */
+ *  see FixedActivity's own doc comment in models.ts. firestore.rules'
+ *  hasValidAvailabilityContextOverride bounds the keys and equipment list; since #1202
+ *  (ADR-0053) the environment enum is owned here alone. */
 function validateAvailabilityContextOverride(
     raw: any,
     errors: ValidationError[]
@@ -1737,8 +1737,8 @@ export function validateAuthoredPlanBlock(raw: any): ValidationResult<AuthoredPl
     if (!raw.userId || typeof raw.userId !== 'string') errors.push({ field: 'userId', message: 'User ID is required' });
     if (raw.phase !== 'travel') errors.push({ field: 'phase', message: 'Only explicit travel blocks are supported' });
     if (!isValidDate(raw.startDate) || !isValidDate(raw.endDate) || raw.startDate > raw.endDate) errors.push({ field: 'dates', message: 'Travel block dates must be valid and ordered' });
-    if (typeof raw.volumeScale !== 'number' || raw.volumeScale < 0 || raw.volumeScale > 1) errors.push({ field: 'volumeScale', message: 'Volume scale must be between 0 and 1' });
-    if (typeof raw.intensityScale !== 'number' || raw.intensityScale < 0 || raw.intensityScale > 1) errors.push({ field: 'intensityScale', message: 'Intensity scale must be between 0 and 1' });
+    if (typeof raw.volumeScale !== 'number' || !Number.isFinite(raw.volumeScale) || raw.volumeScale < 0 || raw.volumeScale > 1) errors.push({ field: 'volumeScale', message: 'Volume scale must be between 0 and 1' });
+    if (typeof raw.intensityScale !== 'number' || !Number.isFinite(raw.intensityScale) || raw.intensityScale < 0 || raw.intensityScale > 1) errors.push({ field: 'intensityScale', message: 'Intensity scale must be between 0 and 1' });
     if (raw.eventId !== undefined && raw.eventId !== null && typeof raw.eventId !== 'string') errors.push({ field: 'eventId', message: 'Event ID must be a string or empty' });
     if (errors.length > 0) return { isValid: false, errors };
     const now = new Date().toISOString();

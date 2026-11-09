@@ -773,20 +773,33 @@ emulatorDescribe('Firestore security rules', () => {
         await assertFails(setDoc(doc(otherDb, `users/${otherUserId}/fixed_activities/activity-2`), { ...validFixedActivity(), userId: ownerId }));
     });
 
-    it('rejects a fixed activity with an out-of-range durationMin', async () => {
+    // Issue #1202 (ADR-0053): fixed-activity VALUES (date, durationMin, flags, environment
+    // enums, startTime, stimulus/cost axis values, availabilityOverride) are validated by
+    // engine/validationCore.ts validateFixedActivity in FixedActivityService.createActivity and
+    // updateActivity before every write -- see validation.test.ts and fixedActivityService.test.ts.
+    // The rules keep ownership, the key allow-lists, the title/equipment/catalog-id caps and
+    // the createdAt shape.
+    it.each([
+        ['a zero durationMin', { durationMin: 0 }],
+        ['an over-long durationMin', { durationMin: 1500 }],
+        ['an expectedCost value above 1', { expectedCost: { systemic: 1.5 } }],
+        ['an expectedStimulus value above 1', { expectedStimulus: { aerobicEndurance: 1.5 } }],
+        ['an unknown environment', { environment: 'space' }],
+        ['an unknown availabilityContextOverride environment', { availabilityContextOverride: { environment: 'space' } }],
+        ['a malformed date', { date: '08/12/2026' }],
+        ['a calendar-impossible date', { date: '2026-02-30' }],
+        ['a non-boolean isCompleted', { isCompleted: 'no' }],
+        ['an out-of-range availabilityOverride', { availabilityOverride: 1500 }],
+    ])('accepts a fixed activity with %s at the rules boundary (validateFixedActivity owns it)', async (_label, override) => {
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
-        await assertFails(setDoc(doc(ownerDb, fixedActivityPath), { ...validFixedActivity(), durationMin: 0 }));
-        await assertFails(setDoc(doc(ownerDb, fixedActivityPath), { ...validFixedActivity(), durationMin: 1500 }));
+        await assertSucceeds(setDoc(doc(ownerDb, fixedActivityPath), { ...validFixedActivity(), ...override }));
     });
 
-    it('rejects a fixed activity with an expectedCost value above 1', async () => {
+    it('rejects a fixed activity with an unknown stimulus or cost axis key, or a non-string createdAt', async () => {
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
-        await assertFails(setDoc(doc(ownerDb, fixedActivityPath), { ...validFixedActivity(), expectedCost: { systemic: 1.5 } }));
-    });
-
-    it('rejects a fixed activity with an unknown environment', async () => {
-        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
-        await assertFails(setDoc(doc(ownerDb, fixedActivityPath), { ...validFixedActivity(), environment: 'space' }));
+        await assertFails(setDoc(doc(ownerDb, fixedActivityPath), { ...validFixedActivity(), expectedStimulus: { notAnAxis: 0.5 } }));
+        await assertFails(setDoc(doc(ownerDb, fixedActivityPath), { ...validFixedActivity(), expectedCost: { notAnAxis: 0.5 } }));
+        await assertFails(setDoc(doc(ownerDb, fixedActivityPath), { ...validFixedActivity(), createdAt: 42 }));
     });
 
     it('rejects a fixed activity with an oversized equipment list', async () => {
@@ -808,25 +821,12 @@ emulatorDescribe('Firestore security rules', () => {
         }))).resolves.toBeUndefined();
     });
 
-    it('rejects a fixed activity with an unknown environment inside availabilityContextOverride', async () => {
-        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
-        await assertFails(setDoc(doc(ownerDb, fixedActivityPath), {
-            ...validFixedActivity(),
-            availabilityContextOverride: { environment: 'space' },
-        }));
-    });
-
     it('rejects a fixed activity with an unrecognized key inside availabilityContextOverride', async () => {
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
         await assertFails(setDoc(doc(ownerDb, fixedActivityPath), {
             ...validFixedActivity(),
             availabilityContextOverride: { environment: 'indoor', extra: true },
         }));
-    });
-
-    it('rejects a fixed activity with a malformed date', async () => {
-        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
-        await assertFails(setDoc(doc(ownerDb, fixedActivityPath), { ...validFixedActivity(), date: '08/12/2026' }));
     });
 
     // ADR-0036 D-WINDOW: one authoritative same-date manifest.
@@ -885,32 +885,55 @@ emulatorDescribe('Firestore security rules', () => {
         await assertFails(setDoc(doc(ownerDb, scheduleWindowPath), { ...validScheduleWindow(), revision: 2, createdAt: '2026-09-05T00:00:00Z' }));
     });
 
-    it('rejects a schedule window where endLocal is not strictly after startLocal', async () => {
+    /** The manifest with its single window's fields overridden, so a test reaches the
+     * nested entry check rather than the manifest-level key allow-list. */
+    function scheduleWindowWith(windowOverride: Record<string, unknown>) {
+        const manifest = validScheduleWindow();
+        return { ...manifest, windows: [{ ...manifest.windows[0], ...windowOverride }] };
+    }
+
+    it('rejects window fields placed at the manifest level', async () => {
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
-        await assertFails(setDoc(doc(ownerDb, scheduleWindowPath), { ...validScheduleWindow(), startLocal: '07:00', endLocal: '07:00' }));
-        await assertFails(setDoc(doc(ownerDb, scheduleWindowPath), { ...validScheduleWindow(), startLocal: '22:00', endLocal: '02:00' }));
+        await assertFails(setDoc(doc(ownerDb, scheduleWindowPath), { ...validScheduleWindow(), startLocal: '07:00' }));
+        await assertFails(setDoc(doc(ownerDb, scheduleWindowPath), { ...validScheduleWindow(), environment: 'indoor' }));
     });
 
+    // Issue #1202 (ADR-0053): the positive duration, the environment enum and the
+    // per-window revision are validated by engine/scheduleWindows.ts validateScheduleWindow
+    // (via validateScheduleWindowManifest) in ScheduleWindowService.buildManifest before every
+    // write -- see scheduleWindows.test.ts.
+    it.each([
+        ['a zero-length window', { startLocal: '07:00', endLocal: '07:00' }],
+        ['a cross-midnight window', { startLocal: '22:00', endLocal: '02:00' }],
+        ['an unknown environment', { environment: 'space' }],
+        ['a zero window revision', { revision: 0 }],
+    ])('accepts %s at the rules boundary (validateScheduleWindow owns it)', async (_label, windowOverride) => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertSucceeds(setDoc(doc(ownerDb, scheduleWindowPath), scheduleWindowWith(windowOverride)));
+    });
+
+    // The HH:mm pattern stays: the overlap check compares the times as strings.
     it('rejects a malformed startLocal/endLocal', async () => {
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
-        await assertFails(setDoc(doc(ownerDb, scheduleWindowPath), { ...validScheduleWindow(), startLocal: '6:00' }));
-        await assertFails(setDoc(doc(ownerDb, scheduleWindowPath), { ...validScheduleWindow(), endLocal: '24:00' }));
-    });
-
-    it('rejects a schedule window with an unknown environment', async () => {
-        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
-        await assertFails(setDoc(doc(ownerDb, scheduleWindowPath), { ...validScheduleWindow(), environment: 'space' }));
+        await assertFails(setDoc(doc(ownerDb, scheduleWindowPath), scheduleWindowWith({ startLocal: '6:00' })));
+        await assertFails(setDoc(doc(ownerDb, scheduleWindowPath), scheduleWindowWith({ endLocal: '24:00' })));
     });
 
     it('rejects a schedule window with an oversized label', async () => {
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
-        await assertFails(setDoc(doc(ownerDb, scheduleWindowPath), { ...validScheduleWindow(), label: 'x'.repeat(101) }));
+        await assertFails(setDoc(doc(ownerDb, scheduleWindowPath), scheduleWindowWith({ label: 'x'.repeat(101) })));
     });
 
     it('rejects a schedule window with a non-string or oversized equipment item', async () => {
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
-        await assertFails(setDoc(doc(ownerDb, scheduleWindowPath), { ...validScheduleWindow(), equipment: [42] }));
-        await assertFails(setDoc(doc(ownerDb, scheduleWindowPath), { ...validScheduleWindow(), equipment: ['x'.repeat(51)] }));
+        await assertFails(setDoc(doc(ownerDb, scheduleWindowPath), scheduleWindowWith({ equipment: [42] })));
+        await assertFails(setDoc(doc(ownerDb, scheduleWindowPath), scheduleWindowWith({ equipment: ['x'.repeat(51)] })));
+    });
+
+    it('rejects a window bound to another user or date', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertFails(setDoc(doc(ownerDb, scheduleWindowPath), scheduleWindowWith({ userId: otherUserId })));
+        await assertFails(setDoc(doc(ownerDb, scheduleWindowPath), scheduleWindowWith({ date: '2026-09-11' })));
     });
 
     it('rejects unauthenticated schedule window access', async () => {
@@ -930,11 +953,6 @@ emulatorDescribe('Firestore security rules', () => {
         await assertFails(getDoc(doc(otherDb, scheduleWindowPath)));
         await assertFails(setDoc(doc(otherDb, scheduleWindowPath), validScheduleWindow()));
         await assertFails(setDoc(doc(otherDb, `users/${otherUserId}/schedule_windows/window-2`), { ...validScheduleWindow(), userId: ownerId }));
-    });
-
-    it('rejects a fixed activity with a YYYY-MM-DD-shaped but calendar-impossible date', async () => {
-        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
-        await assertFails(setDoc(doc(ownerDb, fixedActivityPath), { ...validFixedActivity(), date: '2026-02-30' }));
     });
 
     it('rejects a fixed activity missing the required fixed field', async () => {
@@ -962,12 +980,102 @@ emulatorDescribe('Firestore security rules', () => {
         await expect(assertSucceeds(deleteDoc(doc(ownerDb, fixedActivityPath)))).resolves.toBeUndefined();
     });
 
-    it('allows an owner to create a valid authored travel plan block and rejects malformed ranges or doses', async () => {
+    it('allows an owner to create a valid authored travel plan block and rejects unknown keys or forged timestamps', async () => {
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
         await expect(assertSucceeds(setDoc(doc(ownerDb, planBlockPath), validPlanBlock()))).resolves.toBeUndefined();
-        await assertFails(setDoc(doc(ownerDb, `${planBlockPath}-inverted`), { ...validPlanBlock(), endDate: '2026-08-18' }));
-        await assertFails(setDoc(doc(ownerDb, `${planBlockPath}-impossible`), { ...validPlanBlock(), startDate: '2026-02-30' }));
-        await assertFails(setDoc(doc(ownerDb, `${planBlockPath}-dose`), { ...validPlanBlock(), intensityScale: 1.1 }));
+        await assertFails(setDoc(doc(ownerDb, `${planBlockPath}-extra`), { ...validPlanBlock(), surprise: true }));
+        await assertFails(setDoc(doc(ownerDb, `${planBlockPath}-created`), { ...validPlanBlock(), createdAt: 42 }));
+        for (const key of ['phase', 'startDate', 'endDate', 'volumeScale', 'intensityScale']) {
+            const missing: Record<string, unknown> = validPlanBlock();
+            delete missing[key];
+            await assertFails(setDoc(doc(ownerDb, `${planBlockPath}-missing-${key}`), missing));
+        }
+        const withoutEventId: Record<string, unknown> = validPlanBlock();
+        delete withoutEventId.eventId;
+        await assertSucceeds(setDoc(doc(ownerDb, `${planBlockPath}-no-event`), withoutEventId));
+        await assertFails(setDoc(doc(ownerDb, planBlockPath), { ...validPlanBlock(), createdAt: '2099-01-01T00:00:00Z' }, { merge: true }));
+    });
+
+    // Issue #1202 (ADR-0053): plan-block VALUES (phase, dates and their order, scales,
+    // eventId type) are validated by engine/validationCore.ts validateAuthoredPlanBlock in
+    // PlanBlockService.create and update before every write -- see validation.test.ts.
+    it.each([
+        ['an inverted date range', { endDate: '2026-08-18' }],
+        ['a calendar-impossible date', { startDate: '2026-02-30' }],
+        ['an out-of-range intensityScale', { intensityScale: 1.1 }],
+        ['an out-of-range volumeScale', { volumeScale: -0.1 }],
+        ['a non-travel phase', { phase: 'taper' }],
+    ])('accepts a plan block with %s at the rules boundary (validateAuthoredPlanBlock owns it)', async (_label, override) => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertSucceeds(setDoc(doc(ownerDb, planBlockPath), { ...validPlanBlock(), ...override }));
+    });
+
+    // --- Schedule overlays (hasValidScheduleOverlay) ---
+
+    const scheduleOverlayPath = `users/${ownerId}/schedule_overlays/overlay-1`;
+
+    function validScheduleOverlay() {
+        return {
+            userId: ownerId, title: 'Ski trip', category: 'active_sport', sport: 'skiing',
+            startDate: '2026-12-20', endDate: '2026-12-27', dailyAvailabilityMinutes: 60,
+            volumeScale: 0.5, intensityScale: 0.6,
+            expectedCost: { systemic: 0.7, lowerBody: 0.85 },
+            equipment: ['skis'], environment: 'outdoor', notes: 'Alps',
+            createdAt: '2026-12-01T00:00:00Z', updatedAt: '2026-12-01T00:00:00Z',
+        };
+    }
+
+    it('allows an owner to create, replace and delete a valid schedule overlay', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertSucceeds(setDoc(doc(ownerDb, scheduleOverlayPath), validScheduleOverlay()));
+        await assertSucceeds(setDoc(doc(ownerDb, scheduleOverlayPath), { ...validScheduleOverlay(), title: 'Longer ski trip', updatedAt: '2026-12-02T00:00:00Z' }));
+        await assertSucceeds(getDoc(doc(ownerDb, scheduleOverlayPath)));
+        await assertSucceeds(deleteDoc(doc(ownerDb, scheduleOverlayPath)));
+    });
+
+    it('rejects cross-user schedule overlay access, forged ownership and a changed createdAt', async () => {
+        await testEnvironment.withSecurityRulesDisabled(async context => {
+            await setDoc(doc(context.firestore(), scheduleOverlayPath), validScheduleOverlay());
+        });
+        const otherDb = testEnvironment.authenticatedContext(otherUserId).firestore();
+        await assertFails(getDoc(doc(otherDb, scheduleOverlayPath)));
+        await assertFails(setDoc(doc(otherDb, scheduleOverlayPath), validScheduleOverlay()));
+        await assertFails(setDoc(doc(otherDb, `users/${otherUserId}/schedule_overlays/forged`), validScheduleOverlay()));
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertFails(setDoc(doc(ownerDb, scheduleOverlayPath), { ...validScheduleOverlay(), createdAt: '2099-01-01T00:00:00Z' }));
+    });
+
+    it('rejects a schedule overlay with unknown or missing keys, or over a size cap', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        const withoutCost: Record<string, unknown> = validScheduleOverlay();
+        delete withoutCost.expectedCost;
+        await assertFails(setDoc(doc(ownerDb, scheduleOverlayPath), withoutCost));
+        await assertFails(setDoc(doc(ownerDb, scheduleOverlayPath), { ...validScheduleOverlay(), surprise: true }));
+        await assertFails(setDoc(doc(ownerDb, scheduleOverlayPath), { ...validScheduleOverlay(), expectedCost: { notAnAxis: 0.5 } }));
+        await assertFails(setDoc(doc(ownerDb, scheduleOverlayPath), { ...validScheduleOverlay(), title: '' }));
+        await assertFails(setDoc(doc(ownerDb, scheduleOverlayPath), { ...validScheduleOverlay(), title: 'x'.repeat(201) }));
+        await assertFails(setDoc(doc(ownerDb, scheduleOverlayPath), { ...validScheduleOverlay(), notes: 'x'.repeat(1001) }));
+        await assertFails(setDoc(doc(ownerDb, scheduleOverlayPath), { ...validScheduleOverlay(), equipment: ['x'.repeat(51)] }));
+        await assertFails(setDoc(doc(ownerDb, scheduleOverlayPath), { ...validScheduleOverlay(), createdAt: 42 }));
+    });
+
+    // Issue #1202 (ADR-0053): overlay VALUES are validated by engine/validationCore.ts
+    // validateScheduleOverlay (and whole minutes by assertWholeMinuteAvailability) in
+    // ScheduleOverlayService.create and update before every write -- see
+    // scheduleOverlayService.test.ts.
+    it.each([
+        ['an unknown category', { category: 'holiday' }],
+        ['an unknown sport', { sport: 'curling' }],
+        ['an inverted date range', { endDate: '2026-12-19' }],
+        ['a calendar-impossible date', { startDate: '2026-02-30' }],
+        ['fractional availability minutes', { dailyAvailabilityMinutes: 30.5 }],
+        ['out-of-range availability minutes', { dailyAvailabilityMinutes: 1500 }],
+        ['an out-of-range volumeScale', { volumeScale: 1.5 }],
+        ['an out-of-range expectedCost value', { expectedCost: { systemic: 1.5 } }],
+        ['an unknown environment', { environment: 'space' }],
+    ])('accepts a schedule overlay with %s at the rules boundary (validateScheduleOverlay owns it)', async (_label, override) => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertSucceeds(setDoc(doc(ownerDb, scheduleOverlayPath), { ...validScheduleOverlay(), ...override }));
     });
 
     it('rejects cross-user authored plan block access and forged ownership', async () => {
@@ -1284,25 +1392,43 @@ emulatorDescribe('Firestore security rules', () => {
         }));
     });
 
-    it('enforces ownership, integer capacity, exact shape and immutable creation time for training intent profiles', async () => {
+    it('enforces ownership, exact shape, bounded priorities and immutable creation time for training intent profiles', async () => {
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
         const valid = validTrainingIntentProfile();
         await expect(assertSucceeds(setDoc(doc(ownerDb, trainingIntentProfilePath), valid))).resolves.toBeUndefined();
-        await assertFails(setDoc(doc(ownerDb, `${trainingIntentProfilePath}-fractional`), {
-            ...valid, weeklyCommitment: { ...valid.weeklyCommitment, targetSessions: 2.5 },
+        await assertFails(setDoc(doc(ownerDb, trainingIntentProfilePath), { ...valid, surprise: true }));
+        await assertFails(setDoc(doc(ownerDb, trainingIntentProfilePath), {
+            ...valid, weeklyCommitment: { ...valid.weeklyCommitment, extraSessions: 1 },
         }));
-        await assertFails(setDoc(doc(ownerDb, `${trainingIntentProfilePath}-range`), {
-            ...valid, weeklyCommitment: { minSessions: 4, targetSessions: 3, maxSessions: 4 },
+        await assertFails(setDoc(doc(ownerDb, trainingIntentProfilePath), {
+            ...valid, priorities: ['health', 'endurance', 'strength_muscle', 'speed_power', 'sport_readiness', 'balanced_performance', 'health'],
         }));
-        await assertFails(setDoc(doc(ownerDb, `${trainingIntentProfilePath}-mode`), { ...valid, planningMode: 'unsupported' }));
-        await assertFails(setDoc(doc(ownerDb, `${trainingIntentProfilePath}-org`), { ...valid, organizationPreference: 'manual' }));
-        await assertFails(setDoc(doc(ownerDb, `${trainingIntentProfilePath}-extra-field`), { ...valid, surprise: true }));
         await assertFails(setDoc(doc(ownerDb, trainingIntentProfilePath), { ...valid, createdAt: '2099-01-01T00:00:00Z' }, { merge: true }));
         const otherDb = testEnvironment.authenticatedContext(otherUserId).firestore();
         await assertFails(getDoc(doc(otherDb, trainingIntentProfilePath)));
     });
 
-    it('accepts an absent or valid capability-maintenance opt-in and rejects malformed ones (#805)', async () => {
+    // Issue #1202 (ADR-0053): training-intent VALUES (planningMode, weeklyCommitment counts
+    // and ordering, organizationPreference, schemaVersion, the capability enum, uniqueness
+    // and enabled rule) are validated by engine/validationCore.ts validateTrainingIntentProfile
+    // in TrainingIntentProfileService.upsert before every write -- see
+    // trainingIntentProfileService.test.ts.
+    it.each([
+        ['a fractional targetSessions', { weeklyCommitment: { minSessions: 2, targetSessions: 2.5, maxSessions: 4 } }],
+        ['an inverted weekly commitment', { weeklyCommitment: { minSessions: 4, targetSessions: 3, maxSessions: 4 } }],
+        ['an unsupported planningMode', { planningMode: 'unsupported' }],
+        ['a manual organizationPreference', { organizationPreference: 'manual' }],
+        ['a zero schemaVersion', { schemaVersion: 0 }],
+        ['an unknown capability', { capabilityMaintenance: { enabled: true, capabilities: ['football'] } }],
+        ['an enabled opt-in with no capability', { capabilityMaintenance: { enabled: true, capabilities: [] } }],
+        ['a duplicate capability', { capabilityMaintenance: { enabled: true, capabilities: ['sport_skill', 'sport_skill'] } }],
+        ['a non-boolean enabled', { capabilityMaintenance: { enabled: 'yes', capabilities: ['sport_skill'] } }],
+    ])('accepts a training intent profile with %s at the rules boundary (validateTrainingIntentProfile owns it)', async (_label, override) => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertSucceeds(setDoc(doc(ownerDb, trainingIntentProfilePath), { ...validTrainingIntentProfile(), ...override }));
+    });
+
+    it('accepts an absent or valid capability-maintenance opt-in and rejects unknown keys or an oversized list (#805)', async () => {
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
         const valid = validTrainingIntentProfile();
         const profileRef = doc(ownerDb, trainingIntentProfilePath);
@@ -1310,14 +1436,12 @@ emulatorDescribe('Firestore security rules', () => {
         await assertSucceeds(setDoc(profileRef, valid));
         await assertSucceeds(setDoc(profileRef, { ...valid, capabilityMaintenance: { enabled: true, capabilities: all } }));
         await assertSucceeds(setDoc(profileRef, { ...valid, capabilityMaintenance: { enabled: false, capabilities: all } }));
-        await assertFails(setDoc(profileRef, { ...valid, capabilityMaintenance: { enabled: true, capabilities: ['football'] } }));
         await assertFails(setDoc(profileRef, { ...valid, capabilityMaintenance: { enabled: true, capabilities: ['sport_skill'], intervalDays: 7 } }));
-        await assertFails(setDoc(profileRef, { ...valid, capabilityMaintenance: { enabled: true, capabilities: [] } }));
-        await assertFails(setDoc(profileRef, { ...valid, capabilityMaintenance: { enabled: true, capabilities: ['sport_skill', 'sport_skill'] } }));
-        await assertFails(setDoc(profileRef, { ...valid, capabilityMaintenance: { enabled: 'yes', capabilities: ['sport_skill'] } }));
+        await assertFails(setDoc(profileRef, { ...valid, capabilityMaintenance: { enabled: true } }));
+        await assertFails(setDoc(profileRef, { ...valid, capabilityMaintenance: { enabled: true, capabilities: [...all, 'sport_skill'] } }));
         // Update path: the owner can opt out with a merge-write and keeps the field shape-checked.
         await assertSucceeds(setDoc(profileRef, { capabilityMaintenance: { enabled: false, capabilities: [] } }, { merge: true }));
-        await assertFails(setDoc(profileRef, { capabilityMaintenance: { enabled: true, capabilities: ['football'] } }, { merge: true }));
+        await assertFails(setDoc(profileRef, { capabilityMaintenance: { enabled: true, capabilities: 'sport_skill' } }, { merge: true }));
         const otherDb = testEnvironment.authenticatedContext(otherUserId).firestore();
         await assertFails(setDoc(doc(otherDb, trainingIntentProfilePath), { ...valid, capabilityMaintenance: { enabled: true, capabilities: all } }));
     });
@@ -1341,15 +1465,18 @@ emulatorDescribe('Firestore security rules', () => {
 
     it('rejects a malformed or foreign-owned decision journal entry', async () => {
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
-        await assertFails(setDoc(doc(ownerDb, `${decisionJournalPath}-bad-verdict`), {
-            ...validDecisionJournalEntry(), externalVerdict: 'maybe',
-        }));
-        await assertFails(setDoc(doc(ownerDb, `${decisionJournalPath}-extra-field`), {
+        await assertFails(setDoc(doc(ownerDb, decisionJournalPath), {
             ...validDecisionJournalEntry(), surprise: true,
         }));
         const withoutSawFirst: Record<string, unknown> = validDecisionJournalEntry();
         delete withoutSawFirst.sawEngineVerdictFirst;
-        await assertFails(setDoc(doc(ownerDb, `${decisionJournalPath}-missing-field`), withoutSawFirst));
+        await assertFails(setDoc(doc(ownerDb, decisionJournalPath), withoutSawFirst));
+        await assertFails(setDoc(doc(ownerDb, decisionJournalPath), {
+            ...validDecisionJournalEntry(), externalNote: 'x'.repeat(2001),
+        }));
+        await assertFails(setDoc(doc(ownerDb, decisionJournalPath), {
+            ...validDecisionJournalEntry(), createdAt: 42,
+        }));
         await assertFails(setDoc(doc(ownerDb, decisionJournalPath), { ...validDecisionJournalEntry(), date: '2026-08-08' }));
         await assertFails(setDoc(doc(ownerDb, decisionJournalPath), { ...validDecisionJournalEntry(), userId: otherUserId }));
         const otherDb = testEnvironment.authenticatedContext(otherUserId).firestore();
@@ -1357,6 +1484,19 @@ emulatorDescribe('Firestore security rules', () => {
             doc(otherDb, `users/${otherUserId}/decision_journal/2026-08-07`),
             { ...validDecisionJournalEntry(), userId: ownerId },
         ));
+    });
+
+    // Issue #1202 (ADR-0053): the verdict enums, the sawEngineVerdictFirst type and
+    // schemaVersion are validated by engine/validationCore.ts validateDecisionJournalEntry in
+    // DecisionJournalService.write before every write -- see decisionJournal.test.ts.
+    it.each([
+        ['an unknown externalVerdict', { externalVerdict: 'maybe' }],
+        ['an unknown actualVerdict', { actualVerdict: 'maybe' }],
+        ['a non-boolean sawEngineVerdictFirst', { sawEngineVerdictFirst: 'no' }],
+        ['schemaVersion 2', { schemaVersion: 2 }],
+    ])('accepts a decision journal entry with %s at the rules boundary (validateDecisionJournalEntry owns it)', async (_label, override) => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertSucceeds(setDoc(doc(ownerDb, decisionJournalPath), { ...validDecisionJournalEntry(), ...override }));
     });
 
     it('rejects cross-user decision journal reads and writes', async () => {
@@ -1837,6 +1977,28 @@ emulatorDescribe('Firestore security rules', () => {
         await expect(assertSucceeds(setDoc(doc(ownerDb, sessionDefHeaderPath), {
             ...validSessionDefHeader(), status: 'active',
         }))).resolves.toBeUndefined();
+    });
+
+    // Issue #1202 (ADR-0053): schemaVersion, the intent enum and the blocks list type are
+    // validated by sessions/validation.ts validateSessionDefinition in
+    // SessionDefinitionService.saveDefinitionRevision before the write -- see
+    // sessions/validation.test.ts and sessionDefinitionService.test.ts.
+    it.each([
+        ['an unknown intent', { intent: 'strength' }],
+        ['schemaVersion 2', { schemaVersion: 2 }],
+        ['a non-list blocks value', { blocks: { b1: {} } }],
+    ])('accepts a session definition revision with %s at the rules boundary (validateSessionDefinition owns it)', async (_label, override) => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertSucceeds(setDoc(doc(ownerDb, sessionDefRevPath), { ...validSessionDefRevision(), ...override }));
+    });
+
+    it('keeps the session definition revision bound to its path and owner', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertFails(setDoc(doc(ownerDb, sessionDefRevPath), { ...validSessionDefRevision(), revision: 2 }));
+        await assertFails(setDoc(doc(ownerDb, sessionDefRevPath), { ...validSessionDefRevision(), id: 'other-definition' }));
+        await assertFails(setDoc(doc(ownerDb, sessionDefRevPath), { ...validSessionDefRevision(), userId: otherUserId }));
+        await assertFails(setDoc(doc(ownerDb, sessionDefRevPath), { ...validSessionDefRevision(), contentHash: '' }));
+        await assertFails(setDoc(doc(ownerDb, sessionDefRevPath), { ...validSessionDefRevision(), companionSessions: 'spin' }));
     });
 
     it('rejects a session definition header with archivedAt but no status', async () => {

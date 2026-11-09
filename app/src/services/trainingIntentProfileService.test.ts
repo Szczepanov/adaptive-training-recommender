@@ -29,6 +29,26 @@ describe('TrainingIntentProfile persistence boundary', () => {
         expect(validateTrainingIntentProfile({ ...profile, unsupported: true }).isValid).toBe(false);
     });
 
+    // Issue #1202: the Firestore rules no longer check these values; validateTrainingIntentProfile,
+    // run by upsert before every write, is their only write-time owner.
+    it.each([
+        ['a fractional session count', { weeklyCommitment: { minSessions: 2, targetSessions: 2.5, maxSessions: 4 } }],
+        ['a zero minimum', { weeklyCommitment: { minSessions: 0, targetSessions: 3, maxSessions: 4 } }],
+        ['a maximum above 14', { weeklyCommitment: { minSessions: 2, targetSessions: 3, maxSessions: 15 } }],
+        ['a target above the maximum', { weeklyCommitment: { minSessions: 2, targetSessions: 5, maxSessions: 4 } }],
+        ['an unsupported planningMode', { planningMode: 'imported' }],
+        ['a manual organizationPreference', { organizationPreference: 'manual' }],
+        ['a zero schemaVersion', { schemaVersion: 0 }],
+        ['a fractional schemaVersion', { schemaVersion: 1.5 }],
+        ['an unknown priority', { priorities: ['fame'] }],
+    ])('rejects %s and never writes it', async (_label, override) => {
+        expect(validateTrainingIntentProfile({ ...profile, ...override }).isValid).toBe(false);
+        const { userId: _userId, createdAt: _createdAt, updatedAt: _updatedAt, ...input } = { ...profile, ...override };
+        void _userId; void _createdAt; void _updatedAt;
+        await expect(new TrainingIntentProfileService().upsert('u1', input as never)).rejects.toThrow(/Validation failed/);
+        expect(firestore.setDoc).not.toHaveBeenCalled();
+    });
+
     it('round-trips a valid singleton profile and never stores a caller-owned user id', async () => {
         const service = new TrainingIntentProfileService();
         const saved = await service.upsert('u1', {

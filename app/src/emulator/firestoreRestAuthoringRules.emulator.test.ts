@@ -124,14 +124,27 @@ emulatorDescribe('Firestore rules — ADR-0035/0036 external-plan storage', () =
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
         for (const restDays of [
             [null],
-            [{ id: 'missing-week-day' }],
-            [{ id: 'bad-week', week: 0, day: 'friday' }],
-            [{ id: 'bad-day', week: 1, day: 'holiday' }],
             [{ id: 'extra-field', week: 1, day: 'friday', reason: 'taper' }],
+            [{ id: '', week: 1, day: 'friday' }],
+            [{ id: 'x'.repeat(65), week: 1, day: 'friday' }],
         ]) {
             await assertFails(setDoc(doc(ownerDb, revisionPath), validExternalPlanRevisionV3(restDays)));
             await assertFails(setDoc(doc(ownerDb, revisionPath), validExternalPlanRevisionV4(restDays)));
         }
+    });
+
+    // Issue #1202 (ADR-0053): the week range, the weekday enum and the required week/day
+    // are validated by sessions/externalPlanV3.ts validateRestDays (via
+    // validateExternalPlanImport) in ExternalPlanService.import before the revision is
+    // written -- see externalPlanV3.test.ts. Each case is a separate create.
+    it.each([
+        ['a directive missing week and day', [{ id: 'missing-week-day' }]],
+        ['a zero week', [{ id: 'bad-week', week: 0, day: 'friday' }]],
+        ['a week beyond weekCount', [{ id: 'late-week', week: 5, day: 'friday' }]],
+        ['an unknown weekday', [{ id: 'bad-day', week: 1, day: 'holiday' }]],
+    ])('accepts %s at the rules boundary (validateRestDays owns it)', async (_label, restDays) => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertSucceeds(setDoc(doc(ownerDb, revisionPath), validExternalPlanRevisionV3(restDays)));
     });
 
     it('accepts external-plan@5 revision bytes with intentBlocks, and with intentBlocks absent', async () => {

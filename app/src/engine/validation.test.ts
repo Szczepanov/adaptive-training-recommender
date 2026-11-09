@@ -467,6 +467,22 @@ describe('validateFixedActivity', () => {
         expect(result.errors.some(e => e.field === 'date')).toBe(true);
     });
 
+    // Issue #1202: the Firestore rules no longer check these fixed-activity values; this
+    // validator, run by FixedActivityService before every write, is their only write-time owner.
+    it.each([
+        ['an expectedStimulus value above 1', { expectedStimulus: { aerobicEndurance: 1.5 } }, 'expectedStimulus'],
+        ['a negative expectedCost value', { expectedCost: { systemic: -0.1 } }, 'expectedCost'],
+        ['a fractional durationMin', { durationMin: 30.5 }, 'durationMin'],
+        ['a non-boolean fixed flag', { fixed: 'yes' }, 'fixed'],
+        ['a non-boolean isCompleted', { isCompleted: 'no' }, 'isCompleted'],
+        ['a non-string startTime', { startTime: 1800 }, 'startTime'],
+        ['a calendar-impossible date', { date: '2026-02-30' }, 'date'],
+    ])('rejects %s', (_label, override, field) => {
+        const result = validateFixedActivity({ ...baseFields, ...override });
+        expect(result.isValid).toBe(false);
+        expect(result.errors.some(e => e.field === field)).toBe(true);
+    });
+
     it('accepts availabilityOverride within [0, 1440] and rejects out-of-range', () => {
         expect(validateFixedActivity({ ...baseFields, availabilityOverride: 60 }).isValid).toBe(true);
         expect(validateFixedActivity({ ...baseFields, availabilityOverride: -1 }).isValid).toBe(false);
@@ -533,6 +549,23 @@ describe('validateAuthoredPlanBlock', () => {
         expect(validateAuthoredPlanBlock({ ...travel, endDate: '2026-08-18' }).isValid).toBe(false);
         expect(validateAuthoredPlanBlock({ ...travel, startDate: '2026-02-30' }).isValid).toBe(false);
         expect(validateAuthoredPlanBlock({ ...travel, intensityScale: 1.1 }).isValid).toBe(false);
+    });
+
+    // Issue #1202: the Firestore rules no longer check plan-block values; this validator,
+    // run by PlanBlockService before every write, is their only write-time owner.
+    it.each([
+        ['a non-travel phase', { phase: 'taper' }, 'phase'],
+        ['a negative volumeScale', { volumeScale: -0.1 }, 'volumeScale'],
+        ['a volumeScale above 1', { volumeScale: 1.5 }, 'volumeScale'],
+        ['a non-numeric intensityScale', { intensityScale: '0.5' }, 'intensityScale'],
+        ['a NaN volumeScale', { volumeScale: Number.NaN }, 'volumeScale'],
+        ['a NaN intensityScale', { intensityScale: Number.NaN }, 'intensityScale'],
+        ['a non-string eventId', { eventId: 42 }, 'eventId'],
+        ['a malformed date', { endDate: '22/08/2026' }, 'dates'],
+    ])('rejects %s', (_label, override, field) => {
+        const result = validateAuthoredPlanBlock({ ...travel, ...override });
+        expect(result.isValid).toBe(false);
+        expect(result.errors.some(e => e.field === field)).toBe(true);
     });
 });
 

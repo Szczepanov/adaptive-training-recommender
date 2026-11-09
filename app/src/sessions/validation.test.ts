@@ -61,6 +61,23 @@ describe('Session Validation (M2.1 / ADR-0023)', () => {
         }
     });
 
+    // Issue #1202: the Firestore rules no longer check these revision values;
+    // SessionDefinitionService.saveDefinitionRevision runs this validator before the write.
+    describe('Revision values the rules no longer check', () => {
+        const fixture = JSON.parse(readFileSync(join(FIXTURES_DIR, readdirSync(FIXTURES_DIR).filter(name => name.endsWith('.json')).sort()[0]), 'utf8'));
+
+        it.each([
+            ['schemaVersion 2', { schemaVersion: 2 }, 'schemaVersion'],
+            ['an unknown intent', { intent: 'strength' }, 'intent'],
+            ['a non-list blocks value', { blocks: {} }, 'blocks'],
+        ])('rejects %s', (_label, override, path) => {
+            expect(validateSessionDefinition(fixture).ok).toBe(true);
+            const result = validateSessionDefinition({ ...fixture, ...override });
+            expect(result.ok).toBe(false);
+            expect(result.issues?.map(issue => issue.path)).toContain(path);
+        });
+    });
+
     describe('SessionOccurrence validation', () => {
         it('accepts a valid occurrence', () => {
             const valid = {

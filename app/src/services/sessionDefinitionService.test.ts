@@ -84,6 +84,20 @@ describe('SessionDefinitionService', () => {
         expect(firestore.batchCommit).toHaveBeenCalledTimes(1);
     });
 
+    // Issue #1202: the rules no longer check schemaVersion, intent or the blocks type on a
+    // revision, so saveDefinitionRevision must refuse them before the batch is built.
+    it.each([
+        ['an unknown intent', { intent: 'strength' }, /^intent: Invalid or missing session intent/m],
+        ['schemaVersion 2', { schemaVersion: 2 }, /^schemaVersion: Expected schemaVersion 1/m],
+        ['a non-list blocks value', { blocks: {} }, /^blocks: blocks must be an array/m],
+    ])('rejects %s without writing', async (_label, override, message) => {
+        firestore.getDoc.mockResolvedValue({ exists: () => false });
+        const service = new SessionDefinitionService({} as never);
+        await expect(service.saveDefinitionRevision('user-1', { ...definition, ...override } as never)).rejects.toThrow(message);
+        expect(firestore.batchSet).not.toHaveBeenCalled();
+        expect(firestore.batchCommit).not.toHaveBeenCalled();
+    });
+
     it('archives and restores only the header, leaving revisions untouched', async () => {
         const activeHeader = {
             userId: 'user-1', definitionId: definition.id, title: definition.title,

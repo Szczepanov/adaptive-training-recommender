@@ -63,7 +63,7 @@ describe('deriveStrengthExposure', () => {
         const exposure = deriveStrengthExposure(s)!;
         // Pre-cap this would be 1.5 (the full hard-intensity combined budget applied to one
         // axis) -- WorkoutCostProfile axes are documented 0.0-1.0 (see the type's own field
-        // comments and firestore.rules' hasValidAxisValue enforcing the same bound elsewhere).
+        // comments and validateFixedActivity enforcing the same bound elsewhere).
         expect(exposure.costProfile.lowerBody).toBe(1);
     });
 

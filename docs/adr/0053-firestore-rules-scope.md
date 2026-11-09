@@ -102,13 +102,69 @@ is converted to assert acceptance at the rules boundary and names the TypeScript
   * the `persistenceDays` / `episodeDay` <= 365 bounds: no TS bound;
   * the `respirationElevation` size cap: bounded storage, no TS bound.
 
+### Applied in #1202 (`01`-`04` module trims)
+
+* `01-users-core`:
+  * decision journal: the verdict enums, the `sawEngineVerdictFirst` type and `schemaVersion`
+    (owner `validateDecisionJournalEntry`, called in `DecisionJournalService` `write`; the
+    write merges, but its payload is the whole validated entry with absent optional keys
+    deleted, so the merged document is the payload);
+  * fixed activities: `date`, `durationMin`, the `fixed`/`isCompleted` flags, both environment
+    enums, `startTime`, the stimulus/cost axis values and `availabilityOverride` (owner
+    `validateFixedActivity`, called in `FixedActivityService` `createActivity` and
+    `updateActivity`; every moved check is per field, and nested maps merge key by key). The
+    shared `hasValidAxisValue` helper is removed and `hasValidExpectedCost` bounds keys only;
+  * training-intent profile: `planningMode`, the `weeklyCommitment` counts and ordering,
+    `organizationPreference`, `schemaVersion`, and the capability enum, uniqueness, `enabled`
+    type and enabled-needs-a-capability rule (owner `validateTrainingIntentProfile`, called in
+    `TrainingIntentProfileService` `upsert`; the validator requires every key of each nested
+    map, so a merge replaces each map whole).
+* `02-schedule-windows`: the per-window positive duration, environment enum, `revision` and
+  timestamps (owner `validateScheduleWindow` through `validateScheduleWindowManifest`, called in
+  `ScheduleWindowService` `buildManifest` before every whole-manifest write).
+  `hasValidScheduleWindowManifest` and `hasValidSmallScheduleWindowManifest` are merged into
+  one validator that takes the three-position or eight-position entry path by list size; the
+  merge itself does not change the accepted/rejected sets.
+* `03-external-plans`:
+  * rest directives: the week range, the weekday enum and the required `week`/`day` (owner
+    `validateRestDays`, run by `validateExternalPlanImport` in `ExternalPlanService` `import`);
+  * plan blocks: `phase`, the dates and their order, the scales and the `eventId` type (owner
+    `validateAuthoredPlanBlock`, called in `PlanBlockService` `create` and `update`; `update`
+    merges, but the payload always carries both dates);
+  * schedule overlays: `category`, `sport`, the dates and their order, the availability-minutes
+    range and whole minutes, the scales, the `expectedCost` axis values and `environment`
+    (owners `validateScheduleOverlay` and `assertWholeMinuteAvailability`, both called in
+    `ScheduleOverlayService` `create` and `update`, which replace the whole document).
+* `04-session-occurrences`: the session-definition revision `schemaVersion`, `intent` enum and
+  `blocks` list type (owner `validateSessionDefinition`, called in `SessionDefinitionService`
+  `saveDefinitionRevision` before the create-only revision write).
+* Kept on purpose:
+  * ownership, the path and date-document bindings (journal date, manifest date, window
+    `userId`/`date`, session-definition `id`/`revision`), every key allow-list, and every size
+    cap (notes, titles, labels, equipment lists and items, catalog ids, priorities,
+    capabilities, rest-directive ids, the `restDays` and `windows` list bounds);
+  * the schedule-window `HH:mm` patterns, distinct ids and overlap check: the overlap check
+    compares times as strings, which is time order only for that fixed format. It does not
+    need a positive duration per window;
+  * `createdAt`/`updatedAt` shape on the top-level documents, beside the `keepsCreatedAt`
+    immutability check. For fixed activities it has no TypeScript owner either:
+    `validateFixedActivity` passes a stored `createdAt` through without checking its type;
+  * the session-definition revision `contentHash` (computed by the service, not validated) and
+    the `companionSessions` list type (no TypeScript check);
+  * the decision-journal morning-field immutability and every other (I) check.
+* Removing the enum and range checks also removed the implicit type and size bound they put on
+  scalar fields such as `externalVerdict`, `environment`, `phase`, `intent`, `planningMode`,
+  the stimulus/cost axis values, the `capabilities` items and `blocks`. That is accepted: only
+  the owner can write their own documents, the key allow-lists are kept, and the 1 MiB
+  document limit still applies. This differs from #1201, where `hasBoundedHealthContext`
+  added explicit caps in place of the removed value checks.
+
 ### Not yet applied (follow-up)
 
 * Collections whose writes are not validated in TypeScript today: `session_responses`,
   `performedTrainingOccurrences` / `performedOccurrenceSourceLinks`, session occurrences,
   session-execution diary entries, strength sessions, activity overrides, the Garmin workout
   queue, `competition_outcomes`. Each needs a write-side validator first.
-* The `01`-`04` module trims.
 * `06-recommendations` is read-only at ADR-0052 Phase 3, so it is not trimmed separately.
 
 ## Consequences
@@ -127,8 +183,8 @@ is converted to assert acceptance at the rules boundary and names the TypeScript
 
 ## Follow-up
 
-The write-side validators for the collections that could not be trimmed yet and the 01–04
-trims are tracked in #1202.
+The write-side validators for the collections that could not be trimmed yet are tracked in
+#1202, which also applied the 01–04 trims.
 
 List readers such as `listTrialsForAttempt`, `getLatestForDate` and `listRevisionsForObservation`
 threw on the first invalid document, so a tampered document in an append-only collection made

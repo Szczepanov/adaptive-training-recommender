@@ -75,6 +75,14 @@ describe('FixedActivityService persistence shape', () => {
         await expect(service.createActivity('u1', withoutFixed as typeof validActivity)).rejects.toThrow(/Validation failed/);
     });
 
+    it('rejects an update with an out-of-range value before the merge write (#1202: no rules backstop)', async () => {
+        const service = new FixedActivityService();
+        await expect(service.updateActivity('u1', 'activity-1', { durationMin: 0 })).rejects.toThrow(/Validation failed/);
+        await expect(service.updateActivity('u1', 'activity-1', { expectedStimulus: { sprintPower: 1.5 } })).rejects.toThrow(/Validation failed/);
+        await expect(service.updateActivity('u1', 'activity-1', { environment: 'space' as never })).rejects.toThrow(/Validation failed/);
+        expect(firestore.setDoc).not.toHaveBeenCalled();
+    });
+
     it('markCompleted merges isCompleted true while preserving createdAt', async () => {
         const service = new FixedActivityService();
         await service.markCompleted('u1', 'activity-1');
