@@ -221,8 +221,8 @@ describe('preflightExternalPlanImport', () => {
             ] };
             const declaring = (replaces: string) => ({ ...next, sessions: [{ ...next.sessions[0], replacesSessionId: replaces }] });
 
-            const rejected = await preflightExternalPlanImport('u1', declaring('old-a') as never, '2026-08-19', '2026-08-19', twoDay as never);
-            expect(rejected).toMatchObject({ status: 'invalid_replacements', issues: [{ code: 'replaced-session-before-effective-date', replacesSessionId: 'old-a' }] });
+            const past = await preflightExternalPlanImport('u1', declaring('old-a') as never, '2026-08-19', '2026-08-19', twoDay as never);
+            expect(past.status === 'ready' && past.findings.find(item => item.code === 'session_replacement_before_effective_date')?.date).toBe('2026-08-17');
             const accepted = await preflightExternalPlanImport('u1', declaring('old-b') as never, '2026-08-19', '2026-08-19', twoDay as never);
             expect(accepted.status === 'ready' && accepted.findings.find(item => item.code === 'session_replacement_declared')?.date).toBe('2026-08-19');
         });
@@ -238,18 +238,52 @@ describe('preflightExternalPlanImport', () => {
             expect(result.status).toBe('invalid_replacements');
         });
 
-        it('blocks replacing a session before the activation boundary', async () => {
+        it('warns, without blocking, about replacing an upcoming session dated before the activation boundary (#1189)', async () => {
             const result = await preflightExternalPlanImport('u1', next as never, '2026-08-19', '2026-08-16', previous as never);
-            expect(result).toMatchObject({ status: 'invalid_replacements', issues: [{ code: 'replaced-session-before-effective-date' }] });
+            expect(result.status).toBe('ready');
+            if (result.status === 'ready') {
+                expect(result.findings.filter(item => item.kind === 'session_replacement')).toEqual([{
+                    kind: 'session_replacement', code: 'session_replacement_before_effective_date', date: '2026-08-18',
+                    detail: 'New ride replaces Old ride from revision 1. Old ride on 2026-08-18 is before this revision takes effect on 2026-08-19, but it will still be recorded as replaced, and nothing takes its place on that date.',
+                }]);
+            }
+        });
+
+        it('says a replaced session dated before today has passed (#1189)', async () => {
+            const result = await preflightExternalPlanImport('u1', next as never, '2026-08-19', '2026-08-19', previous as never);
+            expect(result.status === 'ready' && result.findings.find(item => item.kind === 'session_replacement')).toEqual({
+                kind: 'session_replacement', code: 'session_replacement_before_effective_date', date: '2026-08-18',
+                detail: 'New ride replaces Old ride from revision 1. Old ride on 2026-08-18 is before this revision takes effect on 2026-08-19, but it will still be recorded as replaced even though its date has passed.',
+            });
         });
 
         it('checks the moved date against the boundary instead of the authored date', async () => {
             reads.previousPlacement.mockResolvedValue({ status: 'AVAILABLE', data: movedTo('2026-08-17') });
-            const rejected = await preflightExternalPlanImport('u1', next as never, '2026-08-18', '2026-08-16', previous as never);
-            expect(rejected).toMatchObject({ status: 'invalid_replacements', issues: [{ code: 'replaced-session-before-effective-date' }] });
+            const past = await preflightExternalPlanImport('u1', next as never, '2026-08-18', '2026-08-16', previous as never);
+            expect(past.status === 'ready' && past.findings.find(item => item.kind === 'session_replacement')).toMatchObject({
+                code: 'session_replacement_before_effective_date', date: '2026-08-17' });
             reads.previousPlacement.mockResolvedValue({ status: 'AVAILABLE', data: movedTo('2026-08-19') });
-            const accepted = await preflightExternalPlanImport('u1', next as never, '2026-08-19', '2026-08-16', previous as never);
-            expect(accepted.status).toBe('ready');
+            const current = await preflightExternalPlanImport('u1', next as never, '2026-08-19', '2026-08-16', previous as never);
+            expect(current.status === 'ready' && current.findings.find(item => item.kind === 'session_replacement')).toMatchObject({
+                code: 'session_replacement_declared', date: '2026-08-19' });
+        });
+
+        it('still blocks a past-dated replacement of a performed session (#1189)', async () => {
+            reads.occurrences.mockResolvedValue({ status: 'AVAILABLE', data: [occurrence('completed')] });
+            const result = await preflightExternalPlanImport('u1', next as never, '2026-08-19', '2026-08-16', previous as never);
+            expect(result).toMatchObject({ status: 'invalid_replacements', issues: [{ code: 'replaced-session-completed' }] });
+        });
+
+        it('still blocks a past-dated replacement over an unreadable previous overlay (#1189)', async () => {
+            reads.previousPlacement.mockResolvedValue({ status: 'INVALID', issues: [{ code: 'schema-validation-failed', field: 'assignments', documentPath: 'x' }] });
+            const result = await preflightExternalPlanImport('u1', next as never, '2026-08-19', '2026-08-16', previous as never);
+            expect(result).toMatchObject({ status: 'invalid_replacements', issues: [{ code: 'replaced-placement-unreadable' }] });
+        });
+
+        it('still fails closed for a past-dated replacement whose previous overlay names another owner (#1189)', async () => {
+            reads.previousPlacement.mockResolvedValue({ status: 'INVALID', issues: [{ code: 'owner-mismatch', documentPath: 'x' }] });
+            expect(await preflightExternalPlanImport('u1', next as never, '2026-08-19', '2026-08-16', previous as never))
+                .toMatchObject({ status: 'unknown', unavailableSources: ['earlier revision’s saved moves'] });
         });
 
         it('blocks a declaration that names a session missing from the previous revision', async () => {

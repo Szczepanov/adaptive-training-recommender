@@ -413,8 +413,12 @@ screen offers plan import/revision. The screen also renders schedule-overlay con
 A revision may declare which earlier sessions its sessions replace (`replacesSessionId`). The
 import preview lists each declared replacement under the calendar and authority preflight, as a
 finding the athlete acknowledges before **Import this plan**. An invalid declaration blocks the
-import and says which session to correct. On import, each replaced session is marked as replaced
-on its existing date in the previous revision, with a link to its successor (#1172).
+import and says which session to correct. A replaced session dated before the revision's effective
+date is allowed: its finding says the earlier session will still be recorded as replaced (and,
+when its date is before today, that its date has passed), and import stays disabled until the
+athlete acknowledges it (#1189).
+On import, each replaced session is marked as replaced on its existing date in the previous
+revision, with a link to its successor (#1172).
 
 When only the stored placement overlay (the athlete's moves) is unreadable, `PlanView` still
 shows the coach plan, at the plan's own dates. `PlacementOverlayRecoveryCard` warns that
