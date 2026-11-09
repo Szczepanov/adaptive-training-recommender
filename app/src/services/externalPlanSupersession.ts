@@ -6,6 +6,9 @@
  * showed it (its moved date, else where `resolvePlacement` placed it). Every other assignment
  * is kept as it was. Nothing is inferred for undeclared sessions. Preflight and import share
  * the helpers below, so both check and write the same dates.
+ *
+ * #1189: a session the plan view shows before the new revision's effective date is superseded
+ * the same way, on that past date. Preflight warns about it and the athlete acknowledges it.
  */
 import type { ExternalPlanPlacement, ExternalTrainingPlan, FixedActivity } from '../engine/models';
 import { impliedDate, resolvePlacement } from '../engine/externalPlacement';
@@ -15,7 +18,7 @@ import type { SessionReplacement } from '../sessions/externalPlanReplacements';
 import type { SessionOccurrence } from '../sessions/models';
 import type { PlacementEvent } from '../ledger/placementHistory';
 
-export type SupersessionIssueCode = 'replaced-session-completed' | 'replaced-session-before-effective-date';
+export type SupersessionIssueCode = 'replaced-session-completed';
 
 export type SupersessionChange =
     | { ok: true; assignments: ExternalPlanPlacement['assignments']; successors: PlacementEvent['successors'] }
@@ -85,7 +88,6 @@ export function supersedeDeclaredSessions(
     previousOverlay: ExternalPlanPlacement | null,
     declarations: readonly SessionReplacement[],
     newRevision: number,
-    effectiveFrom: string,
     context: ReplacementContext,
 ): SupersessionChange {
     // Performed work is history; superseding it would overwrite that record.
@@ -94,12 +96,6 @@ export function supersedeDeclaredSessions(
     if (completed) return { ok: false, code: 'replaced-session-completed', field: `sessions[${completed.index}].replacesSessionId` };
 
     const dates = previousSessionDates(previousPlan, previousOverlay, context.fixedActivities);
-    const beforeBoundary = declarations.find(item => {
-        const date = dates.get(item.replacesSessionId);
-        return date !== undefined && date < effectiveFrom;
-    });
-    if (beforeBoundary) return { ok: false, code: 'replaced-session-before-effective-date', field: `sessions[${beforeBoundary.index}].replacesSessionId` };
-
     const previousAssignments = previousOverlay?.assignments ?? [];
     const assigned = new Set(previousAssignments.map(item => item.sessionId));
     const replaced = new Set(declarations.map(item => item.replacesSessionId));

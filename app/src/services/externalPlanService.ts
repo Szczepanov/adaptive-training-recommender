@@ -415,7 +415,7 @@ export class ExternalPlanService {
 
             // Same transaction as the activation: the successor links commit with it or not at all,
             // and an identical retry returns above before reaching this point.
-            const supersession = await this.prepareDeclaredSupersession(transaction, userId, plan, replacedRevision, effectiveFrom, nowDate);
+            const supersession = await this.prepareDeclaredSupersession(transaction, userId, plan, replacedRevision, nowDate);
             if (Array.isArray(supersession)) return { status: 'INVALID', issues: supersession };
 
             const header: ExternalPlanHeader = {
@@ -711,7 +711,7 @@ export class ExternalPlanService {
      * overwritten (the athlete resets those moves first); so does one naming another owner.
      */
     private async prepareDeclaredSupersession(transaction: Transaction, userId: string, plan: ImportResult['plan'],
-        previousPlan: AnyExternalTrainingPlan | null, effectiveFrom: string, now: Date): Promise<PlacementChange | DataIssue[] | null> {
+        previousPlan: AnyExternalTrainingPlan | null, now: Date): Promise<PlacementChange | DataIssue[] | null> {
         const planPath = `users/${userId}/external_plans/${plan.planId}`;
         const issues = validateReplacementsAgainstPrevious(plan, previousPlan);
         if (issues.length > 0) {
@@ -725,7 +725,7 @@ export class ExternalPlanService {
             const prior = await this.readPlacementPrior(transaction, userId, plan.planId, previousPlan.revision);
             if (prior.invalid) return [{ code: 'replaced-placement-unreadable', documentPath: placementPath }];
             const context = await readReplacementContext(userId, plan, previousPlan, now);
-            const superseded = supersedeDeclaredSessions(previousPlan, prior.overlay, declarations, plan.revision, effectiveFrom, context);
+            const superseded = supersedeDeclaredSessions(previousPlan, prior.overlay, declarations, plan.revision, context);
             if (!superseded.ok) return [{ code: superseded.code, field: superseded.field, documentPath: placementPath }];
             const placement = { planId: plan.planId, revision: previousPlan.revision, assignments: superseded.assignments };
             validatedPlacement(userId, placement, now);

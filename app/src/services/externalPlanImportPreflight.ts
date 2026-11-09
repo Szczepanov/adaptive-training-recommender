@@ -22,7 +22,7 @@ export interface ImportPreflightFinding {
     date: string;
     detail: string;
     /** Stable identity for findings that callers must deduplicate or match; never parsed from `detail`. */
-    code?: 'placement_overlay_unreadable' | 'session_replacement_declared';
+    code?: 'placement_overlay_unreadable' | 'session_replacement_declared' | 'session_replacement_before_effective_date';
 }
 
 export type ExternalPlanImportPreflight =
@@ -168,7 +168,7 @@ export async function preflightExternalPlanImport(
     }
 
     const replacements = replacing
-        ? await replacementFindings(userId, plan, replacing, effectiveFrom, { fixedActivities: planViewFixed ?? [], occurrences: occurrences as SessionOccurrence[] })
+        ? await replacementFindings(userId, plan, replacing, effectiveFrom, today, { fixedActivities: planViewFixed ?? [], occurrences: occurrences as SessionOccurrence[] })
         : { findings: [] };
     if ('unavailable' in replacements) return { status: 'unknown', unavailableSources: [replacements.unavailable], findings };
     if ('issues' in replacements) return { status: 'invalid_replacements', issues: replacements.issues };
@@ -190,9 +190,12 @@ async function readPreviousOverlay(userId: string, previousPlan: AnyExternalTrai
  * #1172: one acknowledgement finding per declared replacement, dated where the plan view shows
  * the earlier session (`previousSessionDates`). Import applies the same checks: a started or
  * completed session cannot be replaced, and an unreadable previous overlay blocks the import.
+ * #1189: a replaced session dated before `effectiveFrom` is allowed; its finding carries
+ * `session_replacement_before_effective_date` and says it is still marked replaced. The copy says
+ * its date has passed only when it is before `today`; a later effective date can leave it upcoming.
  */
 async function replacementFindings(userId: string, plan: AnyExternalTrainingPlan, previousPlan: AnyExternalTrainingPlan,
-    effectiveFrom: string, context: ReplacementContext):
+    effectiveFrom: string, today: string, context: ReplacementContext):
     Promise<{ findings: ImportPreflightFinding[] } | { issues: SessionReplacementIssue[] } | { unavailable: string }> {
     const declarations = declaredSessionReplacements(plan);
     const read = await readPreviousOverlay(userId, previousPlan);
@@ -209,22 +212,26 @@ async function replacementFindings(userId: string, plan: AnyExternalTrainingPlan
             field: `sessions[${item.index}].replacesSessionId`, sessionId: item.sessionId, replacesSessionId: item.replacesSessionId })) };
     }
     const dates = previousSessionDates(previousPlan, read.overlay, context.fixedActivities);
-    const beforeBoundary = declarations.filter(item => {
-        const date = dates.get(item.replacesSessionId);
-        return date !== undefined && date < effectiveFrom;
-    });
-    if (beforeBoundary.length > 0) {
-        return { issues: beforeBoundary.map(item => ({ code: 'replaced-session-before-effective-date' as const,
-            field: `sessions[${item.index}].replacesSessionId`, sessionId: item.sessionId, replacesSessionId: item.replacesSessionId })) };
-    }
     const titleOf = (sessions: AnyExternalTrainingPlan['sessions'], id: string) => sessions.find(item => item.id === id)?.title ?? id;
-    return { findings: declarations.map(item => {
+    return { findings: declarations.map((item): ImportPreflightFinding => {
         const oldTitle = titleOf(previousPlan.sessions, item.replacesSessionId);
+        const newTitle = titleOf(plan.sessions, item.sessionId);
+        const date = dates.get(item.replacesSessionId) ?? previousPlan.startDate;
+        if (date < effectiveFrom) {
+            return {
+                kind: 'session_replacement',
+                code: 'session_replacement_before_effective_date',
+                date,
+                detail: date < today
+                    ? `${newTitle} replaces ${oldTitle} from revision ${previousPlan.revision}. ${oldTitle} on ${date} is before this revision takes effect on ${effectiveFrom}, but it will still be recorded as replaced even though its date has passed.`
+                    : `${newTitle} replaces ${oldTitle} from revision ${previousPlan.revision}. ${oldTitle} on ${date} is before this revision takes effect on ${effectiveFrom}, but it will still be recorded as replaced, and nothing takes its place on that date.`,
+            };
+        }
         return {
-            kind: 'session_replacement' as const,
-            code: 'session_replacement_declared' as const,
-            date: dates.get(item.replacesSessionId) ?? previousPlan.startDate,
-            detail: `${titleOf(plan.sessions, item.sessionId)} replaces ${oldTitle} from revision ${previousPlan.revision}. ${oldTitle} stays on its date and is marked as replaced.`,
+            kind: 'session_replacement',
+            code: 'session_replacement_declared',
+            date,
+            detail: `${newTitle} replaces ${oldTitle} from revision ${previousPlan.revision}. ${oldTitle} stays on its date and is marked as replaced.`,
         };
     }) };
 }

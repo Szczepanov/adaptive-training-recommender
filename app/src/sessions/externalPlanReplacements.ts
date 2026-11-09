@@ -20,9 +20,10 @@ export interface SessionReplacement {
     index: number;
 }
 
-/** Completion, activation-boundary and unreadable-placement checks need the previous
- * revision’s placement and occurrences; the other checks need only the previous revision itself. */
-export type SessionReplacementIssueCode = 'replacement-previous-revision-missing' | 'replaced-session-not-found' | 'replaced-session-completed' | 'replaced-session-before-effective-date' | 'replaced-placement-unreadable';
+/** Completion and unreadable-placement checks need the previous revision’s placement and
+ * occurrences; the other checks need only the previous revision itself. A replaced session dated
+ * before the effective date is not an issue (#1189): preflight warns about it instead. */
+export type SessionReplacementIssueCode = 'replacement-previous-revision-missing' | 'replaced-session-not-found' | 'replaced-session-completed' | 'replaced-placement-unreadable';
 
 export interface SessionReplacementIssue {
     code: SessionReplacementIssueCode;

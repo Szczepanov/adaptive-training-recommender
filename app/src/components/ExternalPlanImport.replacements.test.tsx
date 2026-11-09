@@ -18,7 +18,7 @@ function plan(): ExternalTrainingPlan {
 }
 
 const previous = { ...plan(), revision: 1, sessions: [{ ...plan().sessions[0], id: 'old-ride', title: 'Old ride' }] };
-const issue = (code: 'replacement-previous-revision-missing' | 'replaced-session-not-found' | 'replaced-session-completed' | 'replaced-session-before-effective-date' | 'replaced-placement-unreadable', replacesSessionId = 'old-ride') => ({
+const issue = (code: 'replacement-previous-revision-missing' | 'replaced-session-not-found' | 'replaced-session-completed' | 'replaced-placement-unreadable', replacesSessionId = 'old-ride') => ({
     code, field: 'sessions[0].replacesSessionId', sessionId: 'new-ride', replacesSessionId,
 });
 
@@ -28,8 +28,6 @@ describe('session replacement copy (#1172)', () => {
             'New ride says it replaces session “ghost”, but revision 1 has no session with that id. Correct or remove replacesSessionId for New ride.');
         expect(describeReplacementIssue(issue('replacement-previous-revision-missing'), plan(), null)).toBe(
             'New ride says it replaces session “old-ride”, but this plan has no earlier revision to replace from. Remove replacesSessionId for New ride.');
-        expect(describeReplacementIssue(issue('replaced-session-before-effective-date'), plan(), previous)).toBe(
-            'New ride would replace Old ride before this revision takes effect. Choose an earlier effective date or remove replacesSessionId for New ride.');
         expect(describeReplacementIssue(issue('replaced-placement-unreadable'), plan(), previous)).toBe(
             'The saved moves for revision 1 could not be read, so its replaced sessions cannot be marked. Open the plan, use Reset moves on revision 1 first, then import this revision again. If the plan does not offer Reset moves, remove replacesSessionId from this revision instead.');
         expect(describeReplacementIssue(issue('replaced-session-completed'), plan(), previous)).toBe(
@@ -40,8 +38,6 @@ describe('session replacement copy (#1172)', () => {
         const documentPath = 'users/u1/external_plans/block/revisions/1/placement/current';
         const declaring = { ...plan().sessions[0], replacesSessionId: 'old-ride' };
         const next: ExternalTrainingPlan = { ...plan(), sessions: [declaring] };
-        expect(describeImportRejection([{ code: 'replaced-session-before-effective-date', field: 'sessions[0].replacesSessionId', documentPath }], next, previous))
-            .toEqual(['New ride would replace Old ride before this revision takes effect. Choose an earlier effective date or remove replacesSessionId for New ride.']);
         expect(describeImportRejection([{ code: 'replaced-session-completed', field: 'sessions[0].replacesSessionId', documentPath }], next, previous))
             .toEqual(['New ride would replace Old ride, which you have already started or completed. A performed session cannot be replaced. Remove replacesSessionId for New ride.']);
         expect(describeImportRejection([{ code: 'replaced-placement-owner-mismatch', documentPath }], next, previous))
@@ -87,5 +83,20 @@ describe('session replacement copy (#1172)', () => {
         );
         expect(html).toContain('2026-08-18 — New ride replaces Old ride from revision 1.');
         expect(html).toContain('I reviewed these placement, calendar, and authority impacts.');
+    });
+
+    it('requires acknowledging a past-dated replacement before import (#1189)', () => {
+        const preflight = { status: 'ready' as const, findings: [{ kind: 'session_replacement' as const,
+            code: 'session_replacement_before_effective_date' as const, date: '2026-08-16',
+            detail: 'New ride replaces Old ride from revision 1. Old ride on 2026-08-16 is before this revision takes effect on 2026-08-17, but it will still be recorded as replaced even though its date has passed.' }] };
+        const render = (acknowledged: boolean) => renderToStaticMarkup(
+            <PlanPreview plan={plan()} previous={null} diff={null} today="2026-08-16" effectiveFrom="2026-08-17"
+                preflight={preflight} preflightAcknowledged={acknowledged} onConfirm={() => {}} onCancel={() => {}} />,
+        );
+        const unacknowledged = render(false);
+        expect(unacknowledged).toContain('it will still be recorded as replaced even though its date has passed');
+        expect(unacknowledged).not.toContain('cannot be imported');
+        expect(unacknowledged).toMatch(/<button[^>]*disabled=""[^>]*>Import this plan<\/button>/);
+        expect(render(true)).not.toMatch(/<button[^>]*disabled=""[^>]*>Import this plan<\/button>/);
     });
 });
