@@ -219,6 +219,68 @@ describe('AssessmentTrialService', () => {
         expect(list.map(t => t.id)).toEqual(['trial-1', 'trial-2']);
     });
 
+    it('skips and counts unreadable trials in the diagnostics read (#1202)', async () => {
+        const one = makeTrial(1, { distance_cm: 235 });
+        const two = makeTrial(2, { distance_cm: 245 });
+        const negative = makeTrial(3, { distance_cm: -5 });
+        const misfiled = makeTrial(4, { distance_cm: 250 });
+        firestore.getDocs.mockResolvedValueOnce({ docs: [
+            { id: two.id, data: () => two },
+            { id: one.id, data: () => one },
+            { id: negative.id, data: () => negative },
+            { id: 'not-trial-4', data: () => misfiled },
+        ] });
+
+        await expect(service.listTrialsForAttemptWithDiagnostics(userId, protocol, TRIAL_ATTEMPT_ID))
+            .resolves.toEqual({ trials: [one, two], unreadableCount: 2 });
+    });
+
+    it('drops a correction whose superseded trial is unreadable (#1202)', async () => {
+        const original = makeTrial(1, { distance_cm: -5 });
+        const correction = makeTrial(1, { distance_cm: 240 }, { correctionIndex: 1, supersedesTrialId: original.id });
+        const other = makeTrial(2, { distance_cm: 245 });
+        firestore.getDocs.mockResolvedValueOnce({ docs: [original, correction, other].map(t => ({ id: t.id, data: () => t })) });
+
+        await expect(service.listTrialsForAttemptWithDiagnostics(userId, protocol, TRIAL_ATTEMPT_ID))
+            .resolves.toEqual({ trials: [other], unreadableCount: 2 });
+    });
+
+    it('never shows an older trial as current when its correction is unreadable (#1202)', async () => {
+        const original = makeTrial(1, { distance_cm: 235 });
+        const badCorrection = makeTrial(1, { distance_cm: -5 }, { correctionIndex: 1, supersedesTrialId: original.id });
+        const other = makeTrial(2, { distance_cm: 245 });
+        firestore.getDocs.mockResolvedValueOnce({ docs: [original, badCorrection, other].map(t => ({ id: t.id, data: () => t })) });
+
+        await expect(service.listTrialsForAttemptWithDiagnostics(userId, protocol, TRIAL_ATTEMPT_ID))
+            .resolves.toEqual({ trials: [other], unreadableCount: 2 });
+    });
+
+    it('drops a whole correction chain whose original is unreadable (#1202)', async () => {
+        const original = makeTrial(1, { distance_cm: -5 });
+        const first = makeTrial(1, { distance_cm: 240 }, { correctionIndex: 1, supersedesTrialId: original.id });
+        const second = makeTrial(1, { distance_cm: 241 }, { correctionIndex: 2, supersedesTrialId: first.id });
+        const other = makeTrial(2, { distance_cm: 245 });
+        // Corrections listed before their predecessors, so a single pass would keep `second`.
+        firestore.getDocs.mockResolvedValueOnce({ docs: [second, first, original, other].map(t => ({ id: t.id, data: () => t })) });
+
+        await expect(service.listTrialsForAttemptWithDiagnostics(userId, protocol, TRIAL_ATTEMPT_ID))
+            .resolves.toEqual({ trials: [other], unreadableCount: 3 });
+    });
+
+    it('counts an empty document as unreadable and attributes it by its path id (#1202)', async () => {
+        const one = makeTrial(1, { distance_cm: 235 });
+        const two = makeTrial(2, { distance_cm: 245 });
+        firestore.getDocs.mockResolvedValueOnce({ docs: [
+            { id: one.id, data: () => one },
+            { id: two.id, data: () => two },
+            { id: 'trial-2-c1', data: () => undefined },
+            { id: 'stray', data: () => null },
+        ] });
+
+        await expect(service.listTrialsForAttemptWithDiagnostics(userId, protocol, TRIAL_ATTEMPT_ID))
+            .resolves.toEqual({ trials: [one], unreadableCount: 3 });
+    });
+
     it('ensures no writes happen when validation fails before transaction', async () => {
         // Invalid trial value (distance_cm cannot be negative)
         const invalidTrial = makeTrial(1, { distance_cm: -5 });

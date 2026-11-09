@@ -12,6 +12,7 @@ import {
     assertAssessmentTrialWriteAllowed,
     assertValidAssessmentTrial,
     assertValidAssessmentTrialSet,
+    readableAssessmentTrialSubset,
 } from '../observations/assessmentTrials';
 import type {
     AssessmentAttempt,
@@ -329,6 +330,30 @@ export class AssessmentTrialService {
             throw new Error(`Assessment trial path mismatch for ${attemptId}/${trialId}`);
         }
         return trial;
+    }
+
+    /**
+     * #1202: read-only variant of `listTrialsForAttempt`. A malformed or tampered record is
+     * skipped and counted instead of making the whole attempt unreadable
+     * (`readableAssessmentTrialSubset`). Capture and correction keep `listTrialsForAttempt`,
+     * which fails closed, because they derive benchmark evidence from the full set.
+     */
+    async listTrialsForAttemptWithDiagnostics(
+        userId: string,
+        protocol: MeasurementProtocol,
+        attemptId: string,
+    ): Promise<{ trials: AssessmentTrial[]; unreadableCount: number }> {
+        const snapshots = await getDocs(collection(this.db, 'users', userId, 'assessment_attempts', attemptId, 'trials'));
+        const records = snapshots.docs.map(snapshot => ({ id: snapshot.id, trial: snapshot.data() as AssessmentTrial }));
+        const pathMatched = records.filter(record => record.trial?.id === record.id).map(record => record.trial);
+        const mismatchedIds = records
+            .filter(record => record.trial?.id !== record.id)
+            .flatMap(record => [record.id, record.trial?.id].filter((id): id is string => typeof id === 'string'));
+        const readable = readableAssessmentTrialSubset(pathMatched, protocol, attemptId, mismatchedIds);
+        return {
+            trials: readable.trials.sort(compareTrials),
+            unreadableCount: readable.unreadableCount + records.length - pathMatched.length,
+        };
     }
 
     /** Every stored record for one attempt (including superseded ones), validated as a set. */

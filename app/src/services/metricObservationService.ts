@@ -280,6 +280,38 @@ export class MetricObservationService {
     }
 
     /**
+     * #1202: read-only variant of `listRevisionsForObservation`. A revision that fails
+     * validation or whose path does not match is skipped and counted instead of making the
+     * whole history unreadable. The export keeps the throwing reader so it never omits a
+     * record silently.
+     */
+    async listRevisionsForObservationWithDiagnostics(
+        userId: string,
+        observationKey: string,
+    ): Promise<{ revisions: MetricObservationRevision[]; unreadableCount: number }> {
+        const snapshots = await getDocs(
+            collection(this.db, 'users', userId, 'metric_observations', observationKey, 'revisions'),
+        );
+        const revisions: MetricObservationRevision[] = [];
+        let unreadableCount = 0;
+        for (const docSnap of snapshots.docs) {
+            const revision = docSnap.data() as MetricObservationRevision;
+            try {
+                assertValidMetricObservationRevision(revision);
+            } catch {
+                unreadableCount++;
+                continue;
+            }
+            if (revision.observationKey !== observationKey || String(revision.revision) !== docSnap.id) {
+                unreadableCount++;
+                continue;
+            }
+            revisions.push(revision);
+        }
+        return { revisions: revisions.sort((a, b) => a.revision - b.revision), unreadableCount };
+    }
+
+    /**
      * WP7.2: resolves the full revision history for one observation head.
      */
     async listRevisionsForObservation(userId: string, observationKey: string): Promise<MetricObservationRevision[]> {

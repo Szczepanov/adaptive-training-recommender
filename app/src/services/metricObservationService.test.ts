@@ -598,6 +598,29 @@ describe('MetricObservationService', () => {
         });
     });
 
+    describe('listRevisionsForObservationWithDiagnostics (#1202)', () => {
+        it('skips and counts invalid or path-mismatched revisions', async () => {
+            const first = makeRevision();
+            firestore.getDocs.mockResolvedValue({
+                docs: [
+                    { id: '3', data: () => ({ garbage: true }) },
+                    { id: '1', data: () => first },
+                    { id: '9', data: () => makeRevision() },
+                ],
+            });
+            const service = new MetricObservationService({} as never);
+            await expect(service.listRevisionsForObservationWithDiagnostics('user-1', first.observationKey))
+                .resolves.toEqual({ revisions: [first], unreadableCount: 2 });
+        });
+
+        it('still fails closed in the strict reader used by the export', async () => {
+            const key = makeRevision().observationKey;
+            firestore.getDocs.mockResolvedValue({ docs: [{ id: '9', data: () => makeRevision() }] });
+            const service = new MetricObservationService({} as never);
+            await expect(service.listRevisionsForObservation('user-1', key)).rejects.toThrow(/path mismatch/);
+        });
+    });
+
     describe('metricObservationService singleton', () => {
         it('is an instance of MetricObservationService', () => {
             expect(metricObservationService).toBeInstanceOf(MetricObservationService);

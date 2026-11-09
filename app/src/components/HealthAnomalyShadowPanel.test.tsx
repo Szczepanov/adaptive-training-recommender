@@ -4,7 +4,7 @@ import type { DailyDecisionInput } from '../engine/models';
 import type { HealthAnomalyAssessmentRevision } from '../derived/flags/illnessAnomaly/healthAnomalyModels';
 import { SHADOW_V1_HEALTH_ANOMALY_THRESHOLDS } from '../derived/flags/illnessAnomaly/healthAnomaly';
 import { HealthAnomalyShadowTrace } from './HealthAnomalyShadowPanel';
-import { selectHealthAnomalyLoadState, selectHealthAnomalyShadowRevision } from './healthAnomalyShadowView';
+import { healthAnomalyLoadStatusFor, selectHealthAnomalyLoadState, selectHealthAnomalyShadowRevision, selectHealthAnomalyUncertainLatestCount } from './healthAnomalyShadowView';
 
 const revision: HealthAnomalyAssessmentRevision = {
     userId: 'u1',
@@ -131,5 +131,38 @@ describe('selectHealthAnomalyLoadState', () => {
         // Once the new target's own request resolves, its result is reported.
         const readyForNewDate = { userId: 'u1', date: '2026-08-21', status: 'ready' } as const;
         expect(selectHealthAnomalyLoadState('u1', '2026-08-21', readyForNewDate)).toBe('ready');
+    });
+});
+
+describe('healthAnomalyLoadStatusFor (#1202)', () => {
+    it('maps a diagnostics read to ready, error or missing', () => {
+        expect(healthAnomalyLoadStatusFor(revision, 0)).toBe('ready');
+        expect(healthAnomalyLoadStatusFor(revision, 3)).toBe('ready');
+        expect(healthAnomalyLoadStatusFor(null, 1)).toBe('error');
+        expect(healthAnomalyLoadStatusFor(null, 0)).toBe('missing');
+    });
+});
+
+describe('selectHealthAnomalyUncertainLatestCount (#1202)', () => {
+    const live = { ...revision, revisionId: 'ha-live000000000000', computedAt: '2026-08-21T08:00:00Z' };
+    const unreadable = { userId: 'u1', date: '2026-08-21', status: 'ready' as const, unreadableCount: 2 };
+
+    it('reports unreadable revisions when a persisted revision is shown', () => {
+        expect(selectHealthAnomalyUncertainLatestCount('u1', '2026-08-21', unreadable, revision)).toBe(2);
+    });
+
+    it('is zero when every revision was readable', () => {
+        expect(selectHealthAnomalyUncertainLatestCount('u1', '2026-08-21', { ...unreadable, unreadableCount: 0 }, revision)).toBe(0);
+        expect(selectHealthAnomalyUncertainLatestCount('u1', '2026-08-21', { userId: 'u1', date: '2026-08-21', status: 'ready' }, revision)).toBe(0);
+    });
+
+    it('still reports when the shown revision is this session’s live one', () => {
+        expect(selectHealthAnomalyUncertainLatestCount('u1', '2026-08-21', unreadable, live)).toBe(2);
+    });
+
+    it('ignores a result for another user or date, and nothing shown', () => {
+        expect(selectHealthAnomalyUncertainLatestCount('u1', '2026-08-22', unreadable, revision)).toBe(0);
+        expect(selectHealthAnomalyUncertainLatestCount('u2', '2026-08-21', unreadable, revision)).toBe(0);
+        expect(selectHealthAnomalyUncertainLatestCount('u1', '2026-08-21', unreadable, null)).toBe(0);
     });
 });

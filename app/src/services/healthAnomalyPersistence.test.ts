@@ -207,4 +207,30 @@ describe('health anomaly immutable persistence identity', () => {
         await expect(new HealthAnomalyAssessmentRepository().getLatestForDate('u1', '2026-08-21'))
             .rejects.toThrow('identity mismatch');
     });
+
+    it('skips and counts a malformed revision in the diagnostics read instead of failing the date (#1202)', async () => {
+        const valid = revision();
+        firestore.collection.mockReturnValue({ path: 'revisions' });
+        firestore.getDocs.mockResolvedValue({
+            empty: false,
+            docs: [
+                { data: () => ({ ...valid, revisionId: 'ha-0000000000000000' }) },
+                { data: () => valid },
+                { data: () => ({ garbage: true }) },
+            ],
+        });
+
+        await expect(new HealthAnomalyAssessmentRepository().getLatestForDateWithDiagnostics('u1', '2026-08-21'))
+            .resolves.toEqual({ revision: valid, unreadableCount: 2 });
+    });
+
+    it('returns no revision and the count when nothing is readable (#1202)', async () => {
+        firestore.collection.mockReturnValue({ path: 'revisions' });
+        firestore.getDocs.mockResolvedValue({ empty: false, docs: [{ data: () => ({ garbage: true }) }] });
+        await expect(new HealthAnomalyAssessmentRepository().getLatestForDateWithDiagnostics('u1', '2026-08-21'))
+            .resolves.toEqual({ revision: null, unreadableCount: 1 });
+        firestore.getDocs.mockResolvedValue({ empty: true, docs: [] });
+        await expect(new HealthAnomalyAssessmentRepository().getLatestForDateWithDiagnostics('u1', '2026-08-21'))
+            .resolves.toEqual({ revision: null, unreadableCount: 0 });
+    });
 });

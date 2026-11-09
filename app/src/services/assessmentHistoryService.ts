@@ -53,6 +53,10 @@ export interface AssessmentAttemptDetailData {
         revisions: readonly MetricObservationRevision[];
         currentRevision: MetricObservationRevision;
     }[];
+    /** #1202: stored trial records skipped because they could not be read. */
+    unreadableTrialCount: number;
+    /** #1202: stored observation revisions skipped because they could not be read. */
+    unreadableRevisionCount: number;
 }
 
 export class AssessmentHistoryService {
@@ -284,18 +288,25 @@ export class AssessmentHistoryService {
             }
         }
 
-        // Lazy load trials
-        const trials = await this.trialService.listTrialsForAttempt(userId, protocol, attempt.id);
+        // Lazy load trials. #1202: one unreadable record no longer hides the whole attempt.
+        const { trials, unreadableCount: unreadableTrialCount } =
+            await this.trialService.listTrialsForAttemptWithDiagnostics(userId, protocol, attempt.id);
 
         // Lazy load observation revision chains
         const metricRevisions: AssessmentAttemptDetailData['metricRevisions'][number][] = [];
+        let unreadableRevisionCount = 0;
         for (const metricId of protocol.metricIds) {
             const key = observationKeyFor(attempt.id, metricId);
             const head = await this.observationService.getHead(userId, key);
             if (!head) continue;
 
-            const revisions = await this.observationService.listRevisionsForObservation(userId, key);
-            const currentRevision = revisions.find(r => r.revision === head.headRevision) ?? revisions[revisions.length - 1];
+            const read = await this.observationService.listRevisionsForObservationWithDiagnostics(userId, key);
+            const revisions = read.revisions;
+            unreadableRevisionCount += read.unreadableCount;
+            // With an unreadable revision in the chain, an older revision must not stand in for
+            // the head: the metric is left out and the count reports it.
+            const currentRevision = revisions.find(r => r.revision === head.headRevision)
+                ?? (read.unreadableCount === 0 ? revisions[revisions.length - 1] : undefined);
             if (currentRevision) {
                 metricRevisions.push({
                     metricId,
@@ -311,6 +322,8 @@ export class AssessmentHistoryService {
             protocol,
             trials,
             metricRevisions,
+            unreadableTrialCount,
+            unreadableRevisionCount,
         };
     }
 }

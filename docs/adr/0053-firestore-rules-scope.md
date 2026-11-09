@@ -127,11 +127,25 @@ is converted to assert acceptance at the rules boundary and names the TypeScript
 
 ## Follow-up
 
+The write-side validators for the collections that could not be trimmed yet and the 01–04
+trims are tracked in #1202.
+
 List readers such as `listTrialsForAttempt`, `getLatestForDate` and `listRevisionsForObservation`
-throw on the first invalid document. A tampered document in an append-only collection can make
-that date, attempt or observation unreadable, so readers should skip and report, following the
-`...WithDiagnostics` pattern. This, the write-side validators for the collections that could
-not be trimmed yet, and the 01–04 trims are tracked in #1202.
+threw on the first invalid document, so a tampered document in an append-only collection made
+that date, attempt or observation unreadable. Under #1202 the owner-facing views (the assessment
+attempt detail and the health-anomaly shadow panel) use `...WithDiagnostics` readers that skip
+and count unreadable records. They never present an older record as current in its place.
+
+The paths that derive evidence or chain state from the full set keep the throwing readers on
+purpose, because dropping a record there would silently change the result:
+* assessment capture and correction (`assessmentCaptureService`);
+* the `TestingWorkflow` trial refresh that feeds a resubmission;
+* the versioned assessment diagnostic export (`assessmentExportService`);
+* the health-anomaly episode chain (`HealthAnomalyService`) and its follow-up lookup.
+
+A single tampered record therefore still blocks the export and further capture or correction of
+that attempt. That is an accepted limit, not an open defect. Lifting it for the export would
+need per-attempt diagnostics in a new export schema version.
 
 ## Alternatives Considered
 
