@@ -24,6 +24,7 @@ import {
     isExternalPlanOccurrence,
 } from '../sessions/models';
 import { parseSessionOccurrenceDocument } from '../persistence/parsers/sessionDefinition';
+import { assertValidSessionOccurrence } from '../sessions/validation';
 import { MAX_RECOVERY_GENERATION } from './dailyLedgerAggregateService';
 
 /** ACTIVE_OCCURRENCE_STATES excludes terminal/superseded states from "what governs today". */
@@ -143,6 +144,8 @@ export class SessionOccurrenceService {
     }
 
     async saveOccurrence(occurrence: SessionOccurrence): Promise<void> {
+        // Issue #1202 (ADR-0053): every occurrence write is validated before Firestore sees it.
+        assertValidSessionOccurrence(occurrence);
         await setDoc(this.occurrenceRef(occurrence.userId, occurrence.occurrenceId), occurrence);
         notifyFlagInputsChanged(occurrence.userId);
     }
@@ -306,6 +309,11 @@ export class SessionOccurrenceService {
      * cannot query) and re-verified by direct document reference *inside* it, so a
      * concurrent claim/completion of that predecessor between the two reads is not
      * silently overwritten.
+     *
+     * Issue #1202 (ADR-0053): the occurrence this call would create is validated by
+     * `assertValidSessionOccurrence` first, before the predecessor query and before the
+     * "already exists" branch. Arguments that would build an invalid occurrence therefore
+     * throw even when a matching occurrence already exists and nothing would be written.
      */
     async getOrCreateExternalPlanOccurrence(
         userId: string,
@@ -321,6 +329,19 @@ export class SessionOccurrenceService {
         const now = options.now ?? new Date().toISOString();
         const generation = options.generation ?? 0;
         const deterministicId = await deterministicExternalPlanOccurrenceId(date, externalPlanRef, generation);
+        const occurrence: ExternalPlanSessionOccurrence = {
+            userId,
+            occurrenceId: deterministicId,
+            date,
+            authority: 'external_plan',
+            externalPlanRef,
+            state: 'scheduled',
+            ...(options.placementOrder !== undefined ? { placementOrder: options.placementOrder } : {}),
+            ...(options.windowBinding !== undefined ? { windowBinding: options.windowBinding } : {}),
+            createdAt: now,
+            updatedAt: now,
+        };
+        assertValidSessionOccurrence(occurrence);
         const ref = this.occurrenceRef(userId, deterministicId);
         const windowReservationRef = options.windowBinding
             ? this.windowReservationRef(userId, date, options.windowBinding.windowId)
@@ -405,7 +426,9 @@ export class SessionOccurrenceService {
             if (priorRef && priorSnap?.exists()) {
                 const parsedPrior = parseSessionOccurrenceDocument(priorSnap.data(), priorRef.path);
                 if (parsedPrior.status === 'AVAILABLE' && parsedPrior.data.state === 'scheduled') {
-                    transaction.set(priorRef, { ...parsedPrior.data, state: 'superseded', updatedAt: now });
+                    const superseded = { ...parsedPrior.data, state: 'superseded', updatedAt: now };
+                    assertValidSessionOccurrence(superseded);
+                    transaction.set(priorRef, superseded);
                     const priorWindowId = isExternalPlanOccurrence(parsedPrior.data)
                         ? parsedPrior.data.windowBinding?.windowId
                         : undefined;
@@ -418,18 +441,6 @@ export class SessionOccurrenceService {
                 transaction.delete(this.windowReservationRef(userId, date, priorWindowIdToRelease));
             }
 
-            const occurrence: ExternalPlanSessionOccurrence = {
-                userId,
-                occurrenceId: deterministicId,
-                date,
-                authority: 'external_plan',
-                externalPlanRef,
-                state: 'scheduled',
-                ...(options.placementOrder !== undefined ? { placementOrder: options.placementOrder } : {}),
-                ...(options.windowBinding !== undefined ? { windowBinding: options.windowBinding } : {}),
-                createdAt: now,
-                updatedAt: now,
-            };
             transaction.set(ref, occurrence);
 
             if (windowReservationRef && options.windowBinding) {
@@ -528,6 +539,7 @@ export class SessionOccurrenceService {
                 state: 'active',
                 updatedAt: now,
             } as SessionOccurrence;
+            assertValidSessionOccurrence(transitioned);
             transaction.set(ref, transitioned);
         });
         notifyFlagInputsChanged(userId);
@@ -579,6 +591,7 @@ export class SessionOccurrenceService {
                 await options.onBeforeRelease(transaction, current);
             }
             released = { ...current, state: 'scheduled', updatedAt: now } as SessionOccurrence;
+            assertValidSessionOccurrence(released);
             transaction.set(ref, released);
         });
         if (released) notifyFlagInputsChanged(userId);
@@ -621,6 +634,7 @@ export class SessionOccurrenceService {
                 state: nextState,
                 updatedAt: now,
             } as SessionOccurrence;
+            assertValidSessionOccurrence(transitioned);
             transaction.set(ref, transitioned);
         });
         notifyFlagInputsChanged(userId);

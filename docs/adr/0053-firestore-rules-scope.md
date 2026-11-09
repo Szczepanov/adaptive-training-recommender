@@ -159,12 +159,73 @@ is converted to assert acceptance at the rules boundary and names the TypeScript
   document limit still applies. This differs from #1201, where `hasBoundedHealthContext`
   added explicit caps in place of the removed value checks.
 
+### Applied in #1202 (item 1, PR A: write-side validators)
+
+* Garmin workout queue (`01-users-core`): the `status` enum, the `queuedAt`, `syncedAt` and
+  `garminWorkoutId` types and the `payload` map type (owner `validateQueuedWorkoutWrite` in
+  `contracts/workoutExportContract.ts`, called in `GarminWorkoutQueueService` `queueWorkout`
+  before its whole-document `setDoc`; the Python sync writes back with the Admin SDK, outside
+  the rules). The write validator is deliberately narrower than `validateQueuedWorkoutContract`:
+  that contract also requires a non-empty title and the full `CanonicalWorkoutExport` payload,
+  which would reject payloads the app queues today, such as the fallback export with no blocks.
+* `session_responses` (`08-outcomes-trials`): the `sourceSession` kind, id and date values, the
+  `window` enum, the response and check-in dates, the window/date ordering, and the
+  `sessionRpe`, `completedFraction` and `unexpectedFatigue` values (owners
+  `validateSessionResponse` through `assertValidSessionResponse`, called in
+  `SessionResponseService` `recordResponse` and `recordOrUpdateResponse` before the create, and
+  `validateSessionResponseFacts` through `assertValidSessionResponseFacts`, called before every
+  partial fact update in `updateResponseFacts` and `recordOrUpdateResponse`). The fact updates
+  are partial, but every moved fact check is per field, and the kept update rule holds
+  `sourceSession`, `window` and `date` equal to the create-validated values, so the ordering
+  cannot change after create. The range checks now also reject `NaN`, which the TypeScript
+  check used to let through and the rule rejected.
+* Session occurrences (`04-session-occurrences`): the `date`, the `authority` enum and its
+  pairing with exactly one of `definitionRef` / `externalPlanRef`, the `definitionRef` values,
+  the `externalPlanRef` revision, the `windowBinding` order, local bounds and instants, the
+  windowBinding-needs-externalPlanRef rule and `placementOrder` (owner
+  `validateSessionOccurrence` through `assertValidSessionOccurrence`, which gained the
+  `placementOrder` check it lacked). Every client writer calls it before a whole-document set,
+  never a merge: `SessionOccurrenceService` `saveOccurrence`,
+  `getOrCreateExternalPlanOccurrence` (new and superseded), `claimOccurrenceLaunch`,
+  `releaseOccurrenceClaim` and `transitionOccurrenceState`; `sealPreparedPrimaryBinding` in
+  `intradayBundleMemberAdjudication.ts`; the skip and both create paths in
+  `adjudicateIntradayBundleMembers` in `intradayBundleMemberAdjudicationCore.ts` (each create
+  path validates before its transaction opens); and `ManualRecommendationReplacementService`
+  `replaceRecommendationOccurrence` and `transferAuthorityInTransaction`.
+* Fixed in passing: the session-definition revision key allow-list
+  (`hasValidSessionDefinitionRevision`) now includes `movementComposition`. It is part of the
+  `SessionDefinition` schema and its content hash, and `ManualSessionBuilder` carries it over
+  from a catalog base definition, so such a revision used to be denied. `validateSessionDefinition`
+  owns its content.
+* Kept on purpose:
+  * ownership, the path and date-document bindings (queue `date`, `responseId`,
+    `occurrenceId`), every key allow-list, and every size cap (queue title, modality and error;
+    response notes; plan id, session id and content hash; window and bundle ids);
+  * required keys that the removed value checks used to imply, now explicit: the occurrence
+    `date` and `authority` and at least one of `definitionRef` / `externalPlanRef`,
+    `checkinRef.date`, and every key of `definitionRef`, `externalPlanRef` and `windowBinding`
+    (the other top-level occurrence and response keys were already required by kept checks);
+  * the response `occurrenceId` existence check: binding to a referenced document;
+  * the response `createdAt`/`updatedAt` shape: the intraday launch claim compares `updatedAt`
+    to the confirmation revision it pinned; and the occurrence timestamps, as for the other
+    top-level documents;
+  * the occurrence `state` enum: it is the domain of the kept transition table
+    (`isValidOccurrenceStateTransition`), and the strength-session and session-execution rules
+    read an occurrence's `state` across documents;
+  * the response provenance immutability (`sourceSession`, `occurrenceId`, `window`, `date`,
+    `createdAt`), the occurrence `date`/`authority`/`createdAt` immutability and transitions,
+    and the `bindsPreparedExternalOccurrence` reservation binding.
+* As in the 01-04 trims, removing the value checks also removed the implicit type and size
+  bound they put on fields such as `status`, `window`, `authority`, `definitionRef.definitionId`
+  and the window-binding bounds. Only the owner can write these documents, the key allow-lists
+  stay, and the 1 MiB document limit applies.
+
 ### Not yet applied (follow-up)
 
-* Collections whose writes are not validated in TypeScript today: `session_responses`,
-  `performedTrainingOccurrences` / `performedOccurrenceSourceLinks`, session occurrences,
-  session-execution diary entries, strength sessions, activity overrides, the Garmin workout
-  queue, `competition_outcomes`. Each needs a write-side validator first.
+* Collections whose writes are not validated in TypeScript today:
+  `performedTrainingOccurrences` / `performedOccurrenceSourceLinks`, session-execution diary
+  entries, strength sessions, activity overrides, `competition_outcomes`. Each needs a
+  write-side validator first.
 * `06-recommendations` is read-only at ADR-0052 Phase 3, so it is not trimmed separately.
 
 ## Consequences

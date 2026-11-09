@@ -112,6 +112,17 @@
     }
 
     match /users/{userId}/session_responses/{responseId} {
+      // Issue #1202 (ADR-0053): the sourceSession kind/id/date values, the window enum, the
+      // response and check-in dates, the window/date ordering and the sessionRpe,
+      // completedFraction and unexpectedFatigue values are owned by validateSessionResponse
+      // (creates) and validateSessionResponseFacts (partial fact updates), which
+      // SessionResponseService runs before every write. A fact update is per field, and the
+      // update rule keeps sourceSession, window and date equal to the create-validated values,
+      // so the ordering cannot change after create. Ownership, the path binding, every key
+      // allow-list and required key (checkinRef.date made explicit with hasAll, since the
+      // removed date check used to imply it), the note caps, the occurrence existence
+      // binding, the timestamps (the intraday launch claim compares updatedAt) and the
+      // provenance immutability stay.
       function hasValidSessionResponse(userId, responseId) {
         let data = request.resource.data;
         return hasOwnedUserId(userId)
@@ -121,24 +132,13 @@
           && data.sourceSession is map
           && data.sourceSession.keys().hasOnly(['kind', 'id', 'date'])
           && data.sourceSession.keys().hasAll(['kind', 'id', 'date'])
-          && data.sourceSession.kind in ['strength', 'execution']
-          && data.sourceSession.id is string && data.sourceSession.id.size() > 0
-          && isValidActivityDate(data.sourceSession.date)
-          && data.window in ['immediate', 'later_day', 'next_morning']
-          && isValidActivityDate(data.date)
-          && ((data.window == 'immediate' && data.date == data.sourceSession.date)
-            || (data.window == 'later_day' && data.date == data.sourceSession.date)
-            || (data.window == 'next_morning' && data.date > data.sourceSession.date))
           && data.checkinRef is map
           && data.checkinRef.keys().hasOnly(['date'])
-          && isValidActivityDate(data.checkinRef.date)
+          && data.checkinRef.keys().hasAll(['date'])
           && (!('occurrenceId' in data) || (
             data.occurrenceId is string && data.occurrenceId.size() > 0
             && exists(/databases/$(database)/documents/users/$(userId)/session_occurrences/$(data.occurrenceId))
           ))
-          && (!('sessionRpe' in data) || (data.sessionRpe is number && data.sessionRpe >= 0 && data.sessionRpe <= 10))
-          && (!('completedFraction' in data) || (data.completedFraction is number && data.completedFraction >= 0 && data.completedFraction <= 1))
-          && (!('unexpectedFatigue' in data) || data.unexpectedFatigue is bool)
           && (!('techniqueNote' in data) || (data.techniqueNote is string && data.techniqueNote.size() <= 2000))
           && (!('note' in data) || (data.note is string && data.note.size() <= 2000))
           && hasStringTimestamps(data);

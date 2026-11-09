@@ -32,6 +32,11 @@ function validSessionResponse(responseId: string) {
     };
 }
 
+// Issue #1202 (ADR-0053): the window/date ordering is owned by validateSessionResponse
+// (responses/validation.ts), which SessionResponseService runs before every create -- see
+// responses/validation.test.ts and sessionResponseService.test.ts. The rules accept every
+// ordering at the boundary, but keep `window` and `date` immutable after create, so a
+// create-validated ordering cannot be changed later.
 emulatorDescribe('SessionResponse window/date rules', () => {
     beforeAll(async () => {
         testEnvironment = await initializeTestEnvironment({
@@ -48,48 +53,32 @@ emulatorDescribe('SessionResponse window/date rules', () => {
         await testEnvironment.cleanup();
     });
 
-    it('enforces same-day immediate/later_day and later-date next_morning semantics', async () => {
+    it.each([
+        ['immediate', sourceDate],
+        ['immediate', '2026-08-19'],
+        ['later_day', sourceDate],
+        ['later_day', '2026-08-17'],
+        ['next_morning', sourceDate],
+        ['next_morning', '2026-08-19'],
+    ])('accepts a %s response dated %s at the rules boundary (validateSessionResponse owns the ordering)', async (window, date) => {
         const db = testEnvironment.authenticatedContext(ownerId).firestore();
+        const responseId = `${window}-${date}`;
+        await assertSucceeds(setDoc(doc(db, responsePath(responseId)), {
+            ...validSessionResponse(responseId),
+            window,
+            date,
+            checkinRef: { date },
+        }));
+    });
 
-        await assertSucceeds(setDoc(doc(db, responsePath('immediate-same-day')), {
-            ...validSessionResponse('immediate-same-day'),
-            window: 'immediate',
+    it('keeps window and date immutable after create', async () => {
+        const db = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertSucceeds(setDoc(doc(db, responsePath('immutable')), validSessionResponse('immutable')));
+        await assertFails(setDoc(doc(db, responsePath('immutable')), {
+            ...validSessionResponse('immutable'), window: 'later_day',
         }));
-        await assertFails(setDoc(doc(db, responsePath('immediate-next-day')), {
-            ...validSessionResponse('immediate-next-day'),
-            window: 'immediate',
-            date: '2026-08-19',
-        }));
-
-        await assertSucceeds(setDoc(doc(db, responsePath('later-day-same-day')), {
-            ...validSessionResponse('later-day-same-day'),
-            window: 'later_day',
-        }));
-        await assertFails(setDoc(doc(db, responsePath('later-day-previous-day')), {
-            ...validSessionResponse('later-day-previous-day'),
-            window: 'later_day',
-            date: '2026-08-17',
-        }));
-        await assertFails(setDoc(doc(db, responsePath('later-day-next-day')), {
-            ...validSessionResponse('later-day-next-day'),
-            window: 'later_day',
-            date: '2026-08-19',
-        }));
-
-        await assertFails(setDoc(doc(db, responsePath('next-morning-same-day')), {
-            ...validSessionResponse('next-morning-same-day'),
-            window: 'next_morning',
-        }));
-        await assertFails(setDoc(doc(db, responsePath('next-morning-previous-day')), {
-            ...validSessionResponse('next-morning-previous-day'),
-            window: 'next_morning',
-            date: '2026-08-17',
-        }));
-        await assertSucceeds(setDoc(doc(db, responsePath('next-morning-next-day')), {
-            ...validSessionResponse('next-morning-next-day'),
-            window: 'next_morning',
-            date: '2026-08-19',
-            checkinRef: { date: '2026-08-19' },
+        await assertFails(setDoc(doc(db, responsePath('immutable')), {
+            ...validSessionResponse('immutable'), window: 'next_morning', date: '2026-08-19',
         }));
     });
 });

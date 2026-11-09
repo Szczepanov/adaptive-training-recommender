@@ -31,6 +31,7 @@ import { isExternalPlanOccurrence } from '../sessions/models';
 import { addDaysToLocalDateString } from '../utils/localDate';
 import { gatePredecessorConfirmation, type PredecessorConfirmationPrompt } from './predecessorConfirmationGate';
 import { parseSessionOccurrenceDocument } from '../persistence/parsers/sessionDefinition';
+import { assertValidSessionOccurrence } from '../sessions/validation';
 import type { BundlePlacementProposal } from '../engine/intradayBundlePlacement';
 import type { LedgerCeilings } from '../engine/dailyLedger';
 import { computeDailyLedger } from '../engine/dailyLedger';
@@ -495,7 +496,9 @@ export async function adjudicateIntradayBundleMembers(
                     if (occSnap.exists()) {
                         const parsed = parseSessionOccurrenceDocument(occSnap.data(), occSnap.ref.path);
                         if (parsed.status === 'AVAILABLE' && parsed.data.state === 'scheduled') {
-                            transaction.set(targetOccRef, { ...parsed.data, state: 'skipped', updatedAt: now });
+                            const skipped = { ...parsed.data, state: 'skipped', updatedAt: now };
+                            assertValidSessionOccurrence(skipped);
+                            transaction.set(targetOccRef, skipped);
                         }
                     }
 
@@ -544,9 +547,25 @@ export async function adjudicateIntradayBundleMembers(
 
         const occRef = occurrenceService.occurrenceRef(userId, deterministicOccId);
         const winRef = occurrenceService.windowReservationRef(userId, date, binding.windowId);
+        // Issue #1202 (ADR-0053): the occurrence a create path would write is built and
+        // validated before its transaction opens, so a rejected occurrence stages no write
+        // at all (not even the aggregate seed).
+        const newOcc: ExternalPlanSessionOccurrence = {
+            userId,
+            occurrenceId: deterministicOccId,
+            date,
+            authority: 'external_plan',
+            externalPlanRef,
+            state: 'scheduled',
+            placementOrder: intraday.order,
+            windowBinding,
+            createdAt: now,
+            updatedAt: now,
+        };
 
         if (verdict.decision === 'pending' || verdict.decision === 'scale') {
             // 8.3 / 8.4: Create occurrence and reserve capacity; emit no binding
+            assertValidSessionOccurrence(newOcc);
             await runTransaction(db, async transaction => {
                 const occSnap = await transaction.get(occRef);
                 const winSnap = await transaction.get(winRef);
@@ -569,18 +588,6 @@ export async function adjudicateIntradayBundleMembers(
                 }
 
                 if (!occSnap.exists()) {
-                    const newOcc: ExternalPlanSessionOccurrence = {
-                        userId,
-                        occurrenceId: deterministicOccId,
-                        date,
-                        authority: 'external_plan',
-                        externalPlanRef,
-                        state: 'scheduled',
-                        placementOrder: intraday.order,
-                        windowBinding,
-                        createdAt: now,
-                        updatedAt: now,
-                    };
                     transaction.set(occRef, newOcc);
 
                     if (winSnap.exists()) {
@@ -653,6 +660,7 @@ export async function adjudicateIntradayBundleMembers(
         }
 
         // 8.5 / Step 9: Proceed verdict -> create occurrence + aggregate reservation + provisional decision in ONE transaction
+        assertValidSessionOccurrence(newOcc);
         const decisionId = await deterministicIntradayDecisionId(deterministicOccId, computedRevision);
         const decRef = doc(db, getIntradayDecisionDocPath(userId, decisionId));
 
@@ -681,18 +689,6 @@ export async function adjudicateIntradayBundleMembers(
             }
 
             if (!occSnap.exists()) {
-                const newOcc: ExternalPlanSessionOccurrence = {
-                    userId,
-                    occurrenceId: deterministicOccId,
-                    date,
-                    authority: 'external_plan',
-                    externalPlanRef,
-                    state: 'scheduled',
-                    placementOrder: intraday.order,
-                    windowBinding,
-                    createdAt: now,
-                    updatedAt: now,
-                };
                 transaction.set(occRef, newOcc);
 
                 if (winSnap.exists()) {

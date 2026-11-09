@@ -42,6 +42,8 @@ import type { SessionResponse } from '../responses/models';
 import type { IntradayDecisionRecord } from '../engine/intradayDecision';
 
 const store = new Map<string, unknown>();
+/** Every path any fake transaction `set` touched, so a test can prove nothing was staged. */
+const transactionLog = vi.hoisted(() => ({ setPaths: [] as string[] }));
 
 function mockDocRef(path: string) {
     return { path };
@@ -85,6 +87,7 @@ vi.mock('firebase/firestore', () => {
                     };
                 }),
                 set: vi.fn((ref: { path: string }, data: unknown) => {
+                    transactionLog.setPaths.push(ref.path);
                     store.set(ref.path, JSON.parse(JSON.stringify(data)));
                 }),
                 delete: vi.fn((ref: { path: string }) => {
@@ -1154,5 +1157,101 @@ describe('adjudicateIntradayBundleMembers', () => {
         ) as IntradayDecisionRecord;
         expect(secondDecisionDoc.reassessmentInputRevision.ledgerRevision).toBe('3');
         expect(secondDecisionDoc.ledgerSnapshot.entries.some(e => e.occurrenceId === 'intervening-occ')).toBe(true);
+    });
+});
+
+// Issue #1202 (ADR-0053): every occurrence write in the adjudicator runs
+// assertValidSessionOccurrence first, so an invalid occurrence stages no write at all.
+describe('adjudicateIntradayBundleMembers write-side occurrence validation (#1202)', () => {
+    const amExternalPlanRef = { planId: 'p-v4', revision: 1, sessionId: 'am-run', contentHash: 'hash-bundle-v4' };
+
+    beforeEach(() => {
+        store.clear();
+        transactionLog.setPaths.length = 0;
+        vi.restoreAllMocks();
+        vi.spyOn(sessionOccurrenceService, 'getOccurrencesForDate').mockImplementation(async (userId, date) => {
+            const prefix = `users/${userId}/session_occurrences/`;
+            return [...store.entries()]
+                .filter(([path, value]) => path.startsWith(prefix) && (value as ExternalPlanSessionOccurrence).date === date)
+                .map(([, value]) => structuredClone(value) as ExternalPlanSessionOccurrence);
+        });
+    });
+
+    function paramsWith(bundlePlacement: BundlePlacementProposal, evaluationInstant: string): AdjudicateIntradayBundleMembersParams {
+        return {
+            userId: USER_ID, date: DATE, activePlan: createPlan(), bundlePlacement,
+            subjective: mockSubjective, objective: mockObjective, userContext: mockUserContext,
+            availability: mockAvailability, ceilings, evaluationInstant,
+            services: { occurrenceService: sessionOccurrenceService },
+        };
+    }
+
+    /** A placement whose binding at `index` has its local end before its start. */
+    function placementWithReversedWindow(index: 0 | 1): BundlePlacementProposal {
+        const placement = createBundlePlacement();
+        const bindings = placement.bindings!.map((binding, i) => (i === index
+            ? { ...binding, boundEndLocal: index === 0 ? '06:00' : '15:00' }
+            : binding));
+        return { ...placement, bindings };
+    }
+
+    function seedCompletedPrimary(): void {
+        seedOccurrences({
+            userId: USER_ID, occurrenceId: 'occ-am-1', date: DATE, authority: 'external_plan',
+            externalPlanRef: amExternalPlanRef, state: 'completed', placementOrder: 0,
+            windowBinding: createPrimaryWindowBinding(),
+            createdAt: '2026-09-07T05:00:00.000Z', updatedAt: '2026-09-07T06:00:00.000Z',
+        });
+        vi.spyOn(sessionExecutionService, 'getExecutionsInRange')
+            .mockResolvedValue({ executions: [createMockExecution('occ-am-1')], invalidRecords: 0 });
+    }
+
+    it('sealPreparedPrimaryBinding rejects an invalid primary window binding without staging any write', async () => {
+        seedOccurrences({
+            userId: USER_ID, occurrenceId: 'occ-am-seal', date: DATE, authority: 'external_plan',
+            externalPlanRef: amExternalPlanRef, state: 'scheduled',
+            createdAt: '2026-09-07T05:00:00.000Z', updatedAt: '2026-09-07T05:00:00.000Z',
+        });
+        const before = structuredClone([...store.entries()]);
+
+        await expect(adjudicateIntradayBundleMembers(paramsWith(placementWithReversedWindow(0), '2026-09-07T12:00:00.000Z')))
+            .rejects.toThrow('Invalid session occurrence: windowBinding: Invalid windowBinding');
+
+        expect(transactionLog.setPaths).toEqual([]);
+        expect([...store.entries()]).toEqual(before);
+    });
+
+    it('the pending create path rejects an invalid member occurrence before its transaction', async () => {
+        seedCompletedPrimary();
+        vi.spyOn(sessionResponseService, 'getResponseForWindow').mockResolvedValue(null);
+        const before = structuredClone([...store.entries()]);
+
+        await expect(adjudicateIntradayBundleMembers(paramsWith(placementWithReversedWindow(1), '2026-09-07T12:00:00.000Z')))
+            .rejects.toThrow('Invalid session occurrence: windowBinding: Invalid windowBinding');
+
+        expect(transactionLog.setPaths).toEqual([]);
+        expect([...store.entries()]).toEqual(before);
+    });
+
+    it('positive control: the same fixture with a valid window takes the proceed path and writes', async () => {
+        seedCompletedPrimary();
+        vi.spyOn(sessionResponseService, 'getResponseForWindow').mockResolvedValue(createMockSessionResponse('occ-am-1'));
+
+        const result = await adjudicateIntradayBundleMembers(paramsWith(createBundlePlacement(), '2026-09-07T12:00:00.000Z'));
+
+        expect(result.statuses[0].status).toBe('proceed');
+        expect(transactionLog.setPaths).toContain(`users/${USER_ID}/session_occurrences/${result.statuses[0].occurrenceId}`);
+    });
+
+    it('the proceed create path rejects an invalid member occurrence before its transaction', async () => {
+        seedCompletedPrimary();
+        vi.spyOn(sessionResponseService, 'getResponseForWindow').mockResolvedValue(createMockSessionResponse('occ-am-1'));
+        const before = structuredClone([...store.entries()]);
+
+        await expect(adjudicateIntradayBundleMembers(paramsWith(placementWithReversedWindow(1), '2026-09-07T12:00:00.000Z')))
+            .rejects.toThrow('Invalid session occurrence: windowBinding: Invalid windowBinding');
+
+        expect(transactionLog.setPaths).toEqual([]);
+        expect([...store.entries()]).toEqual(before);
     });
 });

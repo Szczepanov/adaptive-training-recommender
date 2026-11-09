@@ -5,6 +5,7 @@ import { isExternalPlanOccurrence, isManualOccurrence } from '../sessions/models
 import type { DailyRecommendation } from '../engine/models';
 import { parseDailyRecommendation } from '../persistence/parsers/trainingHistory';
 import { parseSessionOccurrenceDocument } from '../persistence/parsers/sessionDefinition';
+import { assertValidSessionOccurrence } from '../sessions/validation';
 import { windowReservationId } from './sessionOccurrenceService';
 import { deepEqual } from '../utils/deepEqual';
 
@@ -38,6 +39,8 @@ export class ManualRecommendationReplacementService {
             createdAt: now,
             updatedAt: now,
         };
+        // Issue #1202 (ADR-0053): validated before any Firestore call.
+        assertValidSessionOccurrence(replacement);
         const recommendationRef = doc(this.db, 'users', userId, 'daily_recommendations', date);
         const replacementRef = doc(this.db, 'users', userId, 'session_occurrences', occurrenceId);
 
@@ -94,7 +97,9 @@ export class ManualRecommendationReplacementService {
         if (prior?.primarySession?.occurrenceId === claim.occurrenceId) return;
         const displaced = await this.readPreparedPrimary(transaction, userId, date, prior?.primarySession?.occurrenceId);
         if (displaced) {
-            transaction.set(displaced.ref, { ...displaced.occurrence, state: 'superseded', updatedAt: accepted.updatedAt });
+            const superseded = { ...displaced.occurrence, state: 'superseded', updatedAt: accepted.updatedAt };
+            assertValidSessionOccurrence(superseded);
+            transaction.set(displaced.ref, superseded);
             if (displaced.reservationRef) transaction.delete(displaced.reservationRef);
         }
     }

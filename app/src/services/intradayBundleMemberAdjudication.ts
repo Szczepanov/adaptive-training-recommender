@@ -3,6 +3,7 @@ import { getDb } from '../firebase';
 import type { ExternalPlanSessionOccurrence, OccurrenceWindowBinding } from '../sessions/models';
 import { isExternalPlanOccurrence } from '../sessions/models';
 import { parseSessionOccurrenceDocument } from '../persistence/parsers/sessionDefinition';
+import { assertValidSessionOccurrence } from '../sessions/validation';
 import { isBundleCapableExternalPlan } from '../sessions/externalPlanV2';
 import { SessionOccurrenceService, sessionOccurrenceService } from './sessionOccurrenceService';
 import {
@@ -144,6 +145,7 @@ async function sealPreparedPrimaryBinding(params: AdjudicateIntradayBundleMember
             windowBinding: expectedWindowBinding,
             updatedAt: now,
         };
+        assertValidSessionOccurrence(sealed);
         transaction.set(occurrenceRef, sealed);
         if (!windowSnap.exists()) {
             transaction.set(windowRef, {

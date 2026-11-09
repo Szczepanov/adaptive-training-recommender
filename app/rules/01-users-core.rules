@@ -346,6 +346,10 @@
     }
 
     match /users/{userId}/garmin_workout_queue/{date} {
+      // Issue #1202 (ADR-0053): the status enum, the queuedAt/syncedAt/garminWorkoutId types
+      // and the payload map type are owned by validateQueuedWorkoutWrite, which
+      // GarminWorkoutQueueService.queueWorkout runs before every client write. Ownership, the
+      // date-document binding, the key allow-lists and the size caps stay.
       function hasValidGarminQueuedWorkout(userId, date) {
         let data = request.resource.data;
         return hasOwnedUserId(userId)
@@ -354,12 +358,7 @@
           && data.keys().hasAll(['userId', 'date', 'workoutTitle', 'modality', 'status', 'queuedAt', 'payload'])
           && data.workoutTitle is string && data.workoutTitle.size() <= 200
           && data.modality is string && data.modality.size() <= 64
-          && data.status in ['pending', 'synced', 'failed']
-          && data.queuedAt is string
-          && (!('syncedAt' in data) || data.syncedAt == null || data.syncedAt is string)
-          && (!('error' in data) || data.error == null || (data.error is string && data.error.size() <= 2000))
-          && (!('garminWorkoutId' in data) || data.garminWorkoutId is string)
-          && data.payload is map;
+          && (!('error' in data) || data.error == null || (data.error is string && data.error.size() <= 2000));
       }
 
       allow read: if isOwner(userId);

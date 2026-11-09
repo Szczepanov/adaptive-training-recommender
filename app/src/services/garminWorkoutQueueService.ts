@@ -1,6 +1,7 @@
 import { doc, getDoc, setDoc, onSnapshot, collection } from 'firebase/firestore';
 import { getDb } from '../firebase';
 import type { CanonicalWorkoutExport } from '../utils/workoutJsonExport';
+import { validateQueuedWorkoutWrite } from '../contracts/workoutExportContract';
 
 export interface GarminQueuedWorkout {
     userId: string;
@@ -16,8 +17,6 @@ export interface GarminQueuedWorkout {
 
 export class GarminWorkoutQueueService {
     async queueWorkout(userId: string, date: string, payload: CanonicalWorkoutExport): Promise<void> {
-        const db = getDb();
-        const ref = doc(db, `users/${userId}/garmin_workout_queue/${date}`);
         const data: GarminQueuedWorkout = {
             userId,
             date,
@@ -29,6 +28,13 @@ export class GarminWorkoutQueueService {
             error: null,
             payload,
         };
+        // Issue #1202 (ADR-0053): the status enum, timestamp/optional-field types and the
+        // payload object check live here, not in the Firestore rules.
+        const validation = validateQueuedWorkoutWrite(data);
+        if (!validation.valid) {
+            throw new Error(`Invalid Garmin queue entry: ${validation.errors.join('; ')}`);
+        }
+        const ref = doc(getDb(), `users/${userId}/garmin_workout_queue/${date}`);
         await setDoc(ref, data);
     }
 
