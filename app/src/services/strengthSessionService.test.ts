@@ -110,6 +110,29 @@ describe('StrengthSessionService', () => {
         });
     });
 
+    describe('write-side validation (issue #1202)', () => {
+        it('does not create a session whose sourceRecommendationDate is invalid', async () => {
+            await expect(service.startSession(USER_ID, { startedAt: '2026-08-17T18:00:00Z', sourceRecommendationDate: '2026-02-30' }))
+                .rejects.toThrow(/sourceRecommendationDate/);
+            expect(firestore.setDoc).not.toHaveBeenCalled();
+        });
+
+        it.each([11, -1, Number.NaN])('does not transition a session with sessionRpe %s', async (sessionRpe) => {
+            existingDoc(validSession());
+            await expect(service.transitionState(USER_ID, SESSION_ID, 'completed', '2026-08-17T19:00:00Z', { sessionRpe }))
+                .rejects.toThrow(/sessionRpe/);
+            expect(firestore.setDoc).not.toHaveBeenCalled();
+        });
+
+        it('merges a valid sessionRpe on completion', async () => {
+            existingDoc(validSession());
+            await service.transitionState(USER_ID, SESSION_ID, 'completed', '2026-08-17T19:00:00Z', { sessionRpe: 8 });
+            const [, payload, options] = firestore.setDoc.mock.calls[0] as [unknown, Record<string, unknown>, Record<string, unknown>];
+            expect(payload).toMatchObject({ state: 'completed', completedAt: '2026-08-17T19:00:00Z', sessionRpe: 8 });
+            expect(options).toEqual({ merge: true });
+        });
+    });
+
     describe('transitionState', () => {
         it('moves an in_progress session to completed and stamps completedAt', async () => {
             existingDoc(validSession());
