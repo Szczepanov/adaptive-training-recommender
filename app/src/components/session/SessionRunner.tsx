@@ -32,6 +32,7 @@ import { GroupProgress } from './GroupProgress';
 import { ChoiceCard } from './ChoiceCard';
 import { SessionEntryActions } from './SessionEntryActions';
 import { ExerciseSwapModal } from './ExerciseSwapModal';
+import { isAddedExercisesBlock } from '../../sessions/addedExerciseStep';
 import { SessionDefinitionPreview } from './SessionDefinitionPreview';
 import { isSoundEnabled, setSoundEnabled } from '../../utils/audioFeedback';
 import { SCREEN_LABELS } from '../../types/navigation';
@@ -583,7 +584,7 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
         if (runner.activeBlockIndex !== pendingAdvance.blockIndex || runner.activeStepIndex !== pendingAdvance.stepIndex) return;
         const block = runner.definition.blocks[pendingAdvance.blockIndex];
         const step = block?.steps[pendingAdvance.stepIndex];
-        if (!step) return;
+        if (!step || isAddedExercisesBlock(block)) return;
         const before = completedPrescribedSets(step, runner.entries.slice(0, pendingAdvance.entryCountBefore));
         const after = completedPrescribedSets(step, runner.entries);
         if (after <= before) return;

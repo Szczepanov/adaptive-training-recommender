@@ -7,6 +7,12 @@ export const ADDED_EXERCISES_BLOCK_ID = 'added-during-session';
 /** Prefix of every added step id; the summary reports such work as unplanned. */
 const ADDED_STEP_ID_PREFIX = 'added-';
 
+/** Exercises added during the session are open-ended: the athlete decides how many sets they
+ * do, so the runner must not auto-advance away after the first logged set. */
+export function isAddedExercisesBlock(block: SessionBlock | undefined): boolean {
+    return block?.id === ADDED_EXERCISES_BLOCK_ID;
+}
+
 /**
  * Appends an exercise the athlete performed beyond the plan (e.g. back extensions) to a
  * trailing "Added exercises" block, creating that block on first use. The step is optional

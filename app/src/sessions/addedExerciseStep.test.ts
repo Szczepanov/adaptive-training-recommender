@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { SessionBlock, SessionDefinition, SessionEntry } from './models';
-import { ADDED_EXERCISES_BLOCK_ID, appendAddedExerciseStep, restoreAddedExerciseSteps } from './addedExerciseStep';
+import { ADDED_EXERCISES_BLOCK_ID, appendAddedExerciseStep, isAddedExercisesBlock, restoreAddedExerciseSteps } from './addedExerciseStep';
 
 const planned: SessionBlock[] = [{
     id: 'main',
@@ -63,5 +63,12 @@ describe('appendAddedExerciseStep', () => {
             ['added-carry', 'Farmer Carry', 'distance'],
         ]);
         expect(restoreAddedExerciseSteps(definition, entries.slice(3))).toBe(definition);
+    });
+
+    it('marks only the added-exercises block as open-ended (no auto-advance after a set)', () => {
+        const { blocks } = appendAddedExerciseStep(planned, backExtension, 'u1');
+        expect(isAddedExercisesBlock(blocks[1])).toBe(true);
+        expect(isAddedExercisesBlock(blocks[0])).toBe(false);
+        expect(isAddedExercisesBlock(undefined)).toBe(false);
     });
 });
