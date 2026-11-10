@@ -167,4 +167,44 @@ describe('exportCompletedWorkoutToJson', () => {
         expect(result.duration).toBeUndefined();
         expect(result.session).toBeUndefined();
     });
+
+    it('exports a carried load, the performed exercise after a swap, and exercises added during the session', () => {
+        const base = structuredView.structured!;
+        const view: CompletedWorkoutView = {
+            ...structuredView,
+            structured: {
+                ...base,
+                steps: [
+                    {
+                        stepId: 'press', exerciseRef: { kind: 'catalog', exerciseId: 'bench_press' },
+                        title: 'Single-arm Dumbbell Floor Press', plannedTitle: 'Bench Press',
+                        performedExerciseRef: { kind: 'catalog', exerciseId: 'single_arm_dumbbell_floor_press' },
+                        isOptional: false, prescribed: { sets: 3, reps: 8 }, sets: [],
+                    },
+                    {
+                        stepId: 'carry', exerciseRef: { kind: 'catalog', exerciseId: 'farmer_carry' }, title: 'Farmer Carry',
+                        isOptional: false, prescribed: { sets: 1, meters: 40 },
+                        sets: [{
+                            entryId: 'c1', setNumber: 1, isWarmup: false, completedAt: '2026-08-26T07:20:00.000Z',
+                            payload: { kind: 'distance', meters: 40, loadKg: 48 },
+                        }],
+                    },
+                    {
+                        stepId: 'added-1', title: 'Back Extension', unplanned: true,
+                        exerciseRef: { kind: 'unresolved_free_text', name: 'Back Extension' },
+                        isOptional: false, prescribed: { sets: 0 }, sets: [],
+                    },
+                ],
+            },
+        };
+
+        const [press, carry, added] = exportCompletedWorkoutToJson(view, EXPORTED_AT).exercises;
+
+        expect(press.name).toBe('Single-arm Dumbbell Floor Press');
+        expect(press.plannedName).toBe('Bench Press');
+        expect(press.performedExercise).toEqual({ kind: 'catalog', exerciseId: 'single_arm_dumbbell_floor_press' });
+        expect(carry.performed.sets[0]).toEqual(expect.objectContaining({ distanceMeters: 40, weightKg: 48 }));
+        expect(added.unplanned).toBe(true);
+        expect(added.name).toBe('Back Extension');
+    });
 });

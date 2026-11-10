@@ -432,6 +432,8 @@ export type DistanceEntryPayload = {
     kind: 'distance';
     meters: number;
     durationSeconds?: number;
+    /** Carried/pushed load (e.g. farmer carry dumbbells, sled), when the athlete logged one. */
+    loadKg?: number;
 };
 
 export type SprintEntryPayload = {

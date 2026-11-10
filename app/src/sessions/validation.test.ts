@@ -442,6 +442,18 @@ describe('Session Validation (M2.1 / ADR-0023)', () => {
             expect(entry.issues.map(issue => issue.path)).toEqual(expect.arrayContaining(['payload.setIndex', 'payload.reps']));
         });
 
+        it('accepts a carried load on a distance set and rejects a negative one', () => {
+            const base = {
+                id: 'entry-carry', executionId: 'exec-1', stepId: 'carry', completedAt: '2026-08-18T10:05:00Z',
+                createdAt: '2026-08-18T10:05:00Z', updatedAt: '2026-08-18T10:05:00Z',
+            };
+            expect(validateSessionEntry({ ...base, payload: { kind: 'distance', meters: 40, loadKg: 48 } }).ok).toBe(true);
+            const negative = validateSessionEntry({ ...base, payload: { kind: 'distance', meters: 40, loadKg: -1 } });
+            expect(negative.ok).toBe(false);
+            if (negative.ok) throw new Error('Expected invalid entry');
+            expect(negative.issues.map(issue => issue.path)).toContain('payload.loadKg');
+        });
+
         it('validates a recorded athlete choice (D-MCHOICE), with and without a reason', () => {
             const withoutReason = validateSessionEntry({
                 id: 'entry-choice-1', executionId: 'exec-1', stepId: 'step-1',

@@ -267,9 +267,10 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
               && payload.seconds is number && payload.seconds > 0
               && (!('loadKg' in payload) || (payload.loadKg is number && payload.loadKg >= 0)))
             || (payload.kind == 'distance'
-              && payload.keys().hasOnly(['kind', 'meters', 'durationSeconds'])
+              && payload.keys().hasOnly(['kind', 'meters', 'durationSeconds', 'loadKg'])
               && payload.meters is number && payload.meters > 0
-              && (!('durationSeconds' in payload) || (payload.durationSeconds is number && payload.durationSeconds > 0)))
+              && (!('durationSeconds' in payload) || (payload.durationSeconds is number && payload.durationSeconds > 0))
+              && (!('loadKg' in payload) || (payload.loadKg is number && payload.loadKg >= 0)))
             || (payload.kind == 'sprint'
               && payload.keys().hasOnly(['kind', 'meters', 'splitSeconds', 'surface'])
               && payload.meters is number && payload.meters > 0

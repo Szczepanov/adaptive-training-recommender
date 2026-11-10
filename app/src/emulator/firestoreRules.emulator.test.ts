@@ -3265,6 +3265,19 @@ emulatorDescribe('Firestore security rules', () => {
         }));
     });
 
+    it('accepts a carried load on a distance entry and rejects a negative one', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await expect(assertSucceeds(setDoc(doc(ownerDb, sessionExecPath), validSessionExecution()))).resolves.toBeUndefined();
+        await expect(assertSucceeds(setDoc(doc(ownerDb, sessionEntryPath), {
+            ...validSessionEntry(),
+            payload: { kind: 'distance', meters: 40, durationSeconds: 35, loadKg: 48 },
+        }))).resolves.toBeUndefined();
+        await assertFails(setDoc(doc(ownerDb, sessionEntryPath), {
+            ...validSessionEntry(),
+            payload: { kind: 'distance', meters: 40, loadKg: -1 },
+        }));
+    });
+
     it('records a recorded athlete choice (D-MCHOICE) while in progress, rejects it once terminal or cross-user, and rejects a malformed one', async () => {
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
         const validChoiceEntry = {
