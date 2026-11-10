@@ -271,19 +271,20 @@
     }
 
     match /users/{userId}/activity_overrides/{activityId} {
+      // Issue #1202 (ADR-0053): the date format, the modality and intensity enums, the rpe
+      // range and the stimulusFocus enum are owned by validateActivityOverride, which
+      // ActivityOverrideService.saveOverride (the only writer, a whole-document setDoc) runs
+      // before every write. The update rule pins date to the stored value and no other rule
+      // reads this document. The activityId binding, key allow-lists, string caps (the
+      // originalIntensityTag cap needs its string type) and timestamp shape stay.
       function hasValidActivityOverride(userId, activityId) {
         let data = request.resource.data;
         return hasOwnedUserId(userId)
           && data.activityId == activityId
-          && isValidActivityDate(data.date)
           && data.keys().hasOnly(['activityId', 'userId', 'date', 'originalType', 'originalIntensityTag', 'overriddenModality', 'overriddenIntensity', 'rpe', 'stimulusFocus', 'notes', 'createdAt', 'updatedAt'])
           && data.keys().hasAll(['activityId', 'userId', 'date', 'originalType', 'originalIntensityTag', 'overriddenModality', 'overriddenIntensity', 'createdAt', 'updatedAt'])
           && isBoundedString(data.originalType, 128)
           && data.originalIntensityTag is string && data.originalIntensityTag.size() <= 64
-          && data.overriddenModality in ['Running', 'Cycling', 'Swimming', 'Strength', 'Mobility', 'Field', 'Cross Training', 'Unknown']
-          && data.overriddenIntensity in ['easy', 'moderate', 'hard', 'unknown']
-          && (!('rpe' in data) || data.rpe == null || (data.rpe is number && data.rpe >= 1 && data.rpe <= 10))
-          && (!('stimulusFocus' in data) || data.stimulusFocus == null || data.stimulusFocus in ['aerobicEndurance', 'thresholdPower', 'vo2MaxPower', 'repeatedSurges', 'sprintPower', 'fatigueResistance', 'maxStrength', 'hypertrophy'])
           && (!('notes' in data) || data.notes == null || (data.notes is string && data.notes.size() <= 2000))
           && data.createdAt is string && data.createdAt.size() > 0
           && data.updatedAt is string && data.updatedAt.size() > 0;
@@ -309,6 +310,15 @@
         return request.resource.data.sessionId == sessionId;
       }
 
+      // Issue #1202 (ADR-0053): the date and sourceRecommendationDate formats, the
+      // completedAt type, the sessionRpe range and schemaVersion are owned by
+      // validateStrengthSession (assertValidStrengthSession), which StrengthSessionService
+      // runs on the new document in startSession (the only create) and on the whole
+      // post-transition document in transitionState before its merge. The merges
+      // (transitionState, saveExercises) only touch state, updatedAt, completedAt,
+      // sessionRpe, notes and exercises, so every other stored value is the create-validated
+      // one; the update rule pins date and startedAt. The state enum and its completedAt
+      // coupling stay: the update immutability reads state.
       function hasValidStrengthSession(userId, sessionId) {
         let data = request.resource.data;
         return hasOwnedUserId(userId)
@@ -316,17 +326,12 @@
           && data.keys().hasOnly(['userId', 'sessionId', 'date', 'startedAt', 'completedAt', 'updatedAt', 'state', 'sourceRecommendationDate', 'exercises', 'sessionRpe', 'notes', 'completionEvidence', 'schemaVersion'])
           && data.keys().hasAll(['userId', 'sessionId', 'date', 'startedAt', 'updatedAt', 'state', 'exercises', 'schemaVersion'])
           && isBoundedString(data.sessionId, 128)
-          && isValidActivityDate(data.date)
           && data.startedAt is string && data.startedAt.size() > 0
           && data.updatedAt is string && data.updatedAt.size() > 0
-          && (!('completedAt' in data) || (data.completedAt is string && data.completedAt.size() > 0))
           && data.state in ['in_progress', 'completed', 'abandoned']
           && ((data.state == 'completed') == ('completedAt' in data))
-          && (!('sourceRecommendationDate' in data) || isValidActivityDate(data.sourceRecommendationDate))
           && data.exercises is list && data.exercises.size() <= 30
-          && (!('sessionRpe' in data) || (data.sessionRpe is number && data.sessionRpe >= 0 && data.sessionRpe <= 10))
-          && (!('notes' in data) || (data.notes is string && data.notes.size() <= 2000))
-          && data.schemaVersion == 1;
+          && (!('notes' in data) || (data.notes is string && data.notes.size() <= 2000));
       }
 
       allow read: if isOwner(userId);

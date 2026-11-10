@@ -9,7 +9,7 @@ import {
 } from '../engine/strengthSessionLifecycle';
 import { parseStrengthSession } from '../persistence/parsers/strengthSession';
 import { isPermissionDeniedError } from '../utils/errors';
-import { areValidLoggedExercises, isValidStrengthInstant } from '../engine/strengthSessionValidation';
+import { areValidLoggedExercises, assertValidStrengthSession, isValidStrengthInstant } from '../engine/strengthSessionValidation';
 
 /**
  * Storage for `users/{userId}/strength_sessions/{sessionId}` (ADR-0021, S1.4). State
@@ -82,6 +82,9 @@ export class StrengthSessionService {
             ...buildNewStrengthSession(userId, docRef.id, startedAt),
             ...(options.sourceRecommendationDate ? { sourceRecommendationDate: options.sourceRecommendationDate } : {}),
         };
+        // Issue #1202 (ADR-0053): the rules no longer check date, sourceRecommendationDate or
+        // schemaVersion; this is the only create path.
+        assertValidStrengthSession(session);
         await setDoc(docRef, session);
         return session;
     }
@@ -127,6 +130,10 @@ export class StrengthSessionService {
             ...(metadata.sessionRpe !== undefined ? { sessionRpe: metadata.sessionRpe } : {}),
             ...(metadata.notes !== undefined ? { notes: metadata.notes } : {}),
         };
+        // Issue #1202 (ADR-0053): owns the sessionRpe range and the completedAt type the rules
+        // no longer check. Validates the whole post-transition document, so a merge of the
+        // lifecycle fields below can only land values that passed here.
+        assertValidStrengthSession(updated);
         const docRef = doc(getDb(), 'users', userId, this.collectionPath, sessionId);
         // Merge only lifecycle fields and optional completion metadata.
         await setDoc(docRef, {

@@ -8,6 +8,8 @@ const firestoreMock = vi.hoisted(() => ({
     getDocs: vi.fn(),
     setDoc: vi.fn(),
     deleteDoc: vi.fn(),
+    query: vi.fn((ref: unknown) => ref),
+    where: vi.fn(),
 }));
 
 vi.mock('firebase/firestore', () => firestoreMock);
@@ -138,6 +140,56 @@ describe('ActivityOverrideService', () => {
         });
     });
 
+    describe('read-side validation (issue #1202)', () => {
+        const badOverride = { ...mockOverride, activityId: 'act-bad', overriddenIntensity: 'extreme' };
+
+        it('getOverride returns null for an unreadable document', async () => {
+            const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+            firestoreMock.getDoc.mockResolvedValueOnce({ exists: () => true, data: () => badOverride });
+            expect(await service.getOverride('user-456', 'act-bad')).toBeNull();
+            expect(warn).toHaveBeenCalled();
+            warn.mockRestore();
+        });
+
+        it('getOverride accepts null optional fields and a missing optional key', async () => {
+            const stored = { ...mockOverride, rpe: null, stimulusFocus: null, notes: null };
+            firestoreMock.getDoc.mockResolvedValueOnce({ exists: () => true, data: () => stored });
+            expect(await service.getOverride('user-456', 'act-123')).toEqual(stored);
+        });
+
+        it('getAllOverrides skips an unreadable document and returns the good one', async () => {
+            const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+            const docs = [{ data: () => mockOverride }, { data: () => badOverride }];
+            firestoreMock.getDocs.mockResolvedValueOnce({ forEach: (cb: (d: (typeof docs)[number]) => void) => docs.forEach(cb) });
+            expect(await service.getAllOverrides('user-456')).toEqual({ 'act-123': mockOverride });
+            warn.mockRestore();
+        });
+
+        it('getOverridesSinceState skips an unreadable document and reports it as an issue', async () => {
+            const docs = [
+                { id: 'act-123', data: () => mockOverride },
+                { id: 'act-bad', data: () => badOverride },
+            ];
+            firestoreMock.getDocs.mockResolvedValueOnce({ forEach: (cb: (d: (typeof docs)[number]) => void) => docs.forEach(cb) });
+            const state = await service.getOverridesSinceState('user-456', '2026-03-01');
+            expect(state).toMatchObject({ status: 'AVAILABLE', data: { 'act-123': mockOverride } });
+            if (state.status !== 'AVAILABLE') throw new Error('expected AVAILABLE');
+            expect(state.data['act-bad']).toBeUndefined();
+            expect(state.issues).toEqual([expect.objectContaining({
+                code: 'invalid-activity-override',
+                field: 'overriddenIntensity',
+                documentPath: 'users/user-456/activity_overrides/act-bad',
+            })]);
+        });
+
+        it('getOverridesSinceState carries no issues when every document is readable', async () => {
+            const docs = [{ id: 'act-123', data: () => mockOverride }];
+            firestoreMock.getDocs.mockResolvedValueOnce({ forEach: (cb: (d: (typeof docs)[number]) => void) => docs.forEach(cb) });
+            const state = await service.getOverridesSinceState('user-456', '2026-03-01');
+            expect(state).toEqual({ status: 'AVAILABLE', data: { 'act-123': mockOverride }, revision: null });
+        });
+    });
+
     describe('saveOverride', () => {
         it('saves override via setDoc and returns true', async () => {
             firestoreMock.setDoc.mockResolvedValueOnce(undefined);
@@ -156,6 +208,23 @@ describe('ActivityOverrideService', () => {
                 mockOverride
             );
             expect(result).toBe(true);
+        });
+
+        it.each([
+            ['an unknown modality', { overriddenModality: 'Walking' }],
+            ['an unknown intensity', { overriddenIntensity: 'extreme' }],
+            ['an out-of-range rpe', { rpe: 11 }],
+            ['a NaN rpe', { rpe: Number.NaN }],
+            ['an unknown stimulusFocus', { stimulusFocus: 'power' }],
+            ['an invalid date', { date: '2026-02-30' }],
+        ])('does not write an override with %s', async (_label, extra) => {
+            const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+            const result = await service.saveOverride('user-456', { ...mockOverride, ...extra } as unknown as ActivityOverride);
+
+            expect(result).toBe(false);
+            expect(firestoreMock.setDoc).not.toHaveBeenCalled();
+            consoleSpy.mockRestore();
         });
 
         it('catches error, logs error, and returns false on exception', async () => {
