@@ -21,12 +21,14 @@ import {
     where,
     orderBy,
     limit,
+    type DocumentReference,
     type Firestore,
     type Transaction,
 } from 'firebase/firestore';
 import { getDb } from '../firebase';
 import type {
     ManualReconciliationDecision,
+    PerformedOccurrenceSourceLink,
     PerformedOccurrenceSourceRef,
     PerformedTrainingOccurrence,
     ReconciliationProvenance,
@@ -40,7 +42,12 @@ import {
     type OccurrenceProjection,
 } from './projectionBuilder';
 import { encodeSourceKeyForDocId, sourceKeyForRef } from './sourceIdentity';
-import { parsePerformedOccurrenceSourceLink, parsePerformedTrainingOccurrence } from './validation';
+import {
+    assertValidPerformedOccurrenceSourceLinkWrite,
+    assertValidPerformedTrainingOccurrenceWrite,
+    parsePerformedOccurrenceSourceLink,
+    parsePerformedTrainingOccurrence,
+} from './validation';
 
 const OCCURRENCES_COLLECTION = 'performedTrainingOccurrences';
 const SOURCE_LINKS_COLLECTION = 'performedOccurrenceSourceLinks';
@@ -162,6 +169,56 @@ function assertSourceCardinality(sourceRefs: readonly PerformedOccurrenceSourceR
     if (structuredCount > 1) {
         throw new Error('Performed occurrence cannot contain more than one structured execution source');
     }
+}
+
+// Every client write of these two collections goes through the three helpers below, which
+// run the write-side validators first (issue #1202 item 1 PR C, ADR-0053): the rules no
+// longer check nested values here. A throw aborts the whole transaction, so no partial
+// write is committed.
+
+function setValidatedOccurrence(
+    transaction: Transaction,
+    ref: DocumentReference,
+    occurrence: PerformedTrainingOccurrence,
+    userId: string,
+): void {
+    assertValidPerformedTrainingOccurrenceWrite(occurrence, userId);
+    transaction.set(ref, occurrence);
+}
+
+function createValidatedSourceLink(
+    transaction: Transaction,
+    ref: DocumentReference,
+    userId: string,
+    sourceRef: PerformedOccurrenceSourceRef,
+    performedOccurrenceId: string,
+    now: string,
+): void {
+    const link: PerformedOccurrenceSourceLink = {
+        schemaVersion: PERFORMED_OCCURRENCE_SCHEMA_VERSION,
+        sourceKey: sourceKeyForRef(sourceRef),
+        sourceKind: sourceRef.kind,
+        userId,
+        performedOccurrenceId,
+        createdAt: now,
+        updatedAt: now,
+    };
+    assertValidPerformedOccurrenceSourceLinkWrite(link, userId);
+    transaction.set(ref, link);
+}
+
+/** The partial update is validated as the document Firestore will store: the stored link
+ * (already parsed inside this transaction) with the patch applied. */
+function repointValidatedSourceLink(
+    transaction: Transaction,
+    ref: DocumentReference,
+    storedLink: PerformedOccurrenceSourceLink,
+    performedOccurrenceId: string,
+    now: string,
+    userId: string,
+): void {
+    assertValidPerformedOccurrenceSourceLinkWrite({ ...storedLink, performedOccurrenceId, updatedAt: now }, userId);
+    transaction.update(ref, { performedOccurrenceId, updatedAt: now });
 }
 
 /** Refresh facts under the source claim's transaction without changing identity or decisions. */
@@ -326,23 +383,15 @@ export class PerformedTrainingOccurrenceRepository {
                 if (!occSnap.exists()) throw new Error(`Linked occurrence ${link.performedOccurrenceId} does not exist`);
                 const occurrence = await this.followMergeChainTx(transaction, userId, parsePerformedTrainingOccurrence(occSnap.data(), userId));
                 const updated = refreshOccurrenceSource(occurrence, facts);
-                if (updated !== occurrence) transaction.set(this.occurrenceRef(userId, occurrence.performedOccurrenceId), updated);
+                if (updated !== occurrence) setValidatedOccurrence(transaction, this.occurrenceRef(userId, occurrence.performedOccurrenceId), updated, userId);
                 return { occurrence: updated, created: false };
             }
 
             const now = new Date().toISOString();
             const projection = buildProjection([facts]);
             const occurrence = newOccurrenceDoc(userId, facts.sourceRef, projection, now, initialReconciliation);
-            transaction.set(this.occurrenceRef(userId, occurrence.performedOccurrenceId), occurrence);
-            transaction.set(linkRef, {
-                schemaVersion: PERFORMED_OCCURRENCE_SCHEMA_VERSION,
-                sourceKey,
-                sourceKind: facts.sourceRef.kind,
-                userId,
-                performedOccurrenceId: occurrence.performedOccurrenceId,
-                createdAt: now,
-                updatedAt: now,
-            });
+            setValidatedOccurrence(transaction, this.occurrenceRef(userId, occurrence.performedOccurrenceId), occurrence, userId);
+            createValidatedSourceLink(transaction, linkRef, userId, facts.sourceRef, occurrence.performedOccurrenceId, now);
             return { occurrence, created: true };
         });
     }
@@ -374,7 +423,7 @@ export class PerformedTrainingOccurrenceRepository {
                 const existingLink = parseSourceLinkForKey(linkSnap.data(), userId, sourceKey);
                 if (existingLink.performedOccurrenceId === occurrence.performedOccurrenceId) {
                     const updated = refreshOccurrenceSource(occurrence, facts);
-                    if (updated !== occurrence) transaction.set(this.occurrenceRef(userId, occurrence.performedOccurrenceId), updated);
+                    if (updated !== occurrence) setValidatedOccurrence(transaction, this.occurrenceRef(userId, occurrence.performedOccurrenceId), updated, userId);
                     return updated;
                 }
                 throw new SourceLinkConflictError(sourceKey, existingLink.performedOccurrenceId, occurrence.performedOccurrenceId);
@@ -391,16 +440,8 @@ export class PerformedTrainingOccurrenceRepository {
                 reconciliation: withStickyReconciliation(occurrence.reconciliation, reconciliation),
                 updatedAt: now,
             };
-            transaction.set(this.occurrenceRef(userId, occurrence.performedOccurrenceId), updated);
-            transaction.set(linkRef, {
-                schemaVersion: PERFORMED_OCCURRENCE_SCHEMA_VERSION,
-                sourceKey,
-                sourceKind: facts.sourceRef.kind,
-                userId,
-                performedOccurrenceId: occurrence.performedOccurrenceId,
-                createdAt: now,
-                updatedAt: now,
-            });
+            setValidatedOccurrence(transaction, this.occurrenceRef(userId, occurrence.performedOccurrenceId), updated, userId);
+            createValidatedSourceLink(transaction, linkRef, userId, facts.sourceRef, occurrence.performedOccurrenceId, now);
             return updated;
         });
     }
@@ -478,9 +519,9 @@ export class PerformedTrainingOccurrenceRepository {
                 },
             };
 
-            transaction.set(occRef, survivor);
-            transaction.set(this.occurrenceRef(userId, detached.performedOccurrenceId), detachedWithDecision);
-            transaction.update(linkRef, { performedOccurrenceId: detached.performedOccurrenceId, updatedAt: now });
+            setValidatedOccurrence(transaction, occRef, survivor, userId);
+            setValidatedOccurrence(transaction, this.occurrenceRef(userId, detached.performedOccurrenceId), detachedWithDecision, userId);
+            repointValidatedSourceLink(transaction, linkRef, link, detached.performedOccurrenceId, now, userId);
 
             return { survivor, detached: detachedWithDecision };
         });
@@ -543,7 +584,7 @@ export class PerformedTrainingOccurrenceRepository {
                 if (link.performedOccurrenceId !== loser.performedOccurrenceId) {
                     throw new SourceLinkConflictError(sourceKey, link.performedOccurrenceId, loser.performedOccurrenceId);
                 }
-                return { sourceLinkRef };
+                return { sourceLinkRef, link };
             }));
 
             const now = new Date().toISOString();
@@ -573,10 +614,10 @@ export class PerformedTrainingOccurrenceRepository {
                 updatedAt: now,
             };
 
-            transaction.set(survivorRef, mergedSurvivor);
-            transaction.set(loserRef, tombstonedLoser);
-            for (const { sourceLinkRef } of loserLinks) {
-                transaction.update(sourceLinkRef, { performedOccurrenceId: survivor.performedOccurrenceId, updatedAt: now });
+            setValidatedOccurrence(transaction, survivorRef, mergedSurvivor, userId);
+            setValidatedOccurrence(transaction, loserRef, tombstonedLoser, userId);
+            for (const { sourceLinkRef, link } of loserLinks) {
+                repointValidatedSourceLink(transaction, sourceLinkRef, link, survivor.performedOccurrenceId, now, userId);
             }
             return mergedSurvivor;
         });
@@ -595,7 +636,7 @@ export class PerformedTrainingOccurrenceRepository {
             if (!snap.exists()) throw new Error(`Occurrence ${performedOccurrenceId} does not exist`);
             const occurrence = parsePerformedTrainingOccurrence(snap.data(), userId);
             const updated: PerformedTrainingOccurrence = { ...occurrence, ...projection, updatedAt: new Date().toISOString() };
-            transaction.set(occRef, updated);
+            setValidatedOccurrence(transaction, occRef, updated, userId);
             return updated;
         });
     }

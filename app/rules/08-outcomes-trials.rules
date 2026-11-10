@@ -4,48 +4,16 @@
       // --- PR 1 (ADR-0034): canonical performed-training-occurrence shadow reconciliation.
       // Written by the client SDK (shadow-mode reconciliation runs in-browser -- see
       // training-occurrence/reconciliationService.ts), so this needs real schema validation
-      // rather than an Admin-SDK-only `allow write: if false` block. Rules cannot iterate an
-      // arbitrary-length list<map>, so `sourceRefs` element validation is bounded to the
-      // first 4 entries (mirrors `hasValidAdditionalSessions` above) -- full structural
-      // correctness for any list this rule can't fully cover is enforced by
-      // `training-occurrence/validation.ts` plus its unit/emulator tests, not by rules
-      // alone.
-      function hasValidPerformedOccurrenceSourceRef(ref) {
-        return ref is map && (
-          (ref.kind == 'structured_execution'
-            && ref.keys().hasOnly(['kind', 'executionId', 'sessionOccurrenceId', 'prescriptionHash', 'fitWorkoutFingerprint', 'fitWorkoutFingerprintKind'])
-            && ref.keys().hasAll(['kind', 'executionId'])
-            && ref.executionId is string
-            && (!('sessionOccurrenceId' in ref) || ref.sessionOccurrenceId is string)
-            && (!('prescriptionHash' in ref) || ref.prescriptionHash is string)
-            && (('fitWorkoutFingerprint' in ref) == ('fitWorkoutFingerprintKind' in ref))
-            && (!('fitWorkoutFingerprint' in ref) || (ref.fitWorkoutFingerprint is string && ref.fitWorkoutFingerprint.matches('^fit-workout-v2:[0-9a-f]{32}$')))
-            && (!('fitWorkoutFingerprintKind' in ref) || ref.fitWorkoutFingerprintKind in ['semantic_definition', 'index_fallback']))
-          || (ref.kind == 'provider_activity'
-            && ref.keys().hasOnly(['kind', 'provider', 'activityId', 'deviceId', 'fitWorkoutFingerprint', 'fitWorkoutFingerprintKind'])
-            && ref.keys().hasAll(['kind', 'provider', 'activityId'])
-            && ref.provider is string
-            && ref.activityId is string
-            && (!('deviceId' in ref) || ref.deviceId is string)
-            && (('fitWorkoutFingerprint' in ref) == ('fitWorkoutFingerprintKind' in ref))
-            && (!('fitWorkoutFingerprint' in ref) || (ref.fitWorkoutFingerprint is string && ref.fitWorkoutFingerprint.matches('^fit-workout-v2:[0-9a-f]{32}$')))
-            && (!('fitWorkoutFingerprintKind' in ref) || ref.fitWorkoutFingerprintKind in ['semantic_definition', 'index_fallback']))
-        );
-      }
-
-      function hasValidReconciliationManualDecision(decision) {
-        return decision is map
-          && decision.decision in ['link', 'unlink', 'keep_separate']
-          && decision.actor is string
-          && decision.decidedAt is string;
-      }
-
-      function hasValidReconciliation(reconciliation) {
-        return reconciliation is map
-          && reconciliation.state in ['single_source', 'matched', 'ambiguous']
-          && (!('confidence' in reconciliation) || (reconciliation.confidence is number && reconciliation.confidence >= 0 && reconciliation.confidence <= 1))
-          && (!('manualDecision' in reconciliation) || hasValidReconciliationManualDecision(reconciliation.manualDecision))
-          && (!('excludedSourceKeys' in reconciliation) || (reconciliation.excludedSourceKeys is list && reconciliation.excludedSourceKeys.size() <= 16));
+      // rather than an Admin-SDK-only `allow write: if false` block.
+      // Issue #1202 (ADR-0053): nested values (schemaVersion, status, optional scalar types,
+      // localDate, each source ref's kind/identity/fingerprint, reconciliation state,
+      // confidence and manual decision) are owned by
+      // `validatePerformedTrainingOccurrenceWrite`, which `repository.ts` runs before every
+      // whole-document write. Rules keep ownership, the id binding, key allow-lists (a
+      // per-ref allow-list over the first 4 refs), the list bounds and timestamp shape.
+      function isBoundedPerformedOccurrenceSourceRef(ref) {
+        return ref is map
+          && ref.keys().hasOnly(['kind', 'executionId', 'sessionOccurrenceId', 'prescriptionHash', 'provider', 'activityId', 'deviceId', 'fitWorkoutFingerprint', 'fitWorkoutFingerprintKind']);
       }
 
       function hasValidPerformedTrainingOccurrence(userId, occurrenceId) {
@@ -54,19 +22,13 @@
           && data.performedOccurrenceId == occurrenceId
           && data.keys().hasOnly(['schemaVersion', 'performedOccurrenceId', 'userId', 'status', 'mergedIntoOccurrenceId', 'startedAt', 'endedAt', 'localDate', 'modality', 'sourceRefs', 'reconciliation', 'createdAt', 'updatedAt'])
           && data.keys().hasAll(['schemaVersion', 'performedOccurrenceId', 'userId', 'status', 'sourceRefs', 'reconciliation', 'createdAt', 'updatedAt'])
-          && data.schemaVersion == 1
-          && data.status in ['active', 'merged']
-          && (!('mergedIntoOccurrenceId' in data) || data.mergedIntoOccurrenceId is string)
-          && (!('startedAt' in data) || data.startedAt is string)
-          && (!('endedAt' in data) || data.endedAt is string)
-          && (!('localDate' in data) || isValidActivityDate(data.localDate))
-          && (!('modality' in data) || data.modality is string)
           && data.sourceRefs is list && data.sourceRefs.size() >= 1 && data.sourceRefs.size() <= 4
-          && (data.sourceRefs.size() < 1 || hasValidPerformedOccurrenceSourceRef(data.sourceRefs[0]))
-          && (data.sourceRefs.size() < 2 || hasValidPerformedOccurrenceSourceRef(data.sourceRefs[1]))
-          && (data.sourceRefs.size() < 3 || hasValidPerformedOccurrenceSourceRef(data.sourceRefs[2]))
-          && (data.sourceRefs.size() < 4 || hasValidPerformedOccurrenceSourceRef(data.sourceRefs[3]))
-          && hasValidReconciliation(data.reconciliation)
+          && isBoundedPerformedOccurrenceSourceRef(data.sourceRefs[0])
+          && (data.sourceRefs.size() < 2 || isBoundedPerformedOccurrenceSourceRef(data.sourceRefs[1]))
+          && (data.sourceRefs.size() < 3 || isBoundedPerformedOccurrenceSourceRef(data.sourceRefs[2]))
+          && (data.sourceRefs.size() < 4 || isBoundedPerformedOccurrenceSourceRef(data.sourceRefs[3]))
+          && data.reconciliation is map
+          && (!('excludedSourceKeys' in data.reconciliation) || (data.reconciliation.excludedSourceKeys is list && data.reconciliation.excludedSourceKeys.size() <= 16))
           && data.createdAt is string
           && data.updatedAt is string;
       }
@@ -86,15 +48,15 @@
       // (`training-occurrence/sourceIdentity.ts#encodeSourceKeyForDocId`) -- rules cannot
       // re-derive that encoding, so identity integrity relies on the app always deriving the
       // doc ID deterministically, not on a rules-level equality check here.
+      // Issue #1202 (ADR-0053): schemaVersion, the sourceKind enum and performedOccurrenceId
+      // are owned by `validatePerformedOccurrenceSourceLinkWrite`, which `repository.ts` runs
+      // before every create and on the merged document before every re-pointing update.
       function hasValidPerformedOccurrenceSourceLink(userId) {
         let data = request.resource.data;
         return hasOwnedUserId(userId)
           && data.keys().hasOnly(['schemaVersion', 'sourceKey', 'sourceKind', 'userId', 'performedOccurrenceId', 'createdAt', 'updatedAt'])
           && data.keys().hasAll(['schemaVersion', 'sourceKey', 'sourceKind', 'userId', 'performedOccurrenceId', 'createdAt', 'updatedAt'])
-          && data.schemaVersion == 1
           && data.sourceKey is string && data.sourceKey.size() > 0
-          && data.sourceKind in ['structured_execution', 'provider_activity']
-          && data.performedOccurrenceId is string && data.performedOccurrenceId.size() > 0
           && data.createdAt is string
           && data.updatedAt is string;
       }
@@ -108,6 +70,7 @@
         && keepsOwnership(userId)
         && request.resource.data.sourceKey == resource.data.sourceKey
         && request.resource.data.sourceKind == resource.data.sourceKind
+        && request.resource.data.schemaVersion == resource.data.schemaVersion
         && keepsCreatedAt();
     }
 

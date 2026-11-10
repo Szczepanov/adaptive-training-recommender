@@ -47,6 +47,10 @@ function validSourceLink() {
     };
 }
 
+function withoutKey(document: Record<string, unknown>, key: string): Record<string, unknown> {
+    return Object.fromEntries(Object.entries(document).filter(([name]) => name !== key));
+}
+
 emulatorDescribe('Performed training occurrence rules (ADR-0034)', () => {
     beforeAll(async () => {
         testEnvironment = await initializeTestEnvironment({
@@ -99,20 +103,64 @@ emulatorDescribe('Performed training occurrence rules (ADR-0034)', () => {
         }));
     });
 
-    it('rejects malformed occurrence documents', async () => {
+    it('rejects occurrence documents that break ownership, id binding, key allow-lists or bounds', async () => {
         const db = testEnvironment.authenticatedContext(ownerId).firestore();
         const ref = doc(db, occurrencePath);
 
         await assertFails(setDoc(ref, { ...validOccurrence(), userId: otherUserId }));
         await assertFails(setDoc(ref, { ...validOccurrence(), performedOccurrenceId: 'different-id' }));
-        await assertFails(setDoc(ref, { ...validOccurrence(), status: 'deleted' }));
         await assertFails(setDoc(ref, { ...validOccurrence(), sourceRefs: [] }));
-        await assertFails(setDoc(ref, { ...validOccurrence(), sourceRefs: [{ kind: 'unknown_kind' }] }));
-        await assertFails(setDoc(ref, { ...validOccurrence(), reconciliation: { state: 'not_a_real_state' } }));
-        await assertFails(setDoc(ref, { ...validOccurrence(), schemaVersion: 2 }));
+        await assertFails(setDoc(ref, {
+            ...validOccurrence(),
+            sourceRefs: Array.from({ length: 5 }, (_, index) => ({ kind: 'provider_activity', provider: 'garmin', activityId: `act-${index}` })),
+        }));
+        await assertFails(setDoc(ref, { ...validOccurrence(), sourceRefs: ['structured_execution:exec-1'] }));
+        await assertFails(setDoc(ref, { ...validOccurrence(), sourceRefs: [{ kind: 'structured_execution', executionId: 'exec-1', extra: true }] }));
+        await assertFails(setDoc(ref, {
+            ...validOccurrence(),
+            sourceRefs: [
+                { kind: 'structured_execution', executionId: 'exec-1' },
+                { kind: 'provider_activity', provider: 'garmin', activityId: 'act-1' },
+                { kind: 'provider_activity', provider: 'garmin', activityId: 'act-2' },
+                { kind: 'provider_activity', provider: 'garmin', activityId: 'act-3', extra: true },
+            ],
+        }));
+        await assertFails(setDoc(ref, { ...validOccurrence(), reconciliation: 'single_source' }));
+        await assertFails(setDoc(ref, {
+            ...validOccurrence(),
+            reconciliation: { state: 'matched', excludedSourceKeys: Array.from({ length: 17 }, (_, index) => `k${index}`) },
+        }));
+        await assertFails(setDoc(ref, { ...validOccurrence(), unexpected: true }));
+        await assertFails(setDoc(ref, withoutKey(validOccurrence(), 'status')));
+        await assertFails(setDoc(ref, { ...validOccurrence(), createdAt: 1 }));
     });
 
-    it('validates fitWorkoutFingerprint and fitWorkoutFingerprintKind on sourceRefs', async () => {
+    it('accepts nested values now owned by validatePerformedTrainingOccurrenceWrite (#1202, ADR-0053)', async () => {
+        // These values are rejected by `training-occurrence/validation.ts`
+        // `validatePerformedTrainingOccurrenceWrite`, which `repository.ts` runs before every
+        // write; the rules no longer duplicate the checks.
+        const db = testEnvironment.authenticatedContext(ownerId).firestore();
+        // Each case is a fresh create on its own document, so the update pins
+        // (schemaVersion, createdAt) are not what is being exercised.
+        const cases: Array<Record<string, unknown>> = [
+            { status: 'deleted' },
+            { sourceRefs: [{ kind: 'unknown_kind' }] },
+            { reconciliation: { state: 'not_a_real_state' } },
+            { reconciliation: { state: 'matched', confidence: 1.5 } },
+            { localDate: '2026-02-30' },
+            { schemaVersion: 2 },
+        ];
+        for (const [index, overrides] of cases.entries()) {
+            const id = `pto-moved-${index}`;
+            await assertSucceeds(setDoc(doc(db, `users/${ownerId}/performedTrainingOccurrences/${id}`), {
+                ...validOccurrence(),
+                performedOccurrenceId: id,
+                ...overrides,
+            }));
+        }
+    });
+
+    it('accepts sourceRef FIT fingerprint values now owned by validatePerformedTrainingOccurrenceWrite (#1202, ADR-0053)', async () => {
         const db = testEnvironment.authenticatedContext(ownerId).firestore();
         const ref = doc(db, occurrencePath);
         const validFp = 'fit-workout-v2:0123456789abcdef0123456789abcdef';
@@ -150,8 +198,8 @@ emulatorDescribe('Performed training occurrence rules (ADR-0034)', () => {
             updatedAt: '2026-08-26T07:45:00.000Z',
         }));
 
-        // Rejects malformed fingerprint format
-        await assertFails(updateDoc(ref, {
+        // Malformed fingerprint format: rejected by the TS validator, accepted here
+        await assertSucceeds(updateDoc(ref, {
             sourceRefs: [
                 {
                     kind: 'structured_execution',
@@ -162,8 +210,8 @@ emulatorDescribe('Performed training occurrence rules (ADR-0034)', () => {
             ],
         }));
 
-        // Rejects invalid kind
-        await assertFails(updateDoc(ref, {
+        // Invalid fingerprint kind: rejected by the TS validator, accepted here
+        await assertSucceeds(updateDoc(ref, {
             sourceRefs: [
                 {
                     kind: 'structured_execution',
@@ -174,8 +222,8 @@ emulatorDescribe('Performed training occurrence rules (ADR-0034)', () => {
             ],
         }));
 
-        // Fingerprint and evidence kind are one provenance unit.
-        await assertFails(updateDoc(ref, {
+        // Fingerprint/kind pairing: enforced by the TS validator, accepted here
+        await assertSucceeds(updateDoc(ref, {
             sourceRefs: [
                 {
                     kind: 'structured_execution',
@@ -184,7 +232,7 @@ emulatorDescribe('Performed training occurrence rules (ADR-0034)', () => {
                 },
             ],
         }));
-        await assertFails(updateDoc(ref, {
+        await assertSucceeds(updateDoc(ref, {
             sourceRefs: [
                 {
                     kind: 'provider_activity',
@@ -227,13 +275,42 @@ emulatorDescribe('Performed training occurrence rules (ADR-0034)', () => {
         await assertFails(deleteDoc(otherRef));
     });
 
-    it('keeps sourceKey, sourceKind and createdAt immutable on a source-link update', async () => {
+    it('keeps sourceKey, sourceKind, schemaVersion and createdAt immutable on a source-link update', async () => {
         const db = testEnvironment.authenticatedContext(ownerId).firestore();
         const ref = doc(db, sourceLinkPath);
         await assertSucceeds(setDoc(ref, validSourceLink()));
 
+        await assertFails(updateDoc(ref, { schemaVersion: 2 }));
         await assertFails(updateDoc(ref, { sourceKey: 'provider_activity:garmin:act-1' }));
         await assertFails(updateDoc(ref, { sourceKind: 'provider_activity' }));
         await assertFails(updateDoc(ref, { createdAt: '2026-08-26T09:00:00.000Z' }));
+    });
+
+    it('rejects source links that break ownership, key allow-lists or the sourceKey bound', async () => {
+        const db = testEnvironment.authenticatedContext(ownerId).firestore();
+        const ref = doc(db, sourceLinkPath);
+
+        await assertFails(setDoc(ref, { ...validSourceLink(), userId: otherUserId }));
+        await assertFails(setDoc(ref, { ...validSourceLink(), sourceKey: '' }));
+        await assertFails(setDoc(ref, { ...validSourceLink(), unexpected: true }));
+        await assertFails(setDoc(ref, withoutKey(validSourceLink(), 'performedOccurrenceId')));
+        await assertFails(setDoc(ref, { ...validSourceLink(), updatedAt: 1 }));
+    });
+
+    it('accepts source-link values now owned by validatePerformedOccurrenceSourceLinkWrite (#1202, ADR-0053)', async () => {
+        // `training-occurrence/validation.ts` `validatePerformedOccurrenceSourceLinkWrite`
+        // rejects these; `repository.ts` runs it before every create and re-pointing update.
+        const db = testEnvironment.authenticatedContext(ownerId).firestore();
+        const cases: Array<Record<string, unknown>> = [
+            { schemaVersion: 2 },
+            { sourceKind: 'manual' },
+            { performedOccurrenceId: '' },
+        ];
+        for (const [index, overrides] of cases.entries()) {
+            await assertSucceeds(setDoc(doc(db, `users/${ownerId}/performedOccurrenceSourceLinks/moved-${index}`), {
+                ...validSourceLink(),
+                ...overrides,
+            }));
+        }
     });
 });
