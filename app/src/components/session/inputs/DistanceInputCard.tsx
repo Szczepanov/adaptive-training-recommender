@@ -1,13 +1,17 @@
 import React, { useState } from 'react';
 import type { SessionStep, DistanceEntryPayload } from '../../../sessions/models';
+import { stepAcceptsMassLoad } from '../../../sessions/stepLoadCapability';
 
 interface DistanceInputCardProps {
     step: SessionStep;
+    /** Last logged load for this step, else the prescribed fixed mass. */
+    suggestedLoadKg?: number;
     onSubmit: (payload: DistanceEntryPayload) => void;
 }
 
 export const DistanceInputCard: React.FC<DistanceInputCardProps> = ({
     step,
+    suggestedLoadKg,
     onSubmit,
 }) => {
     const dose = step.dose;
@@ -17,6 +21,8 @@ export const DistanceInputCard: React.FC<DistanceInputCardProps> = ({
 
     const [meters, setMeters] = useState<string>(String(defaultMeters));
     const [seconds, setSeconds] = useState<string>('');
+    const showLoad = stepAcceptsMassLoad(step);
+    const [loadKg, setLoadKg] = useState<string>(suggestedLoadKg !== undefined ? String(suggestedLoadKg) : '');
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
@@ -24,10 +30,13 @@ export const DistanceInputCard: React.FC<DistanceInputCardProps> = ({
         if (isNaN(parsedMeters) || parsedMeters <= 0) return;
 
         const parsedSec = seconds.trim().length > 0 ? parseFloat(seconds) : undefined;
+        const parsedLoad = showLoad && loadKg.trim().length > 0 ? parseFloat(loadKg) : undefined;
+        if (parsedLoad !== undefined && (isNaN(parsedLoad) || parsedLoad < 0)) return;
         onSubmit({
             kind: 'distance',
             meters: parsedMeters,
             ...(parsedSec !== undefined ? { durationSeconds: parsedSec } : {}),
+            ...(parsedLoad !== undefined ? { loadKg: parsedLoad } : {}),
         });
     };
 
@@ -60,6 +69,21 @@ export const DistanceInputCard: React.FC<DistanceInputCardProps> = ({
                         aria-label="Split duration in seconds"
                     />
                 </label>
+                {showLoad && (
+                    <label className="input-group">
+                        <span className="input-label">Load (kg)</span>
+                        <input
+                            type="number"
+                            step="0.5"
+                            min="0"
+                            placeholder="0"
+                            value={loadKg}
+                            onChange={e => setLoadKg(e.target.value)}
+                            className="session-input-box"
+                            aria-label="Load in kilograms"
+                        />
+                    </label>
+                )}
             </div>
 
             <button type="submit" className="log-set-btn" aria-label="Log distance split">

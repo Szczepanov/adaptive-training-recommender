@@ -120,7 +120,7 @@ function formatPerformed(payload: SessionEntryPayload): string {
     case 'duration':
       return `${formatClock(payload.seconds)}${payload.loadKg ? ` @ ${payload.loadKg} kg` : ''}`;
     case 'distance':
-      return `${payload.meters} m${payload.durationSeconds !== undefined ? ` in ${formatClock(payload.durationSeconds)}` : ''}`;
+      return `${payload.meters} m${payload.durationSeconds !== undefined ? ` in ${formatClock(payload.durationSeconds)}` : ''}${payload.loadKg ? ` @ ${payload.loadKg} kg` : ''}`;
     case 'sprint':
       return `${payload.meters} m in ${payload.splitSeconds.toFixed(2)} s`;
     case 'jump_attempt':
@@ -168,9 +168,12 @@ function StructuredDetail({ structured }: { structured: NonNullable<CompletedWor
         <div className="completed-workout-step" key={step.stepId}>
           <div className="completed-workout-step-head">
             <strong>{step.title}</strong>
-            <span className="completed-workout-step-status">{stepStatus(comparisonByStepId.get(step.stepId))}</span>
+            <span className="completed-workout-step-status">
+              {step.unplanned ? 'added during session' : stepStatus(comparisonByStepId.get(step.stepId))}
+            </span>
           </div>
-          <p className="completed-workout-step-target">Target: {formatTarget(step.prescribed)}</p>
+          {step.plannedTitle && <p className="completed-workout-step-swap">Swapped from {step.plannedTitle}</p>}
+          {!step.unplanned && <p className="completed-workout-step-target">Target: {formatTarget(step.prescribed)}</p>}
           {step.sets.length > 0 && (
             <ol className="completed-workout-sets" aria-label={`${step.title} sets`}>
               {step.sets.map(set => {

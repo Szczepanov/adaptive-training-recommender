@@ -50,6 +50,10 @@ import { runExclusive } from '../../utils/runExclusive';
 import { loggedSetLabel } from '../../sessions/setUndoState';
 import { LoggedSetUndoBanner } from './LoggedSetUndoBanner';
 
+
+/** Blank exercise the add-exercise dialog fills in from the chosen exercise's catalog facets. */
+const ADD_EXERCISE_BASE_STEP: SessionStep = { id: 'new-added-exercise', kind: 'exercise' };
+
 const AVAILABLE_FIXTURES: SessionDefinition[] = [
     fixture01 as unknown as SessionDefinition,
     fixture02 as unknown as SessionDefinition,
@@ -288,6 +292,7 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
     }, [companionPrompt]);
     const [soundMuted, setSoundMuted] = useState<boolean>(() => !isSoundEnabled());
     const [showSwapModal, setShowSwapModal] = useState<boolean>(false);
+    const [showAddExerciseModal, setShowAddExerciseModal] = useState<boolean>(false);
     const [showSaveTemplateModal, setShowSaveTemplateModal] = useState<boolean>(false);
     const [customTemplateTitle, setCustomTemplateTitle] = useState<string>('');
     const [saveTemplateSuccess, setSaveTemplateSuccess] = useState<string | null>(null);
@@ -375,8 +380,13 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
 
     const suggestedLoadKg = useMemo(() => {
         if (!activeStep) return undefined;
-        if (latestActiveEntry?.payload.kind === 'duration' && latestActiveEntry.payload.loadKg !== undefined) {
+        if ((latestActiveEntry?.payload.kind === 'duration' || latestActiveEntry?.payload.kind === 'distance')
+            && latestActiveEntry.payload.loadKg !== undefined) {
             return latestActiveEntry.payload.loadKg;
+        }
+        // A prescribed fixed mass (e.g. "2 x 24 kg" carry) prefills the load field; ranges use the floor.
+        if (activeStep.load?.kind === 'mass') {
+            return typeof activeStep.load.kg === 'number' ? activeStep.load.kg : activeStep.load.kg.min;
         }
         return undefined;
     }, [activeStep, latestActiveEntry]);
@@ -591,10 +601,10 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
     useEffect(() => {
         if (!focusNextStep) return;
         setFocusNextStep(false);
-        if (showSwapModal || showCompletionSheet || showSaveTemplateModal) return;
+        if (showSwapModal || showAddExerciseModal || showCompletionSheet || showSaveTemplateModal) return;
         activeHeadingRef.current?.focus();
         activeHeadingRef.current?.scrollIntoView?.({ behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
-    }, [focusNextStep, runner.activeBlockIndex, runner.activeStepIndex, showCompletionSheet, showSaveTemplateModal, showSwapModal]);
+    }, [focusNextStep, runner.activeBlockIndex, runner.activeStepIndex, showAddExerciseModal, showCompletionSheet, showSaveTemplateModal, showSwapModal]);
 
     // A choice-driven end_session (D-MCHOICE) routes straight to the completion sheet
     // rather than requiring the athlete to step through every now-optional block.
@@ -1166,6 +1176,7 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                                 <DistanceInputCard
                                     key={activeStep.id}
                                     step={activeStep}
+                                    suggestedLoadKg={suggestedLoadKg}
                                     onSubmit={handleEntrySubmit}
                                 />
                             ) : (
@@ -1234,7 +1245,7 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                                                         <span className="set-metrics">{entry.side === 'left' || entry.side === 'right' ? `${entry.side} · ` : ''}{entry.payload.seconds}s hold</span>
                                                     )}
                                                     {entry.payload.kind === 'distance' && (
-                                                        <span className="set-metrics">{entry.payload.meters}m {entry.payload.durationSeconds ? `(${entry.payload.durationSeconds}s)` : ''}</span>
+                                                        <span className="set-metrics">{entry.payload.loadKg ? `${entry.payload.loadKg} kg × ` : ''}{entry.payload.meters}m {entry.payload.durationSeconds ? `(${entry.payload.durationSeconds}s)` : ''}</span>
                                                     )}
                                                     {entry.payload.kind === 'checkoff' && (
                                                         <span className="set-metrics">✓ Completed</span>
@@ -1314,6 +1325,13 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                         </div>
                     </div>
                 ))}
+                <button
+                    type="button"
+                    className="add-exercise-btn"
+                    onClick={() => setShowAddExerciseModal(true)}
+                >
+                    + Add exercise
+                </button>
             </nav>
 
             {/* Bottom Actions */}
@@ -1383,6 +1401,20 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                         setShowSwapModal(false);
                     }}
                     onClose={() => setShowSwapModal(false)}
+                />
+            )}
+
+            {/* Add an exercise performed beyond the plan */}
+            {showAddExerciseModal && (
+                <ExerciseSwapModal
+                    step={ADD_EXERCISE_BASE_STEP}
+                    mode="add"
+                    onSwap={(exercise) => {
+                        runner.addExerciseStep(exercise);
+                        setShowAddExerciseModal(false);
+                        setFocusNextStep(true);
+                    }}
+                    onClose={() => setShowAddExerciseModal(false)}
                 />
             )}
 
