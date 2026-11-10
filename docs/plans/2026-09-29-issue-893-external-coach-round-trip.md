@@ -426,7 +426,7 @@ and #945 (sessionId contract bounds) are non-blocking hardening tracked separate
 [round-trip E2E]: ../../app/tests/e2e/external-coach-round-trip.pw.ts
 [revision E2E]: ../../app/tests/e2e/external-plan-revisions.pw.ts
 [state E2E]: ../../app/tests/e2e/external-plan-execution-states.pw.ts
-[verdict E2E]: ../../app/tests/e2e/external-verdict.pw.ts
+[verdict E2E]: ../../app/tests/e2e/mobile/external-verdict.pw.ts
 [mobile verdict E2E]: ../../app/tests/e2e/mobile/external-verdict.pw.ts
 
 # 6. Verification and closeout record

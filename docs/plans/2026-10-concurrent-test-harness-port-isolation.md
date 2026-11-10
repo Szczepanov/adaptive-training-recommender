@@ -194,6 +194,15 @@ measured, and reverted:
 If socket load becomes a real constraint, the next lever is the app's Firestore transport in
 E2E mode, not the support helpers; that would need its own plan.
 
+Re-measured 2026-11-11 after `net::ERR_NO_BUFFER_SPACE` (Windows `WSAENOBUFS`: local ephemeral
+ports exhausted by connections held in `TIME_WAIT`) began failing `page.goto` in E2E runs. One
+full serial suite opened 6,800–8,700 distinct connections to the Firestore emulator; the spread
+between runs of the same code was larger than any helper change. Reusing one `inspectAthlete`
+client per test (public API only) again produced no measurable drop and was not kept. Other
+localhost traffic outside the harness ranges (a short-lived server on a dynamic port receiving
+1,300–1,600 connections in two minutes) was seen during both investigations, so the shared
+machine load, not one suite, decides when the port pool runs out.
+
 ### P5 — Orphan visibility and reaping — Implemented
 
 - `npm run harness:status`: list leases with worktree, suite, ports, owner pid, alive/stale, and

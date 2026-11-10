@@ -1,3 +1,4 @@
+import type { Page } from '@playwright/test';
 import { expect, test } from './support/test';
 import {
   completeTypicalCheckin,
@@ -8,6 +9,16 @@ import {
 } from './support/athlete';
 import { ASSESSMENT_CSV_HEADERS } from '../../src/observations/assessmentCsvExport';
 import { buildOpenBarAnalysis } from '../../src/observations/fixtures/openBarAnalysisFixtures';
+
+async function openTestingScreen(page: Page): Promise<void> {
+  await page.locator('.navbar-desktop-menu').getByRole('button', { name: /More/ }).click();
+  await page.locator('#desktop-more-panel').getByRole('button', { name: /Testing/ }).click();
+}
+
+async function finishAndSaveSession(page: Page): Promise<void> {
+  await page.getByRole('button', { name: /Finish Session \(/ }).click();
+  await page.getByRole('button', { name: 'Finish & Save Session', exact: true }).click();
+}
 
 /** Minimal single-rep WL Analysis per-frame export: descent then one concentric ascent. */
 function wlSingleRepCsv(weightKg: number, tags: string, ascentVelocity: number, peakVelocity: number): string {
@@ -49,13 +60,11 @@ test('CMJ capture ignores unused carry-forward rows and focuses missing required
   const date = await seedRecoverySnapshot(athlete);
   await signInThroughUi(page, athlete);
   await completeTypicalCheckin(page, athlete, date);
-  await page.locator('.navbar-desktop-menu').getByRole('button', { name: /More/ }).click();
-  await page.locator('#desktop-more-panel').getByRole('button', { name: /Testing/ }).click();
+  await openTestingScreen(page);
   await page.getByRole('button', { name: 'Wall-touch countermovement jump · rev 2' }).click();
   await page.getByLabel(/equipment_setup_id/).fill('wall-a');
   await page.getByRole('button', { name: 'Confirm lock and start' }).click();
-  await page.getByRole('button', { name: /Finish Session \(/ }).click();
-  await page.getByRole('button', { name: 'Finish & Save Session', exact: true }).click();
+  await finishAndSaveSession(page);
 
   const capture = page.locator('.trial-capture-section');
   const rows = capture.locator('.trial-row-card');
@@ -92,16 +101,14 @@ test('raw result capture: abandonment requires confirmation and return preserves
   const date = await seedRecoverySnapshot(athlete);
   await signInThroughUi(page, athlete);
   await completeTypicalCheckin(page, athlete, date);
-  await page.locator('.navbar-desktop-menu').getByRole('button', { name: /More/ }).click();
-  await page.locator('#desktop-more-panel').getByRole('button', { name: /Testing/ }).click();
+  await openTestingScreen(page);
   await page.getByRole('button', { name: 'Cycling 20-minute TT · rev 1' }).click();
   await page.getByLabel(/power_source_id/).fill('trainer-power');
   await page.getByLabel(/bike_setup_id/).fill('bike-a');
   await page.getByLabel(/test_environment/).fill('indoor');
   await page.getByLabel(/course_or_trainer_id/).fill('trainer-a');
   await page.getByRole('button', { name: 'Confirm lock and start' }).click();
-  await page.getByRole('button', { name: /Finish Session \(/ }).click();
-  await page.getByRole('button', { name: 'Finish & Save Session', exact: true }).click();
+  await finishAndSaveSession(page);
   const capture = page.locator('.testing-card').filter({ has: page.getByRole('heading', { name: 'Record raw result' }) });
   await expect(capture).toBeVisible();
   const attemptId = await capture.locator('code').innerText();
@@ -134,8 +141,7 @@ test('raw result capture: abandonment requires confirmation and return preserves
   await expect(page.getByRole('heading', { name: 'Test Setup & Station' })).toBeVisible();
   await page.getByRole('button', { name: 'Confirm lock and start' }).click();
   await expect(page.locator('.testing-lock-summary')).not.toContainText(attemptId);
-  await page.getByRole('button', { name: /Finish Session \(/ }).click();
-  await page.getByRole('button', { name: 'Finish & Save Session', exact: true }).click();
+  await finishAndSaveSession(page);
   await expect(capture).toBeVisible();
   await expect(capture.getByRole('button', { name: 'Abandon attempt', exact: true })).toBeVisible();
   await expect(capture.getByRole('alert')).toHaveCount(0);
@@ -146,14 +152,12 @@ test('fixed-load velocity: import, reload, offline retry, history and exports pr
   const date = await seedRecoverySnapshot(athlete);
   await signInThroughUi(page, athlete);
   await completeTypicalCheckin(page, athlete, date);
-  await page.locator('.navbar-desktop-menu').getByRole('button', { name: /More/ }).click();
-  await page.locator('#desktop-more-panel').getByRole('button', { name: /Testing/ }).click();
+  await openTestingScreen(page);
   await page.getByRole('button', { name: 'Bench press fixed-load velocity · rev 1' }).click();
   await page.getByLabel(/test_load_kg/).fill('60');
   await page.getByLabel(/equipment_setup_id/).fill('bench-a-camera-a');
   await page.getByRole('button', { name: 'Confirm lock and start' }).click();
-  await page.getByRole('button', { name: /Finish Session \(/ }).click();
-  await page.getByRole('button', { name: 'Finish & Save Session', exact: true }).click();
+  await finishAndSaveSession(page);
   await expect(page.getByRole('heading', { name: 'Record assessment trials' })).toBeVisible();
   const methodInput = page.locator('.attempt-setup-details').getByLabel(/measurement_method_id/);
   await expect(methodInput).toBeEditable();
@@ -251,8 +255,7 @@ test('fixed-load velocity: import, reload, offline retry, history and exports pr
   expect(evidence.protocols.some((item: { id: string }) => item.id === 'strength-bench-press-fixed-load-velocity')).toBe(true);
   expect(await readSessionExecutions(athlete)).toHaveLength(1);
   await page.getByRole('button', { name: 'Done', exact: true }).click();
-  await page.locator('.navbar-desktop-menu').getByRole('button', { name: /More/ }).click();
-  await page.locator('#desktop-more-panel').getByRole('button', { name: /Testing/ }).click();
+  await openTestingScreen(page);
   await page.getByRole('tab', { name: 'History' }).click();
   await expect(page.locator('.assessment-series-card', { hasText: 'Bench press fixed-load velocity' })).toContainText('0.815');
   const csvDownload = page.waitForEvent('download');
@@ -272,9 +275,7 @@ test('physical capital assessment: standing broad jump trial capture, checkpoint
   await completeTypicalCheckin(page, athlete, date);
 
   // Navigate to Testing via desktop More menu
-  const nav = page.locator('.navbar-desktop-menu');
-  await nav.getByRole('button', { name: /More/ }).click();
-  await page.locator('#desktop-more-panel').getByRole('button', { name: /Testing/ }).click();
+  await openTestingScreen(page);
   await expect(page).toHaveURL(/\?screen=testing$/);
 
   // Stage 0: History tab initially shows empty state
@@ -352,8 +353,7 @@ test('physical capital assessment: standing broad jump trial capture, checkpoint
   await page.getByRole('button', { name: 'Done' }).click();
 
   // Check History tab reflects the baseline attempt
-  await nav.getByRole('button', { name: /More/ }).click();
-  await page.locator('#desktop-more-panel').getByRole('button', { name: /Testing/ }).click();
+  await openTestingScreen(page);
   await expect(page).toHaveURL(/\?screen=testing$/);
   await page.getByRole('tab', { name: 'History' }).click();
 
@@ -393,8 +393,7 @@ test('physical capital assessment: standing broad jump trial capture, checkpoint
   await page.getByRole('button', { name: 'Done' }).click();
 
   // Check History tab reflects the checkpoint and progress delta
-  await nav.getByRole('button', { name: /More/ }).click();
-  await page.locator('#desktop-more-panel').getByRole('button', { name: /Testing/ }).click();
+  await openTestingScreen(page);
   await expect(page).toHaveURL(/\?screen=testing$/);
   await page.getByRole('tab', { name: 'History' }).click();
 
@@ -434,8 +433,7 @@ test('physical capital assessment: standing broad jump trial capture, checkpoint
   await page.getByRole('button', { name: 'Done' }).click();
 
   // Inspect History tab with comparability split
-  await nav.getByRole('button', { name: /More/ }).click();
-  await page.locator('#desktop-more-panel').getByRole('button', { name: /Testing/ }).click();
+  await openTestingScreen(page);
   await expect(page).toHaveURL(/\?screen=testing$/);
   await page.getByRole('tab', { name: 'History' }).click();
 
@@ -506,9 +504,7 @@ test('physical capital assessment: back-squat WL Analysis CSV import fills trial
   await signInThroughUi(page, athlete);
   await completeTypicalCheckin(page, athlete, date);
 
-  const nav = page.locator('.navbar-desktop-menu');
-  await nav.getByRole('button', { name: /More/ }).click();
-  await page.locator('#desktop-more-panel').getByRole('button', { name: /Testing/ }).click();
+  await openTestingScreen(page);
   await expect(page).toHaveURL(/\?screen=testing$/);
   await page.getByRole('tab', { name: 'Protocols' }).click();
 
@@ -588,8 +584,7 @@ test('physical capital assessment: back-squat WL Analysis CSV import fills trial
   await page.getByRole('button', { name: 'Done' }).click();
 
   // History detail retains the imported velocities on the trial rows.
-  await nav.getByRole('button', { name: /More/ }).click();
-  await page.locator('#desktop-more-panel').getByRole('button', { name: /Testing/ }).click();
+  await openTestingScreen(page);
   await page.getByRole('tab', { name: 'History' }).click();
   const squatCard = page.locator('.assessment-series-card', { hasText: 'Back squat 1RM' });
   await expect(squatCard.locator('.headline-stat', { hasText: 'Baseline' })).toContainText('120 kg');
@@ -605,15 +600,12 @@ test('physical capital assessment: OpenBar JSON import validates, fills and save
   const date = await seedRecoverySnapshot(athlete);
   await signInThroughUi(page, athlete);
   await completeTypicalCheckin(page, athlete, date);
-  const nav = page.locator('.navbar-desktop-menu');
-  await nav.getByRole('button', { name: /More/ }).click();
-  await page.locator('#desktop-more-panel').getByRole('button', { name: /Testing/ }).click();
+  await openTestingScreen(page);
   await page.getByRole('tab', { name: 'Protocols' }).click();
   await page.getByRole('button', { name: 'Back squat 1RM · rev 2' }).click();
   await page.getByLabel(/equipment_setup_id/).fill('rack-a · same shoes · same belt');
   await page.getByRole('button', { name: 'Confirm lock and start' }).click();
-  await page.getByRole('button', { name: /Finish Session \(/ }).click();
-  await page.getByRole('button', { name: 'Finish & Save Session', exact: true }).click();
+  await finishAndSaveSession(page);
   await expect(page.getByRole('heading', { name: 'Record assessment trials' })).toBeVisible();
   const input = page.getByLabel('Choose OpenBar analysis files');
   const wrong = buildOpenBarAnalysis();

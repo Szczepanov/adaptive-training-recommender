@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { doc, setDoc } from 'firebase/firestore';
+import type { Page } from '@playwright/test';
 import { expect, test } from './support/test';
 import { completeTypicalCheckin, provisionAthlete, seedRecoverySnapshot, signInThroughUi } from './support/athlete';
 import { seedWithRulesDisabled } from './support/emulator';
@@ -98,52 +99,60 @@ async function seedReview(userId: string, corruptHash = false) {
   return { evaluationHash, metricId };
 }
 
-for (const width of [1440, 390]) {
-  test(`block review exports exact frozen evidence and limitations at ${width}px`, async ({ page }, testInfo) => {
-    await page.setViewportSize({ width, height: 900 });
-    const athlete = await provisionAthlete();
-    const date = await seedRecoverySnapshot(athlete);
-    const evidence = await seedReview(athlete.userId);
-    await signInThroughUi(page, athlete);
-    await completeTypicalCheckin(page, athlete, date);
-    await page.goto('/?screen=testing');
-    await page.getByRole('tab', { name: 'History', exact: true }).click();
-    const panel = page.getByRole('region', { name: 'Block evidence review' });
-    await expect(panel.getByRole('button', { name: 'Export block report (JSON)' })).toHaveCount(0);
-    await panel.getByRole('button', { name: 'Review block evidence', exact: true }).click();
-    await panel.getByRole('button', { name: /^Review Synthetic jump block/ }).click();
-    await expect(panel).toContainText('Raw comparable change: +10.00 cm');
-    await expect(panel).toContainText('No reliability estimate');
-    await expect(panel).toContainText('Evidence limitations');
-    await expect(panel.getByText('Insufficient evidence', { exact: true }).first()).toBeVisible();
-    const overflow = await page.evaluate(() => [...document.querySelectorAll<HTMLElement>('body *')]
-      .filter(element => element.getBoundingClientRect().right > window.innerWidth + 1 && !element.closest('.history-table-wrapper'))
-      .map(element => `${element.tagName}.${element.className}`).slice(0, 15));
-    expect(overflow).toEqual([]);
-    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-    await page.screenshot({ path: testInfo.outputPath(`block-review-${width}.png`), fullPage: true });
-    for (const format of ['JSON', 'CSV']) {
-      const pending = page.waitForEvent('download');
-      await panel.getByRole('button', { name: `Export block report (${format})` }).click();
-      const download = await pending;
-      const path = await download.path();
-      const contents = await readFile(path!, 'utf8');
-      expect(contents).toContain(evidence.evaluationHash);
-      expect(contents).toContain(evidence.metricId);
-      expect(contents).toContain('ov-progress-v1');
-      expect(contents).toContain('block-adequacy-v1');
-      expect(contents).toContain('baseline:');
-      expect(contents).toContain('repeat:');
-      expect(contents).toContain('unsupported');
-      if (format === 'JSON') {
-        const report = JSON.parse(contents);
-        expect(report.evaluationRef.revision).toBe(1);
-        expect(report.sourceIds.ecologicalOutcomeIds).toEqual(['z-legacy-outcome', 'z-linked-outcome']);
-        expect(report.reviewProvenance.sources.find((source: { source: string }) => source.source === 'ecological_outcomes'))
-          .toMatchObject({ status: 'available', recordCount: 2 });
-      } else expect(contents).toContain('ecological_outcomes:available:2');
-    }
-  });
+// One journey at phone width (the primary context); the exports are width-independent, so the
+// desktop width only re-checks layout instead of repeating the whole setup and 107-record seed.
+test('block review exports exact frozen evidence and limitations at 390px and 1440px', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 390, height: 900 });
+  const athlete = await provisionAthlete();
+  const date = await seedRecoverySnapshot(athlete);
+  const evidence = await seedReview(athlete.userId);
+  await signInThroughUi(page, athlete);
+  await completeTypicalCheckin(page, athlete, date);
+  await page.goto('/?screen=testing');
+  await page.getByRole('tab', { name: 'History', exact: true }).click();
+  const panel = page.getByRole('region', { name: 'Block evidence review' });
+  await expect(panel.getByRole('button', { name: 'Export block report (JSON)' })).toHaveCount(0);
+  await panel.getByRole('button', { name: 'Review block evidence', exact: true }).click();
+  await panel.getByRole('button', { name: /^Review Synthetic jump block/ }).click();
+  await expect(panel).toContainText('Raw comparable change: +10.00 cm');
+  await expect(panel).toContainText('No reliability estimate');
+  await expect(panel).toContainText('Evidence limitations');
+  await expect(panel.getByText('Insufficient evidence', { exact: true }).first()).toBeVisible();
+  await expectNoOverflow(page, testInfo.outputPath('block-review-390.png'));
+  for (const format of ['JSON', 'CSV']) {
+    const pending = page.waitForEvent('download');
+    await panel.getByRole('button', { name: `Export block report (${format})` }).click();
+    const download = await pending;
+    const path = await download.path();
+    const contents = await readFile(path!, 'utf8');
+    expect(contents).toContain(evidence.evaluationHash);
+    expect(contents).toContain(evidence.metricId);
+    expect(contents).toContain('ov-progress-v1');
+    expect(contents).toContain('block-adequacy-v1');
+    expect(contents).toContain('baseline:');
+    expect(contents).toContain('repeat:');
+    expect(contents).toContain('unsupported');
+    if (format === 'JSON') {
+      const report = JSON.parse(contents);
+      expect(report.evaluationRef.revision).toBe(1);
+      expect(report.sourceIds.ecologicalOutcomeIds).toEqual(['z-legacy-outcome', 'z-linked-outcome']);
+      expect(report.reviewProvenance.sources.find((source: { source: string }) => source.source === 'ecological_outcomes'))
+        .toMatchObject({ status: 'available', recordCount: 2 });
+    } else expect(contents).toContain('ecological_outcomes:available:2');
+  }
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expect(panel).toContainText('Raw comparable change: +10.00 cm');
+  await expectNoOverflow(page, testInfo.outputPath('block-review-1440.png'));
+});
+
+async function expectNoOverflow(page: Page, screenshotPath: string): Promise<void> {
+  const overflow = await page.evaluate(() => [...document.querySelectorAll<HTMLElement>('body *')]
+    .filter(element => element.getBoundingClientRect().right > window.innerWidth + 1 && !element.closest('.history-table-wrapper'))
+    .map(element => `${element.tagName}.${element.className}`).slice(0, 15));
+  expect(overflow).toEqual([]);
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.screenshot({ path: screenshotPath, fullPage: true });
 }
 
 test('block review refuses a corrupted frozen evaluation instead of exporting an empty report', async ({ page }) => {
