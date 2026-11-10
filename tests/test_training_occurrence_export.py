@@ -465,6 +465,26 @@ def test_repeated_identical_fingerprints_are_counted_not_labelled_collisions() -
     assert "reviewedCollisionCount" not in result.aggregate
 
 
+def test_fit_refs_skip_provider_ref_without_activity_id() -> None:
+    records = {
+        "window": {"startDate": "2026-08-01", "endDateExclusive": "2026-08-08"},
+        "performedTrainingOccurrences": [
+            {
+                "data": {
+                    "status": "active",
+                    "sourceRefs": [
+                        {"kind": "structured_execution", "executionId": "e1"},
+                        {"kind": "provider_activity", "provider": "garmin"},
+                        {"kind": "provider_activity", "provider": "garmin", "activityId": "a1"},
+                    ],
+                }
+            }
+        ],
+        "activities": [{"id": "a1", "data": {"date": "2026-08-06", "activityId": "a1"}}],
+    }
+    assert fit_activity_refs_from_records(records) == [FitActivityRef("a1", "2026-08-06", True)]
+
+
 def test_fit_refs_flag_only_active_structured_matches() -> None:
     records = export_training_occurrence_records(_db(), "u1", "2026-08-01", "2026-08-08")
     refs = fit_activity_refs_from_records(records)

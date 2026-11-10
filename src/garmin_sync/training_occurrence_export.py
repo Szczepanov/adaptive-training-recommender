@@ -582,6 +582,9 @@ def fit_activity_refs_from_records(records: dict[str, Any]) -> list[FitActivityR
             for ref in refs
             if ref.get("kind") == "provider_activity"
             and str(ref.get("provider", "")).lower() == "garmin"
+            # The rules no longer require activityId on a ref (#1202, ADR-0053); the app's
+            # write validator does, but a malformed stored ref must not crash the export.
+            and ref.get("activityId")
         )
     window = records["window"]
     activity_refs: list[FitActivityRef] = []

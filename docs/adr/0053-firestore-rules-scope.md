@@ -265,11 +265,51 @@ is converted to assert acceptance at the rules boundary and names the TypeScript
   other document ids, so the `sessionId` binding rejected them regardless of the field under
   test. They now write matched documents with an accepted control.
 
+### Applied in #1202 (item 1, PR C: performed-training occurrences and source links)
+
+* Performed-training occurrences (`08-outcomes-trials`): `schemaVersion == 1`, the `status`
+  enum, the `mergedIntoOccurrenceId`, `startedAt`, `endedAt` and `modality` types, the
+  `localDate` calendar date, and per source ref the `kind` discriminator, the required
+  identity fields per kind (`executionId`; `provider` and `activityId`), the optional field
+  types, the FIT fingerprint/kind pairing, the fingerprint format and the kind enum; and the
+  reconciliation `state` enum, the `confidence` range and the manual decision's `decision`,
+  `actor` and `decidedAt` (owner `validatePerformedTrainingOccurrenceWrite` through
+  `assertValidPerformedTrainingOccurrenceWrite` in `training-occurrence/validation.ts`). The
+  TypeScript check covers every ref, not only the first four that the rules could reach.
+* Source links (`08-outcomes-trials`): `schemaVersion == 1`, the `sourceKind` enum and a
+  non-empty `performedOccurrenceId` (owner `validatePerformedOccurrenceSourceLinkWrite`
+  through `assertValidPerformedOccurrenceSourceLinkWrite`).
+* Every client write goes through three helpers in `training-occurrence/repository.ts`
+  (`setValidatedOccurrence`, `createValidatedSourceLink`, `repointValidatedSourceLink`), used
+  by `createOrGetForSource`, `attachSource`, `unlinkSource`, `mergeOccurrences` and
+  `updateProjection`. Occurrence writes replace the whole document (`transaction.set`), so the
+  payload is the stored document. The source-link re-pointing writes are partial
+  `transaction.update`s; they are validated on the stored link (parsed in the same
+  transaction) with the patch applied, which is the document Firestore stores. A failed
+  validation throws inside the transaction, so nothing is committed.
+* The Python backfill (`training_occurrence_backfill.py` `_perform_candidate_tx`) also creates
+  both documents, through the Admin SDK. Those writes bypass the rules and these validators
+  alike, as they did before this change; a stored document is therefore not proof that the TS
+  validator ran. The Python export now skips a `provider_activity` ref with no `activityId`
+  instead of failing, because the rules no longer require that key.
+* No rule reads either collection across documents, and no kept rule depends on a moved value,
+  so none of the precondition refinements applies.
+* Kept on purpose: ownership, the occurrence `performedOccurrenceId` binding, both key
+  allow-lists and required keys, a per-ref key allow-list (the union of both kinds' keys) on
+  the first four refs, the `sourceRefs` 1..4 bound, `reconciliation` as a map with the
+  `excludedSourceKeys` <= 16 bound, the `createdAt`/`updatedAt` shape, the source-link
+  `sourceKey` non-empty string, and every update pin (`keepsOwnership`, `keepsCreatedAt`, the
+  occurrence `schemaVersion`, the link `sourceKey`/`sourceKind`). The link update now also pins
+  `schemaVersion`: the removed `schemaVersion == 1` check was the only thing holding it fixed.
+* As in the earlier slices, removing the value checks also removed the implicit type bound
+  on fields such as `status`, `modality` and the ref identity strings. Only the owner can write
+  these documents, the key allow-lists stay, and the 1 MiB document limit applies.
+
 ### Not yet applied (follow-up)
 
-* Collections whose writes are not validated in TypeScript today:
-  `performedTrainingOccurrences` / `performedOccurrenceSourceLinks`, session-execution diary
-  entries, `competition_outcomes`. Each needs a write-side validator first.
+* Collections whose writes are not validated in TypeScript today: session-execution diary
+  entries and `competition_outcomes`. Each needs a write-side validator first, and both wait on
+  owner decisions (#895 lossless diary; create-only outcomes with no correction path).
 * `06-recommendations` is read-only at ADR-0052 Phase 3, so it is not trimmed separately.
 
 ## Consequences

@@ -363,3 +363,56 @@ describe('queryActiveInDateWindow', () => {
         expect(results[0].sourceRefs[0]).toEqual({ kind: 'structured_execution', executionId: 'exec-1' });
     });
 });
+
+describe('write-side validation (#1202, ADR-0053)', () => {
+    it('rejects a new occurrence with a malformed FIT fingerprint before writing anything', async () => {
+        const repo = new PerformedTrainingOccurrenceRepository({} as never);
+        const facts = {
+            ...structuredFacts(),
+            sourceRef: {
+                kind: 'structured_execution' as const,
+                executionId: 'exec-1',
+                fitWorkoutFingerprint: 'not-a-fingerprint',
+                fitWorkoutFingerprintKind: 'semantic_definition' as const,
+            },
+        };
+
+        await expect(repo.createOrGetForSource(userId, facts)).rejects.toThrow(/fitWorkoutFingerprint/);
+        expect(docStore.size).toBe(0);
+        expect(mockTransactionSet).not.toHaveBeenCalled();
+    });
+
+    it('rejects a new occurrence whose localDate is not a real calendar date', async () => {
+        const repo = new PerformedTrainingOccurrenceRepository({} as never);
+
+        await expect(repo.createOrGetForSource(userId, { ...structuredFacts(), localDate: '2026-02-30' })).rejects.toThrow(/localDate/);
+        expect(docStore.size).toBe(0);
+    });
+
+    it('rejects an attach whose reconciliation confidence is out of range and leaves the stored occurrence untouched', async () => {
+        const repo = new PerformedTrainingOccurrenceRepository({} as never);
+        const { occurrence } = await repo.createOrGetForSource(userId, structuredFacts());
+        const before = new Map(docStore);
+        mockTransactionSet.mockClear();
+
+        await expect(repo.attachSource(userId, occurrence.performedOccurrenceId, garminFacts(), { state: 'matched', confidence: 1.5 }))
+            .rejects.toThrow(/confidence/);
+        expect(mockTransactionSet).not.toHaveBeenCalled();
+        expect(docStore).toEqual(before);
+    });
+
+    it('validates the re-pointed source link on merge and unlink, so both still write the expected link', async () => {
+        const repo = new PerformedTrainingOccurrenceRepository({} as never);
+        const { occurrence: survivor } = await repo.createOrGetForSource(userId, structuredFacts());
+        const { occurrence: loser } = await repo.createOrGetForSource(userId, garminFacts());
+
+        await repo.mergeOccurrences(userId, survivor.performedOccurrenceId, loser.performedOccurrenceId);
+        const garminLinkPath = [...docStore.keys()].find(path => path.includes('performedOccurrenceSourceLinks/') && path.includes('garmin'));
+        expect(garminLinkPath).toBeDefined();
+        expect(docStore.get(garminLinkPath!)?.performedOccurrenceId).toBe(survivor.performedOccurrenceId);
+
+        const { detached } = await repo.unlinkSource(userId, survivor.performedOccurrenceId, 'provider_activity:garmin:act-1', 'athlete');
+        expect(docStore.get(garminLinkPath!)?.performedOccurrenceId).toBe(detached.performedOccurrenceId);
+        expect(mockTransactionUpdate).toHaveBeenCalledTimes(2);
+    });
+});
