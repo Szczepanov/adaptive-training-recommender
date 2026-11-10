@@ -1217,3 +1217,23 @@
     background: #1e293b;
     color: #fde68a;
 }
+
+/* Add an exercise performed beyond the plan (44px touch target per docs/standards/ui-ux.md) */
+.add-exercise-btn {
+    align-self: flex-start;
+    min-height: 44px;
+    background: transparent;
+    border: 1px dashed #475569;
+    color: #38bdf8;
+    border-radius: 6px;
+    padding: 0.4rem 0.9rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.add-exercise-btn:hover,
+.add-exercise-btn:focus-visible {
+    background: #334155;
+    border-color: #38bdf8;
+}

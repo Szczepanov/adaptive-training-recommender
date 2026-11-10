@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import type { StepExerciseReplacement } from '../sessions/swapAdaptation';
+import { appendAddedExerciseStep, restoreAddedExerciseSteps } from '../sessions/addedExerciseStep';
 import { entryCompositionStamp, relaxUnevidencedRequirements, swappedStepComposition } from '../sessions/compositionStamping';
 import type {
     SessionDefinition,
@@ -88,15 +90,9 @@ export interface UseSessionRunnerResult {
     startRestTimer: (seconds: number) => void;
     skipRestTimer: () => void;
     addRestSeconds: (seconds: number) => void;
-    substituteStepExercise: (blockIndex: number, stepIndex: number, replacement: {
-        exerciseRef: SessionStep['exerciseRef'];
-        title?: string;
-        dose?: SessionStep['dose'];
-        /** `undefined` leaves the step's current tempo/notes untouched; `null` explicitly clears it. */
-        tempo?: string | null;
-        rest?: SessionStep['rest'];
-        notes?: string | null;
-    }) => void;
+    substituteStepExercise: (blockIndex: number, stepIndex: number, replacement: StepExerciseReplacement) => void;
+    /** Appends an exercise the athlete is doing beyond the plan and makes it the active step. */
+    addExerciseStep: (exercise: StepExerciseReplacement) => void;
     saveAsNewTemplate: (title: string, summary?: string) => Promise<string>;
     completeSession: (payload?: SessionCompletionPayload) => Promise<void>;
     abandonSession: (notes?: string) => Promise<void>;
@@ -296,8 +292,9 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
                     setSyncStatus('unavailable');
                     return;
                 }
-                const cursor = resolveResumeCursor(resolved.data, diary.entries);
-                setRawDefinition(resolved.data);
+                const restored = restoreAddedExerciseSteps(resolved.data, diary.entries);
+                const cursor = resolveResumeCursor(restored, diary.entries);
+                setRawDefinition(restored);
                 setActiveBlockIndex(cursor.blockIndex);
                 setActiveStepIndex(cursor.stepIndex);
                 setResumeStatus('ready');
@@ -514,8 +511,9 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
                     setSyncStatus('unavailable');
                     return;
                 }
-                setRawDefinition(resolved.data);
-                const cursor = resolveResumeCursor(resolved.data, diary.entries);
+                const restored = restoreAddedExerciseSteps(resolved.data, diary.entries);
+                setRawDefinition(restored);
+                const cursor = resolveResumeCursor(restored, diary.entries);
                 setActiveBlockIndex(cursor.blockIndex);
                 setActiveStepIndex(cursor.stepIndex);
                 setSyncStatus(diary.failedReceiptCount > 0 ? 'unavailable' : diary.queuedReceiptCount > 0 ? 'queued' : 'synced');
@@ -834,16 +832,7 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
     const substituteStepExercise = useCallback((
         blockIndex: number,
         stepIndex: number,
-        replacement: {
-            exerciseRef: SessionStep['exerciseRef'];
-            title?: string;
-            dose?: SessionStep['dose'];
-            /** `undefined` leaves the step's current tempo/notes untouched; `null` explicitly clears it. */
-            tempo?: string | null;
-            rest?: SessionStep['rest'];
-            notes?: string | null;
-            compositionPatterns?: SessionStep['compositionPatterns'];
-        },
+        replacement: StepExerciseReplacement,
     ) => {
         setRawDefinition(prev => {
             if (!prev) return prev;
@@ -862,7 +851,12 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
                         title: resolvedTitle,
                         ...(replacement.dose ? { dose: replacement.dose } : {}),
                         ...(replacement.rest !== undefined ? { rest: replacement.rest } : {}),
+                        ...(replacement.load ? { load: replacement.load } : {}),
+                        ...(replacement.laterality ? { laterality: replacement.laterality } : {}),
                     };
+                    if (replacement.load === null) delete nextStep.load;
+                    if (replacement.stopConditions === null) delete nextStep.stopConditions;
+                    if (replacement.effort === null) delete nextStep.effort;
                     if (composition.compositionPatterns) nextStep.compositionPatterns = composition.compositionPatterns;
                     else delete nextStep.compositionPatterns;
                     if (replacement.tempo === null) delete nextStep.tempo;
@@ -876,6 +870,15 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
             return { ...prev, blocks: nextBlocks };
         });
     }, []);
+
+    const addExerciseStep = useCallback((exercise: StepExerciseReplacement) => {
+        if (!rawDefinition) return;
+        // Dialogs are modal, so no other definition edit can interleave with this one.
+        const { blocks, blockIndex, stepIndex } = appendAddedExerciseStep(rawDefinition.blocks, exercise, crypto.randomUUID());
+        setRawDefinition({ ...rawDefinition, blocks });
+        setActiveBlockIndex(blockIndex);
+        setActiveStepIndex(stepIndex);
+    }, [rawDefinition]);
 
     const saveAsNewTemplate = useCallback(async (title: string, summary?: string): Promise<string> => {
         if (!rawDefinition) throw new Error('No active session definition to save.');
@@ -1061,6 +1064,7 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
         skipRestTimer,
         addRestSeconds,
         substituteStepExercise,
+        addExerciseStep,
         saveAsNewTemplate,
         completeSession,
         abandonSession,

@@ -71,7 +71,10 @@ describe('buildStructuredStepDetails', () => {
         ];
         const [squat] = buildStructuredStepDetails(definition, entries, [restEvent('e-work-1', 205, 180)]);
 
-        expect(squat.title).toBe('Back Squat');
+        // Two sets as authored, then a swap: the summary names both, in the order performed.
+        expect(squat.title).toBe('Back Squat / Front Squat');
+        expect(squat.plannedTitle).toBe('Back Squat');
+        expect(squat.performedExerciseRef).toBeUndefined();
         expect(squat.prescribed).toEqual({
             sets: 3,
             reps: 5,
@@ -108,5 +111,60 @@ describe('buildStructuredStepDetails', () => {
         };
         const [squat] = buildStructuredStepDetails(definition, [choice], []);
         expect(squat.sets).toEqual([]);
+    });
+
+    it('names a fully swapped step after the performed exercise and keeps the planned name', () => {
+        const benchDefinition = {
+            ...definition,
+            blocks: [{
+                id: 'b1', role: 'main', executionMode: 'sequential',
+                steps: [{
+                    id: 'press', kind: 'exercise', title: 'Bench Press',
+                    exerciseRef: { kind: 'catalog', exerciseId: 'barbell_bench_press' },
+                    dose: { kind: 'repetition', sets: 3, reps: 8 },
+                }],
+            }],
+        } as SessionDefinition;
+        const swapped = { kind: 'catalog', exerciseId: 'single_arm_dumbbell_floor_press' } as const;
+        const entries = [
+            { ...repEntry('p1', '2026-08-26T07:00:00.000Z', 8, 22, false, swapped), stepId: 'press' },
+            { ...repEntry('p2', '2026-08-26T07:03:00.000Z', 8, 22, false, swapped), stepId: 'press' },
+        ];
+
+        const [press] = buildStructuredStepDetails(benchDefinition, entries, []);
+
+        expect(press.title).toBe('Single-arm Dumbbell Floor Press');
+        expect(press.plannedTitle).toBe('Bench Press');
+        expect(press.performedExerciseRef).toEqual(swapped);
+        expect(press.exerciseRef).toEqual({ kind: 'catalog', exerciseId: 'barbell_bench_press' });
+    });
+
+    it('keeps the authored name when every set matches the authored exercise', () => {
+        const ref = { kind: 'catalog', exerciseId: 'back_squat' } as const;
+        const authored = {
+            ...definition,
+            blocks: [{ ...definition.blocks[0], steps: [{ ...definition.blocks[0].steps[0], exerciseRef: ref }] }],
+        } as SessionDefinition;
+        const [squat] = buildStructuredStepDetails(authored, [repEntry('s1', '2026-08-26T07:00:00.000Z', 5, 100, false, ref)], []);
+        expect(squat.title).toBe('Back Squat');
+        expect(squat.plannedTitle).toBeUndefined();
+    });
+
+    it('reports sets logged against an exercise added during the session instead of dropping them', () => {
+        const added = { kind: 'unresolved_free_text', name: 'Back Extension' } as const;
+        const entries = [
+            { ...repEntry('x2', '2026-08-26T07:22:00.000Z', 12, 0, false, added), stepId: 'added-abc' },
+            { ...repEntry('x1', '2026-08-26T07:20:00.000Z', 15, 0, false, added), stepId: 'added-abc' },
+        ];
+
+        const details = buildStructuredStepDetails(definition, entries, []);
+        const extra = details.find(step => step.stepId === 'added-abc');
+
+        expect(extra).toBeDefined();
+        expect(extra?.unplanned).toBe(true);
+        expect(extra?.title).toBe('Back Extension');
+        expect(extra?.prescribed).toEqual({ sets: 0 });
+        expect(extra?.sets.map(set => [set.entryId, set.setNumber])).toEqual([['x1', 1], ['x2', 2]]);
+        expect(details.at(-1)?.stepId).toBe('added-abc');
     });
 });

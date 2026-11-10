@@ -536,6 +536,19 @@ describe('performedTrainingFactsService', () => {
                     confidence: 'exact', evidenceTier: 'completedStructuredWorkout',
                 });
             });
+
+            it('marks overrides degraded when the reader skipped invalid override documents (#1202)', async () => {
+                vi.mocked(activityOverrideService.getOverridesSinceState).mockResolvedValue({
+                    status: 'AVAILABLE', data: {}, revision: null,
+                    issues: [{ code: 'invalid-activity-override', field: 'overriddenModality', documentPath: 'users/user-1/activity_overrides/act-1' }],
+                });
+
+                const snapshot = await getPerformedTrainingFactsInRange('user-1', '2026-09-01', '2026-09-02', {
+                    preloadedActivities: [garminActivity({ stimulusDomain: 'endurance', sessionCost: 'low' })],
+                });
+
+                expect(snapshot.overridesDegraded).toBe(true);
+            });
         });
     });
 

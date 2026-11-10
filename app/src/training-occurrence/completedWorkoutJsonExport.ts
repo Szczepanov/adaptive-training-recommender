@@ -68,8 +68,16 @@ export interface ExportedPrescription {
 
 export interface ExportedExercise {
     stepId: string;
+    /** What was performed: the swapped-in exercise when the athlete swapped mid-session. */
     name: string;
+    /** The authored exercise name, present only when a swap replaced it. */
+    plannedName?: string;
+    /** The authored exercise reference. */
     exercise?: ExerciseRef;
+    /** The performed exercise reference, present only when it differs from `exercise`. */
+    performedExercise?: ExerciseRef;
+    /** True for an exercise the athlete added during the session (no prescription). */
+    unplanned?: true;
     optional: boolean;
     prescribed: ExportedPrescription;
     performed: {
@@ -182,7 +190,11 @@ function payloadFields(payload: SessionEntryPayload): Partial<ExportedPerformedS
         case 'duration':
             return { durationSeconds: payload.seconds, ...(payload.loadKg !== undefined ? { weightKg: payload.loadKg } : {}) };
         case 'distance':
-            return { distanceMeters: payload.meters, ...(payload.durationSeconds !== undefined ? { durationSeconds: payload.durationSeconds } : {}) };
+            return {
+                distanceMeters: payload.meters,
+                ...(payload.durationSeconds !== undefined ? { durationSeconds: payload.durationSeconds } : {}),
+                ...(payload.loadKg !== undefined ? { weightKg: payload.loadKg } : {}),
+            };
         case 'sprint':
             return { distanceMeters: payload.meters, durationSeconds: payload.splitSeconds };
         case 'jump_attempt':
@@ -241,7 +253,10 @@ function exportExercise(step: StructuredStepDetail): ExportedExercise {
     return {
         stepId: step.stepId,
         name: step.title,
+        ...(step.plannedTitle ? { plannedName: step.plannedTitle } : {}),
         ...(step.exerciseRef ? { exercise: step.exerciseRef } : {}),
+        ...(step.performedExerciseRef ? { performedExercise: step.performedExerciseRef } : {}),
+        ...(step.unplanned ? { unplanned: true as const } : {}),
         optional: step.isOptional,
         prescribed: exportPrescription(step.prescribed),
         performed: {

@@ -220,12 +220,56 @@ is converted to assert acceptance at the rules boundary and names the TypeScript
   and the window-binding bounds. Only the owner can write these documents, the key allow-lists
   stay, and the 1 MiB document limit applies.
 
+### Applied in #1202 (item 1, PR B: activity overrides and strength sessions)
+
+* Activity overrides (`01-users-core`): the `date` format, the `overriddenModality` and
+  `overriddenIntensity` enums, the `rpe` range and the `stimulusFocus` enum (owner
+  `validateActivityOverride` through `assertValidActivityOverride` in
+  `ledger/activityOverrideValidation.ts`, called in `ActivityOverrideService` `saveOverride`
+  before its whole-document `setDoc`; there is no other writer). The update rule pins `date`
+  to the stored value and no other rule reads this document, so the date format only mattered
+  at create. The validator did not exist before; it keeps the accepted modality set (no
+  `Walking` / `None`, plus `Unknown`).
+* Strength sessions (`01-users-core`): the `date` and `sourceRecommendationDate` formats,
+  `schemaVersion == 1`, the `completedAt` type and the `sessionRpe` range (owner
+  `validateStrengthSession` through `assertValidStrengthSession` in
+  `engine/strengthSessionValidation.ts`, called in `StrengthSessionService` `startSession` on
+  the new document and in `transitionState` on the whole post-transition document, before the
+  merge). The merge writes (`transitionState`, `saveExercises`) only touch `state`,
+  `updatedAt`, `completedAt`, `sessionRpe`, `notes` and `exercises`; every other stored value
+  is the create-validated one, and the update rule pins `date` and `startedAt`. `saveExercises`
+  keeps its own `areValidLoggedExercises` check. The `sessionRpe` check matches the old rule,
+  which already rejected `NaN`.
+* The merge-write refinement does not apply to `schemaVersion` or `sourceRecommendationDate`,
+  because no merge payload carries them: `transitionState` carries `state`, `updatedAt`,
+  `completedAt`, `sessionRpe` and `notes` and validates the whole post-transition document, and
+  `saveExercises` carries `exercises` and `updatedAt`. Both values are therefore only ever set
+  by the create-validated `startSession` write, the same argument as PR A for
+  `session_responses`.
+* Activity overrides also gain a read-side check: `getOverride`, `getAllOverrides` and
+  `getOverridesSinceState` run `validateActivityOverride` on each document and skip an invalid
+  one (`getOverride` returns `null`). `getOverridesSinceState` reports each skipped document as a
+  `DataIssue` on its `AVAILABLE` result; the other two log a warning, as that service already
+  does. The write validator is exactly as strict as the old rule, so every document the old rules
+  accepted still reads.
+* Kept on purpose: ownership, the activity `activityId` and strength `sessionId` bindings, the
+  key allow-lists, the string caps (`originalType`, `originalIntensityTag`, override and
+  session `notes`, `sessionId`), the `createdAt`/`updatedAt`/`startedAt` shape, the override
+  update immutability, and for strength sessions the `state` enum and the
+  `(state == 'completed') == ('completedAt' in data)` coupling, because the update rule's
+  `resource.data.state == 'in_progress'` terminal immutability depends on `state`.
+* The strength-session create rule's superseded-occurrence guard reads `occurrenceId`, but the
+  key allow-list does not include it and no writer sets it, so that branch is dead today. It
+  is left as is: removing it is a behaviour change outside this slice.
+* The previous strength-session rejection emulator cases wrote `sessionId: 'session-1'` to
+  other document ids, so the `sessionId` binding rejected them regardless of the field under
+  test. They now write matched documents with an accepted control.
+
 ### Not yet applied (follow-up)
 
 * Collections whose writes are not validated in TypeScript today:
   `performedTrainingOccurrences` / `performedOccurrenceSourceLinks`, session-execution diary
-  entries, strength sessions, activity overrides, `competition_outcomes`. Each needs a
-  write-side validator first.
+  entries, `competition_outcomes`. Each needs a write-side validator first.
 * `06-recommendations` is read-only at ADR-0052 Phase 3, so it is not trimmed separately.
 
 ## Consequences

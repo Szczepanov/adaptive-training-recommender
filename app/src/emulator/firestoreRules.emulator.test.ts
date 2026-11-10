@@ -174,9 +174,9 @@ function validCheckinWithSessionResponse() {
     };
 }
 
-function validStrengthSession() {
+function validStrengthSession(sessionId = 'session-1') {
     return {
-        userId: ownerId, sessionId: 'session-1', date: '2026-08-17',
+        userId: ownerId, sessionId, date: '2026-08-17',
         startedAt: '2026-08-17T18:00:00Z', updatedAt: '2026-08-17T18:00:00Z',
         state: 'in_progress',
         // Rules bound array length and top-level shape only (S1.3): nested per-set fields
@@ -1570,25 +1570,47 @@ emulatorDescribe('Firestore security rules', () => {
         await assertFails(setDoc(doc(ownerDb, strengthSessionPath), { ...validStrengthSession(), startedAt: '2026-08-17T19:00:00Z' }));
     });
 
-    it('rejects a malformed or foreign-owned strength session', async () => {
+    // Every case writes to the document id it names as sessionId, so each fails only for the
+    // field under test (an unmatched path would be rejected by the sessionId binding alone).
+    it.each([
+        ['a completed state at creation', { state: 'completed', completedAt: '2026-08-17T18:45:00Z' }],
+        ['a completedAt on an in_progress session', { completedAt: '2026-08-17T18:45:00Z' }],
+        ['an unknown state', { state: 'paused' }],
+        ['an extra field', { surprise: true }],
+        ['a notes field over 2000 characters', { notes: 'x'.repeat(2001) }],
+        ['a startedAt that is not a string', { startedAt: 5 }],
+        ['more than 30 exercises', { exercises: Array.from({ length: 31 }, () => ({ exerciseId: 'front_squat', sets: [] })) }],
+        ['a foreign userId', { userId: otherUserId }],
+        ['a missing exercises list', { exercises: undefined }],
+    ])('rejects a strength session with %s', async (_label, override) => {
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
-        await assertFails(setDoc(doc(ownerDb, `${strengthSessionPath}-starts-completed`), {
-            ...validStrengthSession(), state: 'completed', completedAt: '2026-08-17T18:45:00Z',
-        }));
-        await assertFails(setDoc(doc(ownerDb, `${strengthSessionPath}-premature-completion`), {
-            ...validStrengthSession(), completedAt: '2026-08-17T18:45:00Z',
-        }));
-        await assertFails(setDoc(doc(ownerDb, `${strengthSessionPath}-bad-state`), { ...validStrengthSession(), state: 'paused' }));
-        await assertFails(setDoc(doc(ownerDb, `${strengthSessionPath}-bad-date`), { ...validStrengthSession(), date: '2026-02-30' }));
-        await assertFails(setDoc(doc(ownerDb, `${strengthSessionPath}-bad-schema`), { ...validStrengthSession(), schemaVersion: 2 }));
-        await assertFails(setDoc(doc(ownerDb, `${strengthSessionPath}-extra-field`), { ...validStrengthSession(), surprise: true }));
-        await assertFails(setDoc(doc(ownerDb, `${strengthSessionPath}-id-mismatch`), { ...validStrengthSession(), sessionId: 'someone-elses-id' }));
-        const withoutExercises: Record<string, unknown> = validStrengthSession();
-        delete withoutExercises.exercises;
-        await assertFails(setDoc(doc(ownerDb, `${strengthSessionPath}-missing-field`), withoutExercises));
-        await assertFails(setDoc(doc(ownerDb, `${strengthSessionPath}-oversized`), {
-            ...validStrengthSession(), exercises: Array.from({ length: 31 }, () => ({ exerciseId: 'front_squat', sets: [] })),
-        }));
+        const id = 'session-matched';
+        const session: Record<string, unknown> = { ...validStrengthSession(id), ...override };
+        for (const key of Object.keys(session)) if (session[key] === undefined) delete session[key];
+        await assertFails(setDoc(doc(ownerDb, `users/${ownerId}/strength_sessions/${id}`), session));
+        // Control: the same document without the override is accepted at the same path.
+        await assertSucceeds(setDoc(doc(ownerDb, `users/${ownerId}/strength_sessions/${id}`), validStrengthSession(id)));
+    });
+
+    it('rejects a strength session whose sessionId does not match its document', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertFails(setDoc(doc(ownerDb, `${strengthSessionPath}-id-mismatch`), validStrengthSession('someone-elses-id')));
+    });
+
+    // Issue #1202 (ADR-0053): validateStrengthSession (assertValidStrengthSession in
+    // StrengthSessionService startSession and transitionState) owns these values.
+    it.each([
+        ['a malformed date', { date: '2026-02-30' }],
+        ['a malformed sourceRecommendationDate', { sourceRecommendationDate: '17-08-2026' }],
+        ['schemaVersion 2', { schemaVersion: 2 }],
+        ['an out-of-range sessionRpe', { sessionRpe: 11 }],
+    ])('accepts a strength session with %s at the rules boundary (validateStrengthSession owns it)', async (_label, override) => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertSucceeds(setDoc(doc(ownerDb, strengthSessionPath), { ...validStrengthSession(), ...override }));
+    });
+
+    it('rejects a foreign-owned strength session', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
         await assertFails(setDoc(doc(ownerDb, strengthSessionPath), { ...validStrengthSession(), userId: otherUserId }));
         const otherDb = testEnvironment.authenticatedContext(otherUserId).firestore();
         await assertFails(setDoc(
@@ -3240,6 +3262,19 @@ emulatorDescribe('Firestore security rules', () => {
         await assertFails(setDoc(doc(ownerDb, sessionEntryPath), {
             ...validSessionEntry(),
             payload: { kind: 'repetition', setIndex: 0, reps: 0 },
+        }));
+    });
+
+    it('accepts a carried load on a distance entry and rejects a negative one', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await expect(assertSucceeds(setDoc(doc(ownerDb, sessionExecPath), validSessionExecution()))).resolves.toBeUndefined();
+        await expect(assertSucceeds(setDoc(doc(ownerDb, sessionEntryPath), {
+            ...validSessionEntry(),
+            payload: { kind: 'distance', meters: 40, durationSeconds: 35, loadKg: 48 },
+        }))).resolves.toBeUndefined();
+        await assertFails(setDoc(doc(ownerDb, sessionEntryPath), {
+            ...validSessionEntry(),
+            payload: { kind: 'distance', meters: 40, loadKg: -1 },
         }));
     });
 

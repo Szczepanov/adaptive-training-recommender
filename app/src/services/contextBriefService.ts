@@ -410,6 +410,14 @@ export class ContextBriefService {
         if (activityResult.status !== 'fulfilled' || activityResult.value.status !== 'AVAILABLE') {
             unavailableSources.push('recorded activities');
         }
+        // Issue #1202: invalid override documents are skipped by the reader; say so, since
+        // the affected activities fall back to their recorded classification.
+        const skippedOverrides = overrideResult.status === 'fulfilled' && overrideResult.value?.status === 'AVAILABLE'
+            ? new Set((overrideResult.value.issues ?? []).map(issue => issue.documentPath)).size
+            : 0;
+        if (skippedOverrides > 0) {
+            unavailableSources.push(`athlete reclassifications (${skippedOverrides} invalid record(s) omitted)`);
+        }
 
         const recommendationsReadable = recommendationResult.status === 'fulfilled' && recommendationResult.value.status === 'AVAILABLE';
         const recommendations = recommendationResult.status === 'fulfilled' && recommendationResult.value.status === 'AVAILABLE'

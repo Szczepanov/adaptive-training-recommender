@@ -90,7 +90,10 @@ function authoredProtocolFamily(session: TrainingResponseSessionEvidence): strin
     if (source.kind === 'unplanned_fixture') return undefined;
     return JSON.stringify([
         source,
-        structured.steps.map(step => [step.stepId, step.exerciseRef, step.prescribed, step.isOptional]),
+        // Exercises added during the session are performed work, not part of the authored protocol.
+        structured.steps
+            .filter(step => !step.unplanned)
+            .map(step => [step.stepId, step.exerciseRef, step.prescribed, step.isOptional]),
     ]);
 }
 

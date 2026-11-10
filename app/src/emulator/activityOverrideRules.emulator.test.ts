@@ -74,18 +74,39 @@ emulatorDescribe('Activity override rules', () => {
         await assertFails(deleteDoc(otherRef));
     });
 
-    it('rejects path/owner mismatches and malformed correction fields', async () => {
+    it('rejects path/owner mismatches', async () => {
         const db = testEnvironment.authenticatedContext(ownerId).firestore();
         const ref = doc(db, overridePath);
 
         await assertFails(setDoc(ref, { ...validOverride(), userId: otherUserId }));
         await assertFails(setDoc(ref, { ...validOverride(), activityId: 'different-activity' }));
-        // Swimming became a valid modality for triathlon/multisport support; 'Underwater
-        // Basket Weaving' keeps this assertion testing a genuinely unsupported modality.
-        await assertFails(setDoc(ref, { ...validOverride(), overriddenModality: 'Underwater Basket Weaving' }));
-        await assertFails(setDoc(ref, { ...validOverride(), overriddenIntensity: 'maximal' }));
-        await assertFails(setDoc(ref, { ...validOverride(), rpe: 11 }));
-        await assertFails(setDoc(ref, { ...validOverride(), stimulusFocus: 'madeUpAxis' }));
+    });
+
+    // Issue #1202 (ADR-0053): validateActivityOverride (assertValidActivityOverride in
+    // ActivityOverrideService saveOverride) owns these values; the rules no longer check them.
+    it.each([
+        ['an unsupported modality', { overriddenModality: 'Underwater Basket Weaving' }],
+        ['an unknown intensity', { overriddenIntensity: 'maximal' }],
+        ['an out-of-range rpe', { rpe: 11 }],
+        ['an unknown stimulusFocus', { stimulusFocus: 'madeUpAxis' }],
+        ['a malformed date', { date: '2026-02-30' }],
+    ])('accepts a correction with %s at the rules boundary (validateActivityOverride owns it)', async (_label, override) => {
+        const db = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertSucceeds(setDoc(doc(db, overridePath), { ...validOverride(), ...override }));
+    });
+
+    it.each([
+        ['an extra field', { surprise: true }],
+        ['an originalType over 128 characters', { originalType: 'x'.repeat(129) }],
+        ['an originalIntensityTag over 64 characters', { originalIntensityTag: 'x'.repeat(65) }],
+        ['notes over 2000 characters', { notes: 'x'.repeat(2001) }],
+        ['an empty createdAt', { createdAt: '' }],
+        ['an empty updatedAt', { updatedAt: '' }],
+    ])('rejects a correction with %s', async (_label, override) => {
+        const db = testEnvironment.authenticatedContext(ownerId).firestore();
+        const ref = doc(db, overridePath);
+        await assertFails(setDoc(ref, { ...validOverride(), ...override }));
+        await assertSucceeds(setDoc(ref, validOverride()));
     });
 
     it('keeps identity, date, and createdAt immutable on update', async () => {

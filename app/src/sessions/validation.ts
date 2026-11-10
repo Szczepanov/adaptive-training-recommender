@@ -742,6 +742,7 @@ export function validateSessionEntry(raw: unknown): ValidationResult<SessionEntr
             if (typeof payload.seconds !== 'number' || !Number.isFinite(payload.seconds) || payload.seconds <= 0) issues.push({ path: 'payload.seconds', message: 'seconds must be a finite positive number' });
         } else if (kind === 'distance') {
             if (typeof payload.meters !== 'number' || !Number.isFinite(payload.meters) || payload.meters <= 0) issues.push({ path: 'payload.meters', message: 'meters must be a finite positive number' });
+            if (payload.loadKg !== undefined && (typeof payload.loadKg !== 'number' || !Number.isFinite(payload.loadKg) || payload.loadKg < 0)) issues.push({ path: 'payload.loadKg', message: 'loadKg must be a finite non-negative number' });
         } else if (kind === 'sprint') {
             if (typeof payload.meters !== 'number' || payload.meters <= 0) issues.push({ path: 'payload.meters', message: 'meters must be positive' });
             if (typeof payload.splitSeconds !== 'number' || payload.splitSeconds <= 0) issues.push({ path: 'payload.splitSeconds', message: 'splitSeconds must be positive' });

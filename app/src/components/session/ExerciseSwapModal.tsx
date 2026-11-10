@@ -4,26 +4,22 @@ import '../overlayContract.css';
 import type { SessionStep } from '../../sessions/models';
 import { EXERCISES, EXERCISES_BY_ID } from '../../workouts/exercises';
 import { stepName } from '../../sessions/stepDisplay';
+import { buildCatalogReplacement, type StepExerciseReplacement } from '../../sessions/swapAdaptation';
 import './ExerciseSwapModal.css';
 
 interface ExerciseSwapModalProps {
+    /** The step being replaced; in `add` mode, an empty exercise step to build the new one from. */
     step: SessionStep;
-    onSwap: (replacement: {
-        exerciseRef: SessionStep['exerciseRef'];
-        title?: string;
-        dose?: SessionStep['dose'];
-        /** `undefined` leaves the step's current tempo/notes untouched; `null` explicitly clears it. */
-        tempo?: string | null;
-        rest?: SessionStep['rest'];
-        notes?: string | null;
-        compositionPatterns?: SessionStep['compositionPatterns'];
-    }) => void;
+    /** `add` picks an extra exercise to append instead of replacing the current one. */
+    mode?: 'swap' | 'add';
+    onSwap: (replacement: StepExerciseReplacement) => void;
     onClose: () => void;
 }
 
 /** Modal dialog for substituting an active session step with a catalog or custom free-text exercise. */
 export const ExerciseSwapModal: React.FC<ExerciseSwapModalProps> = ({
     step,
+    mode = 'swap',
     onSwap,
     onClose,
 }) => {
@@ -34,6 +30,10 @@ export const ExerciseSwapModal: React.FC<ExerciseSwapModalProps> = ({
     const [customName, setCustomName] = useState<string>('');
     const [customTempo, setCustomTempo] = useState<string>(step.tempo ?? '');
     const [customNotes, setCustomNotes] = useState<string>(step.notes ?? '');
+    // The fields start with the replaced exercise's tempo/notes. Unless the athlete edits them,
+    // they describe the old movement and must not be copied onto a catalog replacement.
+    const [tempoEdited, setTempoEdited] = useState<boolean>(false);
+    const [notesEdited, setNotesEdited] = useState<boolean>(false);
     const panelRef = useRef<HTMLDivElement>(null);
     useOverlayDialog(true, panelRef, onClose, '#swap-exercise-search, #swap-custom-exercise-name');
     useEffect(() => {
@@ -59,10 +59,10 @@ export const ExerciseSwapModal: React.FC<ExerciseSwapModalProps> = ({
             onSwap({
                 exerciseRef: { kind: 'unresolved_free_text', name: customName.trim() },
                 title: customName.trim(),
-                // This modal always shows tempo/notes as editable text -- an empty field is an
-                // explicit instruction to clear the step's existing value, not "leave it as is".
-                tempo: customTempo.trim() || null,
-                notes: customNotes.trim() || null,
+                // Pre-filled tempo/notes describe the replaced movement; only typed text carries over.
+                tempo: (tempoEdited ? customTempo.trim() : '') || null,
+                notes: (notesEdited ? customNotes.trim() : '') || null,
+                stopConditions: null,
             });
             onClose();
             return;
@@ -73,13 +73,10 @@ export const ExerciseSwapModal: React.FC<ExerciseSwapModalProps> = ({
         const exercise = EXERCISES_BY_ID.get(selectedExerciseId);
         if (!exercise) return;
 
-        onSwap({
-            exerciseRef: { kind: 'catalog', exerciseId: exercise.id },
-            compositionPatterns: exercise.compositionPatterns,
-            title: exercise.name,
-            tempo: customTempo.trim() || null,
-            notes: customNotes.trim() || exercise.instruction || null,
-        });
+        onSwap(buildCatalogReplacement(step, exercise, {
+            ...(tempoEdited ? { tempo: customTempo } : {}),
+            ...(notesEdited ? { notes: customNotes } : {}),
+        }));
         onClose();
     };
 
@@ -87,11 +84,13 @@ export const ExerciseSwapModal: React.FC<ExerciseSwapModalProps> = ({
         <div className="modal-overlay overlay-viewport" role="dialog" aria-modal="true" aria-labelledby="swap-modal-title">
             <div ref={panelRef} className="exercise-swap-modal overlay-panel" tabIndex={-1}>
                 <div className="swap-modal-header">
-                    <h3 id="swap-modal-title">Swap Exercise</h3>
+                    <h3 id="swap-modal-title">{mode === 'add' ? 'Add Exercise' : 'Swap Exercise'}</h3>
                     <button type="button" className="close-btn" onClick={onClose} aria-label="Close">✕</button>
                 </div>
                 <p className="swap-subtitle">
-                    Current: <strong>{currentName}</strong>
+                    {mode === 'add'
+                        ? 'Log an exercise you are doing beyond the plan. It is saved with this session.'
+                        : <>Current: <strong>{currentName}</strong></>}
                 </p>
 
                 <div className="swap-mode-toggle">
@@ -172,7 +171,7 @@ export const ExerciseSwapModal: React.FC<ExerciseSwapModalProps> = ({
                             className="swap-input-box"
                             placeholder="e.g. 3-0-1-1"
                             value={customTempo}
-                            onChange={e => setCustomTempo(e.target.value)}
+                            onChange={e => { setCustomTempo(e.target.value); setTempoEdited(true); }}
                         />
                     </label>
                     <label className="swap-input-group">
@@ -182,7 +181,7 @@ export const ExerciseSwapModal: React.FC<ExerciseSwapModalProps> = ({
                             className="swap-input-box"
                             placeholder="e.g. Single dumbbell, brace core"
                             value={customNotes}
-                            onChange={e => setCustomNotes(e.target.value)}
+                            onChange={e => { setCustomNotes(e.target.value); setNotesEdited(true); }}
                         />
                     </label>
                 </div>
@@ -197,7 +196,7 @@ export const ExerciseSwapModal: React.FC<ExerciseSwapModalProps> = ({
                         disabled={!isCustom && !selectedExerciseId || isCustom && !customName.trim()}
                         onClick={handleConfirm}
                     >
-                        Replace Exercise
+                        {mode === 'add' ? 'Add Exercise' : 'Replace Exercise'}
                     </button>
                 </div>
             </div>
