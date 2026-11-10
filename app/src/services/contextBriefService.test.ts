@@ -219,6 +219,19 @@ describe('ContextBriefService', () => {
         expect(result.text.includes('The future plan was not fully readable:')).toBe(expectedStatus === 'unknown');
     });
 
+    it('reports skipped invalid athlete reclassifications as an unavailable source (#1202)', async () => {
+        const documentPath = 'users/u1/activity_overrides/act-1';
+        services.getOverridesSinceState.mockResolvedValue({
+            status: 'AVAILABLE', data: {}, revision: null,
+            issues: [
+                { code: 'invalid-activity-override', field: 'overriddenModality', documentPath },
+                { code: 'invalid-activity-override', field: 'rpe', documentPath },
+            ],
+        });
+        const result = await new ContextBriefService().build('u1', AS_OF, 14, 'full');
+        expect(result.unavailableSources).toContain('athlete reclassifications (1 invalid record(s) omitted)');
+    });
+
     it('loads and renders the full second week of planning commitments', async () => {
         services.getFixedActivitiesInRangeState.mockResolvedValue({ status: 'AVAILABLE', revision: null, data: [{
             id: 'fixed-week-two', userId: 'u1', title: 'Second-week race', date: '2026-08-25',

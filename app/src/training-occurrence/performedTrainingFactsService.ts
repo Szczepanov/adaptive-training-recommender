@@ -129,6 +129,10 @@ export async function getPerformedTrainingFactsInRange(
             const overridesState = await activityOverrideService.getOverridesSinceState(userId, fromDateInclusive);
             if (overridesState.status === 'AVAILABLE') {
                 overrides = overridesState.data;
+                // Issue #1202: the reader skips invalid override documents and reports them as
+                // issues. A skipped override reverts that activity to its recorded
+                // classification, so the snapshot must say overrides are incomplete.
+                if ((overridesState.issues?.length ?? 0) > 0) overridesDegraded = true;
             } else {
                 overridesDegraded = true;
             }
