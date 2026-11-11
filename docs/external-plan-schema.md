@@ -418,7 +418,7 @@ Executable browser proofs live in
 [`external-coach-round-trip.pw.ts`](../app/tests/e2e/external-coach-round-trip.pw.ts),
 [`external-plan-revisions.pw.ts`](../app/tests/e2e/external-plan-revisions.pw.ts),
 [`external-plan-execution-states.pw.ts`](../app/tests/e2e/external-plan-execution-states.pw.ts)
-and the desktop/mobile [`external-verdict.pw.ts`](../app/tests/e2e/external-verdict.pw.ts).
+and [`mobile/external-verdict.pw.ts`](../app/tests/e2e/mobile/external-verdict.pw.ts).
 The [#893 proof ledger](./plans/2026-09-29-issue-893-external-coach-round-trip.md#5-revised-acceptance-criteria-and-proof-ledger)
 records exact test names, verification status and resolved gaps. All 12 browser variant proof slots (V1–V12),
 including V8 manual replacement and full V9 bundle completion, are active, passing proofs. Issue #893 is

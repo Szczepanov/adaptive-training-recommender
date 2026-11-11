@@ -1,4 +1,5 @@
-import { doc, getDoc, setDoc, deleteDoc, collection, query, where, getDocs, addDoc, deleteField, type DocumentData } from 'firebase/firestore';
+import { doc, getDoc, setDoc, deleteDoc, collection, query, where, addDoc, deleteField, type DocumentData } from 'firebase/firestore';
+import { getDocsRetained } from './firestoreReadRetention';
 import { getDb } from '../firebase';
 import type { UserGoal, GoalCategory } from '../engine/models';
 import type { DataIssue, DataState } from '../engine/dataState';
@@ -167,7 +168,7 @@ export class GoalService {
                 where('userId', '==', userId),
             );
 
-            const querySnapshot = await getDocs(q);
+            const querySnapshot = await getDocsRetained(q);
             const goals = querySnapshot.docs
                 .map(goalDocument => {
                     const goal = tryParseGoalForRead(
@@ -197,7 +198,7 @@ export class GoalService {
     async getActiveGoalsState(userId: string): Promise<DataState<UserGoalWithId[]>> {
         try {
             const collRef = collection(getDb(), 'users', userId, this.collectionPath);
-            const querySnapshot = await getDocs(query(collRef, where('status', '==', 'active')));
+            const querySnapshot = await getDocsRetained(query(collRef, where('status', '==', 'active')));
             const goals: UserGoalWithId[] = [];
             const issues: DataIssue[] = [];
             const revisions: string[] = [];
@@ -225,7 +226,7 @@ export class GoalService {
                 where('status', '==', 'active')
             );
 
-            const querySnapshot = await getDocs(q);
+            const querySnapshot = await getDocsRetained(q);
             const goals = querySnapshot.docs
                 .map(goalDocument => {
                     const goal = tryParseGoalForRead(

@@ -1,4 +1,5 @@
-import { addDoc, collection, deleteDoc, doc, getDocs, query, setDoc, where, type DocumentData } from 'firebase/firestore';
+import { addDoc, collection, deleteDoc, doc, query, setDoc, where, type DocumentData } from 'firebase/firestore';
+import { getDocsRetained } from './firestoreReadRetention';
 import { getDb } from '../firebase';
 import type { AuthoredPlanBlock } from '../engine/models';
 import type { DataIssue, DataState } from '../engine/dataState';
@@ -21,7 +22,7 @@ export class PlanBlockService {
     async getBlocksInRangeState(userId: string, startDate: string, endDate: string): Promise<DataState<PlanBlockWithId[]>> {
         try {
             const ref = collection(getDb(), 'users', userId, this.collectionPath);
-            const snapshot = await getDocs(query(ref, where('startDate', '<=', endDate)));
+            const snapshot = await getDocsRetained(query(ref, where('startDate', '<=', endDate)));
             const blocks: PlanBlockWithId[] = [];
             const issues: DataIssue[] = [];
             const revisions: string[] = [];

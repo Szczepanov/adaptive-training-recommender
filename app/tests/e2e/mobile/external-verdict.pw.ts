@@ -1,4 +1,3 @@
-import type { Page } from '@playwright/test';
 import { expect, test } from '../support/test';
 import {
   completeTypicalCheckin,
@@ -8,60 +7,77 @@ import {
 } from '../support/athlete';
 import { seedExternalPlanForToday } from '../support/externalPlan';
 
-async function freshAthleteWithCheckin(
-  page: Page,
-  kind: 'proceed' | 'scale' | 'defer' | 'skip',
-): Promise<string> {
-  const athlete = await provisionAthlete();
-  const depleted = kind === 'scale' || kind === 'defer';
-  const date = await seedRecoverySnapshot(athlete, depleted ? { bodyBatteryWake: 25 } : {});
-  const seed = await seedExternalPlanForToday(athlete, kind);
-  await signInThroughUi(page, athlete);
-  await completeTypicalCheckin(page, athlete, date);
-  return seed.planId;
+// The one browser journey per imported-plan verdict. It runs at phone width, the primary
+// product context; the verdict copy itself is covered by ExternalVerdictBanner.test.tsx.
+interface VerdictCase {
+  kind: 'proceed' | 'scale' | 'defer' | 'skip';
+  title: string;
+  depleted: boolean;
+  label: string;
+  detail: string;
+  session: string;
 }
 
-test('an imported proceed session shows its verdict and Start path on a phone viewport', async ({ page }) => {
-  const planId = await freshAthleteWithCheckin(page, 'proceed');
+const CASES: readonly VerdictCase[] = [
+  {
+    kind: 'proceed',
+    title: 'an imported proceed session shows its verdict, source and Start path',
+    depleted: false,
+    label: 'Do it as written',
+    detail: 'Easy spin, nothing over 60% FTP.',
+    session: 'E2E easy spin',
+  },
+  {
+    kind: 'scale',
+    title: 'a scaled imported session shows the reduced version without launching the full structured dose',
+    depleted: true,
+    label: 'Do the reduced version',
+    detail: 'Cut it in half.',
+    session: 'E2E hard intervals',
+  },
+  {
+    kind: 'defer',
+    title: 'a deferred imported session names its verdict and offers no Start path',
+    depleted: true,
+    label: 'Move it to another day',
+    detail: 'Nothing from this session is prescribed today',
+    session: 'E2E hard intervals',
+  },
+  {
+    kind: 'skip',
+    title: 'an excluded imported session names its verdict and offers no Start path as written',
+    depleted: false,
+    label: 'Not today',
+    detail: 'Nothing from this session is prescribed today',
+    session: 'E2E overlong ride',
+  },
+];
 
-  const verdict = page.getByRole('region', { name: 'Imported plan session' });
-  await expect(verdict).toBeVisible();
-  await expect(verdict).toContainText('Do it as written');
-  await expect(verdict).toContainText(`${planId} (revision 1)`);
-  await expect(page.getByRole('button', { name: /Start E2E easy spin/ })).toBeVisible();
-});
+for (const verdictCase of CASES) {
+  test(`${verdictCase.title} on a phone viewport`, async ({ page }) => {
+    const athlete = await provisionAthlete();
+    const date = await seedRecoverySnapshot(athlete, verdictCase.depleted ? { bodyBatteryWake: 25 } : {});
+    const seed = await seedExternalPlanForToday(athlete, verdictCase.kind);
+    await signInThroughUi(page, athlete);
+    await completeTypicalCheckin(page, athlete, date);
 
-test('a scaled imported session shows the reduced version on a phone viewport', async ({ page }) => {
-  const planId = await freshAthleteWithCheckin(page, 'scale');
+    const verdict = page.getByRole('region', { name: 'Imported plan session' });
+    await expect(verdict).toBeVisible();
+    await expect(verdict).toContainText(verdictCase.label);
+    await expect(verdict).toContainText(`${seed.planId} (revision 1)`);
+    await expect(verdict).toContainText(verdictCase.detail);
 
-  const verdict = page.getByRole('region', { name: 'Imported plan session' });
-  await expect(verdict).toBeVisible();
-  await expect(verdict).toContainText('Do the reduced version');
-  await expect(verdict).toContainText(`${planId} (revision 1)`);
-  await expect(verdict).toContainText('Cut it in half.');
-  await expect(verdict).toContainText('Start is unavailable for this reduced form');
-  await expect(page.getByText(/min · reduced/, { exact: false })).toBeVisible();
-  await expect(page.getByRole('button', { name: /Start E2E hard intervals/ })).toHaveCount(0);
-});
-
-test('a deferred imported session offers no Start path on a phone viewport', async ({ page }) => {
-  const planId = await freshAthleteWithCheckin(page, 'defer');
-
-  const verdict = page.getByRole('region', { name: 'Imported plan session' });
-  await expect(verdict).toBeVisible();
-  await expect(verdict).toContainText('Move it to another day');
-  await expect(verdict).toContainText(`${planId} (revision 1)`);
-  await expect(page.getByRole('button', { name: /Start E2E hard intervals/ })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: /Resume E2E hard intervals/ })).toHaveCount(0);
-});
-
-test('an excluded imported session offers no Start path on a phone viewport', async ({ page }) => {
-  await freshAthleteWithCheckin(page, 'skip');
-
-  const verdict = page.getByRole('region', { name: 'Imported plan session' });
-  await expect(verdict).toBeVisible();
-  await expect(verdict).toContainText('Not today');
-  await expect(verdict).toContainText('Nothing from this session is prescribed today');
-  await expect(page.getByRole('button', { name: /Start E2E overlong ride/ })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: /Resume E2E overlong ride/ })).toHaveCount(0);
-});
+    const start = page.getByRole('button', { name: new RegExp(`Start ${verdictCase.session}`) });
+    if (verdictCase.kind === 'proceed') {
+      await expect(start).toBeVisible();
+      return;
+    }
+    if (verdictCase.kind === 'scale') {
+      await expect(verdict).toContainText('Start is unavailable for this reduced form');
+      await expect(page.getByText(/min · reduced/, { exact: false })).toBeVisible();
+    }
+    // The imported prescription must not be launchable as written.
+    await expect(start).toHaveCount(0);
+    await expect(page.getByRole('button', { name: new RegExp(`Resume ${verdictCase.session}`) })).toHaveCount(0);
+  });
+}

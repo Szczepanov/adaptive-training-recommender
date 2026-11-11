@@ -1,4 +1,5 @@
-import { doc, getDoc, setDoc, deleteDoc, deleteField, collection, query, where, getDocs, addDoc, type DocumentData } from 'firebase/firestore';
+import { doc, getDoc, setDoc, deleteDoc, deleteField, collection, query, where, addDoc, type DocumentData } from 'firebase/firestore';
+import { getDocsRetained } from './firestoreReadRetention';
 import { getDb } from '../firebase';
 import type { FixedActivity } from '../engine/models';
 import type { DataIssue, DataState } from '../engine/dataState';
@@ -66,7 +67,7 @@ export class FixedActivityService {
         try {
             const collRef = collection(getDb(), 'users', userId, this.collectionPath);
             const q = query(collRef, where('date', '>=', startDate), where('date', '<=', endDate));
-            const querySnapshot = await getDocs(q);
+            const querySnapshot = await getDocsRetained(q);
             const activities: FixedActivityWithId[] = [];
             const schemaIssues: DataIssue[] = [];
             const identityIssues: DataIssue[] = [];
@@ -99,7 +100,7 @@ export class FixedActivityService {
     async listAll(userId: string): Promise<FixedActivityWithId[]> {
         const collRef = collection(getDb(), 'users', userId, this.collectionPath);
         const q = query(collRef, where('userId', '==', userId));
-        const querySnapshot = await getDocs(q);
+        const querySnapshot = await getDocsRetained(q);
         return querySnapshot.docs
             .flatMap(d => {
                 const parsed = parseActivity({ ...d.data(), id: d.id });

@@ -1,4 +1,5 @@
-import { doc, getDoc, onSnapshot } from 'firebase/firestore';
+import { doc, onSnapshot } from 'firebase/firestore';
+import { getDocRetained } from './firestoreReadRetention';
 import { getDb } from '../firebase';
 import { garminAuthService } from './garminAuthService';
 
@@ -34,7 +35,7 @@ export const garminConnectionService = {
     async getConnectionState(userId: string): Promise<GarminConnectionResult> {
         try {
             const ref = doc(getDb(), 'users', userId, 'connections', 'garmin');
-            const snap = await getDoc(ref);
+            const snap = await getDocRetained(ref);
             if (snap.exists() && snap.data()?.status === 'active') {
                 return { state: 'connected', linkedAt: snap.data()?.linkedAt };
             }

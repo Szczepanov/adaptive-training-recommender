@@ -1,4 +1,5 @@
-import { doc, getDoc, setDoc, type Firestore } from 'firebase/firestore';
+import { doc, setDoc, type Firestore } from 'firebase/firestore';
+import { getDocRetained } from './firestoreReadRetention';
 import { getDb } from '../firebase';
 import type { TrainingIntentProfile } from '../engine/models';
 import type { DataState } from '../engine/dataState';
@@ -17,7 +18,7 @@ export class TrainingIntentProfileService {
 
     async getProfileState(userId: string): Promise<DataState<TrainingIntentProfile>> {
         try {
-            const snapshot = await getDoc(doc(this.db, 'users', userId, COLLECTION, DOC_ID));
+            const snapshot = await getDocRetained(doc(this.db, 'users', userId, COLLECTION, DOC_ID));
             if (!snapshot.exists()) return { status: 'MISSING' };
             const parsed = validateTrainingIntentProfile(snapshot.data());
             if (!parsed.isValid || !parsed.data || parsed.data.userId !== userId) {

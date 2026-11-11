@@ -1,4 +1,5 @@
-import { collection, doc, getDoc, getDocs, onSnapshot, orderBy, query, where } from 'firebase/firestore';
+import { collection, doc, onSnapshot, orderBy, query, where } from 'firebase/firestore';
+import { getDocRetained, getDocsRetained } from './firestoreReadRetention';
 import { getDb } from '../firebase';
 import type { DailyRecoverySnapshot } from '../engine/models';
 import type { DataIssue, DataState } from '../engine/dataState';
@@ -43,7 +44,7 @@ export class RecoverySnapshotService {
         const documentPath = `users/${userId}/daily_recovery_snapshots/${date}`;
         try {
             const scopedRef = doc(getDb(), 'users', userId, 'daily_recovery_snapshots', date);
-            const scopedSnap = await getDoc(scopedRef);
+            const scopedSnap = await getDocRetained(scopedRef);
             if (scopedSnap.exists()) {
                 return parseRecoverySnapshot(scopedSnap.data(), documentPath, userId, date);
             }
@@ -79,7 +80,7 @@ export class RecoverySnapshotService {
 
         try {
             const ref = collection(getDb(), 'users', userId, 'daily_recovery_snapshots');
-            const result = await getDocs(query(
+            const result = await getDocsRetained(query(
                 ref,
                 where('date', '>=', startDateInclusive),
                 where('date', '<', endDateExclusive),
