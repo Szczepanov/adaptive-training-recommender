@@ -1,4 +1,5 @@
-import { doc, getDoc, setDoc, type WriteBatch } from 'firebase/firestore';
+import { doc, setDoc, type WriteBatch } from 'firebase/firestore';
+import { getDocRetained } from './firestoreReadRetention';
 import { getDb } from '../firebase';
 import type { StrengthSession, UserPreferences } from '../engine/models';
 import type { DataState } from '../engine/dataState';
@@ -15,7 +16,7 @@ export class PreferencesService {
     async getPreferencesState(userId: string): Promise<DataState<UserPreferences>> {
         try {
             const docRef = doc(getDb(), 'users', userId, this.collectionPath, this.singletonDocId);
-            const docSnap = await getDoc(docRef);
+            const docSnap = await getDocRetained(docRef);
             if (!docSnap.exists()) return { status: 'MISSING' };
             const validation = validatePreferences(docSnap.data());
             if (!validation.isValid || !validation.data || validation.data.userId !== userId) {
@@ -30,7 +31,7 @@ export class PreferencesService {
     async getPreferences(userId: string): Promise<UserPreferences | null> {
         try {
             const docRef = doc(getDb(), 'users', userId, this.collectionPath, this.singletonDocId);
-            const docSnap = await getDoc(docRef);
+            const docSnap = await getDocRetained(docRef);
 
             if (docSnap.exists()) {
                 return docSnap.data() as UserPreferences;

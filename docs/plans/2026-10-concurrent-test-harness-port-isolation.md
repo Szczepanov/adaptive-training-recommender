@@ -198,10 +198,32 @@ Re-measured 2026-11-11 after `net::ERR_NO_BUFFER_SPACE` (Windows `WSAENOBUFS`: l
 ports exhausted by connections held in `TIME_WAIT`) began failing `page.goto` in E2E runs. One
 full serial suite opened 6,800–8,700 distinct connections to the Firestore emulator; the spread
 between runs of the same code was larger than any helper change. Reusing one `inspectAthlete`
-client per test (public API only) again produced no measurable drop and was not kept. Other
-localhost traffic outside the harness ranges (a short-lived server on a dynamic port receiving
-1,300–1,600 connections in two minutes) was seen during both investigations, so the shared
-machine load, not one suite, decides when the port pool runs out.
+client per test (public API only) again produced no measurable drop and was not kept.
+
+Root cause, measured the same day with no other work on the machine:
+
+- The Firestore emulator (firebase-tools 15.34–15.35, emulator 1.22.0) closes the browser's
+  connection after every WebChannel forward-channel POST, and for each one opens and closes an
+  internal loopback connection to its own JVM on a dynamic port. That internal connection is
+  closed from the client end, so it holds a Windows ephemeral port in `TIME_WAIT` for two
+  minutes. REST `get` and `commit` requests open none. A probe of 20 forward POSTs left 20
+  internal `TIME_WAIT`s; 20 REST reads or commits left none. The dynamic-port "server" seen
+  receiving 1,300–1,600 connections in earlier snapshots was this JVM port, not unrelated
+  traffic.
+- The browser sends a forward POST whenever the SDK adds or removes a listen target, which an
+  online `getDoc`/`getDocs` does on every call. One full serial suite sent 11,376 forward POSTs
+  (9,093 target additions); today's recovery snapshot alone was added 791 times.
+- `app/src/services/firestoreReadRetention.ts` keeps a short-lived listener on hot read targets
+  so repeated reads reuse one watch target. Retention is per target, so it also serves plain
+  reads of the same document elsewhere; it is therefore limited to collections no code writes
+  with `runTransaction` (a retained target sees a transaction commit only when watch pushes
+  it). With that limit the same suite sent 8,963 forward POSTs (−21%), all 60 tests passing.
+  Retaining every hot target, including transaction-written ones, measured 5,864 (−48%) but
+  could serve pre-commit state to the `saveRecommendation` authority guard, so it was not
+  kept; `firestoreReadRetention.boundary.test.ts` enforces the limit.
+
+`TcpTimedWaitDelay` (default 120 s) and the dynamic port range still bound how many suites can
+run at once; widening the range must stay above the 20000–39999 lease band.
 
 ### P5 — Orphan visibility and reaping — Implemented
 

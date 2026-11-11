@@ -16,6 +16,7 @@ import {
     type Firestore,
     type WriteBatch,
 } from 'firebase/firestore';
+import { getDocsRetained } from './firestoreReadRetention';
 import { getDb } from '../firebase';
 import { notifyFlagInputsChanged } from './flagCaptureRuntime';
 import type { DataState } from '../engine/dataState';
@@ -714,7 +715,7 @@ export class SessionExecutionService {
     }
 
     async getRestEvents(userId: string, executionId: string): Promise<SessionRestEvent[]> {
-        const snap = await getDocs(this.restEventsColl(userId, executionId));
+        const snap = await getDocsRetained(this.restEventsColl(userId, executionId));
         const restEvents: SessionRestEvent[] = [];
         for (const docSnap of snap.docs) {
             const parsed = parseSessionRestEventDocument(docSnap.data(), docSnap.ref.path);

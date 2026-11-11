@@ -1,4 +1,5 @@
-import { doc, getDoc, setDoc, deleteDoc, deleteField, collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
+import { doc, getDoc, setDoc, deleteDoc, deleteField, collection, query, where, orderBy, limit } from 'firebase/firestore';
+import { getDocRetained, getDocsRetained } from './firestoreReadRetention';
 import { getDb } from '../firebase';
 import type { DailySubjectiveCheckin } from '../engine/models';
 import type { DataIssue, DataState } from '../engine/dataState';
@@ -44,7 +45,7 @@ export class CheckinService {
     async getCheckinState(userId: string, date: string): Promise<DataState<DailySubjectiveCheckin>> {
         try {
             const docRef = doc(getDb(), 'users', userId, this.collectionPath, date);
-            const docSnap = await getDoc(docRef);
+            const docSnap = await getDocRetained(docRef);
             if (!docSnap.exists()) return { status: 'MISSING' };
             return parseSubjectiveCheckin(docSnap.data(), `users/${userId}/${this.collectionPath}/${date}`, userId, date);
         } catch (error: unknown) {
@@ -179,7 +180,7 @@ export class CheckinService {
                 limit(days)
             );
 
-            const querySnapshot = await getDocs(q);
+            const querySnapshot = await getDocsRetained(q);
             return querySnapshot.docs.map(doc => doc.data() as DailySubjectiveCheckin);
         } catch (error) {
             console.error('Error fetching recent check-ins:', error);
@@ -220,7 +221,7 @@ export class CheckinService {
                 where('date', '<', endDateExclusive),
                 orderBy('date', 'asc'),
             );
-            const querySnapshot = await getDocs(q);
+            const querySnapshot = await getDocsRetained(q);
             if (querySnapshot.empty) return { status: 'MISSING' };
 
             const checkins: DailySubjectiveCheckin[] = [];

@@ -1,4 +1,5 @@
-import { collection, getDocs, orderBy, query, where } from 'firebase/firestore';
+import { collection, orderBy, query, where } from 'firebase/firestore';
+import { getDocsRetained } from './firestoreReadRetention';
 import { getDb } from '../firebase';
 import type { DataIssue, DataState } from '../engine/dataState';
 import type { NormalizedGarminActivity } from '../engine/models';
@@ -23,7 +24,7 @@ export class ActivityService {
                 where('date', '<', throughDateExclusive),
                 orderBy('date', 'asc'),
             );
-            const snapshot = await getDocs(activityQuery);
+            const snapshot = await getDocsRetained(activityQuery);
             const activities: NormalizedGarminActivity[] = [];
             const issues: DataIssue[] = [];
             const revisions: string[] = [];

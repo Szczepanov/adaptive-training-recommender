@@ -1,4 +1,5 @@
-import { collection, doc, getDoc, getDocs, query, setDoc, deleteDoc, where } from 'firebase/firestore';
+import { collection, doc, getDoc, query, setDoc, deleteDoc, where } from 'firebase/firestore';
+import { getDocsRetained } from './firestoreReadRetention';
 import { getDb } from '../firebase';
 import type { ActivityOverride } from '../engine/models';
 import type { DataIssue, DataState } from '../engine/dataState';
@@ -34,7 +35,7 @@ export class ActivityOverrideService {
 
     async getAllOverrides(userId: string): Promise<Record<string, ActivityOverride>> {
         try {
-            const snap = await getDocs(this.getCollectionRef(userId));
+            const snap = await getDocsRetained(this.getCollectionRef(userId));
             const overrides: Record<string, ActivityOverride> = {};
             snap.forEach((docSnap) => {
                 const data = docSnap.data() as ActivityOverride;
@@ -58,7 +59,7 @@ export class ActivityOverrideService {
      * into "no overrides", so read-only exports can say the source is unknown. */
     async getOverridesSinceState(userId: string, fromDate: string): Promise<DataState<Record<string, ActivityOverride>>> {
         try {
-            const snap = await getDocs(query(this.getCollectionRef(userId), where('date', '>=', fromDate)));
+            const snap = await getDocsRetained(query(this.getCollectionRef(userId), where('date', '>=', fromDate)));
             const overrides: Record<string, ActivityOverride> = {};
             const skipped: DataIssue[] = [];
             snap.forEach((docSnap) => {

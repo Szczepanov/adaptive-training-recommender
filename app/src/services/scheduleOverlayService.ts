@@ -1,4 +1,5 @@
-import { addDoc, collection, deleteDoc, doc, getDocs, query, setDoc, where, type DocumentData } from 'firebase/firestore';
+import { addDoc, collection, deleteDoc, doc, query, setDoc, where, type DocumentData } from 'firebase/firestore';
+import { getDocsRetained } from './firestoreReadRetention';
 import { getDb } from '../firebase';
 import type { ScheduleOverlay } from '../engine/models';
 import type { DataIssue, DataState } from '../engine/dataState';
@@ -36,7 +37,7 @@ export class ScheduleOverlayService {
         try {
             const ref = collection(getDb(), 'users', userId, this.collectionPath);
             // Overlays that start on or before the queried range end
-            const snapshot = await getDocs(query(ref, where('startDate', '<=', endDate)));
+            const snapshot = await getDocsRetained(query(ref, where('startDate', '<=', endDate)));
             const overlays: ScheduleOverlayWithId[] = [];
             const issues: DataIssue[] = [];
             const revisions: string[] = [];
@@ -78,7 +79,7 @@ export class ScheduleOverlayService {
      * into a misleading "no schedule blocks" state. */
     async listOverlays(userId: string): Promise<ScheduleOverlayWithId[]> {
         const ref = collection(getDb(), 'users', userId, this.collectionPath);
-        const snapshot = await getDocs(ref);
+        const snapshot = await getDocsRetained(ref);
         const overlays: ScheduleOverlayWithId[] = [];
         for (const item of snapshot.docs) {
             const parsed = validateScheduleOverlay({ ...item.data(), id: item.id });

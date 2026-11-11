@@ -4,6 +4,7 @@ import { onAuthStateChanged } from 'firebase/auth';
 import type { User } from 'firebase/auth';
 import { preferencesService } from '../services/preferencesService';
 import { trainingSettingsService } from '../services/trainingSettingsService';
+import { releaseRetainedReads } from '../services/firestoreReadRetention';
 
 type AuthPhase = 'CHECKING' | 'LOGIN' | 'AUTHENTICATED';
 
@@ -40,6 +41,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(getAuthInstance(), async (firebaseUser) => {
+      // Retained read listeners belong to the previous user; never carry them across.
+      releaseRetainedReads();
       setUser(firebaseUser);
       if (firebaseUser) {
         setUserId(firebaseUser.uid);
