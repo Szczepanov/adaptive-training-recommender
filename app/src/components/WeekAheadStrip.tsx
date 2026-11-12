@@ -5,6 +5,7 @@ import { capabilityMaintenanceReadout } from '../engine/capabilityMaintenance';
 import { resolveRestDatesByDate, type PlacedSession } from '../engine/externalPlacement';
 import { externalSessionDisplayPrescription } from '../engine/externalSessionProfiles';
 import type { ActiveExternalPlan } from '../services/activeExternalPlanService';
+import type { PlanningAuthorityMode } from '../ledger/planningAuthorityMode';
 import { addDaysToLocalDateString } from '../utils/localDate';
 import { splitCoachingRationale } from '../utils/rationaleDisplay';
 import { WorkoutExportMenu } from './WorkoutExportMenu';
@@ -89,6 +90,10 @@ interface WeekAheadStripProps {
   userId?: string;
   /** Pauses workout step details and export when clinical escalation is active. */
   clinicalEscalationRequired?: boolean;
+  /** Planning authority mode (ADR-0052 Phase 2, #1167). Defaults to 'engine' until P2-8. */
+  planningAuthorityMode?: PlanningAuthorityMode;
+  /** Optional callback to open or navigate to plan import from the ledger empty state. */
+  onImportPlan?: () => void;
 }
 
 const MODALITY_ICON: Record<string, string> = {
@@ -219,6 +224,8 @@ export const WeekAheadStrip = memo(function WeekAheadStrip({
   today,
   userId,
   clinicalEscalationRequired = false,
+  planningAuthorityMode = 'engine',
+  onImportPlan,
 }: WeekAheadStripProps) {
   const [selectedIndex, setSelectedIndex] = useState(0);
 
@@ -476,6 +483,35 @@ export const WeekAheadStrip = memo(function WeekAheadStrip({
             </p>
           )}
         </div>
+      </div>
+    );
+  }
+
+  if (planningAuthorityMode === 'ledger') {
+    return (
+      <div className="dashboard-card week-ahead-card week-ahead-ledger-empty" role="region" aria-label="Week ahead">
+        <div className="card-header">
+          <div className="header-title-group">
+            <h3>Today &amp; Next 7 Days</h3>
+            <span className="provisional-tag">No imported plan</span>
+          </div>
+        </div>
+        <p className="detail-rationale">
+          {onImportPlan
+            ? 'No active training plan is imported. Import a coach or AI plan to see your scheduled sessions for the week ahead.'
+            : 'No active training plan is imported. Open Plan to import a coach or AI plan for the week ahead.'}
+        </p>
+        {onImportPlan && (
+          <div className="week-ahead-empty-actions">
+            <button
+              type="button"
+              className="week-ahead-import-btn"
+              onClick={onImportPlan}
+            >
+              📥 Import Plan
+            </button>
+          </div>
+        )}
       </div>
     );
   }

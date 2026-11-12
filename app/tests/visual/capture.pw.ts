@@ -8,7 +8,7 @@ const artifactDir = resolve('artifacts/visual-review/latest');
 const entriesPath = resolve(artifactDir, 'entries.ndjson');
 
 async function visitScenario(page: Page, scenario: VisualScenario): Promise<void> {
-  if (scenario.id === 'plan-recovery-authority-exit') {
+  if (scenario.id === 'plan-recovery-authority-exit' || scenario.id === 'plan-ledger-imported') {
     await page.clock.setFixedTime('2026-09-12T08:00:00+02:00');
   }
   await page.goto(`/visual.html?scenario=${scenario.id}`);

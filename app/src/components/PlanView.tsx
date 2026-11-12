@@ -58,12 +58,17 @@ import { PlacementOverlayRecoveryCard } from './PlacementOverlayRecoveryCard';
 import type { AuthorityBannerInput } from './planAuthorityBannerRule';
 import './PlanView.css';
 import type { CapabilityMaintenanceResult } from '../engine/capabilityMaintenance';
+import {
+  resolvePlanningAuthorityMode,
+  type PlanningAuthorityMode,
+} from '../ledger/planningAuthorityMode';
 
 interface PlanViewProps {
   userId: string;
   onNavigate?: (screen: Screen) => void;
   onPlanChanged?: () => void;
   onCapabilityMaintenanceResolved?: (userId: string, date: string, result: CapabilityMaintenanceResult | null) => void;
+  planningAuthorityMode?: PlanningAuthorityMode;
 }
 
 const WEEKDAY_FORMATTER = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
@@ -80,7 +85,7 @@ function formatSourceList(items: string[]): string {
   return `${items.slice(0, -1).join(', ')}, and ${items.at(-1)}`;
 }
 
-export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanChanged, onCapabilityMaintenanceResolved }) => {
+export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanChanged, onCapabilityMaintenanceResolved, planningAuthorityMode }) => {
   const today = useMemo(() => getLocalDateString(), []);
   const [activePlan, setActivePlan] = useState<ActiveExternalPlan | null>(null);
   const [critique, setCritique] = useState<ExternalWeekCritique | null>(null);
@@ -167,37 +172,41 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
         return;
       }
 
-      const recoveryState = input.sourceStates?.recoverySnapshot;
-      if (recoveryState && recoveryState.status !== 'AVAILABLE' && recoveryState.status !== 'MISSING') {
-        if (recoveryState.status === 'INVALID') {
-          // A malformed stored snapshot is fixed by re-ingesting, not by re-reading it --
-          // offer a forced resync instead of a dead-end Retry.
-          setForecastRepairTargets([{ kind: 'resync' }]);
-        }
-        setForecastUnavailable(
-          recoveryState.status === 'UNAVAILABLE'
-            ? 'Recovery data is temporarily unavailable. Please retry before generating a plan.'
-            : 'Recovery data needs repair before generating a plan.',
-        );
-        return;
-      }
+      const modeForLoad = planningAuthorityMode ?? resolvePlanningAuthorityMode(input.preferences);
 
       let wearableMode: WearablePlanningMode = 'wearable';
-      if (!input.recoverySnapshot) {
-        const connection = await garminConnectionService.getConnectionState(userId);
-        wearableMode = resolveWearablePlanningMode(false, connection.state);
-        if (wearableMode === 'sync_required') {
-          setWearableForecastBlock({
-            message: 'Garmin is connected, but today\'s recovery data is missing. Sync before generating a forecast.',
-            canResync: true,
-          });
+      if (modeForLoad === 'engine') {
+        const recoveryState = input.sourceStates?.recoverySnapshot;
+        if (recoveryState && recoveryState.status !== 'AVAILABLE' && recoveryState.status !== 'MISSING') {
+          if (recoveryState.status === 'INVALID') {
+            // A malformed stored snapshot is fixed by re-ingesting, not by re-reading it --
+            // offer a forced resync instead of a dead-end Retry.
+            setForecastRepairTargets([{ kind: 'resync' }]);
+          }
+          setForecastUnavailable(
+            recoveryState.status === 'UNAVAILABLE'
+              ? 'Recovery data is temporarily unavailable. Please retry before generating a plan.'
+              : 'Recovery data needs repair before generating a plan.',
+          );
+          return;
         }
-        // 'unavailable' means the reconciliation call itself failed rather than
-        // confirming a real disconnect -- most often on an account with no Garmin mirror
-        // doc at all (every non-Garmin user, every load). Blocking the forecast here made
-        // a transient backend hiccup fully dead-end the athletes least likely to know
-        // what "Garmin connection" means. Fail open into the same subjective-only
-        // computation below, same as Home.tsx's dashboard load.
+
+        if (!input.recoverySnapshot) {
+          const connection = await garminConnectionService.getConnectionState(userId);
+          wearableMode = resolveWearablePlanningMode(false, connection.state);
+          if (wearableMode === 'sync_required') {
+            setWearableForecastBlock({
+              message: 'Garmin is connected, but today\'s recovery data is missing. Sync before generating a forecast.',
+              canResync: true,
+            });
+          }
+          // 'unavailable' means the reconciliation call itself failed rather than
+          // confirming a real disconnect -- most often on an account with no Garmin mirror
+          // doc at all (every non-Garmin user, every load). Blocking the forecast here made
+          // a transient backend hiccup fully dead-end the athletes least likely to know
+          // what "Garmin connection" means. Fail open into the same subjective-only
+          // computation below, same as Home.tsx's dashboard load.
+        }
       }
 
       const acts = actState.data;
@@ -224,11 +233,12 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
       const currentPlan = activePlanState.status === 'AVAILABLE' ? activePlanState.data : null;
       setActivePlan(currentPlan);
 
-      // P0/P1: Verify minimum safety check-in status before generating normal adaptive forecast
-      const safetyStatus = getMinimumSafetyCheckinStatus(input.subjectiveCheckin);
-      const canGenerateNormalPlan = canGenerateNormalRecommendation(safetyStatus);
+      if (modeForLoad === 'engine') {
+        // P0/P1: Verify minimum safety check-in status before generating normal adaptive forecast
+        const safetyStatus = getMinimumSafetyCheckinStatus(input.subjectiveCheckin);
+        const canGenerateNormalPlan = canGenerateNormalRecommendation(safetyStatus);
 
-      if (canGenerateNormalPlan && (wearableMode === 'wearable' || wearableMode === 'subjective_only' || wearableMode === 'unavailable')) {
+        if (canGenerateNormalPlan && (wearableMode === 'wearable' || wearableMode === 'subjective_only' || wearableMode === 'unavailable')) {
         const subjective = mapCheckinToSubjectiveInput(input.subjectiveCheckin);
         const objective = mapSnapshotToEngineInput(input.recoverySnapshot);
         const events = mapGoalsToUserEvents(input.activeGoals);
@@ -355,6 +365,7 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
           setWeekAheadPlan(forecast);
         }
       }
+    }
     } catch (err) {
       console.error('Failed to load plan or forecast in PlanView:', err);
       const compositionRepair = resolveDecisionCompositionRepairState(err);
@@ -372,7 +383,7 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
     } finally {
       setLoading(false);
     }
-  }, [userId, today, selectedNextDayTier, onCapabilityMaintenanceResolved]);
+  }, [userId, today, selectedNextDayTier, onCapabilityMaintenanceResolved, planningAuthorityMode]);
 
   useEffect(() => {
     loadPlanData();
@@ -451,6 +462,9 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
     onPlanChanged?.();
   }, [loadPlanData, onPlanChanged]);
 
+  const effectiveAuthorityMode = planningAuthorityMode ?? resolvePlanningAuthorityMode(decisionInput?.preferences);
+  const effectiveViewMode = effectiveAuthorityMode === 'ledger' ? 'imported' : viewMode;
+
   const resolvedPlanningMode = useMemo(() => {
     if (!decisionInput) return undefined;
     const events = mapGoalsToUserEvents(decisionInput.activeGoals);
@@ -470,7 +484,7 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
   // `weekAheadPlan.days` for today: that collection intentionally starts tomorrow.
   const authorityBanner = useMemo((): AuthorityBannerInput | null => {
     // An unreadable overlay means today's coach session is not known; do not compare it.
-    if (!activePlan || activePlan.placementOverlayInvalid || !adaptiveTodayRecommendation) return null;
+    if (effectiveAuthorityMode === 'ledger' || !activePlan || activePlan.placementOverlayInvalid || !adaptiveTodayRecommendation) return null;
     const coachTodaySessions = activePlan.placed.filter(
       (item) => item.date === today && occupiesDate(item.status),
     );
@@ -511,14 +525,14 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
         </section>
       )}
 
-      {!loading && !loadError && !forecastUnavailable && authorityBanner && (
+      {!loading && !loadError && !forecastUnavailable && authorityBanner && effectiveAuthorityMode === 'engine' && (
         <PlanAuthorityBanner
           {...authorityBanner}
           onViewHome={onNavigate ? () => onNavigate('home') : undefined}
         />
       )}
 
-      {activePlan && (
+      {activePlan && effectiveAuthorityMode === 'engine' && (
         <div className="plan-view-mode-tabs" role="tablist" aria-label="Training plan views">
           <button
             type="button"
@@ -543,7 +557,7 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
 
       {loading ? (
         <div className="plan-loading-state">
-          <p>Loading active plan & weekly forecast…</p>
+          <p>{effectiveAuthorityMode === 'ledger' ? 'Loading active plan…' : 'Loading active plan & weekly forecast…'}</p>
         </div>
       ) : loadError ? (
         <div className="plan-error-card">
@@ -588,7 +602,7 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
             </button>
           </div>
         </div>
-      ) : activePlan && viewMode === 'imported' ? (
+      ) : activePlan && effectiveViewMode === 'imported' ? (
         <div className="plan-active-content">
           {activePlan.placementOverlayInvalid && (
             <PlacementOverlayRecoveryCard
@@ -614,6 +628,13 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
             clinicalEscalationRequired={clinicalEscalationRequired}
           />
         </div>
+      ) : effectiveAuthorityMode === 'ledger' ? (
+        <WeekAheadStrip
+          plan={null}
+          externalPlan={null}
+          planningAuthorityMode="ledger"
+          onImportPlan={() => setShowImport(true)}
+        />
       ) : (
         <div className="plan-evergreen-content">
           <div className="plan-evergreen-banner">

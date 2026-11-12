@@ -969,6 +969,25 @@ export const VISUAL_SCENARIOS: VisualScenario[] = [
     expectedFocus: ['Plan import editor opens cleanly without horizontal overflow.'],
     fixture: standardFixture,
   },
+  {
+    id: 'plan-ledger-empty',
+    title: 'Training Plan — ledger mode empty state',
+    screen: 'plan',
+    expectedFocus: ['Ledger mode without an imported plan shows an honest empty state with an import action and no AI forecast.'],
+    fixture: buildFixture({
+      preferences: { ...preferences, engineRecommendationsEnabled: false },
+    }),
+  },
+  {
+    id: 'plan-ledger-imported',
+    title: 'Training Plan — ledger mode imported coach plan',
+    screen: 'plan',
+    expectedFocus: ['Ledger mode with an imported plan shows only the coach plan without AI forecast tab or authority banner.'],
+    fixture: buildFixture({
+      preferences: { ...preferences, engineRecommendationsEnabled: false },
+      externalPlan: importedPlan,
+    }),
+  },
 ];
 
 export function getVisualScenario(id: string | null): VisualScenario {
