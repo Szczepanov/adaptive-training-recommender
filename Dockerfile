@@ -1,5 +1,5 @@
 # Production Dockerfile for Garmin Ingestion Service
-FROM python:3.14-slim AS builder
+FROM python:3.15-slim AS builder
 
 WORKDIR /app
 
@@ -30,7 +30,7 @@ COPY src /app/src
 RUN uv sync --frozen --no-dev
 
 # Final runtime image
-FROM python:3.14-slim AS runtime
+FROM python:3.15-slim AS runtime
 
 # Set security and Python defaults
 ENV PYTHONUNBUFFERED=1 \
