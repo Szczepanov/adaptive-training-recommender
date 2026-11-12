@@ -83,6 +83,10 @@ import {
     type MeasuredBenchmarkExport,
 } from '../observations/contextBriefAssessments';
 import { compareCodeUnits } from '../utils/canonicalJson';
+import { resolvePlanningAuthorityMode } from '../ledger/planningAuthorityMode';
+import { renderLedgerExport } from '../ledger/export/renderLedgerExport';
+import type { LegacyEngineLayer } from '../ledger/export/schema';
+import { ledgerExportService, type LedgerExportService } from './ledgerExportService';
 
 export interface ContextBriefResult {
     /** The rendered markdown, ready to paste into an external planner. */
@@ -227,12 +231,21 @@ function planningAuthoritySession(session: AnyExternalPlanSession): LegacyExtern
 /** Assembles the context brief from the user-scoped stores. Read-only: it persists
  * nothing and mutates nothing, so it is safe to call at any point in the day. */
 export class ContextBriefService {
+    private readonly ledgerExporter: Pick<LedgerExportService, 'build'>;
+
+    constructor(
+        ledgerExporter: Pick<LedgerExportService, 'build'> = ledgerExportService,
+    ) {
+        this.ledgerExporter = ledgerExporter;
+    }
+
     async build(
         userId: string,
         asOfDate?: string,
         windowDays: number = defaultBriefWindowDays(),
         preset: BriefWindowPreset = windowDays <= briefWindowDaysFor('daily') ? 'daily' : 'full',
         capabilityMaintenance?: CapabilityMaintenanceResult | null,
+        options?: { legacyEngine?: LegacyEngineLayer | null; exportedAt?: string },
     ): Promise<ContextBriefResult> {
         const targetDate = asOfDate ?? getLocalDateString();
         // Purpose selects the output contract. Planning alone reads compact assessment
@@ -243,6 +256,39 @@ export class ContextBriefService {
         // even when a caller requests a one-day window.
         windowDays = purpose === 'morning' ? Math.max(2, windowDays) : windowDays;
         const startDate = briefWindowStart(targetDate, windowDays);
+
+        let prefetchedPreferencesResult: PromiseSettledResult<Awaited<ReturnType<typeof preferencesService.getPreferencesState>>>;
+        try {
+            prefetchedPreferencesResult = { status: 'fulfilled', value: await preferencesService.getPreferencesState(userId) };
+        } catch (reason) {
+            prefetchedPreferencesResult = { status: 'rejected', reason };
+        }
+        const prefetchedPreferences = prefetchedPreferencesResult.status === 'fulfilled'
+            && prefetchedPreferencesResult.value.status === 'AVAILABLE'
+            ? prefetchedPreferencesResult.value.data
+            : null;
+        if (resolvePlanningAuthorityMode(prefetchedPreferences) === 'ledger') {
+            const ledger = await this.ledgerExporter.build(userId, {
+                asOfDate: targetDate,
+                purpose,
+                window: { startDate, endDate: targetDate },
+                ...(options?.exportedAt !== undefined ? { exportedAt: options.exportedAt } : {}),
+                ...(options?.legacyEngine ? { legacyEngine: options.legacyEngine } : {}),
+            });
+            const unavailableSources = ledger.sources
+                .filter(source => source.state === 'unavailable')
+                .map(source => source.source);
+            return {
+                text: renderLedgerExport(ledger),
+                startDate: ledger.window.startDate,
+                asOfDate: ledger.asOfDate,
+                windowDays: ledger.window.days,
+                preset,
+                purpose,
+                contractVersion: ledger.schemaVersion,
+                unavailableSources,
+            };
+        }
         // Strictly longer than the window, so there is always prior history to compare
         // against even when the caller asks for a long window.
         const baselineDays = Math.max(SUBJECTIVE_BASELINE_DAYS, windowDays * 2);
@@ -334,7 +380,9 @@ export class ContextBriefService {
             // profile as a side effect of being looked at (DataView presents it as
             // "generating it changes nothing").
             trainingSettingsService.peekTrainingSettingsState(userId),
-            preferencesService.getPreferencesState(userId),
+            prefetchedPreferencesResult.status === 'fulfilled'
+                ? Promise.resolve(prefetchedPreferencesResult.value)
+                : Promise.reject(prefetchedPreferencesResult.reason),
             trainingIntentProfileService.getProfileState(userId),
             goalService.getActiveGoalsState(userId),
             // Fixed activities are fetched slightly wider than the visible handoff so

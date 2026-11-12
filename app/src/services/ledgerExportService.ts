@@ -36,7 +36,7 @@ function fromState<T>(result: DataState<T>, empty: T): Read<T> {
         : { data: empty, state: result.status === 'MISSING' ? 'missing' : result.status === 'INVALID' ? 'invalid' : 'unavailable' };
 }
 const measured = <T,>(data: T): Read<T> => ({ data, state: 'measured' });
-export type LedgerExportRequest = Pick<BuildLedgerExportInput, 'asOfDate' | 'purpose' | 'window'> & { exportedAt?: string };
+export type LedgerExportRequest = Pick<BuildLedgerExportInput, 'asOfDate' | 'purpose' | 'window' | 'legacyEngine'> & { exportedAt?: string };
 
 /** User-initiated, read-only assembly. No default migration, reconciliation, or engine evaluation. */
 export class LedgerExportService {
