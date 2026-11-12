@@ -156,3 +156,10 @@ def test_overlapping_recorders_on_two_threads_restore_the_logger() -> None:
     assert seen["other"] == ["portal+cffi"]
     assert SSO.level == level_before
     assert SSO.filters == filters_before
+
+
+def test_unexpected_record_arguments_never_raise_into_the_library() -> None:
+    with record_login_strategies() as recorder:
+        SSO.debug("Trying login strategy: %s", ["unhashable"])  # must not raise
+        _try("mobile+cffi")
+    assert [a.name for a in recorder.summary("succeeded").attempts] == ["mobile+cffi"]

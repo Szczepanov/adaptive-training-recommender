@@ -115,7 +115,10 @@ class _DispatchFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         stack = self.recorders.get(record.thread or 0)
         if stack:
-            stack[-1].observe(record)
+            try:
+                stack[-1].observe(record)
+            except Exception:  # noqa: BLE001 - telemetry must never break the login call
+                pass
         return record.levelno >= self.threshold
 
 
