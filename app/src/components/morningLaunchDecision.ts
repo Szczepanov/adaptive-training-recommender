@@ -31,12 +31,19 @@ export interface MorningLaunchInputs {
     isExternalExcluded: boolean;
     /** External-plan launch state already makes the binding unavailable (verdict, scaling proof, or adjustment). */
     isExternalPrimaryBindingUnavailable: boolean;
+    /**
+     * The decision is the canonical `Total Rest` template (`rest_01`): "No training is
+     * recommended today". There is nothing to run, so its binding never gets a Start
+     * (mirrors `sessionLaunch.ts` `canLaunchExternalPlanSession` for authored rest). An
+     * athlete adjustment that displays a real prescription still launches that prescription.
+     */
+    isRestDecision: boolean;
 }
 
 export function resolveMorningLaunch(inputs: MorningLaunchInputs): MorningLaunchDecision {
     const {
         canLaunch, hasAthleteAdjustment, prescription, primarySession,
-        isExternalExcluded, isExternalPrimaryBindingUnavailable,
+        isExternalExcluded, isExternalPrimaryBindingUnavailable, isRestDecision,
     } = inputs;
     // External-plan launch authority is stronger than the presence of a catalog prescription.
     // Fail closed even for currently-unreachable mixed states so a future resolver/caller change
@@ -49,7 +56,7 @@ export function resolveMorningLaunch(inputs: MorningLaunchInputs): MorningLaunch
     if (hasAthleteAdjustment && prescription) {
         return { kind: 'adjusted', prescription };
     }
-    if (!primarySession) return { kind: 'none' };
+    if (!primarySession || isRestDecision) return { kind: 'none' };
     return hasAthleteAdjustment
         ? { kind: 'withheld', binding: primarySession }
         : { kind: 'primary', binding: primarySession };
