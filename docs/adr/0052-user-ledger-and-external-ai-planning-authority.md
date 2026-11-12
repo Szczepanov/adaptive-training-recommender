@@ -1,7 +1,8 @@
 # ADR-0052: User Ledger with External-AI Planning Authority
 
 * **Status:** Accepted (2026-10-25; amended on acceptance: D-EVAL timing and definitions, the
-  Phase 2 export gate, export missingness, and the simulation detector's base/head rule)
+  Phase 2 export gate, export missingness, and the simulation detector's base/head rule;
+  amended 2026-11-12: red-flag symptoms keep a launch pause, see D-FLAGS)
 * **Date:** 2026-10-25
 * **Deciders:** Repository owner
 * **Related:** ADR-0003, ADR-0007, ADR-0010, ADR-0012, ADR-0013, ADR-0017, ADR-0019, ADR-0023,
@@ -119,6 +120,27 @@ Rules:
   makes the app more of a decider again.
 * Flag thresholds keep decision-adjacent weight, so they stay under the knowledge registry
   (D-CI).
+
+#### Amendment (2026-11-12): red-flag symptoms keep a launch pause (#1167 OQ2)
+
+Red-flag symptoms reported at check-in (ADR-0032; today derived by `engine/adapters.ts`
+`resolveRedFlagFindings` and surfaced as `clinicalEscalationRequired`) are **not** one of the
+four flags above. They are a medical-escalation stop, and today they pause every session
+launch for that date. The owner decided on 2026-11-12 that they keep doing so after Phase 2:
+
+* **Scope:** only red-flag findings pause a launch. The four D-FLAGS stay advisory, and pain or
+  injury, illness symptoms and recovery-beyond-baseline never block, modify or re-dose.
+* **Behaviour:** while a red flag is recorded for the date, ledger mode offers no Start for any
+  session. It shows the existing clinical-evaluation message next to today's sessions. It does
+  not re-dose, swap or suggest an alternative.
+* **Implementation:** the predicate must be pure and live outside `engine/`, because ledger
+  mode does not evaluate the engine. #1167 P2-3 moves `resolveRedFlagFindings` out of
+  `engine/` as a behaviour-preserving relocation (Phase 1 pattern).
+* **D-EVAL is unchanged by this amendment.** The criteria document's §2 counts a session as
+  `flag_skip` only when a D-FLAGS flag is `active: true`, so a red-flag date with no active
+  flag counts as an ordinary miss. Changing that is a criteria-document decision, and it must
+  be made before the qualifying block starts. A red flag in a check-in is already an adverse
+  outcome under the flagged-day criterion.
 
 ### D-ENGINE — freeze, extract, then retire in phases
 
