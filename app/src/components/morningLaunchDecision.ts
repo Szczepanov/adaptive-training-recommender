@@ -32,10 +32,11 @@ export interface MorningLaunchInputs {
     /** External-plan launch state already makes the binding unavailable (verdict, scaling proof, or adjustment). */
     isExternalPrimaryBindingUnavailable: boolean;
     /**
-     * The decision is the canonical `Total Rest` template (`rest_01`): "No training is
-     * recommended today". There is nothing to run, so its binding never gets a Start
-     * (mirrors `sessionLaunch.ts` `canLaunchExternalPlanSession` for authored rest). An
-     * athlete adjustment that displays a real prescription still launches that prescription.
+     * The displayed decision is the canonical `Total Rest` template (`rest_01`): "No training
+     * is recommended today". There is nothing to run, so nothing gets a Start (mirrors
+     * `sessionLaunch.ts` `canLaunchExternalPlanSession` for authored rest). This includes an
+     * easier or time-crunch adjustment, which keeps `rest_01` and its rest prescription. An
+     * alternative that actually moves away from rest changes the template, so it launches.
      */
     isRestDecision: boolean;
 }
@@ -50,13 +51,13 @@ export function resolveMorningLaunch(inputs: MorningLaunchInputs): MorningLaunch
     // cannot turn an imported skip/scale/adjustment into a catalog swap by accident.
     const isAdjustedExternalBinding = hasAthleteAdjustment
         && primarySession?.sessionSource.kind === 'external_plan';
-    if (!canLaunch || isExternalExcluded || isExternalPrimaryBindingUnavailable || isAdjustedExternalBinding) {
+    if (!canLaunch || isRestDecision || isExternalExcluded || isExternalPrimaryBindingUnavailable || isAdjustedExternalBinding) {
         return { kind: 'none' };
     }
     if (hasAthleteAdjustment && prescription) {
         return { kind: 'adjusted', prescription };
     }
-    if (!primarySession || isRestDecision) return { kind: 'none' };
+    if (!primarySession) return { kind: 'none' };
     return hasAthleteAdjustment
         ? { kind: 'withheld', binding: primarySession }
         : { kind: 'primary', binding: primarySession };

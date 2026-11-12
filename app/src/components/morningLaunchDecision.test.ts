@@ -49,9 +49,16 @@ describe('resolveMorningLaunch (morning-decision-ux.md §4)', () => {
             .toEqual({ kind: 'none' });
     });
 
-    it('still launches the displayed prescription when the athlete adjusts away from rest', () => {
+    it('offers no Start for an easier or time-crunch adjustment that keeps Total Rest', () => {
+        // Such adjustments keep `rest_01`, and its rest prescription still resolves.
         expect(resolveMorningLaunch({
             ...base, primarySession: catalogBinding, isRestDecision: true, hasAthleteAdjustment: true, prescription: displayedPrescription,
+        })).toEqual({ kind: 'none' });
+    });
+
+    it('launches an alternative that moved away from rest (the template is no longer rest_01)', () => {
+        expect(resolveMorningLaunch({
+            ...base, primarySession: catalogBinding, isRestDecision: false, hasAthleteAdjustment: true, prescription: displayedPrescription,
         })).toEqual({ kind: 'adjusted', prescription: displayedPrescription });
     });
 
