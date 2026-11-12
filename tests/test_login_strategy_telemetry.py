@@ -163,3 +163,14 @@ def test_unexpected_record_arguments_never_raise_into_the_library() -> None:
         SSO.debug("Trying login strategy: %s", ["unhashable"])  # must not raise
         _try("mobile+cffi")
     assert [a.name for a in recorder.summary("succeeded").attempts] == ["mobile+cffi"]
+
+
+def test_attempt_that_ends_without_a_record_is_unresolved_not_the_final_outcome() -> None:
+    # The library falls through silently when MFA resolution raises a connection error.
+    with record_login_strategies() as recorder:
+        _try("widget+cffi")
+        _try("portal+cffi")
+    assert [(a.name, a.outcome) for a in recorder.summary("succeeded").attempts] == [
+        ("widget+cffi", "unresolved"),
+        ("portal+cffi", "succeeded"),
+    ]

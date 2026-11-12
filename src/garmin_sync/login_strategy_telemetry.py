@@ -35,6 +35,9 @@ _OUTCOME_BY_FORMAT = {
     "%s obtained a token the API rejected; trying next strategy": "token_rejected",
 }
 _PENDING = "pending"
+# A strategy the library left without a log record (e.g. MFA resolution failing with a
+# connection error falls through to the next strategy silently).
+_UNRESOLVED = "unresolved"
 
 logger = logging.getLogger(__name__)
 _sso_logger = logging.getLogger(SSO_LOGGER_NAME)
@@ -79,6 +82,12 @@ class LoginStrategyRecorder:
             return
         name = args[0] if args[0] in KNOWN_STRATEGIES else "other"
         if record.msg == _TRYING:
+            # A new attempt starts only after the previous one ended; one still pending ended
+            # without a record, so it must not inherit the overall outcome later.
+            self._attempts = [
+                StrategyAttempt(a.name, _UNRESOLVED) if a.outcome == _PENDING else a
+                for a in self._attempts
+            ]
             self._attempts.append(StrategyAttempt(str(name), _PENDING))
             return
         outcome = _OUTCOME_BY_FORMAT.get(str(record.msg))

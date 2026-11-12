@@ -1,3 +1,4 @@
+from pathlib import Path
 from unittest.mock import MagicMock, call, patch
 
 import pytest
@@ -334,13 +335,15 @@ def test_body_composition_methods():
     assert wrapper.get_daily_weigh_ins("2026-08-23") == {"dateWeightList": [{"weight": 74500}]}
 
 
-def test_login_logs_sanitized_strategy_summary_on_rate_limit(tmp_path, caplog):
+def test_login_logs_sanitized_strategy_summary_on_rate_limit(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
     """#718: each login emits one per-strategy summary, with no message arguments."""
     import logging
 
     sso = logging.getLogger("garminconnect.client.sso")
 
-    def chain(_path):
+    def chain(_path: str) -> None:
         sso.debug("Trying login strategy: %s", "mobile+cffi")
         sso.warning("%s returned 429: %s", "mobile+cffi", "user@example.com ST-123")
         raise GarminConnectTooManyRequestsError("rate limited")
