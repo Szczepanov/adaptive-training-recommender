@@ -139,8 +139,8 @@ launch for that date. The owner decided on 2026-11-12 that they keep doing so af
 * **D-EVAL is unchanged by this amendment.** The criteria document's §2 counts a session as
   `flag_skip` only when a D-FLAGS flag is `active: true`, so a red-flag date with no active
   flag counts as an ordinary miss. Changing that is a criteria-document decision, and it must
-  be made before the qualifying block starts. A red flag in a check-in is already an adverse
-  outcome under the flagged-day criterion.
+  be made before the qualifying block starts. A red flag reported within 72 hours after a
+  flagged hard session is already an adverse outcome under the flagged-day criterion.
 
 ### D-ENGINE — freeze, extract, then retire in phases
 
