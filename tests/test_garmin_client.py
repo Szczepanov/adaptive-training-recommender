@@ -332,3 +332,31 @@ def test_body_composition_methods():
         "dateWeightList": [{"weight": 74500}]
     }
     assert wrapper.get_daily_weigh_ins("2026-08-23") == {"dateWeightList": [{"weight": 74500}]}
+
+
+def test_login_logs_sanitized_strategy_summary_on_rate_limit(tmp_path, caplog):
+    """#718: each login emits one per-strategy summary, with no message arguments."""
+    import logging
+
+    sso = logging.getLogger("garminconnect.client.sso")
+
+    def chain(_path):
+        sso.debug("Trying login strategy: %s", "mobile+cffi")
+        sso.warning("%s returned 429: %s", "mobile+cffi", "user@example.com ST-123")
+        raise GarminConnectTooManyRequestsError("rate limited")
+
+    with patch("garmin_sync.garmin_client.Garmin") as mock_garmin_cls:
+        mock_garmin_cls.return_value.login.side_effect = chain
+        with (
+            caplog.at_level(logging.INFO, logger="garmin_sync.login_strategy_telemetry"),
+            pytest.raises(GarminConnectTooManyRequestsError),
+        ):
+            GarminClientWrapper().login_with_tokens_or_credentials(tmp_path / "t.json")
+
+    summaries = [
+        r.getMessage() for r in caplog.records if r.name == "garmin_sync.login_strategy_telemetry"
+    ]
+    assert summaries == [
+        "garmin_login_strategies outcome=rate_limited attempts=1 rate_limited=1 "
+        "sequence=mobile+cffi:rate_limited"
+    ]

@@ -1018,3 +1018,34 @@ def test_delete_token_object_handles_import_error(
         service._delete_token_object("test-object.json")
 
     assert "Failed to remove orphaned Garmin token object after link error" in caplog.text
+
+
+def test_start_login_logs_strategy_summary_without_credentials(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """#718: the link flow records which strategy reached MFA, never the email or password."""
+    sso = logging.getLogger("garminconnect.client.sso")
+
+    class ChainGarmin(FakeGarmin):
+        def login(self, token_path: str) -> tuple[str | None, None]:
+            sso.debug("Trying login strategy: %s", "mobile+cffi")
+            sso.warning("%s failed: %s", "mobile+cffi", "person@example.com")
+            sso.debug("Trying login strategy: %s", "widget+cffi")
+            return super().login(token_path)
+
+    service = GarminAccountLinkService(
+        "bucket",
+        repository=DummyRepository(),  # type: ignore[arg-type]
+        garmin_factory=lambda **kwargs: ChainGarmin(needs_mfa=True, **kwargs),  # type: ignore[arg-type]
+    )
+    with caplog.at_level(logging.INFO, logger="garmin_sync.login_strategy_telemetry"):
+        assert service.start_login("person@example.com", "secret")["status"] == "mfa_required"
+
+    lines = [r.getMessage() for r in caplog.records if r.name.endswith("login_strategy_telemetry")]
+    assert lines == [
+        "garmin_login_strategies outcome=mfa_required attempts=2 rate_limited=0 "
+        "sequence=mobile+cffi:failed>widget+cffi:mfa_required"
+    ]
+    # The library's own WARNING still propagates unchanged (it sanitizes its exception text);
+    # the telemetry line adds nothing from the message arguments.
+    assert "example.com" not in lines[0] and "secret" not in lines[0]

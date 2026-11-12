@@ -16,6 +16,12 @@ from garminconnect import (
     GarminConnectTooManyRequestsError,
 )
 
+from .login_strategy_telemetry import (
+    classify_login_failure,
+    log_login_summary,
+    record_login_strategies,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -154,7 +160,13 @@ class GarminClientWrapper:
         )
 
         try:
-            self.api.login(str(token_file))
+            with record_login_strategies() as strategies:
+                try:
+                    self.api.login(str(token_file))
+                except Exception as exc:
+                    log_login_summary(strategies, classify_login_failure(exc))
+                    raise
+            log_login_summary(strategies, "succeeded")
             logger.info(f"Garmin login succeeded; tokens persisted to '{token_file}'.")
         except (GarminConnectTooManyRequestsError, GarminConnectConnectionError):
             # Transient/infra failure, not a token problem -- surface as-is rather than

@@ -23,6 +23,11 @@ from google.cloud.exceptions import GoogleCloudError
 from google.cloud.firestore_v1.base_query import FieldFilter
 
 from .firestore_repository import init_firestore_client
+from .login_strategy_telemetry import (
+    classify_login_failure,
+    log_login_summary,
+    record_login_strategies,
+)
 from .token_store import GcsTokenStore
 
 logger = logging.getLogger(__name__)
@@ -425,7 +430,15 @@ class GarminAccountLinkService:
             retry_attempts=1,
         )
         try:
-            mfa_status, client_state = api.login(str(token_path))
+            with record_login_strategies() as strategies:
+                try:
+                    mfa_status, client_state = api.login(str(token_path))
+                except Exception as exc:
+                    log_login_summary(strategies, classify_login_failure(exc))
+                    raise
+            log_login_summary(
+                strategies, "mfa_required" if mfa_status == "needs_mfa" else "succeeded"
+            )
             if mfa_status == "needs_mfa":
                 # Current garminconnect keeps the live MFA state inside this Garmin/Client
                 # instance and normally returns client_state=None. Keep the optional return
