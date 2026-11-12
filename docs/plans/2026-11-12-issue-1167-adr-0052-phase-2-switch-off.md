@@ -1,6 +1,6 @@
 # Issue #1167: ADR-0052 Phase 2, switch off the engine's recommendation surfaces
 
-- **Status:** Draft. OQ1 answered **yes**, OQ2 **keep the pause** and OQ3 **no gate, just prompt** (owner, 2026-11-12). P2-1…P2-7 may start now. OQ4–OQ6 are open. The default flip (P2-8) waits for device acceptance.
+- **Status:** In progress. OQ1–OQ6 answered by the owner (2026-11-12). P2-1 merged (#1241); P2-2…P2-7 unblocked. The default flip (P2-8) waits for device acceptance.
 - **Blocked by:** Device acceptance of #897, #895, #725–#729 for the **flip** (P2-8) only.
 - **Gates met:** Phase 1 (#1144, closed 2026-11-08); D-EXPORT v1 shipped and contract-tested (#1145); D-EVAL criteria merged (#1149, #1150); D-EVAL §5 ledger inputs (#1151, #1152, #1153, #1154).
 - **Decision source:** [ADR-0052](../adr/0052-user-ledger-and-external-ai-planning-authority.md) (D-AUTHORITY, D-TRAVEL, D-FLAGS, D-ENGINE Phase 2, D-CI, D-EXPORT), [D-EVAL criteria](../analysis/2026-10-25-adr-0052-d-eval-criteria.md), [#1145 plan](./2026-10-25-issue-1145-ledger-export-v1.md) (OD4, OD5), [ADR-0053](../adr/0053-firestore-rules-scope.md) (rules stay through Phase 2).
@@ -93,14 +93,9 @@ After P2-1 lands, P2-4, P2-5 and P2-6 touch disjoint files and can run in parall
   Ledger mode does not apply engine mode's minimum safety check-in
   (`canGenerateNormalRecommendation`). It shows a "Check in first" prompt and still allows
   Start, so the ledger records what was done.
-- **OQ4. Prompt in rollback mode.** **Recommended:** the prompt text follows the mode. Engine
-  mode keeps "plan as if every day is available", because the engine still applies travel
-  there. That avoids a double reduction when the setting is turned back on.
-- **OQ5. Where the setting lives.** **Recommended:** Preferences → Advanced. Its label states
-  that turning it on during a D-EVAL block ends the block (criteria §1, C4).
-- **OQ6. Silent engine runs.** **Recommended:** none in ledger mode. That means no shadow
-  evaluation and no decision journal entries, because the D-EVAL block requires adjudication
-  off, and a hidden run would still cost reads.
+- **OQ4. Prompt in rollback mode.** **Answered (owner, 2026-11-12): yes.** The prompt text follows `resolvePlanningAuthorityMode`. Engine mode keeps "plan as if every day is available", because the engine still applies travel there; ledger mode uses "plan around `userContext.travel` and `venueRestrictions`", avoiding a double travel reduction when the setting is turned back on.
+- **OQ5. Where the setting lives.** **Answered (owner, 2026-11-12): yes.** Preferences → Advanced ("Advanced: legacy engine recommendations"). Its label states that turning it on during a D-EVAL block ends the block (criteria §1, C4).
+- **OQ6. Silent engine runs.** **Answered (owner, 2026-11-12): yes.** None in ledger mode — no shadow evaluation and no decision journal entries, because the D-EVAL block requires adjudication off, and a hidden run would still cost reads.
 
 ## Risks
 

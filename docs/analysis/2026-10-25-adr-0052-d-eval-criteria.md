@@ -41,7 +41,7 @@ Each planned session gets exactly one outcome. Count a linked occurrence at most
 | `partial` | A linked occurrence has explicit `completedFraction < 1` in `SessionExecution.completionEvidence` or `SessionResponse`, or its execution state is `abandoned` (#896). Conflicting reports are `unknown`. |
 | `moved` | A linked occurrence has evidence of full completion, the placement status is `moved`, and it was performed within the block. |
 | `completed` | A canonical `PerformedTrainingOccurrence` (ADR-0034) is linked to the assignment, has evidence of full completion and was performed on the assigned date or ±1 date. |
-| `flag_skip` | Confirmed no linked performance, and on the assigned date at least one D-FLAGS flag was `active: true`. |
+| `flag_skip` | Confirmed no linked performance, and on the assigned date at least one D-FLAGS flag was `active: true` or a check-in recorded a red-flag symptom (`redFlags` non-empty, which pauses session launch under the 2026-11-12 ADR-0052 OQ2 amendment). |
 | `missed` | Any remaining determinable planned session, including linked performance outside the completion/move window. |
 
 Full completion means an explicit `completedFraction: 1` in the execution's completion
