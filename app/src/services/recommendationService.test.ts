@@ -26,6 +26,10 @@ const firestore = vi.hoisted(() => {
 
 vi.mock('firebase/firestore', () => firestore);
 vi.mock('../firebase', () => ({ getDb: vi.fn(() => ({})) }));
+const mockResolveMode = vi.hoisted(() => vi.fn(async () => 'engine' as 'engine' | 'ledger'));
+vi.mock('./planningAuthorityModeService', () => ({
+    resolveUserPlanningAuthorityMode: mockResolveMode,
+}));
 
 import { RecommendationService } from './recommendationService';
 
@@ -557,6 +561,35 @@ describe('RecommendationService persistence', () => {
             firestore.getDocs.mockRejectedValue(new Error('offline'));
             const result = await new RecommendationService().listRecommendationRevisions('u1', '2026-09-20');
             expect(result).toMatchObject({ status: 'UNAVAILABLE', operation: 'read recommendation revision archive' });
+        });
+    });
+
+    describe('ledger mode write suppression (#1167 P2-5)', () => {
+        it('does not write daily_recommendations or decision_contexts in ledger mode', async () => {
+            mockResolveMode.mockResolvedValue('ledger');
+            const service = new RecommendationService();
+            const rec = {
+                template: TEMPLATES[0],
+                mode: 'train',
+                rationale: 'Engine rationale',
+            } as unknown as Recommendation;
+
+            expect(await service.saveRecommendation('athlete', '2026-11-12', rec)).toBeNull();
+            expect(await service.saveNotApplicableContext('athlete', '2026-11-12', 'missing')).toBe(false);
+            expect(await service.recordAdherence('athlete', '2026-11-12', { followed: true })).toBeNull();
+            expect(firestore.setDoc).not.toHaveBeenCalled();
+            expect(firestore.batch.commit).not.toHaveBeenCalled();
+            expect(firestore.runTransaction).not.toHaveBeenCalled();
+            mockResolveMode.mockResolvedValue('engine');
+        });
+
+        it('returns zeroed adherence stats without error when no daily_recommendations exist', async () => {
+            firestore.getDocs.mockResolvedValueOnce({ docs: [] });
+            const stats = await new RecommendationService().getAdherenceStats('athlete', 30);
+            expect(stats.totalRecommendations).toBe(0);
+            expect(stats.answered).toBe(0);
+            expect(stats.awaitingResponse).toBe(0);
+            expect(stats.followedRate).toBe(0);
         });
     });
 });

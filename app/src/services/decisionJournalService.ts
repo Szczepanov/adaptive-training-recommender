@@ -5,6 +5,7 @@ import type { DataState } from '../engine/dataState';
 import { validateDecisionJournalEntry } from '../engine/validation';
 import { parseDecisionJournalEntry } from '../persistence/parsers/decisionInputs';
 import { isPermissionDeniedError } from '../utils/errors';
+import { resolveUserPlanningAuthorityMode } from './planningAuthorityModeService';
 
 export interface DecisionJournalRangeResult {
     entries: DecisionJournalEntry[];
@@ -61,6 +62,9 @@ export class DecisionJournalService {
         date: string,
         input: { externalVerdict: ShadowVerdict; externalNote?: string | null; sawEngineVerdictFirst: boolean },
     ): Promise<DecisionJournalEntry> {
+        if (await resolveUserPlanningAuthorityMode(userId) === 'ledger') {
+            throw new Error('Decision journal entries are disabled in ledger mode.');
+        }
         const existingState = await this.getEntryState(userId, date);
         if (existingState.status === 'UNAVAILABLE') {
             throw new Error("Could not confirm whether today's entry already exists; please try again");
@@ -95,6 +99,9 @@ export class DecisionJournalService {
      * evening-only record with no external verdict is not a valid shadow-mode day.
      */
     async recordActualVerdict(userId: string, date: string, actualVerdict: ShadowVerdict): Promise<DecisionJournalEntry> {
+        if (await resolveUserPlanningAuthorityMode(userId) === 'ledger') {
+            throw new Error('Decision journal entries are disabled in ledger mode.');
+        }
         const existingState = await this.getEntryState(userId, date);
         if (existingState.status === 'UNAVAILABLE') {
             throw new Error("Could not confirm today's entry; please try again");

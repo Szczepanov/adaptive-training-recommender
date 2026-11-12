@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, memo } from 'react';
 import { decisionJournalService } from '../services/decisionJournalService';
 import { shadowLogService } from '../services/shadowLogService';
 import { SHADOW_VERDICTS, type DecisionJournalEntry, type ShadowVerdict } from '../engine/models';
+import { resolvePlanningAuthorityMode, type PlanningAuthorityMode } from '../ledger/planningAuthorityMode';
+import { resolveUserPlanningAuthorityMode } from '../services/planningAuthorityModeService';
 import { exportDecisionJournalEvidenceOnce } from '../utils/decisionJournalEvidenceExport';
 import { downloadShadowEvidence } from '../utils/shadowLogExport';
 import './DecisionJournalCard.css';
@@ -20,6 +22,7 @@ interface DecisionJournalCardProps {
    *  reveal-equivalent -- a returning athlete who recorded blind earlier today shouldn't be
    *  re-hidden from their own recommendation on a later page load. */
   onEntryChange: (entry: DecisionJournalEntry | null) => void;
+  planningAuthorityMode?: PlanningAuthorityMode;
 }
 
 const VERDICT_LABELS: Record<ShadowVerdict, string> = {
@@ -68,7 +71,7 @@ function persistReveal(userId: string, date: string): void {
  * like an unanchored observation. Only the evening actual outcome remains editable.
  */
 export const DecisionJournalCard = memo(function DecisionJournalCard({
-  userId, date, engineVerdict, engineRevealed, onEntryChange,
+  userId, date, engineVerdict, engineRevealed, onEntryChange, planningAuthorityMode,
 }: DecisionJournalCardProps) {
   const [entry, setEntry] = useState<DecisionJournalEntry | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -81,6 +84,21 @@ export const DecisionJournalCard = memo(function DecisionJournalCard({
   const [exportStatus, setExportStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [readBlocked, setReadBlocked] = useState(false);
+  const [loadedMode, setLoadedMode] = useState<PlanningAuthorityMode>(() => resolvePlanningAuthorityMode(null));
+  const effectiveMode = planningAuthorityMode ?? loadedMode;
+
+  useEffect(() => {
+    if (planningAuthorityMode !== undefined) return;
+    let cancelled = false;
+    resolveUserPlanningAuthorityMode(userId)
+      .then(mode => {
+        if (!cancelled) setLoadedMode(mode);
+      })
+      .catch(() => {
+        if (!cancelled) setLoadedMode(resolvePlanningAuthorityMode(null));
+      });
+    return () => { cancelled = true; };
+  }, [planningAuthorityMode, userId]);
 
   useEffect(() => {
     if (engineRevealed) persistReveal(userId, date);
@@ -171,6 +189,8 @@ export const DecisionJournalCard = memo(function DecisionJournalCard({
       download: downloadShadowEvidence, setExporting, setStatus: setExportStatus,
     });
   };
+
+  if (effectiveMode === 'ledger') return null;
 
   if (!loaded) {
     return (

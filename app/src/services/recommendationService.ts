@@ -12,6 +12,7 @@ import type { MinimumSafetyCheckinStatus } from '../engine/safetyCheckin';
 import { parseSessionOccurrenceDocument } from '../persistence/parsers/sessionDefinition';
 import { isManualOccurrence } from '../sessions/models';
 import { manualRecommendationReplacementService } from './manualRecommendationReplacementService';
+import { resolveUserPlanningAuthorityMode } from './planningAuthorityModeService';
 
 type DecisionContextCapture = Omit<CreateDecisionContextInput, 'userId' | 'date' | 'recommendationRevision'>;
 
@@ -42,6 +43,7 @@ export class RecommendationService {
         evaluatedAt = new Date().toISOString(),
     ): Promise<boolean> {
         try {
+            if (await resolveUserPlanningAuthorityMode(userId) === 'ledger') return false;
             const contextRef = doc(getDb(), 'users', userId, this.collectionPath, date, 'decision_contexts', '0');
             const existing = await getDoc(contextRef);
             if (existing.exists()) {
@@ -95,6 +97,7 @@ export class RecommendationService {
         let priorRevision: number | undefined;
         let nextRevision: number | undefined;
         try {
+            if (await resolveUserPlanningAuthorityMode(userId) === 'ledger') return null;
             const docRef = doc(getDb(), 'users', userId, this.collectionPath, date);
             const existingSnap = await getDoc(docRef);
             const existing = existingSnap.exists() ? existingSnap.data() as DailyRecommendationWithVerdict : undefined;
@@ -348,6 +351,7 @@ export class RecommendationService {
         answer: { followed: boolean; skipped?: boolean; actualModality?: string | null; actualDurationMin?: number | null; notes?: string | null }
     ): Promise<DailyRecommendation | null> {
         try {
+            if (await resolveUserPlanningAuthorityMode(userId) === 'ledger') return null;
             const docRef = doc(getDb(), 'users', userId, this.collectionPath, date);
             const existingSnap = await getDoc(docRef);
             if (!existingSnap.exists()) {

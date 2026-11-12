@@ -59,4 +59,25 @@ describe('Firestore training history manual source', () => {
         await expect(getFirestoreTrainingHistorySnapshot('u1', '2026-08-07', 7, 'included'))
             .rejects.toMatchObject({ source: 'manualTraining', state: { status: 'UNAVAILABLE' } });
     });
+
+    it('handles days with no daily_recommendations record without error or rest-day fabrication (#1167 P2-5)', async () => {
+        activityService.getActivitiesInRange.mockResolvedValueOnce({
+            status: 'AVAILABLE',
+            revision: 'a1',
+            data: [{
+                activityId: 'act-1', date: '2026-08-06', type: 'cycling', durationMin: 50,
+                trainingEffectAerobic: 2.8, trainingEffectAnaerobic: 0, averageHr: 132, activityTrainingLoad: 70, intensityTag: 'easy',
+            }],
+        } as never);
+        recommendationService.getRecommendationsInRange.mockResolvedValueOnce({
+            status: 'AVAILABLE',
+            revision: null,
+            data: [],
+        } as never);
+
+        const snapshot = await getFirestoreTrainingHistorySnapshot('u1', '2026-08-07', 7, 'off');
+        expect(snapshot.exposures).toHaveLength(1);
+        expect(snapshot.exposures[0].date).toBe('2026-08-06');
+        expect(snapshot.sourceStates.recommendations.status).toBe('AVAILABLE');
+    });
 });

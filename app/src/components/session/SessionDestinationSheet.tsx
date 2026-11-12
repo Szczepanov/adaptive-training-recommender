@@ -1,9 +1,11 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useOverlayDialog } from '../useOverlayDialog';
 import '../overlayContract.css';
 import type { SessionDefinition, SessionOccurrence } from '../../sessions/models';
 import type { PreparedSessionLaunch } from '../../sessions/sessionLaunch';
 import { validateSessionDefinition } from '../../sessions/validation';
+import { resolvePlanningAuthorityMode, type PlanningAuthorityMode } from '../../ledger/planningAuthorityMode';
+import { resolveUserPlanningAuthorityMode } from '../../services/planningAuthorityModeService';
 import { sessionDefinitionService } from '../../services/sessionDefinitionService';
 import { prepareUnplannedSessionLaunch } from '../../services/sessionAuthoringService';
 import { sessionOccurrenceService } from '../../services/sessionOccurrenceService';
@@ -34,6 +36,7 @@ interface SessionDestinationSheetProps {
     onStartExecution: (session: PreparedSessionLaunch) => void;
     onSaved?: () => void;
     onOccurrenceCreated?: (occurrence: SessionOccurrence) => void;
+    planningAuthorityMode?: PlanningAuthorityMode;
 }
 
 export const SessionDestinationSheet: React.FC<SessionDestinationSheetProps> = ({
@@ -44,13 +47,34 @@ export const SessionDestinationSheet: React.FC<SessionDestinationSheetProps> = (
     onStartExecution,
     onSaved,
     onOccurrenceCreated,
+    planningAuthorityMode,
 }) => {
     const [selectedDestination, setSelectedDestination] = useState<DestinationChoice>('start_unplanned');
     const [scheduleDate, setScheduleDate] = useState<string>(getLocalDateString());
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [loadedMode, setLoadedMode] = useState<PlanningAuthorityMode>(() => resolvePlanningAuthorityMode(null));
+    const effectiveMode = planningAuthorityMode ?? loadedMode;
     const dialogRef = useRef<HTMLDivElement>(null);
     useOverlayDialog(isOpen, dialogRef, saving ? undefined : onClose, 'input[type="radio"]');
+
+    useEffect(() => {
+        if (!isOpen || planningAuthorityMode !== undefined) return;
+        let cancelled = false;
+        resolveUserPlanningAuthorityMode(userId)
+            .then(mode => {
+                if (!cancelled) {
+                    setLoadedMode(mode);
+                    if (mode === 'ledger') {
+                        setSelectedDestination(current => current === 'replace_recommendation' ? 'start_unplanned' : current);
+                    }
+                }
+            })
+            .catch(() => {
+                if (!cancelled) setLoadedMode(resolvePlanningAuthorityMode(null));
+            });
+        return () => { cancelled = true; };
+    }, [isOpen, planningAuthorityMode, userId]);
 
     if (!isOpen) return null;
 
@@ -97,6 +121,9 @@ export const SessionDestinationSheet: React.FC<SessionDestinationSheetProps> = (
             const definitionRef = { definitionId: definition.id, revision: definition.revision, contentHash };
             let occurrence: SessionOccurrence;
             if (selectedDestination === 'replace_recommendation') {
+                if (effectiveMode === 'ledger') {
+                    throw new Error('Replacing today’s recommendation is disabled in ledger mode.');
+                }
                 occurrence = await manualRecommendationReplacementService.replaceRecommendationOccurrence(
                     userId,
                     occurrenceDate,
@@ -133,7 +160,7 @@ export const SessionDestinationSheet: React.FC<SessionDestinationSheetProps> = (
                 </header>
 
                 <div className="destination-options-list">
-                    {(['start_unplanned', 'schedule', 'replace_recommendation', 'additional_session', 'save_only'] as DestinationChoice[]).map(choice => (
+                    {(['start_unplanned', 'schedule', ...(effectiveMode === 'ledger' ? [] : ['replace_recommendation' as const]), 'additional_session', 'save_only'] as DestinationChoice[]).map(choice => (
                         <label key={choice} className={`destination-option ${selectedDestination === choice ? 'selected' : ''}`}>
                             <input
                                 type="radio"

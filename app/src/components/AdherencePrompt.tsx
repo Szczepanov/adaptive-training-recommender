@@ -1,6 +1,8 @@
 import { useState, memo, useEffect, useCallback, useRef } from 'react';
 import { recommendationService } from '../services/recommendationService';
 import type { DailyRecommendation } from '../engine/models';
+import { resolvePlanningAuthorityMode, type PlanningAuthorityMode } from '../ledger/planningAuthorityMode';
+import { resolveUserPlanningAuthorityMode } from '../services/planningAuthorityModeService';
 import { usabilityMetrics } from '../utils/usabilityMetrics';
 import './AdherencePrompt.css';
 
@@ -14,11 +16,12 @@ interface AdherencePromptProps {
    *  adherence stats, and (Phase 9.0.3) sync the decision journal's `actualVerdict` when
    *  the athlete followed the plan as given. */
   onResolved: (answer: AdherenceAnswer) => void;
+  planningAuthorityMode?: PlanningAuthorityMode;
 }
 
 const MODALITY_OPTIONS = ['Running', 'Cycling', 'Strength', 'Mobility', 'Field', 'Cross Training', 'Other'];
 
-export const AdherencePrompt = memo(function AdherencePrompt({ userId, date, recommendation, onResolved }: AdherencePromptProps) {
+export const AdherencePrompt = memo(function AdherencePrompt({ userId, date, recommendation, onResolved, planningAuthorityMode }: AdherencePromptProps) {
   const [step, setStep] = useState<'initial' | 'details'>('initial');
   const [rpe, setRpe] = useState<number>(7);
   const [actualModality, setActualModality] = useState('');
@@ -26,9 +29,25 @@ export const AdherencePrompt = memo(function AdherencePrompt({ userId, date, rec
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loadedMode, setLoadedMode] = useState<PlanningAuthorityMode>(() => resolvePlanningAuthorityMode(null));
+  const effectiveMode = planningAuthorityMode ?? loadedMode;
   const submitInFlightRef = useRef(false);
 
+  useEffect(() => {
+    if (planningAuthorityMode !== undefined) return;
+    let cancelled = false;
+    resolveUserPlanningAuthorityMode(userId)
+      .then(mode => {
+        if (!cancelled) setLoadedMode(mode);
+      })
+      .catch(() => {
+        if (!cancelled) setLoadedMode(resolvePlanningAuthorityMode(null));
+      });
+    return () => { cancelled = true; };
+  }, [planningAuthorityMode, userId]);
+
   const submit = useCallback(async (answer: AdherenceAnswer) => {
+    if (effectiveMode === 'ledger') return;
     // State updates are asynchronous; the ref closes the small window where a rapid key
     // repeat/click could enqueue the same Firestore write twice before `submitting` renders.
     if (submitInFlightRef.current) return;
@@ -49,7 +68,7 @@ export const AdherencePrompt = memo(function AdherencePrompt({ userId, date, rec
       submitInFlightRef.current = false;
       setSubmitting(false);
     }
-  }, [userId, date, onResolved]);
+  }, [effectiveMode, userId, date, onResolved]);
 
   const handleFollowed = useCallback(() => submit({ followed: true, notes: `RPE ${rpe}/10` }), [submit, rpe]);
   const handleSkipped = useCallback(() => submit({ followed: false, skipped: true }), [submit]);
@@ -79,6 +98,8 @@ export const AdherencePrompt = memo(function AdherencePrompt({ userId, date, rec
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [step, handleFollowed, handleSkipped]);
+
+  if (effectiveMode === 'ledger') return null;
 
   return (
     <section className="dashboard-card adherence-prompt" aria-label="Completed Training Report">

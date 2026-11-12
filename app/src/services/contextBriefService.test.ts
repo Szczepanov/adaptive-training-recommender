@@ -2138,4 +2138,11 @@ describe('ContextBriefService', () => {
         expect(result.text).toContain('Planning authority note: An imported/external plan is the active planning authority for this athlete.');
         expect(result.text).toContain('The feedback below reflects responses to in-app recommendation prompts only, not compliance with the external plan.');
     });
+
+    it('treats a missing daily_recommendations day as no engine record rather than an error or rest day (#1167 P2-5)', async () => {
+        services.getRecommendationsInRange.mockResolvedValue({ status: 'AVAILABLE', data: [], revision: null });
+        const result = await new ContextBriefService().build('u1', AS_OF, 14);
+        expect(result.unavailableSources).not.toContain('recommendations and feedback');
+        expect(result.text).toContain('recommendations missing/no recommendation');
+    });
 });
