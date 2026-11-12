@@ -118,30 +118,30 @@
     "harness:reap": "node scripts/harness/reap.mjs"
   },
   "dependencies": {
-    "firebase": "^13.1.0",
+    "firebase": "^13.2.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@firebase/rules-unit-testing": "^6.0.0",
-    "@playwright/test": "^1.64.1",
+    "@playwright/test": "^1.65.0",
     "@types/node": "^26.6.6",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@typescript/native": "npm:typescript@~7.0.2",
-    "@vitejs/plugin-react": "^6.2.1",
-    "@vitest/coverage-v8": "^5.0.5",
+    "@vitejs/plugin-react": "^6.3.0",
+    "@vitest/coverage-v8": "^5.1.0",
     "eslint": "^10.14.0",
     "eslint-plugin-react-hooks": "7.1.1",
     "eslint-plugin-react-refresh": "^0.5.6",
-    "firebase-tools": "^15.34.2",
+    "firebase-tools": "^15.35.0",
     "globals": "^17.14.0",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
     "typescript-eslint": "^8.72.1",
-    "vite": "^8.3.5",
+    "vite": "^8.3.7",
     "vite-plugin-pwa": "^2.0.0",
-    "vitest": "^5.0.5"
+    "vitest": "^5.1.0"
   },
   "overrides": {
     "@firebase/firestore": {
