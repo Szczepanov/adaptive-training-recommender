@@ -41,7 +41,6 @@ _sso_logger = logging.getLogger(SSO_LOGGER_NAME)
 _level_lock = threading.Lock()
 _active_recorders = 0
 _saved_level = logging.NOTSET
-_saved_effective_level = logging.WARNING
 
 
 @dataclass(frozen=True)
@@ -67,20 +66,14 @@ class LoginStrategySummary:
         )
 
 
-class LoginStrategyRecorder(logging.Filter):
-    """Collects strategy attempts from the SSO logger for the creating thread."""
+class LoginStrategyRecorder:
+    """Collects strategy attempts from the SSO logger for the thread that created it."""
 
     def __init__(self) -> None:
-        super().__init__()
-        self._thread_id = threading.get_ident()
+        self.thread_id = threading.get_ident()
         self._attempts: list[StrategyAttempt] = []
 
-    def filter(self, record: logging.LogRecord) -> bool:
-        if record.thread == self._thread_id:
-            self._observe(record)
-        return record.levelno >= _saved_effective_level
-
-    def _observe(self, record: logging.LogRecord) -> None:
+    def observe(self, record: logging.LogRecord) -> None:
         args = record.args if isinstance(record.args, tuple) else ()
         if not args:
             return
@@ -105,35 +98,67 @@ class LoginStrategyRecorder(logging.Filter):
         return LoginStrategySummary(outcome=outcome, attempts=attempts)
 
 
-def _acquire_debug_level() -> None:
-    global _active_recorders, _saved_level, _saved_effective_level
+class _DispatchFilter(logging.Filter):
+    """The single filter on the SSO logger while any login is being recorded.
+
+    One shared filter, because `logging` stops at the first filter that rejects a record:
+    per-recorder filters would drop another thread's DEBUG records before its own recorder
+    saw them. Records below the logger's pre-recording effective level are captured and
+    then dropped, so lowering the level to DEBUG never adds output to the app's handlers.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.recorders: dict[int, list[LoginStrategyRecorder]] = {}
+        self.threshold = logging.WARNING
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        stack = self.recorders.get(record.thread or 0)
+        if stack:
+            stack[-1].observe(record)
+        return record.levelno >= self.threshold
+
+
+_dispatch = _DispatchFilter()
+
+
+def _attach(recorder: LoginStrategyRecorder) -> None:
+    # The filter is attached before the logger is lowered to DEBUG, and the level is restored
+    # before it is detached, so no DEBUG record is ever emitted without the filter dropping it.
+    global _active_recorders, _saved_level
     with _level_lock:
         if _active_recorders == 0:
             _saved_level = _sso_logger.level
-            _saved_effective_level = _sso_logger.getEffectiveLevel()
+            _dispatch.threshold = _sso_logger.getEffectiveLevel()
+            _sso_logger.addFilter(_dispatch)
             _sso_logger.setLevel(logging.DEBUG)
+        _dispatch.recorders.setdefault(recorder.thread_id, []).append(recorder)
         _active_recorders += 1
 
 
-def _release_debug_level() -> None:
+def _detach(recorder: LoginStrategyRecorder) -> None:
     global _active_recorders
     with _level_lock:
+        stack = _dispatch.recorders.get(recorder.thread_id, [])
+        if recorder in stack:
+            stack.remove(recorder)
+        if not stack:
+            _dispatch.recorders.pop(recorder.thread_id, None)
         _active_recorders -= 1
         if _active_recorders == 0:
             _sso_logger.setLevel(_saved_level)
+            _sso_logger.removeFilter(_dispatch)
 
 
 @contextmanager
 def record_login_strategies() -> Iterator[LoginStrategyRecorder]:
     """Watch one login on this thread; always restores the SSO logger afterwards."""
     recorder = LoginStrategyRecorder()
-    _acquire_debug_level()
-    _sso_logger.addFilter(recorder)
+    _attach(recorder)
     try:
         yield recorder
     finally:
-        _sso_logger.removeFilter(recorder)
-        _release_debug_level()
+        _detach(recorder)
 
 
 def classify_login_failure(error: BaseException) -> str:

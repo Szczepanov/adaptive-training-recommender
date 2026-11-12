@@ -130,3 +130,29 @@ def test_parsed_format_strings_match_the_installed_library() -> None:
 )
 def test_classify_login_failure(error: Exception, expected: str) -> None:
     assert classify_login_failure(error) == expected
+
+
+def test_overlapping_recorders_on_two_threads_restore_the_logger() -> None:
+    level_before, filters_before = SSO.level, list(SSO.filters)
+    inner_entered, outer_may_exit = threading.Event(), threading.Event()
+    seen: dict[str, list[str]] = {}
+
+    def other_login() -> None:
+        with record_login_strategies() as recorder:
+            _try("portal+cffi")
+            inner_entered.set()
+            outer_may_exit.wait(timeout=5)
+        seen["other"] = [a.name for a in recorder.summary("succeeded").attempts]
+
+    with record_login_strategies() as recorder:
+        worker = threading.Thread(target=other_login)
+        worker.start()
+        assert inner_entered.wait(timeout=5)
+        _try("mobile+cffi")
+    outer_may_exit.set()
+    worker.join(timeout=5)
+
+    assert [a.name for a in recorder.summary("succeeded").attempts] == ["mobile+cffi"]
+    assert seen["other"] == ["portal+cffi"]
+    assert SSO.level == level_before
+    assert SSO.filters == filters_before
