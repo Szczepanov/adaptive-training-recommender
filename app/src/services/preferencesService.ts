@@ -66,6 +66,10 @@ export class PreferencesService {
                 explanationVerbosity: existingPrefs?.explanationVerbosity ?? 'detailed',
                 conservativeBias: existingPrefs?.conservativeBias ?? false,
                 shadowModeEnabled: existingPrefs?.shadowModeEnabled ?? false,
+                // #1167: carry an explicit choice, never a default (see planningAuthorityMode.ts).
+                ...(existingPrefs?.engineRecommendationsEnabled !== undefined
+                    ? { engineRecommendationsEnabled: existingPrefs.engineRecommendationsEnabled }
+                    : {}),
                 preferredUnits: existingPrefs?.preferredUnits ?? {
                     distance: 'km',
                     weight: 'kg',

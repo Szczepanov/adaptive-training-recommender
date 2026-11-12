@@ -553,6 +553,10 @@ export interface UserPreferences {
      *  general onboarding surface -- undefined/false (the default for every account,
      *  including brand-new ones) keeps Home showing today's recommendation immediately. */
     shadowModeEnabled?: boolean;
+    /** ADR-0052 Phase 2 rollback setting (#1167). `true` keeps engine recommendations,
+     *  `false` selects ledger mode. Absent means "not chosen": `ledger/planningAuthorityMode.ts`
+     *  `resolvePlanningAuthorityMode` supplies the default, so nothing may write one here. */
+    engineRecommendationsEnabled?: boolean;
     // Metric preferences
     preferredUnits: {
         distance: 'km' | 'miles';
