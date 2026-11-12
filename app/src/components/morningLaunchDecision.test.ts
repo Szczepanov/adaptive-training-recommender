@@ -31,11 +31,35 @@ const base: MorningLaunchInputs = {
     primarySession: authoredBinding,
     isExternalExcluded: false,
     isExternalPrimaryBindingUnavailable: false,
+    isRestDecision: false,
 };
 
 describe('resolveMorningLaunch (morning-decision-ux.md §4)', () => {
     it('launches the stored binding when no adjustment is applied', () => {
         expect(resolveMorningLaunch(base)).toEqual({ kind: 'primary', binding: authoredBinding });
+    });
+
+    it('offers no Start for a Total Rest decision, even with a stored binding', () => {
+        expect(resolveMorningLaunch({ ...base, primarySession: catalogBinding, isRestDecision: true }))
+            .toEqual({ kind: 'none' });
+    });
+
+    it('does not withhold-and-explain an unadjustable Total Rest decision either', () => {
+        expect(resolveMorningLaunch({ ...base, primarySession: catalogBinding, isRestDecision: true, hasAthleteAdjustment: true }))
+            .toEqual({ kind: 'none' });
+    });
+
+    it('offers no Start for an easier or time-crunch adjustment that keeps Total Rest', () => {
+        // Such adjustments keep `rest_01`, and its rest prescription still resolves.
+        expect(resolveMorningLaunch({
+            ...base, primarySession: catalogBinding, isRestDecision: true, hasAthleteAdjustment: true, prescription: displayedPrescription,
+        })).toEqual({ kind: 'none' });
+    });
+
+    it('launches an alternative that moved away from rest (the template is no longer rest_01)', () => {
+        expect(resolveMorningLaunch({
+            ...base, primarySession: catalogBinding, isRestDecision: false, hasAthleteAdjustment: true, prescription: displayedPrescription,
+        })).toEqual({ kind: 'adjusted', prescription: displayedPrescription });
     });
 
     it('withholds an authored binding under an adjustment with no displayable prescription', () => {

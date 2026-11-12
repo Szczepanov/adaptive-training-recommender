@@ -82,11 +82,11 @@ test('V6 authored rest records unexpected work without inventing an authored ses
   await seedExternalPlanRevision(athlete, plan, today);
   await signInThroughUi(page, athlete);
   await checkIn(page);
-  // Home shows the protected rest day and nothing authored is launchable. The engine's own
-  // `Total Rest` decision currently still renders a Start control, so that one button is the
-  // only Start allowed.
+  // Home shows the protected rest day and nothing is launchable: neither the authored rest
+  // nor the engine's own `Total Rest` decision ("No training is recommended today") offers a
+  // Start control (`morningLaunchDecision.ts` `isRestDecision`).
   await expect(page.getByRole('heading', { name: 'Total Rest' })).toBeVisible();
-  await expect(page.getByRole('button', { name: /^Start (?!Total Rest$)/ })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /^Start / })).toHaveCount(0);
   const row = `- ${today} ${plan.planId} r1 rest/rest-today: placement unknown; adjudication not adjudicated; athlete none; performance not applicable.`;
   expect(await planningBrief(page)).toContain(row);
   await openFixturePicker(page);

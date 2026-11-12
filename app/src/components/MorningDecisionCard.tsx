@@ -250,6 +250,7 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
         primarySession: recommendation?.primarySession,
         isExternalExcluded,
         isExternalPrimaryBindingUnavailable,
+        isRestDecision: recommendation?.template.id === 'rest_01',
     });
 
     useEffect(() => {
