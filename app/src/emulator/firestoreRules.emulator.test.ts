@@ -1392,6 +1392,16 @@ emulatorDescribe('Firestore security rules', () => {
         }));
     });
 
+    it('accepts the ADR-0052 Phase 2 engine recommendations setting (#1167 P2-1)', async () => {
+        // ADR-0053: its boolean type is owned by validatePreferences on the write path; the
+        // rules only need to let the owner store and later change an explicit choice.
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertSucceeds(setDoc(doc(ownerDb, preferencesPath), { ...validPreferences(), engineRecommendationsEnabled: true }));
+        await assertSucceeds(setDoc(doc(ownerDb, preferencesPath), { engineRecommendationsEnabled: false }, { merge: true }));
+        const otherDb = testEnvironment.authenticatedContext(otherUserId).firestore();
+        await assertFails(setDoc(doc(otherDb, preferencesPath), { engineRecommendationsEnabled: false }, { merge: true }));
+    });
+
     it('enforces ownership, exact shape, bounded priorities and immutable creation time for training intent profiles', async () => {
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
         const valid = validTrainingIntentProfile();

@@ -1048,6 +1048,13 @@ export function validatePreferences(raw: any): ValidationResult<UserPreferences>
         });
     }
 
+    if (raw.engineRecommendationsEnabled !== undefined && typeof raw.engineRecommendationsEnabled !== 'boolean') {
+        errors.push({
+            field: 'engineRecommendationsEnabled',
+            message: 'Engine recommendations enabled must be a boolean'
+        });
+    }
+
     // Preferred units validation
     if (!raw.preferredUnits || typeof raw.preferredUnits !== 'object') {
         errors.push({
@@ -1155,6 +1162,7 @@ export function validatePreferences(raw: any): ValidationResult<UserPreferences>
         explanationVerbosity: raw.explanationVerbosity,
         conservativeBias: raw.conservativeBias ?? false,
         ...(raw.shadowModeEnabled !== undefined ? { shadowModeEnabled: raw.shadowModeEnabled } : {}),
+        ...(raw.engineRecommendationsEnabled !== undefined ? { engineRecommendationsEnabled: raw.engineRecommendationsEnabled } : {}),
         preferredUnits: raw.preferredUnits,
         ...(raw.performanceProfile ? { performanceProfile: raw.performanceProfile } : {}),
         schemaVersion: raw.schemaVersion ?? 1,
