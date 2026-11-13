@@ -1,5 +1,4 @@
 import type { FlagEvaluation } from './flagEvaluation';
-import { ILLNESS_ANOMALY_FLAG_DEFINITION_VERSION } from './illnessAnomaly/illnessAnomalyFlag';
 import type { PersistedFlagEvaluation } from '../../ledger/flagEvaluation';
 import type { LedgerFlagId, LedgerState } from '../../ledger/export/schema';
 
@@ -123,13 +122,7 @@ export function resolveTodayFlagStripItems(options: {
         items.push(notRecordedItem('illness_risk_symptom'));
     }
 
-    items.push({
-        ...DEFAULT_HA7_WITHHELD_ITEM,
-        // Reference the constant so it stays linked to the HA7 definition.
-        reasonCode: latest.get('illness_anomaly::')?.reasonCode === 'ha7_release_gate_unmet'
-            ? 'ha7_release_gate_unmet'
-            : ILLNESS_ANOMALY_FLAG_DEFINITION_VERSION && 'ha7_release_gate_unmet',
-    });
+    items.push(DEFAULT_HA7_WITHHELD_ITEM);
 
     if (options.sessionEvaluations && options.sessionEvaluations.length > 0) {
         for (const session of options.sessionEvaluations) {

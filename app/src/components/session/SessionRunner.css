@@ -52,6 +52,31 @@
     max-width: 720px;
 }
 
+.session-runner-redflag-pause {
+    padding: 0.8rem 0.95rem;
+    border-radius: var(--radius-control);
+    background: var(--tier-red-bg);
+    border: 1px solid var(--tier-red);
+    color: #fecaca;
+    font-size: 0.88rem;
+    line-height: 1.45;
+}
+
+.session-runner-redflag-pause strong {
+    display: block;
+    margin-bottom: 0.2rem;
+    color: #fee2e2;
+}
+
+.session-runner-redflag-unavailable {
+    margin: 0;
+    padding: 0.6rem 0.8rem;
+    border-radius: var(--radius-control);
+    border: 1px solid rgba(251, 191, 36, 0.45);
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+}
+
 .session-runner-error {
     margin: 0;
     color: #fecaca;

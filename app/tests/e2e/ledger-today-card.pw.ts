@@ -6,7 +6,6 @@ import {
   seedRecoverySnapshot,
   signInThroughUi,
   submitTypicalCheckin,
-  type E2EAthlete,
 } from './support/athlete';
 import { seedWithRulesDisabled } from './support/emulator';
 import {
@@ -15,33 +14,9 @@ import {
   finishStrength,
   readExecutions,
   seedExternalPlanRevision,
+  seedLedgerModePreferences,
   strengthDefinition,
 } from './support/roundTrip';
-
-async function seedLedgerModePreferences(athlete: E2EAthlete, date: string): Promise<void> {
-  const timestamp = `${date}T06:00:00.000Z`;
-  await seedWithRulesDisabled(db =>
-    setDoc(doc(db, 'users', athlete.userId, 'preferences', 'profile'), {
-      userId: athlete.userId,
-      preferredRecoveryStyle: 'mixed',
-      defaultWeekdayTimeMin: 45,
-      defaultWeekendTimeMin: 60,
-      preferredTimeOfDay: 'flexible',
-      preferredModalities: [],
-      deprioritizedModalities: [],
-      avoidedModalities: [],
-      unavailableModalities: [],
-      explanationVerbosity: 'detailed',
-      conservativeBias: false,
-      shadowModeEnabled: false,
-      engineRecommendationsEnabled: false,
-      preferredUnits: { distance: 'km', weight: 'kg', temperature: 'celsius' },
-      schemaVersion: 1,
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    }),
-  );
-}
 
 test('ledger mode launches authored definition by default and reducedDefinition only on explicit choice, recording executedDefinition', async ({ page }) => {
   const athlete = await provisionAthlete();

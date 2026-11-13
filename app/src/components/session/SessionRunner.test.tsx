@@ -8,6 +8,7 @@ import {
     resolveNextDueStep,
     resolveRestPreviewStep,
     resolveInitialSessionStartOptions,
+    resolveRedFlagLaunchGate,
 } from './SessionRunner';
 import { useSessionRunner } from '../../hooks/useSessionRunner';
 import { formatSessionLoad } from '../../sessions/loadDisplay';
@@ -654,5 +655,39 @@ describe('SessionRunner launch FlagStrip and red-flag pause', () => {
         expect(html).toContain('Training paused for clinical evaluation');
         expect(html).not.toContain('Start session');
         expect(html).not.toContain('Start Session →');
+    });
+});
+
+describe('resolveRedFlagLaunchGate (#1167 OQ2)', () => {
+    const redFlagCheckIn = { redFlags: { present: true, categories: ['neurological'] } } as never;
+    const cleanCheckIn = { redFlags: { present: false, categories: [] } } as never;
+
+    it('drops an App-level import/build launch and blocks every start when a red flag is recorded', () => {
+        const gate = resolveRedFlagLaunchGate({ todayCheckIn: undefined, loadedCheckIn: redFlagCheckIn, checkInLoad: 'loaded', hasUser: true });
+        expect(gate).toMatchObject({ redFlagPaused: true, launchBlocked: true, initialLaunch: 'drop' });
+    });
+
+    it('holds launches while the check-in read is in flight instead of failing open', () => {
+        const gate = resolveRedFlagLaunchGate({ todayCheckIn: undefined, loadedCheckIn: null, checkInLoad: 'loading', hasUser: true });
+        expect(gate).toMatchObject({ redFlagPaused: false, redFlagCheckPending: true, launchBlocked: true, initialLaunch: 'wait' });
+    });
+
+    it('allows a launch with a notice when the check-in cannot be read', () => {
+        const gate = resolveRedFlagLaunchGate({ todayCheckIn: undefined, loadedCheckIn: null, checkInLoad: 'unavailable', hasUser: true });
+        expect(gate).toMatchObject({ redFlagCheckUnavailable: true, launchBlocked: false, initialLaunch: 'start' });
+    });
+
+    it('starts immediately when the check-in is clean or missing', () => {
+        expect(resolveRedFlagLaunchGate({ todayCheckIn: undefined, loadedCheckIn: cleanCheckIn, checkInLoad: 'loaded', hasUser: true }))
+            .toMatchObject({ launchBlocked: false, initialLaunch: 'start', redFlagCheckUnavailable: false });
+        expect(resolveRedFlagLaunchGate({ todayCheckIn: undefined, loadedCheckIn: null, checkInLoad: 'loaded', hasUser: true }))
+            .toMatchObject({ launchBlocked: false, initialLaunch: 'start' });
+    });
+
+    it('trusts an injected check-in prop over the loader state', () => {
+        expect(resolveRedFlagLaunchGate({ todayCheckIn: redFlagCheckIn, loadedCheckIn: null, checkInLoad: 'loading', hasUser: true }))
+            .toMatchObject({ redFlagPaused: true, initialLaunch: 'drop' });
+        expect(resolveRedFlagLaunchGate({ todayCheckIn: null, loadedCheckIn: null, checkInLoad: 'loading', hasUser: true }))
+            .toMatchObject({ launchBlocked: false, initialLaunch: 'start' });
     });
 });
