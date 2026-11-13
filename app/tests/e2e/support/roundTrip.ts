@@ -1,14 +1,17 @@
 import { expect, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import { collection, doc, getDoc, getDocs, setDoc } from 'firebase/firestore';
 import type { SessionDefinition, SessionExecution, ExecutionPrescription, SessionOccurrence } from '../../../src/sessions/models';
 import type { ExternalPlanPlacement, NormalizedGarminActivity, ScheduleWindowManifest } from '../../../src/engine/models';
 import type { PerformedTrainingOccurrence } from '../../../src/training-occurrence/models';
+import type { LedgerExport } from '../../../src/ledger/export/schema';
 import { validateExternalPlanPlacement } from '../../../src/engine/validation';
 import { validateScheduleWindowManifest } from '../../../src/engine/scheduleWindows';
 import { parseNormalizedGarminActivity } from '../../../src/persistence/parsers/trainingHistory';
 import { computeContentHash } from '../../../src/engine/externalPlanHash';
 import { validateAnyExternalTrainingPlan } from '../../../src/sessions/externalPlanValidation';
+import { EXTERNAL_PLAN_SCHEMA_V5, type ExternalTrainingPlanV5 } from '../../../src/sessions/externalPlanV5';
 import { EXTERNAL_PLAN_SCHEMA_V6, type ExternalTrainingPlanV6, type ExternalPlanSessionV6 } from '../../../src/sessions/externalPlanV6';
 import { dismissOnboardingIfVisible, submitTypicalCheckin, type E2EAthlete } from './athlete';
 import { inspectAthlete, seedWithRulesDisabled } from './emulator';
@@ -35,6 +38,51 @@ export function buildV6Plan(date: string, overrides: Partial<ExternalTrainingPla
   expect(parsed.errors, 'coach fixture must pass the app validator').toEqual([]);
   expect(parsed.isValid).toBe(true);
   return plan;
+}
+
+export function buildV5Plan(date: string, overrides: Partial<ExternalTrainingPlanV5> = {}): ExternalTrainingPlanV5 {
+  const session = coachSession(date);
+  const plan: ExternalTrainingPlanV5 = {
+    schema: EXTERNAL_PLAN_SCHEMA_V5, planId: `e2e-v5-round-trip-${date}`, revision: 1,
+    title: 'E2E v5 coach round trip', startDate: mondayOfWeek(date), weekCount: 2,
+    restDays: [], sessions: [session], ...overrides,
+  };
+  const parsed = validateAnyExternalTrainingPlan(plan);
+  expect(parsed.errors, 'v5 coach fixture must pass the app validator').toEqual([]);
+  expect(parsed.isValid).toBe(true);
+  return plan;
+}
+
+export async function seedLedgerModePreferences(athlete: E2EAthlete, date: string): Promise<void> {
+  const timestamp = `${date}T06:00:00.000Z`;
+  await seedWithRulesDisabled(db =>
+    setDoc(doc(db, 'users', athlete.userId, 'preferences', 'profile'), {
+      userId: athlete.userId,
+      preferredRecoveryStyle: 'mixed',
+      defaultWeekdayTimeMin: 45,
+      defaultWeekendTimeMin: 60,
+      preferredTimeOfDay: 'flexible',
+      preferredModalities: [],
+      deprioritizedModalities: [],
+      avoidedModalities: [],
+      unavailableModalities: [],
+      explanationVerbosity: 'detailed',
+      conservativeBias: false,
+      shadowModeEnabled: false,
+      engineRecommendationsEnabled: false,
+      preferredUnits: { distance: 'km', weight: 'kg', temperature: 'celsius' },
+      schemaVersion: 1,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    }),
+  );
+}
+
+export async function exportLedgerJson(page: Page): Promise<LedgerExport> {
+  const downloading = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Export ledger (JSON)', exact: true }).click();
+  const download = await downloading;
+  return JSON.parse(await readFile((await download.path())!, 'utf8')) as LedgerExport;
 }
 
 /** Single-revision preconditions only; successor revisions must use the import UI. */
@@ -108,7 +156,7 @@ export async function seedActivityForExecution(athlete: E2EAthlete, execution: S
   return id;
 }
 
-export async function previewPlan(page: Page, plan: ExternalTrainingPlanV6, effectiveFrom?: string): Promise<void> {
+export async function previewPlan(page: Page, plan: ExternalTrainingPlanV5 | ExternalTrainingPlanV6, effectiveFrom?: string): Promise<void> {
   await dismissOnboardingIfVisible(page, 200);
   await page.getByRole('button', { name: 'Plan', exact: true }).click();
   await page.getByRole('button', { name: /Import Plan|Revise Plan/ }).click();
@@ -119,7 +167,7 @@ export async function previewPlan(page: Page, plan: ExternalTrainingPlanV6, effe
   await expect(page.getByText('Checking current plans, fixed activities, travel blocks, and authored sessions…')).toHaveCount(0);
 }
 
-export async function importPlan(page: Page, plan: ExternalTrainingPlanV6, effectiveFrom?: string): Promise<void> {
+export async function importPlan(page: Page, plan: ExternalTrainingPlanV5 | ExternalTrainingPlanV6, effectiveFrom?: string): Promise<void> {
   await previewPlan(page, plan, effectiveFrom);
   for (const checkbox of await page.getByRole('region', { name: 'Plan preview', exact: true }).getByRole('checkbox').all()) await checkbox.check();
   await expect(page.getByRole('button', { name: 'Import this plan' })).toBeEnabled();
@@ -136,14 +184,27 @@ export async function checkIn(page: Page): Promise<void> {
   await expect(page.getByLabel("Today's Morning Training Decision")).toBeVisible();
 }
 
-export async function planningBrief(page: Page): Promise<string> {
+export async function checkInLedgerMode(page: Page): Promise<void> {
+  await page.getByRole('button', { name: 'Check-in', exact: true }).click();
+  await dismissOnboardingIfVisible(page, 200);
+  await submitTypicalCheckin(page);
+  await dismissOnboardingIfVisible(page, 200);
+  await expect(page.getByRole('region', { name: "Today's training plan" })).toBeVisible();
+  await expect(page.getByLabel("Today's Morning Training Decision")).toHaveCount(0);
+}
+
+export async function planningBrief(page: Page, expectedHeading = '## External-plan execution round trip'): Promise<string> {
   await dismissOnboardingIfVisible(page, 200);
   await page.getByRole('button', { name: 'More' }).click();
   await page.getByRole('button', { name: /^📤 Export Context for AI/ }).click();
   await page.getByRole('button', { name: /Block Planning/ }).click();
   const brief = page.locator('textarea.brief-text');
-  await expect.poll(() => brief.inputValue()).toContain('## External-plan execution round trip');
+  await expect.poll(() => brief.inputValue()).toContain(expectedHeading);
   return brief.inputValue();
+}
+
+export function ledgerPlanningBrief(page: Page): Promise<string> {
+  return planningBrief(page, '# Ledger export');
 }
 
 export async function finishStrength(page: Page, abandon = false): Promise<void> {
