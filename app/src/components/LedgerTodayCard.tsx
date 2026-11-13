@@ -8,7 +8,10 @@ import {
   externalRestContextForDate,
   type ActiveExternalPlan,
 } from '../services/activeExternalPlanService';
-import { prepareExternalPlanSessionLaunch } from '../services/sessionAuthoringService';
+import {
+  ExternalPlanLaunchValidationError,
+  prepareExternalPlanSessionLaunch,
+} from '../services/sessionAuthoringService';
 import { sessionExecutionService } from '../services/sessionExecutionService';
 import { sessionOccurrenceService } from '../services/sessionOccurrenceService';
 import { isDefinitionBearingExternalSession } from '../sessions/externalPlanV2';
@@ -149,7 +152,9 @@ export function LedgerTodayCard({
           <span className="ledger-today-kicker">
             📋 {activeExternalPlan.plan.title} (r{activeExternalPlan.plan.revision})
           </span>
-          <h2 className="ledger-today-heading">Rest day in your plan</h2>
+          <h2 className="ledger-today-heading">
+            {restContext ? 'Rest day in your plan' : 'Nothing scheduled today'}
+          </h2>
         </div>
         <div className="ledger-today-empty">
           <p className="ledger-today-empty-copy">
@@ -177,19 +182,19 @@ export function LedgerTodayCard({
     if (!isDefinitionBearingExternalSession(session) || session.isEvent) return;
 
     const existingExec = executionsBySessionId[session.id];
-    if (!useReduced && existingExec?.state === 'in_progress' && existingExec.occurrenceId && existingExec.prescriptionHash) {
-      await onStartSession({
-        sessionSource: existingExec.sessionSource,
-        occurrenceId: existingExec.occurrenceId,
-        prescriptionHash: existingExec.prescriptionHash,
-      });
-      return;
-    }
-
     const key = `${session.id}:${useReduced ? 'reduced' : 'authored'}`;
     setLaunchingKey(key);
     setLaunchError(null);
     try {
+      if (!useReduced && existingExec?.state === 'in_progress' && existingExec.occurrenceId && existingExec.prescriptionHash) {
+        await onStartSession({
+          sessionSource: existingExec.sessionSource,
+          occurrenceId: existingExec.occurrenceId,
+          prescriptionHash: existingExec.prescriptionHash,
+        });
+        return;
+      }
+
       const launch = await prepareExternalPlanSessionLaunch(
         userId,
         {
@@ -201,7 +206,9 @@ export function LedgerTodayCard({
         {
           date,
           useReducedDefinition: useReduced,
-          ...(useReduced ? { scaleVolume: 1 } : {}),
+          // Ledger mode: the athlete chose the coach's reduced form; no engine verdict
+          // bounds its duration. Identity/intent/modality checks still apply.
+          ...(useReduced ? { skipEngineDurationCeiling: true } : {}),
           allowPreviouslyLaunchedOccurrence: true,
         },
       );
@@ -211,7 +218,11 @@ export function LedgerTodayCard({
       );
     } catch (err) {
       console.warn('Failed to prepare ledger session launch:', err);
-      setLaunchError(`Could not start ${session.title}. Please try again.`);
+      setLaunchError(
+        err instanceof ExternalPlanLaunchValidationError
+          ? `${session.title} can't be started as imported, so retrying won't help. Check this session in your plan and re-import a corrected version.`
+          : `Could not start ${session.title}. Please try again.`,
+      );
     } finally {
       setLaunchingKey(null);
     }
@@ -232,6 +243,21 @@ export function LedgerTodayCard({
         <div className="ledger-today-redflag-pause" role="alert">
           <strong>Training paused for clinical evaluation</strong>
           Today&apos;s check-in recorded a clinical red-flag symptom. Seek clinical evaluation before starting a session.
+        </div>
+      )}
+
+      {!todayCheckIn && (
+        <div className="ledger-today-checkin-prompt">
+          <p className="ledger-today-checkin-copy">
+            No check-in yet today. It&apos;s optional, but it records how you feel alongside today&apos;s sessions.
+          </p>
+          <button
+            type="button"
+            className="ledger-today-checkin-btn"
+            onClick={() => onNavigate('checkin')}
+          >
+            Check in first
+          </button>
         </div>
       )}
 
@@ -372,15 +398,6 @@ export function LedgerTodayCard({
                         </button>
                       )}
                     </>
-                  )}
-                  {!todayCheckIn && (
-                    <button
-                      type="button"
-                      className="ledger-today-checkin-btn"
-                      onClick={() => onNavigate('checkin')}
-                    >
-                      Check in first
-                    </button>
                   )}
                 </div>
               )}

@@ -54,7 +54,7 @@ vi.mock('./executionPrescriptionService', () => ({ executionPrescriptionService:
 vi.mock('./sessionOccurrenceService', () => ({ sessionOccurrenceService: services.occurrence }));
 
 import { resolveWorkoutPrescription } from '../workouts/prescription';
-import { prepareAuthoredOccurrenceLaunch, prepareCatalogSessionLaunch, prepareExternalPlanSessionLaunch, prepareUnplannedSessionLaunch, resolveScaledLaunchCeilingMinutes } from './sessionAuthoringService';
+import { ExternalPlanLaunchValidationError, prepareAuthoredOccurrenceLaunch, prepareCatalogSessionLaunch, prepareExternalPlanSessionLaunch, prepareUnplannedSessionLaunch, resolveScaledLaunchCeilingMinutes } from './sessionAuthoringService';
 import type { SessionDefinition } from '../sessions/models';
 import type { ExternalPlanSessionV4 } from '../sessions/externalPlanV4';
 import type { ExternalPlanSessionV6 } from '../sessions/externalPlanV6';
@@ -366,6 +366,59 @@ describe('prepareExternalPlanSessionLaunch (ADR-0036 H4)', () => {
         }, { useReducedDefinition: true, scaleVolume: 0.4 }))
             .rejects.toThrow(/exceeds today's approved duration ceiling/);
         expect(services.prescription.savePrescription).not.toHaveBeenCalled();
+    });
+
+    describe('skipEngineDurationCeiling (ledger mode, #1167 P2-2)', () => {
+        it('launches an athlete-chosen reduced form without a scale verdict or duration ceiling', async () => {
+            const externalPlan = makeV4ExternalPlan();
+            const authoredWithoutDuration: SessionDefinition = Object.fromEntries(
+                Object.entries(externalPlan.session.definition).filter(([key]) => key !== 'duration'),
+            ) as SessionDefinition;
+            // Longer than gating.durationMin, and with no duration at all: both fail the engine ceiling.
+            for (const duration of [{ min: 90, max: 120 }, undefined]) {
+                const reducedDefinition: SessionDefinition = {
+                    ...authoredWithoutDuration,
+                    summary: 'Reduced session',
+                    ...(duration ? { duration } : {}),
+                };
+                const session: ExternalPlanSessionV6 = {
+                    ...externalPlan.session,
+                    scaling: { reducible: true, reducedDefinition },
+                };
+                await expect(prepareExternalPlanSessionLaunch('u1', { ...externalPlan, session }, {
+                    useReducedDefinition: true, scaleVolume: 1,
+                })).rejects.toBeInstanceOf(ExternalPlanLaunchValidationError);
+
+                const launch = await prepareExternalPlanSessionLaunch('u1', { ...externalPlan, session }, {
+                    useReducedDefinition: true,
+                    skipEngineDurationCeiling: true,
+                    date: '2026-09-06',
+                    now: '2026-09-06T12:00:00.000Z',
+                });
+                expect(launch.definition).toEqual(reducedDefinition);
+                expect(launch.binding.executedDefinition).toBe('reduced');
+            }
+        });
+
+        it('still enforces reducible and identity/intent/modality checks', async () => {
+            const externalPlan = makeV4ExternalPlan();
+            const authored = externalPlan.session.definition;
+            const cases: Array<[ExternalPlanSessionV6['scaling'], RegExp]> = [
+                [{ reducible: false, reducedDefinition: { ...authored } } as unknown as ExternalPlanSessionV6['scaling'], /reducible: true/],
+                [{ reducible: true, reducedDefinition: { ...authored, id: 'other-id' } }, /definition id/],
+                [{ reducible: true, reducedDefinition: { ...authored, intent: 'recovery' } } as unknown as ExternalPlanSessionV6['scaling'], /session intent/],
+                [{ reducible: true, reducedDefinition: { ...authored, dominantModality: 'running' } } as unknown as ExternalPlanSessionV6['scaling'], /dominant modality/],
+            ];
+            for (const [scaling, message] of cases) {
+                const session = { ...externalPlan.session, scaling } as ExternalPlanSessionV6;
+                const attempt = prepareExternalPlanSessionLaunch('u1', { ...externalPlan, session }, {
+                    useReducedDefinition: true, skipEngineDurationCeiling: true,
+                });
+                await expect(attempt).rejects.toThrow(message);
+                await expect(attempt).rejects.toBeInstanceOf(ExternalPlanLaunchValidationError);
+            }
+            expect(services.prescription.savePrescription).not.toHaveBeenCalled();
+        });
     });
 
     it('creates and binds an external-plan occurrence when date is provided in options', async () => {

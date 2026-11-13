@@ -12,7 +12,12 @@ const mocks = vi.hoisted(() => ({
   slots: [] as unknown[],
   cursor: 0,
   prepare: vi.fn(),
+  ValidationError: class ExternalPlanLaunchValidationError extends Error {},
 }));
+
+// useState slot order inside LedgerTodayCard: executions, launchingKey, launchError.
+const LAUNCHING_KEY_SLOT = 1;
+const LAUNCH_ERROR_SLOT = 2;
 
 vi.mock('react', async importOriginal => ({
   ...await importOriginal<typeof import('react')>(),
@@ -26,6 +31,7 @@ vi.mock('react', async importOriginal => ({
 
 vi.mock('../services/sessionAuthoringService', () => ({
   prepareExternalPlanSessionLaunch: mocks.prepare,
+  ExternalPlanLaunchValidationError: mocks.ValidationError,
 }));
 
 type ElementProps = {
@@ -183,6 +189,13 @@ describe('LedgerTodayCard', () => {
     expect(baseProps.onNavigate).toHaveBeenCalledWith('plan');
   });
 
+  it('does not claim a rest day when the plan has no rest entry for today', () => {
+    const html = renderHtml({ date: '2026-11-12', sessions: [] });
+    expect(html).toContain('Nothing scheduled today');
+    expect(html).toContain('No sessions are scheduled for today.');
+    expect(html).not.toContain('Rest day in your plan');
+  });
+
   it('renders a rest-day empty state when today has no planned sessions', () => {
     const html = renderHtml({ date: '2026-11-15', sessions: [] });
     expect(html).toContain('Rest day in your plan');
@@ -226,9 +239,12 @@ describe('LedgerTodayCard', () => {
     expect(mocks.prepare).toHaveBeenLastCalledWith(
       'u1',
       expect.objectContaining({ planId: 'plan-1', revision: 2 }),
-      expect.objectContaining({ date: '2026-11-12', useReducedDefinition: true, scaleVolume: 1 }),
+      expect.objectContaining({ date: '2026-11-12', useReducedDefinition: true, skipEngineDurationCeiling: true }),
     );
+    expect(mocks.prepare.mock.lastCall?.[2]).not.toHaveProperty('scaleVolume');
     expect(baseProps.onStartSession).toHaveBeenLastCalledWith(reducedBinding, undefined);
+    // The authored Start never opts out of the ceiling.
+    expect(mocks.prepare.mock.calls[0][2]).not.toHaveProperty('skipEngineDurationCeiling');
   });
 
   it('shows a non-blocking Check in first prompt when todayCheckIn is missing while keeping Start enabled', async () => {
@@ -243,6 +259,36 @@ describe('LedgerTodayCard', () => {
 
     startBtn!.props.onClick!();
     await vi.waitFor(() => expect(baseProps.onStartSession).toHaveBeenCalledTimes(1));
+  });
+
+  it('renders a single card-level Check in first prompt for multiple sessions', () => {
+    const second: PlacedSession = {
+      ...placedSession,
+      session: { ...baseSession, id: 'run-today', title: 'Easy Run' } as PlacedSession['session'],
+    };
+    const props = { todayCheckIn: null, sessions: [placedSession, second] };
+    const checkinBtns = renderTree(props).filter(el => el.type === 'button' && String(el.props.children) === 'Check in first');
+    expect(checkinBtns).toHaveLength(1);
+    expect(renderHtml(props).match(/Check in first/g)).toHaveLength(1);
+  });
+
+  it('shows a specific non-retry message when the launch contract rejects the session', async () => {
+    mocks.prepare.mockRejectedValueOnce(new mocks.ValidationError('Reduced definition must retain the authored dominant modality.'));
+    const tree = renderTree();
+    const reducedBtn = tree.find(el => el.type === 'button' && el.props['aria-label'] === 'Start reduced version of Lower Body Strength');
+    reducedBtn!.props.onClick!();
+    await vi.waitFor(() => expect(mocks.slots[LAUNCH_ERROR_SLOT]).toEqual(expect.stringContaining("retrying won't help")));
+    expect(mocks.slots[LAUNCH_ERROR_SLOT]).not.toContain('Please try again');
+    expect(baseProps.onStartSession).not.toHaveBeenCalled();
+    expect(renderHtml()).toContain('ledger-today-error');
+  });
+
+  it('keeps the retry message for transient launch failures', async () => {
+    mocks.prepare.mockRejectedValueOnce(Object.assign(new Error('offline'), { code: 'unavailable' }));
+    const tree = renderTree();
+    const startBtn = tree.find(el => el.type === 'button' && el.props['aria-label'] === 'Start Lower Body Strength');
+    startBtn!.props.onClick!();
+    await vi.waitFor(() => expect(mocks.slots[LAUNCH_ERROR_SLOT]).toBe('Could not start Lower Body Strength. Please try again.'));
   });
 
   it('pauses launch and hides Start/Start reduced buttons when todayCheckIn has red flags', () => {
@@ -298,5 +344,22 @@ describe('LedgerTodayCard', () => {
     redoBtn!.props.onClick!();
     await vi.waitFor(() => expect(baseProps.onStartSession).toHaveBeenCalledTimes(2));
     expect(baseProps.onStartSession).toHaveBeenLastCalledWith(authoredBinding, { allowDuplicateCompleted: true });
+  });
+
+  it('surfaces a resume failure with busy state instead of an unhandled rejection', async () => {
+    mocks.slots[0] = {
+      'strength-today': { ...authoredBinding, state: 'in_progress' } as SessionExecution,
+    };
+    let rejectResume: (err: Error) => void = () => {};
+    const onStartSession = vi.fn(() => new Promise<void>((_resolve, reject) => { rejectResume = reject; }));
+    const tree = renderTree({ onStartSession });
+    const resumeBtn = tree.find(el => el.type === 'button' && el.props['aria-label'] === 'Resume Lower Body Strength');
+    resumeBtn!.props.onClick!();
+    expect(mocks.slots[LAUNCHING_KEY_SLOT]).toBe('strength-today:authored');
+
+    rejectResume(new Error('navigation failed'));
+    await vi.waitFor(() => expect(mocks.slots[LAUNCH_ERROR_SLOT]).toBe('Could not start Lower Body Strength. Please try again.'));
+    expect(mocks.slots[LAUNCHING_KEY_SLOT]).toBeNull();
+    expect(mocks.prepare).not.toHaveBeenCalled();
   });
 });

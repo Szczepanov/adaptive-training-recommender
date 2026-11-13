@@ -26,7 +26,7 @@
   margin: 0;
   font-size: 1.1rem;
   font-weight: 800;
-  color: var(--color-text-primary, #f8fafc);
+  color: var(--text-primary);
 }
 
 .ledger-today-empty {
@@ -40,20 +40,20 @@
   margin: 0;
   font-size: 1rem;
   font-weight: 700;
-  color: var(--color-text-primary, #f8fafc);
+  color: var(--text-primary);
 }
 
 .ledger-today-empty-copy {
   margin: 0;
   font-size: 0.88rem;
-  color: var(--color-text-secondary, #cbd5e1);
+  color: var(--text-secondary);
   line-height: 1.45;
 }
 
 .ledger-today-nav-btn {
-  min-height: 44px;
+  min-height: var(--touch-target-min);
   padding: 0.55rem 1rem;
-  border-radius: 10px;
+  border-radius: var(--radius-control);
   border: 1px solid rgba(96, 165, 250, 0.45);
   background: rgba(59, 130, 246, 0.16);
   color: #e0f2fe;
@@ -68,9 +68,9 @@
 
 .ledger-today-redflag-pause {
   padding: 0.8rem 0.95rem;
-  border-radius: 10px;
-  background: rgba(239, 68, 68, 0.14);
-  border: 1px solid rgba(239, 68, 68, 0.4);
+  border-radius: var(--radius-control);
+  background: var(--tier-red-bg);
+  border: 1px solid var(--tier-red);
   color: #fecaca;
   font-size: 0.88rem;
   line-height: 1.45;
@@ -84,12 +84,35 @@
 
 .ledger-today-error {
   margin: 0;
-  padding: 0.5rem 0.7rem;
-  border-radius: 8px;
-  background: rgba(239, 68, 68, 0.14);
-  border: 1px solid rgba(239, 68, 68, 0.35);
-  color: #fca5a5;
-  font-size: 0.84rem;
+  padding: 0.6rem 0.8rem;
+  border-radius: var(--radius-control);
+  background: var(--tier-red-bg);
+  border: 1px solid var(--tier-red);
+  border-left-width: 4px;
+  color: var(--text-primary);
+  font-size: 0.88rem;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.ledger-today-checkin-prompt {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.7rem 0.9rem;
+  border-radius: var(--radius-control);
+  background: rgba(251, 191, 36, 0.08);
+  border: 1px solid rgba(251, 191, 36, 0.3);
+}
+
+.ledger-today-checkin-copy {
+  margin: 0;
+  flex: 1 1 14rem;
+  color: var(--text-secondary);
+  font-size: 0.86rem;
+  line-height: 1.45;
 }
 
 .ledger-today-list {
@@ -143,14 +166,14 @@
   padding: 0.14rem 0.45rem;
   border-radius: 6px;
   background: rgba(148, 163, 184, 0.14);
-  color: var(--color-text-secondary, #cbd5e1);
+  color: var(--text-secondary);
 }
 
 .ledger-today-session-title {
   margin: 0;
   font-size: 1rem;
   font-weight: 700;
-  color: var(--color-text-primary, #f8fafc);
+  color: var(--text-primary);
 }
 
 .ledger-today-badges {
@@ -205,25 +228,25 @@
 .ledger-today-meta {
   margin: 0;
   font-size: 0.82rem;
-  color: var(--color-text-secondary, #cbd5e1);
+  color: var(--text-secondary);
 }
 
 .ledger-today-summary {
   margin: 0;
   font-size: 0.88rem;
   line-height: 1.45;
-  color: var(--color-text-primary, #f8fafc);
+  color: var(--text-primary);
 }
 
 .ledger-today-reduced-note {
   margin: 0;
   font-size: 0.82rem;
-  color: var(--color-text-secondary, #cbd5e1);
+  color: var(--text-secondary);
 }
 
 .ledger-today-steps-details {
   font-size: 0.84rem;
-  color: var(--color-text-secondary, #cbd5e1);
+  color: var(--text-secondary);
 }
 
 .ledger-today-steps-details summary {
@@ -257,9 +280,9 @@
 }
 
 .ledger-today-start-btn {
-  min-height: 44px;
+  min-height: var(--touch-target-min);
   padding: 0.55rem 1.05rem;
-  border-radius: 10px;
+  border-radius: var(--radius-control);
   border: 1px solid rgba(59, 130, 246, 0.65);
   background: linear-gradient(135deg, #2563eb, #1d4ed8);
   color: #ffffff;
@@ -279,12 +302,12 @@
 }
 
 .ledger-today-reduced-btn {
-  min-height: 44px;
+  min-height: var(--touch-target-min);
   padding: 0.5rem 0.9rem;
-  border-radius: 10px;
+  border-radius: var(--radius-control);
   border: 1px solid rgba(148, 163, 184, 0.35);
   background: rgba(255, 255, 255, 0.05);
-  color: var(--color-text-primary, #f8fafc);
+  color: var(--text-primary);
   font-size: 0.85rem;
   font-weight: 600;
   cursor: pointer;
@@ -296,9 +319,9 @@
 }
 
 .ledger-today-checkin-btn {
-  min-height: 44px;
+  min-height: var(--touch-target-min);
   padding: 0.5rem 0.85rem;
-  border-radius: 10px;
+  border-radius: var(--radius-control);
   border: 1px solid rgba(251, 191, 36, 0.45);
   background: rgba(251, 191, 36, 0.12);
   color: #fde68a;
@@ -313,6 +336,11 @@
 
 @media (max-width: 480px) {
   .ledger-today-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .ledger-today-checkin-prompt {
     flex-direction: column;
     align-items: stretch;
   }

@@ -80,6 +80,7 @@ import { DataConfidenceIndicator } from './DataConfidenceIndicator';
 import { MorningDecisionCard } from './MorningDecisionCard';
 import { LedgerTodayCard } from './LedgerTodayCard';
 import { resolvePlanningAuthorityMode } from '../ledger/planningAuthorityMode';
+import { hasRecordedRedFlag } from '../ledger/redFlagPause';
 import { AdditionalSessionsCard } from './session/AdditionalSessionsCard';
 import { TodayImportedSessionsCard } from './session/TodayImportedSessionsCard';
 import { recordPredecessorConfirmation } from './session/predecessorConfirmationAction';
@@ -376,9 +377,14 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
       if (!isCurrent()) return;
       hasCurrentDecisionInput = true;
       setDecisionInput(input);
+      // ADR-0052 P2-2: the recovery/decision-source/sync gates below are engine
+      // prerequisites, not ledger ones. In ledger mode they must neither block today's
+      // imported plan nor surface engine repair copy, so they are skipped and the active
+      // external plan still loads.
+      const isLedgerModeLoad = resolvePlanningAuthorityMode(input.preferences) === 'ledger';
 
       const recoveryState = input.sourceStates?.recoverySnapshot;
-      if (recoveryState && recoveryState.status !== 'AVAILABLE' && recoveryState.status !== 'MISSING') {
+      if (!isLedgerModeLoad && recoveryState && recoveryState.status !== 'AVAILABLE' && recoveryState.status !== 'MISSING') {
         setRecommendation(null);
         setNextDayPlan(null);
         clearExternalPlanState();
@@ -393,7 +399,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
         return;
       }
 
-      const decisionSourceFailure = resolveDecisionSourceRepairState(input.sourceStates);
+      const decisionSourceFailure = isLedgerModeLoad ? null : resolveDecisionSourceRepairState(input.sourceStates);
       if (decisionSourceFailure) {
         setRecommendation(null);
         setNextDayPlan(null);
@@ -403,7 +409,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
         return;
       }
 
-      if (!input.recoverySnapshot) {
+      if (!isLedgerModeLoad && !input.recoverySnapshot) {
         const connection = await garminConnectionService.getConnectionState(userId);
         if (!isCurrent()) return;
         const wearableMode = resolveWearablePlanningMode(false, connection.state);
@@ -427,7 +433,6 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
         // blocking.
       }
 
-      const isLedgerModeLoad = resolvePlanningAuthorityMode(input.preferences) === 'ledger';
       const yesterday = getPreviousLocalDateString(input.date);
       const [
         yesterdayRec,
@@ -1416,23 +1421,25 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
   const shadowModeEnabled = !isLedgerMode && decisionInput?.preferences?.shadowModeEnabled === true;
   const recommendationEffectivelyRevealed = !shadowModeEnabled || recommendationRevealed || !!todaysJournalEntry;
 
+  // Ledger mode runs no engine evaluation: WeekAheadStrip's imported-plan branch never reads
+  // `planningMode`, and the sidebar falls back to the plain Active Goals list.
   const eventPeriodization = useMemo(() => {
-    if (!decisionInput) return null;
+    if (isLedgerMode || !decisionInput) return null;
     const events = mapGoalsToUserEvents(decisionInput.activeGoals);
     return {
       events,
       today: evaluatePeriodizationPhase(events, decisionInput.date),
     };
-  }, [decisionInput]);
+  }, [isLedgerMode, decisionInput]);
 
   const resolvedPlanningMode = useMemo(() => {
-    if (!decisionInput || !eventPeriodization) return undefined;
+    if (isLedgerMode || !decisionInput || !eventPeriodization) return undefined;
     return resolvePlanningContext(
       decisionInput.trainingIntentProfile,
       eventPeriodization.today,
       decisionInput.date,
     ).mode;
-  }, [decisionInput, eventPeriodization]);
+  }, [isLedgerMode, decisionInput, eventPeriodization]);
 
   const allTodayImportedSessions = useMemo(() => {
     if (!activeExternalPlan || !decisionInput?.date) return [];
@@ -1599,7 +1606,9 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
     ? null
     : subjectiveReadiness >= 8 ? 'High' : subjectiveReadiness >= 5 ? 'Moderate' : 'Low';
 
-  const isCheckinMissing = !decisionInput?.dataQuality.hasSubjectiveCheckin;
+  // OQ3: in ledger mode the check-in is a prompt, not a plan-generation gate -- LedgerTodayCard
+  // renders its own "Check in first" prompt, so the engine gate banner is hidden.
+  const isCheckinMissing = !isLedgerMode && !decisionInput?.dataQuality.hasSubjectiveCheckin;
 
   return (
     <div className="home-container">
@@ -1807,31 +1816,39 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
             />
           )}
 
-          <div className="home-week-strip-section">
-            <div className="section-header-row">
-              <h4>7-Day Outlook</h4>
-              <button
-                type="button"
-                className="view-plan-link-btn"
-                onClick={() => onNavigate('plan')}
-              >
-                View full plan →
-              </button>
+          {/* Ledger mode with no imported plan has nothing to outlook; LedgerTodayCard
+              already carries the import prompt, so the empty section is hidden. */}
+          {(!isLedgerMode || activeExternalPlan) && (
+            <div className="home-week-strip-section">
+              <div className="section-header-row">
+                <h4>7-Day Outlook</h4>
+                <button
+                  type="button"
+                  className="view-plan-link-btn"
+                  onClick={() => onNavigate('plan')}
+                >
+                  View full plan →
+                </button>
+              </div>
+              <WeekAheadStrip
+                plan={weekAheadPlan}
+                nextDayPlan={nextDayPlan}
+                selectedTier={selectedNextDayTier}
+                onSelectTier={setSelectedNextDayTier}
+                trainingIntentProfile={decisionInput?.trainingIntentProfile}
+                scheduleOverlays={decisionInput?.scheduleOverlays}
+                planningMode={resolvedPlanningMode}
+                externalPlan={activeExternalPlan}
+                today={decisionInput?.date}
+                userId={userId}
+                clinicalEscalationRequired={
+                  isLedgerMode
+                    ? hasRecordedRedFlag(decisionInput?.subjectiveCheckin)
+                    : recommendation?.envelopes?.safety.clinicalEscalationRequired === true
+                }
+              />
             </div>
-            <WeekAheadStrip
-              plan={weekAheadPlan}
-              nextDayPlan={nextDayPlan}
-              selectedTier={selectedNextDayTier}
-              onSelectTier={setSelectedNextDayTier}
-              trainingIntentProfile={decisionInput?.trainingIntentProfile}
-              scheduleOverlays={decisionInput?.scheduleOverlays}
-              planningMode={resolvedPlanningMode}
-              externalPlan={activeExternalPlan}
-              today={decisionInput?.date}
-              userId={userId}
-              clinicalEscalationRequired={recommendation?.envelopes?.safety.clinicalEscalationRequired === true}
-            />
-          </div>
+          )}
         </div>
 
         <div className="home-sidebar-col">
