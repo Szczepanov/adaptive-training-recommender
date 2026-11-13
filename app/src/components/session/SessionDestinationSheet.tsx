@@ -4,8 +4,8 @@ import '../overlayContract.css';
 import type { SessionDefinition, SessionOccurrence } from '../../sessions/models';
 import type { PreparedSessionLaunch } from '../../sessions/sessionLaunch';
 import { validateSessionDefinition } from '../../sessions/validation';
-import { resolvePlanningAuthorityMode, type PlanningAuthorityMode } from '../../ledger/planningAuthorityMode';
-import { resolveUserPlanningAuthorityMode } from '../../services/planningAuthorityModeService';
+import type { PlanningAuthorityMode } from '../../ledger/planningAuthorityMode';
+import { usePlanningAuthorityMode } from '../../hooks/usePlanningAuthorityMode';
 import { sessionDefinitionService } from '../../services/sessionDefinitionService';
 import { prepareUnplannedSessionLaunch } from '../../services/sessionAuthoringService';
 import { sessionOccurrenceService } from '../../services/sessionOccurrenceService';
@@ -53,28 +53,14 @@ export const SessionDestinationSheet: React.FC<SessionDestinationSheetProps> = (
     const [scheduleDate, setScheduleDate] = useState<string>(getLocalDateString());
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [loadedMode, setLoadedMode] = useState<PlanningAuthorityMode>(() => resolvePlanningAuthorityMode(null));
-    const effectiveMode = planningAuthorityMode ?? loadedMode;
+    const { mode: effectiveMode } = usePlanningAuthorityMode(userId, planningAuthorityMode, isOpen);
     const dialogRef = useRef<HTMLDivElement>(null);
     useOverlayDialog(isOpen, dialogRef, saving ? undefined : onClose, 'input[type="radio"]');
 
     useEffect(() => {
-        if (!isOpen || planningAuthorityMode !== undefined) return;
-        let cancelled = false;
-        resolveUserPlanningAuthorityMode(userId)
-            .then(mode => {
-                if (!cancelled) {
-                    setLoadedMode(mode);
-                    if (mode === 'ledger') {
-                        setSelectedDestination(current => current === 'replace_recommendation' ? 'start_unplanned' : current);
-                    }
-                }
-            })
-            .catch(() => {
-                if (!cancelled) setLoadedMode(resolvePlanningAuthorityMode(null));
-            });
-        return () => { cancelled = true; };
-    }, [isOpen, planningAuthorityMode, userId]);
+        if (effectiveMode !== 'ledger') return;
+        setSelectedDestination(current => current === 'replace_recommendation' ? 'start_unplanned' : current);
+    }, [effectiveMode]);
 
     if (!isOpen) return null;
 

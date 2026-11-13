@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DailyRecommendation, Recommendation, RecommendationAudit } from '../engine/models';
 import { TEMPLATES } from '../engine/templates';
 import { POLICY_VERSION } from '../engine/policy';
@@ -565,8 +565,14 @@ describe('RecommendationService persistence', () => {
     });
 
     describe('ledger mode write suppression (#1167 P2-5)', () => {
+        afterEach(() => {
+            mockResolveMode.mockResolvedValue('engine');
+        });
+
         it('does not write daily_recommendations or decision_contexts in ledger mode', async () => {
             mockResolveMode.mockResolvedValue('ledger');
+            // An existing day document, so only the ledger guard can stop the writes below.
+            firestore.getDoc.mockResolvedValue({ exists: () => true, data: () => ({ userId: 'athlete', date: '2026-11-12' }) });
             const service = new RecommendationService();
             const rec = {
                 template: TEMPLATES[0],
@@ -580,7 +586,8 @@ describe('RecommendationService persistence', () => {
             expect(firestore.setDoc).not.toHaveBeenCalled();
             expect(firestore.batch.commit).not.toHaveBeenCalled();
             expect(firestore.runTransaction).not.toHaveBeenCalled();
-            mockResolveMode.mockResolvedValue('engine');
+            // The guard runs before any read, so ledger mode costs no recommendation reads.
+            expect(firestore.getDoc).not.toHaveBeenCalled();
         });
 
         it('returns zeroed adherence stats without error when no daily_recommendations exist', async () => {

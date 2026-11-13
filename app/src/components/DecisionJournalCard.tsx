@@ -2,8 +2,8 @@ import { useEffect, useRef, useState, memo } from 'react';
 import { decisionJournalService } from '../services/decisionJournalService';
 import { shadowLogService } from '../services/shadowLogService';
 import { SHADOW_VERDICTS, type DecisionJournalEntry, type ShadowVerdict } from '../engine/models';
-import { resolvePlanningAuthorityMode, type PlanningAuthorityMode } from '../ledger/planningAuthorityMode';
-import { resolveUserPlanningAuthorityMode } from '../services/planningAuthorityModeService';
+import type { PlanningAuthorityMode } from '../ledger/planningAuthorityMode';
+import { usePlanningAuthorityMode } from '../hooks/usePlanningAuthorityMode';
 import { exportDecisionJournalEvidenceOnce } from '../utils/decisionJournalEvidenceExport';
 import { downloadShadowEvidence } from '../utils/shadowLogExport';
 import './DecisionJournalCard.css';
@@ -84,27 +84,16 @@ export const DecisionJournalCard = memo(function DecisionJournalCard({
   const [exportStatus, setExportStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [readBlocked, setReadBlocked] = useState(false);
-  const [loadedMode, setLoadedMode] = useState<PlanningAuthorityMode>(() => resolvePlanningAuthorityMode(null));
-  const effectiveMode = planningAuthorityMode ?? loadedMode;
-
-  useEffect(() => {
-    if (planningAuthorityMode !== undefined) return;
-    let cancelled = false;
-    resolveUserPlanningAuthorityMode(userId)
-      .then(mode => {
-        if (!cancelled) setLoadedMode(mode);
-      })
-      .catch(() => {
-        if (!cancelled) setLoadedMode(resolvePlanningAuthorityMode(null));
-      });
-    return () => { cancelled = true; };
-  }, [planningAuthorityMode, userId]);
+  const { mode: effectiveMode, resolved: modeResolved } = usePlanningAuthorityMode(userId, planningAuthorityMode);
+  // OQ6: no journal reads in ledger mode either, so wait until the mode is known.
+  const journalActive = modeResolved && effectiveMode !== 'ledger';
 
   useEffect(() => {
     if (engineRevealed) persistReveal(userId, date);
   }, [userId, date, engineRevealed]);
 
   useEffect(() => {
+    if (!journalActive) return;
     let cancelled = false;
     setLoaded(false);
     setReadBlocked(false);
@@ -141,7 +130,7 @@ export const DecisionJournalCard = memo(function DecisionJournalCard({
       })
       .finally(() => { if (!cancelled) setLoaded(true); });
     return () => { cancelled = true; };
-  }, [userId, date, onEntryChange]);
+  }, [journalActive, userId, date, onEntryChange]);
 
   const submitMorning = async () => {
     if (readBlocked) return;

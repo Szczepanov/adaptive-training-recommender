@@ -208,7 +208,7 @@ describe('DataView null-input empty state', () => {
     expect(html).not.toContain('>Retry<');
   });
 
-  it('renders the adherence tab cleanly when no daily_recommendations exist (#1167 P2-5)', () => {
+  it('renders the adherence tab shell; the empty-reader case is covered in recommendationService.test.ts (#1167 P2-5)', () => {
     const html = renderToStaticMarkup(
       <DataView decisionInput={recoveryDecisionInput(5)} userId="athlete-1" initialTab="adherence" onBack={() => {}} />,
     );

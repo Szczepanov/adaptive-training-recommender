@@ -60,6 +60,8 @@ emulatorDescribe('Ledger mode daily_recommendations write suppression (#1167 P2-
 
         expect(await recService.saveRecommendation(USER_ID, DATE, rec)).toBeNull();
         expect(await recService.saveNotApplicableContext(USER_ID, DATE, 'missing')).toBe(false);
+        // No day document is seeded, so this only shows recordAdherence stays quiet here; the
+        // guard-before-read for adherence is proven in recommendationService.test.ts.
         expect(await recService.recordAdherence(USER_ID, DATE, { followed: true })).toBeNull();
 
         const replacementService = new ManualRecommendationReplacementService(db);

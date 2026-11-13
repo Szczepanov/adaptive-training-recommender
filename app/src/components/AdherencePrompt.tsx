@@ -1,8 +1,8 @@
 import { useState, memo, useEffect, useCallback, useRef } from 'react';
 import { recommendationService } from '../services/recommendationService';
 import type { DailyRecommendation } from '../engine/models';
-import { resolvePlanningAuthorityMode, type PlanningAuthorityMode } from '../ledger/planningAuthorityMode';
-import { resolveUserPlanningAuthorityMode } from '../services/planningAuthorityModeService';
+import type { PlanningAuthorityMode } from '../ledger/planningAuthorityMode';
+import { usePlanningAuthorityMode } from '../hooks/usePlanningAuthorityMode';
 import { usabilityMetrics } from '../utils/usabilityMetrics';
 import './AdherencePrompt.css';
 
@@ -29,22 +29,8 @@ export const AdherencePrompt = memo(function AdherencePrompt({ userId, date, rec
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [loadedMode, setLoadedMode] = useState<PlanningAuthorityMode>(() => resolvePlanningAuthorityMode(null));
-  const effectiveMode = planningAuthorityMode ?? loadedMode;
+  const { mode: effectiveMode } = usePlanningAuthorityMode(userId, planningAuthorityMode);
   const submitInFlightRef = useRef(false);
-
-  useEffect(() => {
-    if (planningAuthorityMode !== undefined) return;
-    let cancelled = false;
-    resolveUserPlanningAuthorityMode(userId)
-      .then(mode => {
-        if (!cancelled) setLoadedMode(mode);
-      })
-      .catch(() => {
-        if (!cancelled) setLoadedMode(resolvePlanningAuthorityMode(null));
-      });
-    return () => { cancelled = true; };
-  }, [planningAuthorityMode, userId]);
 
   const submit = useCallback(async (answer: AdherenceAnswer) => {
     if (effectiveMode === 'ledger') return;
