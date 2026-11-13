@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fullRecords, AS_OF } from '../ledger/export/ledgerExportFixtures.testSupport';
 import { computeContentHash } from '../engine/externalPlanHash';
 import { SOURCE_KEYS } from '../ledger/export/inputs';
+import { ENGINE_OPINION_KEYS } from '../ledger/export/schema';
 import { PLACEMENT_HISTORY_TRUNCATED_OPERATION } from '../ledger/placementHistory';
 const reads = vi.hoisted(() => Object.fromEntries([
 'flags', 'recovery', 'checkins', 'activities', 'preferences', 'goals', 'fixed', 'blocks', 'anthropometry', 'constraints', 'schedule', 'responses', 'outcomes', 'intent', 'assessments', 'executions', 'occurrences', 'settings', 'plans', 'header', 'activations', 'revision', 'placement', 'history', 'performed',
@@ -225,5 +226,21 @@ describe('LedgerExportService', () => {
         await expect(service.build('', request)).rejects.toThrow();
         await expect(service.build('owner', { ...request, asOfDate: '2026-02-30' })).rejects.toThrow();
         expect(reads.recovery).not.toHaveBeenCalled();
+    });
+
+    it('keeps engine-opinion keys out of default exports and isolates opt-in opinions to legacyEngine (OD4)', async () => {
+        const service = new LedgerExportService();
+        const defaultExport = await service.build('owner', request);
+        expect(defaultExport.legacyEngine).toBeNull();
+        const serializedDefault = JSON.stringify(defaultExport);
+        for (const key of ENGINE_OPINION_KEYS) {
+            expect(serializedDefault).not.toContain(`"${key}"`);
+        }
+
+        const optedIn = await service.build('owner', {
+            ...request,
+            legacyEngine: { policyVersion: '9.9.9', verdict: 'proceed' },
+        });
+        expect(optedIn.legacyEngine).toEqual({ policyVersion: '9.9.9', verdict: 'proceed' });
     });
 });

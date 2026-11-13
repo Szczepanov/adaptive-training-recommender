@@ -49,4 +49,15 @@ describe('SessionDestinationSheet (M3.3)', () => {
         );
         expect(html).not.toContain('destination-schedule-date');
     });
+
+    it('hides Replace today’s recommendation in ledger mode (#1167 P2-5)', () => {
+        const html = renderToStaticMarkup(
+            <SessionDestinationSheet userId="u1" definition={definition} isOpen={true} onClose={vi.fn()} onStartExecution={vi.fn()} planningAuthorityMode="ledger" />,
+        );
+        expect(html).not.toContain('Replace today');
+        expect(html).toContain('Start now');
+        expect(html).toContain('Schedule for a date');
+        expect(html).toContain('Add to today');
+        expect(html).toContain('Save to library');
+    });
 });

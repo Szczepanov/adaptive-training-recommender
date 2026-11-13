@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { buildLedgerExport } from './buildLedgerExport.ts';
 import { activity, fullInput, recoverySnapshot } from './ledgerExportFixtures.testSupport.ts';
 import { renderLedgerExport } from './renderLedgerExport.ts';
-import { LEDGER_STATES } from './schema.ts';
+import { ENGINE_OPINION_KEYS, LEDGER_STATES } from './schema.ts';
 
 describe('renderLedgerExport', () => {
     it('matches the five-layer planning golden export', async () => {
@@ -112,7 +112,11 @@ describe('renderLedgerExport', () => {
     });
 
     it('omits legacy engine opinions unless supplied and clearly labels an included layer', () => {
-        expect(renderLedgerExport(buildLedgerExport(fullInput()))).not.toContain('Legacy engine');
+        const defaultMarkdown = renderLedgerExport(buildLedgerExport(fullInput()));
+        expect(defaultMarkdown).not.toContain('Legacy engine');
+        for (const key of ENGINE_OPINION_KEYS) {
+            expect(defaultMarkdown).not.toContain(key);
+        }
         const markdown = renderLedgerExport(buildLedgerExport(fullInput({ legacyEngine: {
             policyVersion: '1.2.3', recommendation: { modality: 'cycling' },
         } })));

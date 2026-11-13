@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, memo } from 'react';
 import { decisionJournalService } from '../services/decisionJournalService';
 import { shadowLogService } from '../services/shadowLogService';
 import { SHADOW_VERDICTS, type DecisionJournalEntry, type ShadowVerdict } from '../engine/models';
+import type { PlanningAuthorityMode } from '../ledger/planningAuthorityMode';
+import { usePlanningAuthorityMode } from '../hooks/usePlanningAuthorityMode';
 import { exportDecisionJournalEvidenceOnce } from '../utils/decisionJournalEvidenceExport';
 import { downloadShadowEvidence } from '../utils/shadowLogExport';
 import './DecisionJournalCard.css';
@@ -20,6 +22,7 @@ interface DecisionJournalCardProps {
    *  reveal-equivalent -- a returning athlete who recorded blind earlier today shouldn't be
    *  re-hidden from their own recommendation on a later page load. */
   onEntryChange: (entry: DecisionJournalEntry | null) => void;
+  planningAuthorityMode?: PlanningAuthorityMode;
 }
 
 const VERDICT_LABELS: Record<ShadowVerdict, string> = {
@@ -68,7 +71,7 @@ function persistReveal(userId: string, date: string): void {
  * like an unanchored observation. Only the evening actual outcome remains editable.
  */
 export const DecisionJournalCard = memo(function DecisionJournalCard({
-  userId, date, engineVerdict, engineRevealed, onEntryChange,
+  userId, date, engineVerdict, engineRevealed, onEntryChange, planningAuthorityMode,
 }: DecisionJournalCardProps) {
   const [entry, setEntry] = useState<DecisionJournalEntry | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -81,12 +84,16 @@ export const DecisionJournalCard = memo(function DecisionJournalCard({
   const [exportStatus, setExportStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [readBlocked, setReadBlocked] = useState(false);
+  const { mode: effectiveMode, resolved: modeResolved } = usePlanningAuthorityMode(userId, planningAuthorityMode);
+  // OQ6: no journal reads in ledger mode either, so wait until the mode is known.
+  const journalActive = modeResolved && effectiveMode !== 'ledger';
 
   useEffect(() => {
     if (engineRevealed) persistReveal(userId, date);
   }, [userId, date, engineRevealed]);
 
   useEffect(() => {
+    if (!journalActive) return;
     let cancelled = false;
     setLoaded(false);
     setReadBlocked(false);
@@ -123,7 +130,7 @@ export const DecisionJournalCard = memo(function DecisionJournalCard({
       })
       .finally(() => { if (!cancelled) setLoaded(true); });
     return () => { cancelled = true; };
-  }, [userId, date, onEntryChange]);
+  }, [journalActive, userId, date, onEntryChange]);
 
   const submitMorning = async () => {
     if (readBlocked) return;
@@ -171,6 +178,8 @@ export const DecisionJournalCard = memo(function DecisionJournalCard({
       download: downloadShadowEvidence, setExporting, setStatus: setExportStatus,
     });
   };
+
+  if (effectiveMode === 'ledger') return null;
 
   if (!loaded) {
     return (

@@ -78,6 +78,9 @@ import { LaterDayFollowupCard, type LaterDayFollowupTarget } from './session/Lat
 import { GarminSyncNowButton } from './GarminSyncNowButton';
 import { DataConfidenceIndicator } from './DataConfidenceIndicator';
 import { MorningDecisionCard } from './MorningDecisionCard';
+import { LedgerTodayCard } from './LedgerTodayCard';
+import { resolvePlanningAuthorityMode } from '../ledger/planningAuthorityMode';
+import { hasRecordedRedFlag } from '../ledger/redFlagPause';
 import { AdditionalSessionsCard } from './session/AdditionalSessionsCard';
 import { TodayImportedSessionsCard } from './session/TodayImportedSessionsCard';
 import { recordPredecessorConfirmation } from './session/predecessorConfirmationAction';
@@ -182,6 +185,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
   const handlePendingAdherenceResolved = useCallback((answer: AdherenceAnswer) => {
     const resolved = pendingAdherenceRef.current;
     setPendingAdherence(null);
+    if (resolvePlanningAuthorityMode(decisionInput?.preferences) === 'ledger') return;
     if (answer.followed === true && resolved) {
       decisionJournalService.getEntry(userId, resolved.date)
         .then(existing => {
@@ -193,7 +197,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
         })
         .catch(err => console.warn('Failed to sync decision journal actualVerdict from adherence:', err));
     }
-  }, [userId]);
+  }, [userId, decisionInput?.preferences]);
   const handleJournalEntryChange = useCallback((entry: DecisionJournalEntry | null) => setTodaysJournalEntry(entry), []);
   const handleRevealRecommendation = useCallback(() => setRecommendationRevealed(true), []);
   const dashboardRequest = useRef(0);
@@ -373,9 +377,14 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
       if (!isCurrent()) return;
       hasCurrentDecisionInput = true;
       setDecisionInput(input);
+      // ADR-0052 P2-2: the recovery/decision-source/sync gates below are engine
+      // prerequisites, not ledger ones. In ledger mode they must neither block today's
+      // imported plan nor surface engine repair copy, so they are skipped and the active
+      // external plan still loads.
+      const isLedgerModeLoad = resolvePlanningAuthorityMode(input.preferences) === 'ledger';
 
       const recoveryState = input.sourceStates?.recoverySnapshot;
-      if (recoveryState && recoveryState.status !== 'AVAILABLE' && recoveryState.status !== 'MISSING') {
+      if (!isLedgerModeLoad && recoveryState && recoveryState.status !== 'AVAILABLE' && recoveryState.status !== 'MISSING') {
         setRecommendation(null);
         setNextDayPlan(null);
         clearExternalPlanState();
@@ -390,7 +399,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
         return;
       }
 
-      const decisionSourceFailure = resolveDecisionSourceRepairState(input.sourceStates);
+      const decisionSourceFailure = isLedgerModeLoad ? null : resolveDecisionSourceRepairState(input.sourceStates);
       if (decisionSourceFailure) {
         setRecommendation(null);
         setNextDayPlan(null);
@@ -400,7 +409,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
         return;
       }
 
-      if (!input.recoverySnapshot) {
+      if (!isLedgerModeLoad && !input.recoverySnapshot) {
         const connection = await garminConnectionService.getConnectionState(userId);
         if (!isCurrent()) return;
         const wearableMode = resolveWearablePlanningMode(false, connection.state);
@@ -434,10 +443,12 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
         loadedOverrides,
         activitiesState,
       ] = await Promise.all([
-        recommendationService.getRecommendation(userId, yesterday).catch(err => {
-          console.warn('Failed to load yesterday\'s recommendation:', err);
-          return null;
-        }),
+        isLedgerModeLoad
+          ? Promise.resolve(null)
+          : recommendationService.getRecommendation(userId, yesterday).catch(err => {
+              console.warn('Failed to load yesterday\'s recommendation:', err);
+              return null;
+            }),
         recoverySnapshotService.getRecoverySnapshotState(userId, yesterday).catch(() => ({ status: 'MISSING' as const })),
         fixedActivityService
           .getActivitiesInRange(userId, input.date, addDaysToLocalDateString(input.date, 1))
@@ -517,11 +528,22 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
         console.warn(`External plan could not be read (${activeExternalState.status}); today falls back to the ranked path.`);
       }
 
-      const safetyStatus = getMinimumSafetyCheckinStatus(input.subjectiveCheckin);
-      if (safetyStatus !== 'complete') {
-        void recommendationService.saveNotApplicableContext(userId, input.date, safetyStatus);
-      }
-      if (canGenerateNormalRecommendation(safetyStatus)) {
+      if (isLedgerModeLoad) {
+        setDecisionContextCapture(null);
+        setRecommendation(null);
+        setAdjustmentDirection(null);
+        setActiveAlternativeId(null);
+        setNextDayPlan(null);
+        setHistorySnapshot(null);
+        setBundleMemberStatuses([]);
+        setBundleMemberInputRevision(null);
+        setPendingAdherence(null);
+      } else {
+        const safetyStatus = getMinimumSafetyCheckinStatus(input.subjectiveCheckin);
+        if (safetyStatus !== 'complete') {
+          void recommendationService.saveNotApplicableContext(userId, input.date, safetyStatus);
+        }
+        if (canGenerateNormalRecommendation(safetyStatus)) {
         const objective = mapSnapshotToEngineInput(input.recoverySnapshot);
         const subjective = mapCheckinToSubjectiveInput(input.subjectiveCheckin);
         const context = mapContextFromGoalsAndTrainingSettings(input.activeGoals, input.trainingSettings, input.preferences, input.date, input.subjectiveCheckin, input.carriedRegionRestrictions);
@@ -1040,6 +1062,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
         setBundleMemberStatuses([]);
         setBundleMemberInputRevision(null);
       }
+      }
     } catch (err) {
       if (!isCurrent()) return;
       console.error('Error loading dashboard data:', err);
@@ -1152,29 +1175,31 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
     return Math.round((completed / items.length) * 100);
   };
 
+  const isLedgerMode = resolvePlanningAuthorityMode(decisionInput?.preferences) === 'ledger';
+
   const engineInputs = useMemo(() => {
-    if (!decisionInput || (!decisionInput.recoverySnapshot && !decisionInput.subjectiveCheckin)) return null;
+    if (isLedgerMode || !decisionInput || (!decisionInput.recoverySnapshot && !decisionInput.subjectiveCheckin)) return null;
     const subjective = mapCheckinToSubjectiveInput(decisionInput.subjectiveCheckin);
     const objective = mapSnapshotToEngineInput(decisionInput.recoverySnapshot);
     const context = mapContextFromGoalsAndTrainingSettings(decisionInput.activeGoals, decisionInput.trainingSettings, decisionInput.preferences, decisionInput.date, decisionInput.subjectiveCheckin, decisionInput.carriedRegionRestrictions);
     return { subjective, objective, context };
-  }, [decisionInput]);
+  }, [isLedgerMode, decisionInput]);
 
   const forecastEngineInputs = useMemo(() => {
-    if (!decisionInput || (!decisionInput.recoverySnapshot && !decisionInput.subjectiveCheckin)) return null;
+    if (isLedgerMode || !decisionInput || (!decisionInput.recoverySnapshot && !decisionInput.subjectiveCheckin)) return null;
     const subjective = mapCheckinToSubjectiveInput(decisionInput.subjectiveCheckin);
     const objective = mapSnapshotToEngineInput(decisionInput.recoverySnapshot);
     // No carry here -- forecast/provisional days never receive it (issue #680's
     // no-forecast-leakage requirement, same as the today/forecast pair above).
     const context = mapContextFromGoalsAndTrainingSettings(decisionInput.activeGoals, decisionInput.trainingSettings, decisionInput.preferences, decisionInput.date, null);
     return { subjective, objective, context };
-  }, [decisionInput]);
+  }, [isLedgerMode, decisionInput]);
 
   const computeAdjustedRecommendation = useCallback((
     direction: 'easier' | 'harder' | null,
     alternativeId: string | null = null,
   ): Recommendation | null => {
-    if (!recommendation) return null;
+    if (isLedgerMode || !recommendation) return null;
     if (!canGenerateNormalPlan) return recommendation;
     if (!engineInputs || !decisionInput) return recommendation;
 
@@ -1282,10 +1307,10 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
       ...adjustedWithExecution,
       prescription: resolveWorkoutPrescription(adjustedWithExecution, userId, decisionInput.date, decisionInput.preferences?.performanceProfile, executionDose, decisionInput.trainingSettings) ?? undefined
     };
-  }, [recommendation, canGenerateNormalPlan, engineInputs, decisionInput, userId]);
+  }, [isLedgerMode, recommendation, canGenerateNormalPlan, engineInputs, decisionInput, userId]);
 
   const handleAdjustSession = useCallback((direction: 'easier' | 'harder' | null) => {
-    if (!canGenerateNormalPlan) return;
+    if (isLedgerMode || !canGenerateNormalPlan) return;
     setAdjustmentDirection(direction);
     if (!recommendation || !decisionInput) return;
     const adjusted = direction ? computeAdjustedRecommendation(direction, activeAlternativeId) : null;
@@ -1299,7 +1324,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
     } : undefined)
       .then(saved => verifySessionBindingReplay(userId, saved))
       .catch(err => console.warn('Failed to persist adjusted recommendation:', err));
-  }, [recommendation, canGenerateNormalPlan, decisionInput, computeAdjustedRecommendation, activeAlternativeId, userId, decisionContextCapture]);
+  }, [isLedgerMode, recommendation, canGenerateNormalPlan, decisionInput, computeAdjustedRecommendation, activeAlternativeId, userId, decisionContextCapture]);
 
   const handleSelectTimeCrunch = useCallback((minutes: number) => {
     const nextId = activeAlternativeId === `time-${minutes}` ? null : `time-${minutes}`;
@@ -1349,14 +1374,14 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
   // Computed off the engine's own pick (recommendation.template), never off activeRec --
   // otherwise selecting one alternative would recompute alternatives-of-an-alternative.
   const stimulusAlternatives = useMemo(() => {
-    if (!recommendation || !engineInputs || !decisionInput) return [];
+    if (isLedgerMode || !recommendation || !engineInputs || !decisionInput) return [];
     return findStimulusMatchedAlternatives(
       recommendation.template,
       engineInputs.context,
       engineInputs.subjective.timeAvailable,
       decisionInput.date,
     );
-  }, [recommendation, engineInputs, decisionInput]);
+  }, [isLedgerMode, recommendation, engineInputs, decisionInput]);
 
   // An alternative can become invalid without Home unmounting (for example after a fresh
   // check-in adds a Running restriction). Remove stale UI state as soon as the current
@@ -1376,42 +1401,45 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
   );
 
   const morningEvidence = useMemo(() => {
+    if (isLedgerMode || !decisionInput) return null;
     return assembleMorningDecisionEvidence(
-      decisionInput?.recoverySnapshot ?? null,
+      decisionInput.recoverySnapshot ?? null,
       yesterdaySnapshot,
       activeRec,
       yesterdayRecommendation,
       decisionInput,
     );
-  }, [decisionInput, yesterdaySnapshot, activeRec, yesterdayRecommendation]);
+  }, [isLedgerMode, decisionInput, yesterdaySnapshot, activeRec, yesterdayRecommendation]);
 
-  const todaysEngineVerdict = activeRec && canGenerateNormalPlan
+  const todaysEngineVerdict = !isLedgerMode && activeRec && canGenerateNormalPlan
     ? resolveEngineShadowVerdict(activeRec.mode, activeRec.externalVerdict?.decision)
     : null;
   // Phase 9.0.3's shadow-mode reveal gate/Decision Journal card is a single-athlete
   // evidence-collection tool (docs/plans/phase-9-0-shadow-mode-and-decision-journal.md),
   // not a general onboarding surface -- opt-in per account, off by default so a new user's
   // first visit shows today's recommendation immediately instead of an unfamiliar gate.
-  const shadowModeEnabled = decisionInput?.preferences?.shadowModeEnabled === true;
+  const shadowModeEnabled = !isLedgerMode && decisionInput?.preferences?.shadowModeEnabled === true;
   const recommendationEffectivelyRevealed = !shadowModeEnabled || recommendationRevealed || !!todaysJournalEntry;
 
+  // Ledger mode runs no engine evaluation: WeekAheadStrip's imported-plan branch never reads
+  // `planningMode`, and the sidebar falls back to the plain Active Goals list.
   const eventPeriodization = useMemo(() => {
-    if (!decisionInput) return null;
+    if (isLedgerMode || !decisionInput) return null;
     const events = mapGoalsToUserEvents(decisionInput.activeGoals);
     return {
       events,
       today: evaluatePeriodizationPhase(events, decisionInput.date),
     };
-  }, [decisionInput]);
+  }, [isLedgerMode, decisionInput]);
 
   const resolvedPlanningMode = useMemo(() => {
-    if (!decisionInput || !eventPeriodization) return undefined;
+    if (isLedgerMode || !decisionInput || !eventPeriodization) return undefined;
     return resolvePlanningContext(
       decisionInput.trainingIntentProfile,
       eventPeriodization.today,
       decisionInput.date,
     ).mode;
-  }, [decisionInput, eventPeriodization]);
+  }, [isLedgerMode, decisionInput, eventPeriodization]);
 
   const allTodayImportedSessions = useMemo(() => {
     if (!activeExternalPlan || !decisionInput?.date) return [];
@@ -1493,7 +1521,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
   const [weekAheadPlan, setWeekAheadPlan] = useState<WeekAheadPlan | null>(null);
   useEffect(() => {
     let cancelled = false;
-    if (!forecastEngineInputs || !decisionInput || !activeRec || !canGenerateNormalPlan || !historySnapshot) {
+    if (isLedgerMode || !forecastEngineInputs || !decisionInput || !activeRec || !canGenerateNormalPlan || !historySnapshot) {
       setWeekAheadPlan(null);
       return () => { cancelled = true; };
     }
@@ -1532,7 +1560,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
       }
     });
     return () => { cancelled = true; };
-  }, [userId, forecastEngineInputs, decisionInput, activeRec, canGenerateNormalPlan, nextDayPlan, selectedNextDayTier, eventPeriodization, historySnapshot, fixedActivitiesState, fixedActivities, planBlocksState, authoredPlanBlocks, intentBlocks]);
+  }, [isLedgerMode, userId, forecastEngineInputs, decisionInput, activeRec, canGenerateNormalPlan, nextDayPlan, selectedNextDayTier, eventPeriodization, historySnapshot, fixedActivitiesState, fixedActivities, planBlocksState, authoredPlanBlocks, intentBlocks]);
 
   if (loading) {
     return (
@@ -1578,7 +1606,9 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
     ? null
     : subjectiveReadiness >= 8 ? 'High' : subjectiveReadiness >= 5 ? 'Moderate' : 'Low';
 
-  const isCheckinMissing = !decisionInput?.dataQuality.hasSubjectiveCheckin;
+  // OQ3: in ledger mode the check-in is a prompt, not a plan-generation gate -- LedgerTodayCard
+  // renders its own "Check in first" prompt, so the engine gate banner is hidden.
+  const isCheckinMissing = !isLedgerMode && !decisionInput?.dataQuality.hasSubjectiveCheckin;
 
   return (
     <div className="home-container">
@@ -1669,96 +1699,110 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
             />
           )}
 
-          {/* Hero Morning Decision Card with Progressive Disclosure */}
-          {activeRec ? (
-            canGenerateNormalPlan && !recommendationEffectivelyRevealed ? (
-              <div className="dashboard-card recommendation-hidden">
-                <p className="card-empty">Today's recommendation is ready.</p>
-                <button type="button" className="reveal-recommendation-btn" onClick={handleRevealRecommendation}>
-                  👁️ Reveal today's recommendation
-                </button>
-                <p className="reveal-hint">
-                  Recording your own plan's verdict first is what the Decision Journal card above measures.
-                </p>
-              </div>
-            ) : (
-              <MorningDecisionCard
-                userId={userId}
-                date={decisionInput?.date ?? ''}
-                recommendation={activeRec}
-                evidence={morningEvidence}
-                prescription={activeRec?.prescription}
-                adjustmentDirection={adjustmentDirection}
-                activeAlternativeId={activeAlternativeId}
-                isGateLocked={recommendation?.envelopes?.safety.clinicalFlagActive ?? false}
-                gateLockedReason={recommendation?.envelopes?.safety.clinicalFlagActive ? 'Harder option is disabled because an active pain or injury flag restricts physical loading.' : undefined}
-                onAdjustLoad={handleAdjustSession}
-                onSelectTimeCrunch={handleSelectTimeCrunch}
-                stimulusAlternatives={stimulusAlternatives}
-                onSelectStimulusAlternative={handleSelectStimulusAlternative}
-                onSelectHomeAlternative={handleSelectHomeAlternative}
-                onSelectMobilityAlternative={handleSelectMobilityAlternative}
-                onSelectActiveRecoveryWalk={handleSelectActiveRecoveryWalk}
-                onResetAlternative={handleResetAlternative}
-                onStartSession={onStartSession}
-                onOpenReclassify={recentActivities.length > 0 ? () => setReclassifyModalOpen(true) : undefined}
-              />
-            )
+          {isLedgerMode ? (
+            <LedgerTodayCard
+              userId={userId}
+              date={decisionInput?.date ?? ''}
+              activeExternalPlan={activeExternalPlan}
+              sessions={allTodayImportedSessions}
+              todayCheckIn={decisionInput?.subjectiveCheckin ?? null}
+              onNavigate={onNavigate}
+              onStartSession={onStartSession}
+            />
           ) : (
-            <div className="dashboard-card empty-recommendation-card">
-              <p className="card-empty">
-                {!decisionInput?.dataQuality.hasSubjectiveCheckin
-                  ? "Complete your morning check-in to generate today's recommendation."
-                  : decisionInput.subjectiveCheckin && !decisionInput.dataQuality.subjectiveCheckinComplete
-                  ? "Today's check-in is only partially filled in — finish it to get a recommendation."
-                  : 'Unable to compute a recommendation yet.'}
-              </p>
-            </div>
-          )}
-
-          {bundleMemberStatuses.length > 0 && (
             <>
-              {additionalSessionNotice && (
-                <p className="additional-session-notice" role="status">{additionalSessionNotice}</p>
+              {/* Hero Morning Decision Card with Progressive Disclosure */}
+              {activeRec && morningEvidence ? (
+                canGenerateNormalPlan && !recommendationEffectivelyRevealed ? (
+                  <div className="dashboard-card recommendation-hidden">
+                    <p className="card-empty">Today's recommendation is ready.</p>
+                    <button type="button" className="reveal-recommendation-btn" onClick={handleRevealRecommendation}>
+                      👁️ Reveal today's recommendation
+                    </button>
+                    <p className="reveal-hint">
+                      Recording your own plan's verdict first is what the Decision Journal card above measures.
+                    </p>
+                  </div>
+                ) : (
+                  <MorningDecisionCard
+                    userId={userId}
+                    date={decisionInput?.date ?? ''}
+                    recommendation={activeRec}
+                    evidence={morningEvidence}
+                    prescription={activeRec?.prescription}
+                    adjustmentDirection={adjustmentDirection}
+                    activeAlternativeId={activeAlternativeId}
+                    isGateLocked={recommendation?.envelopes?.safety.clinicalFlagActive ?? false}
+                    gateLockedReason={recommendation?.envelopes?.safety.clinicalFlagActive ? 'Harder option is disabled because an active pain or injury flag restricts physical loading.' : undefined}
+                    onAdjustLoad={handleAdjustSession}
+                    onSelectTimeCrunch={handleSelectTimeCrunch}
+                    stimulusAlternatives={stimulusAlternatives}
+                    onSelectStimulusAlternative={handleSelectStimulusAlternative}
+                    onSelectHomeAlternative={handleSelectHomeAlternative}
+                    onSelectMobilityAlternative={handleSelectMobilityAlternative}
+                    onSelectActiveRecoveryWalk={handleSelectActiveRecoveryWalk}
+                    onResetAlternative={handleResetAlternative}
+                    onStartSession={onStartSession}
+                    onOpenReclassify={recentActivities.length > 0 ? () => setReclassifyModalOpen(true) : undefined}
+                  />
+                )
+              ) : (
+                <div className="dashboard-card empty-recommendation-card">
+                  <p className="card-empty">
+                    {!decisionInput?.dataQuality.hasSubjectiveCheckin
+                      ? "Complete your morning check-in to generate today's recommendation."
+                      : decisionInput.subjectiveCheckin && !decisionInput.dataQuality.subjectiveCheckinComplete
+                      ? "Today's check-in is only partially filled in — finish it to get a recommendation."
+                      : 'Unable to compute a recommendation yet.'}
+                  </p>
+                </div>
               )}
-              <AdditionalSessionsCard
-                members={bundleMemberStatuses}
-                onStartMember={handleStartAdditionalSession}
-                onConfirmPredecessor={handleConfirmPredecessor}
-              />
+
+              {bundleMemberStatuses.length > 0 && (
+                <>
+                  {additionalSessionNotice && (
+                    <p className="additional-session-notice" role="status">{additionalSessionNotice}</p>
+                  )}
+                  <AdditionalSessionsCard
+                    members={bundleMemberStatuses}
+                    onStartMember={handleStartAdditionalSession}
+                    onConfirmPredecessor={handleConfirmPredecessor}
+                  />
+                </>
+              )}
+
+              {activeExternalPlan && decisionInput && remainingTodayImportedSessions.length > 0 && (
+                <TodayImportedSessionsCard
+                  userId={userId}
+                  date={decisionInput.date}
+                  planId={activeExternalPlan.plan.planId}
+                  revision={activeExternalPlan.plan.revision}
+                  planTitle={activeExternalPlan.plan.title}
+                  contentHash={activeExternalPlan.header.contentHash}
+                  sessions={remainingTodayImportedSessions}
+                  allTodaySessions={allTodayImportedSessions}
+                  primaryDisplayedSessionId={primaryDisplayedExternalSessionId}
+                  clinicalEscalationRequired={recommendation?.envelopes?.safety.clinicalEscalationRequired === true}
+                  verdictsBySessionId={
+                    recommendationEffectivelyRevealed && !adjustmentDirection && !activeAlternativeId &&
+                    activeRec?.externalVerdict && activeRec.externalPrescription &&
+                    activeRec.externalPrescription.planId === activeExternalPlan.plan.planId &&
+                    activeRec.externalPrescription.revision === activeExternalPlan.plan.revision
+                      ? { [activeRec.externalPrescription.sessionId]: activeRec.externalVerdict.decision }
+                      : undefined
+                  }
+                  onStartSession={canGenerateNormalPlan ? onStartSession : undefined}
+                />
+              )}
+
+              {!canGenerateNormalPlan && (
+                <MinimumSafetyCheckin
+                  userId={userId}
+                  existingCheckin={decisionInput?.subjectiveCheckin ?? null}
+                  onCompleted={loadDashboardData}
+                />
+              )}
             </>
-          )}
-
-          {activeExternalPlan && decisionInput && remainingTodayImportedSessions.length > 0 && (
-            <TodayImportedSessionsCard
-              userId={userId}
-              date={decisionInput.date}
-              planId={activeExternalPlan.plan.planId}
-              revision={activeExternalPlan.plan.revision}
-              planTitle={activeExternalPlan.plan.title}
-              contentHash={activeExternalPlan.header.contentHash}
-              sessions={remainingTodayImportedSessions}
-              allTodaySessions={allTodayImportedSessions}
-              primaryDisplayedSessionId={primaryDisplayedExternalSessionId}
-              clinicalEscalationRequired={recommendation?.envelopes?.safety.clinicalEscalationRequired === true}
-              verdictsBySessionId={
-                recommendationEffectivelyRevealed && !adjustmentDirection && !activeAlternativeId &&
-                activeRec?.externalVerdict && activeRec.externalPrescription &&
-                activeRec.externalPrescription.planId === activeExternalPlan.plan.planId &&
-                activeRec.externalPrescription.revision === activeExternalPlan.plan.revision
-                  ? { [activeRec.externalPrescription.sessionId]: activeRec.externalVerdict.decision }
-                  : undefined
-              }
-              onStartSession={canGenerateNormalPlan ? onStartSession : undefined}
-            />
-          )}
-
-          {!canGenerateNormalPlan && (
-            <MinimumSafetyCheckin
-              userId={userId}
-              existingCheckin={decisionInput?.subjectiveCheckin ?? null}
-              onCompleted={loadDashboardData}
-            />
           )}
 
           {activityOverrides && reclassifyModalOpen && recentActivities.length > 0 && (
@@ -1772,31 +1816,39 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
             />
           )}
 
-          <div className="home-week-strip-section">
-            <div className="section-header-row">
-              <h4>7-Day Outlook</h4>
-              <button
-                type="button"
-                className="view-plan-link-btn"
-                onClick={() => onNavigate('plan')}
-              >
-                View full plan →
-              </button>
+          {/* Ledger mode with no imported plan has nothing to outlook; LedgerTodayCard
+              already carries the import prompt, so the empty section is hidden. */}
+          {(!isLedgerMode || activeExternalPlan) && (
+            <div className="home-week-strip-section">
+              <div className="section-header-row">
+                <h4>7-Day Outlook</h4>
+                <button
+                  type="button"
+                  className="view-plan-link-btn"
+                  onClick={() => onNavigate('plan')}
+                >
+                  View full plan →
+                </button>
+              </div>
+              <WeekAheadStrip
+                plan={weekAheadPlan}
+                nextDayPlan={nextDayPlan}
+                selectedTier={selectedNextDayTier}
+                onSelectTier={setSelectedNextDayTier}
+                trainingIntentProfile={decisionInput?.trainingIntentProfile}
+                scheduleOverlays={decisionInput?.scheduleOverlays}
+                planningMode={resolvedPlanningMode}
+                externalPlan={activeExternalPlan}
+                today={decisionInput?.date}
+                userId={userId}
+                clinicalEscalationRequired={
+                  isLedgerMode
+                    ? hasRecordedRedFlag(decisionInput?.subjectiveCheckin)
+                    : recommendation?.envelopes?.safety.clinicalEscalationRequired === true
+                }
+              />
             </div>
-            <WeekAheadStrip
-              plan={weekAheadPlan}
-              nextDayPlan={nextDayPlan}
-              selectedTier={selectedNextDayTier}
-              onSelectTier={setSelectedNextDayTier}
-              trainingIntentProfile={decisionInput?.trainingIntentProfile}
-              scheduleOverlays={decisionInput?.scheduleOverlays}
-              planningMode={resolvedPlanningMode}
-              externalPlan={activeExternalPlan}
-              today={decisionInput?.date}
-              userId={userId}
-              clinicalEscalationRequired={recommendation?.envelopes?.safety.clinicalEscalationRequired === true}
-            />
-          </div>
+          )}
         </div>
 
         <div className="home-sidebar-col">
@@ -1887,7 +1939,13 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
             <div className="dashboard-card" onClick={() => onNavigate('checkin')}>
               <div className="card-header">
                 <h3>Today's Check-in</h3>
-                {canGenerateNormalPlan ? (
+                {isLedgerMode ? (
+                  decisionInput?.subjectiveCheckin ? (
+                    <span className="status-badge success">Recorded ✓</span>
+                  ) : (
+                    <span className="status-badge status-neutral">Optional</span>
+                  )
+                ) : canGenerateNormalPlan ? (
                   <span className="status-badge success">Complete ✓</span>
                 ) : (
                   <span className="status-badge pending">Safety check needed</span>

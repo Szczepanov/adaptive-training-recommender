@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DailyRecommendation, Recommendation, RecommendationAudit } from '../engine/models';
 import { TEMPLATES } from '../engine/templates';
 import { POLICY_VERSION } from '../engine/policy';
@@ -26,6 +26,10 @@ const firestore = vi.hoisted(() => {
 
 vi.mock('firebase/firestore', () => firestore);
 vi.mock('../firebase', () => ({ getDb: vi.fn(() => ({})) }));
+const mockResolveMode = vi.hoisted(() => vi.fn(async () => 'engine' as 'engine' | 'ledger'));
+vi.mock('./planningAuthorityModeService', () => ({
+    resolveUserPlanningAuthorityMode: mockResolveMode,
+}));
 
 import { RecommendationService } from './recommendationService';
 
@@ -557,6 +561,42 @@ describe('RecommendationService persistence', () => {
             firestore.getDocs.mockRejectedValue(new Error('offline'));
             const result = await new RecommendationService().listRecommendationRevisions('u1', '2026-09-20');
             expect(result).toMatchObject({ status: 'UNAVAILABLE', operation: 'read recommendation revision archive' });
+        });
+    });
+
+    describe('ledger mode write suppression (#1167 P2-5)', () => {
+        afterEach(() => {
+            mockResolveMode.mockResolvedValue('engine');
+        });
+
+        it('does not write daily_recommendations or decision_contexts in ledger mode', async () => {
+            mockResolveMode.mockResolvedValue('ledger');
+            // An existing day document, so only the ledger guard can stop the writes below.
+            firestore.getDoc.mockResolvedValue({ exists: () => true, data: () => ({ userId: 'athlete', date: '2026-11-12' }) });
+            const service = new RecommendationService();
+            const rec = {
+                template: TEMPLATES[0],
+                mode: 'train',
+                rationale: 'Engine rationale',
+            } as unknown as Recommendation;
+
+            expect(await service.saveRecommendation('athlete', '2026-11-12', rec)).toBeNull();
+            expect(await service.saveNotApplicableContext('athlete', '2026-11-12', 'missing')).toBe(false);
+            expect(await service.recordAdherence('athlete', '2026-11-12', { followed: true })).toBeNull();
+            expect(firestore.setDoc).not.toHaveBeenCalled();
+            expect(firestore.batch.commit).not.toHaveBeenCalled();
+            expect(firestore.runTransaction).not.toHaveBeenCalled();
+            // The guard runs before any read, so ledger mode costs no recommendation reads.
+            expect(firestore.getDoc).not.toHaveBeenCalled();
+        });
+
+        it('returns zeroed adherence stats without error when no daily_recommendations exist', async () => {
+            firestore.getDocs.mockResolvedValueOnce({ docs: [] });
+            const stats = await new RecommendationService().getAdherenceStats('athlete', 30);
+            expect(stats.totalRecommendations).toBe(0);
+            expect(stats.answered).toBe(0);
+            expect(stats.awaitingResponse).toBe(0);
+            expect(stats.followedRate).toBe(0);
         });
     });
 });

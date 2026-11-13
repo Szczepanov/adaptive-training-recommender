@@ -561,4 +561,29 @@ describe('performedTrainingFactsService', () => {
             expect(repository.queryActiveInDateWindow).toHaveBeenCalledWith('user-1', '2026-09-01', '2026-09-05');
         });
     });
+
+    it('handles a structured execution on a date with no daily_recommendations record (#1167 P2-5)', async () => {
+        vi.mocked(activityOverrideService.getOverridesSinceState).mockResolvedValue({ status: 'AVAILABLE', data: {}, revision: null });
+        vi.mocked(repository.queryActiveInDateWindow).mockResolvedValue([
+            occurrence({
+                localDate: '2026-09-01',
+                sourceRefs: [{ kind: 'structured_execution', executionId: 'exec-1' }],
+            }),
+        ]);
+        vi.mocked(sessionExecutionService.getExecution).mockResolvedValue({
+            status: 'AVAILABLE',
+            data: sessionExecution(),
+            revision: null,
+        });
+        vi.mocked(resolveSessionDefinition).mockResolvedValue({ status: 'MISSING' });
+        vi.mocked(recommendationService.getRecommendationsInRange).mockResolvedValue({ status: 'AVAILABLE', data: [], revision: null });
+
+        const snapshot = await getPerformedTrainingFactsInRange('user-1', '2026-09-01', '2026-09-02', {
+            preloadedActivities: [],
+        });
+
+        expect(snapshot.exposures).toHaveLength(1);
+        expect(snapshot.exposures[0].isReadinessModifiedDose).toBeUndefined();
+        expect(snapshot.exposures[0].workoutVariantId).toBeUndefined();
+    });
 });

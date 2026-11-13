@@ -19,6 +19,10 @@ const firestore = vi.hoisted(() => {
 
 vi.mock('firebase/firestore', () => firestore);
 vi.mock('../firebase', () => ({ getDb: vi.fn(() => ({})) }));
+const mockResolveMode = vi.hoisted(() => vi.fn(async () => 'engine' as 'engine' | 'ledger'));
+vi.mock('./planningAuthorityModeService', () => ({
+    resolveUserPlanningAuthorityMode: mockResolveMode,
+}));
 
 import { DecisionJournalService } from './decisionJournalService';
 
@@ -198,6 +202,21 @@ describe('DecisionJournalService', () => {
             const result = await new DecisionJournalService().getEntriesInRange(USER_ID, DATE, '2026-08-17');
             expect(result.entries).toHaveLength(1);
             expect(result.invalidRecords).toBe(1);
+        });
+    });
+
+    describe('ledger mode OQ6 suppression (#1167 P2-5)', () => {
+        it('refuses to write morning or actual decision journal entries in ledger mode', async () => {
+            mockResolveMode.mockResolvedValue('ledger');
+            const service = new DecisionJournalService();
+            await expect(service.recordMorningEntry(USER_ID, DATE, {
+                externalVerdict: 'proceed',
+                sawEngineVerdictFirst: false,
+            })).rejects.toThrow('disabled in ledger mode');
+            await expect(service.recordActualVerdict(USER_ID, DATE, 'proceed'))
+                .rejects.toThrow('disabled in ledger mode');
+            expect(firestore.setDoc).not.toHaveBeenCalled();
+            mockResolveMode.mockResolvedValue('engine');
         });
     });
 });

@@ -262,6 +262,18 @@ export function resolveScaledLaunchCeilingMinutes(gatingDurationMin: number, dos
     return gatingDurationMin * doseVolume;
 }
 
+/**
+ * A deterministic launch-contract failure (bad definition, identity mismatch, ceiling,
+ * mismatched occurrence). Retrying the same launch cannot succeed, so UI callers can tell it
+ * apart from a transient read/write failure.
+ */
+export class ExternalPlanLaunchValidationError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = 'ExternalPlanLaunchValidationError';
+    }
+}
+
 export interface PrepareExternalPlanSessionLaunchOptions {
     summaryOverride?: string;
     now?: string;
@@ -276,6 +288,11 @@ export interface PrepareExternalPlanSessionLaunchOptions {
     useReducedDefinition?: boolean;
     /** Adjudicated execution-volume fraction for today's exact scale verdict. */
     scaleVolume?: number;
+    /** ADR-0052 ledger mode (#1167 P2-2): the athlete explicitly chose the coach's reduced
+     * form, so no engine verdict bounds its duration. Skips only the scaled duration
+     * ceiling (and its `scaleVolume` requirement); the reducible/identity/intent/modality
+     * checks and definition validation still apply. Never set from an engine path. */
+    skipEngineDurationCeiling?: boolean;
     /** During recommendation recomposition, preserve a binding for an occurrence that was
      * already launched (active/completed/abandoned). Never re-bind skipped, missed, or
      * superseded occurrences, which no longer govern today's executable recommendation. */
@@ -306,7 +323,7 @@ export async function prepareExternalPlanSessionLaunch(
     nowFallback = new Date().toISOString(),
 ): Promise<PreparedSessionLaunch> {
     if (externalPlan.session.isEvent) {
-        throw new Error('External-plan target events are advisory fixed-activity inputs and cannot be launched as primary sessions.');
+        throw new ExternalPlanLaunchValidationError('External-plan target events are advisory fixed-activity inputs and cannot be launched as primary sessions.');
     }
 
     const options: PrepareExternalPlanSessionLaunchOptions =
@@ -323,7 +340,7 @@ export async function prepareExternalPlanSessionLaunch(
         ? externalPlan.session.scaling.reducedDefinition
         : undefined;
     if (options.useReducedDefinition && !reducedDefinition) {
-        throw new Error('A scaled external-plan session requires an exact structured reducedDefinition.');
+        throw new ExternalPlanLaunchValidationError('A scaled external-plan session requires an exact structured reducedDefinition.');
     }
     // Execution-boundary mirror of `externalPlanV6.ts`'s import contract (PR-B, #893 WP3.2):
     // a scaled launch is only ever the coach's own reduced form. Import validation already
@@ -331,21 +348,21 @@ export async function prepareExternalPlanSessionLaunch(
     // authored identity, but the authoring layer accepts hand-built sessions, so it
     // re-enforces both rules here -- before any dose check -- and fails closed.
     if (options.useReducedDefinition && externalPlan.session.scaling?.reducible !== true) {
-        throw new Error('A scaled external-plan launch requires reducible: true with an exact structured reducedDefinition.');
+        throw new ExternalPlanLaunchValidationError('A scaled external-plan launch requires reducible: true with an exact structured reducedDefinition.');
     }
     if (options.useReducedDefinition && reducedDefinition) {
         const fullDefinition = externalPlan.session.definition;
         if (reducedDefinition.id !== fullDefinition.id) {
-            throw new Error('Reduced definition must retain the authored session definition id.');
+            throw new ExternalPlanLaunchValidationError('Reduced definition must retain the authored session definition id.');
         }
         if (reducedDefinition.intent !== fullDefinition.intent) {
-            throw new Error('Reduced definition must retain the authored session intent.');
+            throw new ExternalPlanLaunchValidationError('Reduced definition must retain the authored session intent.');
         }
         if (reducedDefinition.dominantModality !== fullDefinition.dominantModality) {
-            throw new Error('Reduced definition must retain the authored dominant modality.');
+            throw new ExternalPlanLaunchValidationError('Reduced definition must retain the authored dominant modality.');
         }
     }
-    const maxDurationMinutes = options.useReducedDefinition
+    const maxDurationMinutes = options.useReducedDefinition && !options.skipEngineDurationCeiling
         ? resolveScaledLaunchCeilingMinutes(externalPlan.session.gating.durationMin, options.scaleVolume ?? Number.NaN)
         : undefined;
     const definition = options.useReducedDefinition ? reducedDefinition! : externalPlan.session.definition;
@@ -353,12 +370,12 @@ export async function prepareExternalPlanSessionLaunch(
         && (!definition.duration
             || definition.duration.max > maxDurationMinutes
             || explicitDurationSeconds(definition) > maxDurationMinutes * 60)) {
-        throw new Error('The exact reduced definition exceeds today\'s approved duration ceiling.');
+        throw new ExternalPlanLaunchValidationError('The exact reduced definition exceeds today\'s approved duration ceiling.');
     }
     // Defense in depth: revalidate the exact executable definition, including v6's scaled form.
     const validation = validateSessionDefinition(definition);
     if (!validation.ok) {
-        throw new Error(validation.issues.map(issue => `${issue.path}: ${issue.message}`).join('\n'));
+        throw new ExternalPlanLaunchValidationError(validation.issues.map(issue => `${issue.path}: ${issue.message}`).join('\n'));
     }
 
     const definitionHash = await hashSessionDefinition(definition);
@@ -388,10 +405,10 @@ export async function prepareExternalPlanSessionLaunch(
             || occurrenceData.externalPlanRef.sessionId !== sessionSource.sessionId
             || occurrenceData.externalPlanRef.contentHash !== sessionSource.contentHash
         ) {
-            throw new Error(`External-plan occurrence ${effectiveOccurrenceId} does not match the launch source.`);
+            throw new ExternalPlanLaunchValidationError(`External-plan occurrence ${effectiveOccurrenceId} does not match the launch source.`);
         }
         if (options.date !== undefined && occurrenceData.date !== options.date) {
-            throw new Error(
+            throw new ExternalPlanLaunchValidationError(
                 `External-plan occurrence ${effectiveOccurrenceId} is for ${occurrenceData.date}, expected ${options.date}.`,
             );
         }
@@ -414,7 +431,7 @@ export async function prepareExternalPlanSessionLaunch(
         if (occurrence.state !== 'scheduled'
             && !(options.allowPreviouslyLaunchedOccurrence
                 && ['active', 'completed', 'abandoned'].includes(occurrence.state))) {
-            throw new Error(`External-plan occurrence ${occurrence.occurrenceId} does not match the launch source.`);
+            throw new ExternalPlanLaunchValidationError(`External-plan occurrence ${occurrence.occurrenceId} does not match the launch source.`);
         }
         effectiveOccurrenceId = occurrence.occurrenceId;
     }

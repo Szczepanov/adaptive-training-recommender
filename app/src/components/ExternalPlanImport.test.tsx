@@ -5,7 +5,15 @@ import { EXTERNAL_PLAN_SCHEMA, type ExternalTrainingPlan } from '../engine/model
 import { EXTERNAL_PLAN_SCHEMA_V2, type ExternalTrainingPlanV2 } from '../sessions/externalPlanV2';
 import { EXTERNAL_PLAN_SCHEMA_V5, type ExternalTrainingPlanV5 } from '../sessions/externalPlanV5';
 import type { SessionDefinition } from '../sessions/models';
-import { PlanPreview } from './ExternalPlanImport';
+import { ExternalPlanImport, PlanPreview } from './ExternalPlanImport';
+import { loadPromptPlanningAuthorityMode } from './externalPlanImportPromptMode';
+import { buildAiPromptTemplate } from './externalPlanImportPrompt';
+import { resolvePlanningAuthorityMode } from '../ledger/planningAuthorityMode';
+
+const { getPreferencesState } = vi.hoisted(() => ({ getPreferencesState: vi.fn() }));
+vi.mock('../services/preferencesService', () => ({
+    preferencesService: { getPreferencesState },
+}));
 
 function plan(): ExternalTrainingPlan {
     return {
@@ -267,5 +275,69 @@ describe('PlanPreview — external-plan@5 intent block preview', () => {
             <PlanPreview plan={plan} previous={null} diff={null} onConfirm={vi.fn()} onCancel={vi.fn()} />,
         );
         expect(html).not.toContain('Intent blocks this import will author');
+    });
+});
+
+describe('ExternalPlanImport — D-TRAVEL mode-aware prompt (#1167 P2-6, OQ4)', () => {
+    it('switches prompt travel instructions deterministically with resolvePlanningAuthorityMode', () => {
+        const engineFromUnset = buildAiPromptTemplate(resolvePlanningAuthorityMode(undefined));
+        const engineFromNull = buildAiPromptTemplate(resolvePlanningAuthorityMode(null));
+        const engineFromEmpty = buildAiPromptTemplate(resolvePlanningAuthorityMode({}));
+        const engineFromTrue = buildAiPromptTemplate(resolvePlanningAuthorityMode({ engineRecommendationsEnabled: true }));
+        const ledgerPrompt = buildAiPromptTemplate(resolvePlanningAuthorityMode({ engineRecommendationsEnabled: false }));
+
+        expect(engineFromUnset).toBe(engineFromNull);
+        expect(engineFromUnset).toBe(engineFromEmpty);
+        expect(engineFromUnset).toBe(engineFromTrue);
+        expect(engineFromUnset).toContain('Plan as if every otherwise scheduled day is available.');
+        expect(engineFromUnset).not.toContain('userContext.travel');
+        expect(engineFromUnset).not.toContain('venueRestrictions');
+
+        expect(ledgerPrompt).toContain('userContext.travel');
+        expect(ledgerPrompt).toContain('venueRestrictions');
+        expect(ledgerPrompt).not.toContain('Plan as if every otherwise scheduled day is available.');
+        expect(buildAiPromptTemplate('ledger')).toBe(ledgerPrompt);
+    });
+
+    it('renders the matching prompt variant on ExternalPlanImport for engine vs ledger preferences', () => {
+        const defaultHtml = renderToStaticMarkup(<ExternalPlanImport userId="u1" />);
+        const engineHtml = renderToStaticMarkup(<ExternalPlanImport userId="u1" preferences={{ engineRecommendationsEnabled: true }} />);
+        const ledgerHtml = renderToStaticMarkup(<ExternalPlanImport userId="u1" preferences={{ engineRecommendationsEnabled: false }} />);
+
+        expect(defaultHtml).toContain('Plan as if every otherwise scheduled day is available.');
+        expect(engineHtml).toContain('Plan as if every otherwise scheduled day is available.');
+        expect(engineHtml).not.toContain('userContext.travel');
+
+        expect(ledgerHtml).toContain('userContext.travel');
+        expect(ledgerHtml).toContain('venueRestrictions');
+        expect(ledgerHtml).not.toContain('Plan as if every otherwise scheduled day is available.');
+    });
+
+    it('resolves the prompt mode from stored preferences, the only path PlanView uses', async () => {
+        getPreferencesState.mockResolvedValueOnce({ status: 'AVAILABLE', data: { engineRecommendationsEnabled: false } });
+        await expect(loadPromptPlanningAuthorityMode('u1')).resolves.toBe('ledger');
+        expect(getPreferencesState).toHaveBeenLastCalledWith('u1');
+
+        getPreferencesState.mockResolvedValueOnce({ status: 'AVAILABLE', data: { engineRecommendationsEnabled: true } });
+        await expect(loadPromptPlanningAuthorityMode('u1')).resolves.toBe('engine');
+    });
+
+    it('falls back to the resolver default when stored preferences are unreadable', async () => {
+        const fallback = resolvePlanningAuthorityMode(null);
+        getPreferencesState.mockResolvedValueOnce({ status: 'UNAVAILABLE' });
+        await expect(loadPromptPlanningAuthorityMode('u1')).resolves.toBe(fallback);
+
+        getPreferencesState.mockRejectedValueOnce(new Error('offline'));
+        await expect(loadPromptPlanningAuthorityMode('u1')).resolves.toBe(fallback);
+    });
+
+    it('disables Copy until stored preferences settle, but not when the caller passes them', () => {
+        const pendingHtml = renderToStaticMarkup(<ExternalPlanImport userId="u1" />);
+        const suppliedHtml = renderToStaticMarkup(<ExternalPlanImport userId="u1" preferences={{ engineRecommendationsEnabled: false }} />);
+        const copyButton = (html: string) => html.match(/<button[^>]*>Copy AI prompt template<\/button>/)?.[0] ?? '';
+
+        expect(copyButton(pendingHtml)).toContain('disabled');
+        expect(copyButton(suppliedHtml)).not.toBe('');
+        expect(copyButton(suppliedHtml)).not.toContain('disabled');
     });
 });

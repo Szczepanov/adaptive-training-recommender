@@ -117,4 +117,18 @@ describe('computeHistoryShadowDiffForUser', () => {
         expect(activityService.getActivitiesInRange).toHaveBeenCalledWith('user-1', '2026-08-19', '2026-08-28');
         expect(getCompletedWorkoutsInRange).toHaveBeenCalledWith('user-1', '2026-08-20', '2026-08-27', widenedActivities);
     });
+
+    it('handles days with no daily_recommendations record without error or rest-day fabrication (#1167 P2-5)', async () => {
+        vi.mocked(activityService.getActivitiesInRange).mockResolvedValue({
+            status: 'AVAILABLE',
+            data: [{ activityId: 'a1', date: '2026-08-26', type: 'cycling', durationMin: 45, trainingEffectAerobic: 2.5, trainingEffectAnaerobic: 0, averageHr: 130, activityTrainingLoad: 60, intensityTag: 'easy' }],
+            revision: null,
+        });
+        vi.mocked(recommendationService.getRecommendationsInRange).mockResolvedValue({ status: 'AVAILABLE', data: [], revision: null });
+
+        const diff = await computeHistoryShadowDiffForUser('user-1', '2026-08-20', '2026-08-27');
+
+        expect(diff).not.toBeNull();
+        expect(diff?.liveExposureCount).toBe(1);
+    });
 });
