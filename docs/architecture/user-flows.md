@@ -37,9 +37,10 @@ update this document in the same PR.
 
 ## Global shell
 
-By default (`ledger` mode, ADR-0052 Phase 2), Home (`LedgerTodayCard`), Plan (`PlanView`
-imported tab only), and `WeekAheadStrip` show and run today's imported sessions as authored with
-D-FLAGS (`FlagStrip`), without evaluating the recommendation engine or writing
+By default (`ledger` mode, ADR-0052 Phase 2), Home's `LedgerTodayCard` shows today's imported
+sessions as authored, renders D-FLAGS (`FlagStrip`) and launches them. Plan (`PlanView`, imported
+`ExternalPlanWeek` tab only) and `WeekAheadStrip` show imported placements without flags or a
+launch action. None of these surfaces runs recommendation-engine evaluations or writes
 `daily_recommendations`. Legacy engine recommendations (`MorningDecisionCard`, `ai_forecast`,
 `AdherencePrompt`) remain available as a rollback via **Preferences → Advanced: legacy engine
 recommendations** (`engineRecommendationsEnabled: true`).

@@ -354,6 +354,8 @@ describe('evaluateTrainingWithIntent in externally_planned mode', () => {
         };
         const authoredSession = externalPlan();
         // Default mode is ledger: the engine is not evaluated, so travel overlays never re-dose the authored session.
+        // The production path (unset setting + travel block + placed session through Home) is
+        // covered in `components/Home.ledger.test.tsx`; this test pins the resolver and the export.
         expect(resolvePlanningAuthorityMode(undefined)).toBe('ledger');
         expect('gating' in authoredSession.session ? authoredSession.session.gating.durationMin : undefined).toBe(60);
 

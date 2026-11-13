@@ -3,10 +3,17 @@
 How `app/src/engine/` turns a morning's data into a prescribed session.
 
 > **Default mode (ADR-0052 Phase 2):** Ledger mode is now the default (`resolvePlanningAuthorityMode`
-> resolves an unset `engineRecommendationsEnabled` to `'ledger'`). By default, Home, Plan, and the
-> week-ahead strip show and run today's imported session as authored with D-FLAGS and do not
-> evaluate `app/src/engine/` or write `daily_recommendations`. The paths below remain in the tree
-> behind the default-off **Preferences → Advanced: legacy engine recommendations** rollback setting
+> resolves an unset `engineRecommendationsEnabled` to `'ledger'`). By default, Home's
+> `LedgerTodayCard` shows today's imported sessions as authored, renders D-FLAGS (`FlagStrip`)
+> and launches them; Plan (`ExternalPlanWeek`, imported tab only) and `WeekAheadStrip` show
+> imported placements without flags or a launch action. None of them runs the recommendation
+> evaluations described below (`evaluateSameDayRecommendation`,
+> `evaluateReadinessAndSafetyEnvelope`, `evaluateNextDayPlanWithIntent`,
+> `adjustSessionRecommendation`, `generateWeekAheadPlanWithIntent`) or writes
+> `daily_recommendations`. Ledger mode still uses non-deciding helpers under `app/src/engine/`,
+> such as `externalPlacement` `resolveRestDatesByDate` and `externalSessionProfiles`
+> `externalSessionDisplayPrescription`. The evaluation paths below remain in the tree behind the
+> default-off **Preferences → Advanced: legacy engine recommendations** rollback setting
 > (`engineRecommendationsEnabled: true`).
 >
 > **Accuracy note.** Rewritten 2026-08-08 against the engine as it actually is. The
