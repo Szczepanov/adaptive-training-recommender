@@ -196,7 +196,21 @@ describe('session movement-composition evidence', () => {
       expect(requirementStatus([{ ...carry, deletedAt: '2026-09-26T10:05:00Z' }])).toBe('omitted');
     });
 
-    it('keeps a logged distance set unknown rather than omitted', () => {
+    it('credits a stamped distance set with positive meters, and ignores zero-distance or deleted distance sets', () => {
+      const distance: SessionEntry = { ...entry(), payload: { kind: 'distance', meters: 40 } };
+      const zeroDistance: SessionEntry = { ...entry(), payload: { kind: 'distance', meters: 0 } };
+      const deletedDistance: SessionEntry = { ...distance, deletedAt: '2026-09-26T10:05:00Z' };
+      expect(deliveredPatternWork([distance], 'unilateral_lower_body')).toEqual({
+        workingSets: 1, stepIds: ['split-squat'],
+      });
+      expect(requirementStatus([distance])).toBe('performed');
+      expect(deliveredPatternWork([zeroDistance], 'unilateral_lower_body')).toBeNull();
+      expect(requirementStatus([zeroDistance])).toBe('unknown');
+      expect(deliveredPatternWork([deletedDistance], 'unilateral_lower_body')).toBeNull();
+      expect(requirementStatus([deletedDistance])).toBe('omitted');
+    });
+
+    it('keeps a logged distance set unknown rather than omitted when unstamped', () => {
       const distance: SessionEntry = { ...unstamped(entry()), payload: { kind: 'distance', meters: 200 } };
       expect(requirementStatus([distance])).toBe('unknown');
     });
