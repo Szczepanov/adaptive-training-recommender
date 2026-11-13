@@ -136,11 +136,12 @@ launch for that date. The owner decided on 2026-11-12 that they keep doing so af
 * **Implementation:** the predicate must be pure and live outside `engine/`, because ledger
   mode does not evaluate the engine. #1167 P2-3 moves `resolveRedFlagFindings` out of
   `engine/` as a behaviour-preserving relocation (Phase 1 pattern).
-* **D-EVAL is unchanged by this amendment.** The criteria document's §2 counts a session as
-  `flag_skip` only when a D-FLAGS flag is `active: true`, so a red-flag date with no active
-  flag counts as an ordinary miss. Changing that is a criteria-document decision, and it must
-  be made before the qualifying block starts. A red flag reported within 72 hours after a
-  flagged hard session is already an adverse outcome under the flagged-day criterion.
+* **D-EVAL is not changed by this amendment itself.** Whether a paused red-flag date counts
+  as `flag_skip` is a criteria-document decision, made before the qualifying block starts.
+  The owner made it on 2026-11-12: the criteria document's §2 now counts a session with
+  confirmed no linked performance on a date with a recorded red-flag symptom as `flag_skip`,
+  not `missed`. A red flag reported within 72 hours after a flagged hard session is already
+  an adverse outcome under the flagged-day criterion.
 
 ### D-ENGINE — freeze, extract, then retire in phases
 
