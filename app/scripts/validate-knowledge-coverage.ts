@@ -17,7 +17,7 @@ for (const error of result.errors) {
 if (!result.valid) {
     process.exitCode = 1;
 } else {
-    console.log(`Validated ${ENGINE_KNOWLEDGE_COVERAGE.length} engine knowledge-coverage items.`);
+    console.log(`Validated ${ENGINE_KNOWLEDGE_COVERAGE.length} engine knowledge-coverage items (${summary.retiredInPhase2} retired in Phase 2).`);
     console.log(`Coverage: ${summary.byCoverage.covered} covered, ${summary.byCoverage.partial} partial, ${summary.byCoverage.uncovered} uncovered, ${summary.byCoverage.not_applicable} not applicable.`);
     console.log(`Research backlog: P0=${summary.byPriority.p0}, P1=${summary.byPriority.p1}, P2=${summary.byPriority.p2}, P3=${summary.byPriority.p3}.`);
     console.log(`Risk debt: ${summary.highImpactUncovered} high-impact uncovered; ${summary.highSafetyUncovered} high-safety uncovered.`);

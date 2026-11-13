@@ -6,6 +6,8 @@ import { resolvePlanningContext } from './planningMode';
 import { evaluatePeriodizationPhase } from './periodization';
 import { isExternalTemplateId } from './externalSessionProfiles';
 import { validateTrainingIntentProfile } from './validation';
+import { buildLedgerExport } from '../ledger/export/buildLedgerExport';
+import { resolvePlanningAuthorityMode } from '../ledger/planningAuthorityMode';
 import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
 import type {
     AuthoredPlanBlock, DailyReadiness, EngineObjectiveInput, ExternalPlanSession, FixedActivity,
@@ -344,7 +346,32 @@ describe('evaluateTrainingWithIntent in externally_planned mode', () => {
         expect(recommendation.rationale).toContain('External plan fallback');
     });
 
-    it('applies a travel block\'s dose reduction exactly once (D-NOTRAVEL)', async () => {
+    it('an imported session inside a travel block runs as authored, and the block appears in the export', () => {
+        const travel: AuthoredPlanBlock = {
+            id: 'trip', userId: 'u1', phase: 'travel',
+            startDate: DATE, endDate: DATE, volumeScale: 0.5, intensityScale: 0.8,
+            createdAt: '', updatedAt: '',
+        };
+        const authoredSession = externalPlan();
+        // Default mode is ledger: the engine is not evaluated, so travel overlays never re-dose the authored session.
+        expect(resolvePlanningAuthorityMode(undefined)).toBe('ledger');
+        expect('gating' in authoredSession.session ? authoredSession.session.gating.durationMin : undefined).toBe(60);
+
+        const exported = buildLedgerExport({
+            records: { planBlocks: [travel] },
+            asOfDate: DATE,
+            purpose: 'planning',
+            exportedAt: `${DATE}T06:00:00.000Z`,
+        });
+        expect(exported.userContext.travel.state).toBe('measured');
+        expect(exported.userContext.travel.items).toHaveLength(1);
+        expect(exported.userContext.travel.items[0].id).toBe('trip');
+        expect(exported.userContext.travel.items[0].fields.startDate.value).toBe(DATE);
+        expect(exported.userContext.travel.items[0].fields.volumeScale.value).toBe(0.5);
+    });
+
+    it('applies a travel block\'s dose reduction exactly once when rollback engine mode is enabled (engineRecommendationsEnabled: true)', async () => {
+        expect(resolvePlanningAuthorityMode({ engineRecommendationsEnabled: true })).toBe('engine');
         const travel: AuthoredPlanBlock = {
             id: 'trip', userId: 'u1', phase: 'travel',
             startDate: DATE, endDate: DATE, volumeScale: 0.5, intensityScale: 0.8,

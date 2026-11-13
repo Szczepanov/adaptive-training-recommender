@@ -202,6 +202,27 @@ export function StyleSections({ preferences, onNavigate, updatePreference, updat
           </div>
         </div>
       </SettingsDisclosure>
+
+      {/* Advanced: legacy engine recommendations (ADR-0052 Phase 2 rollback, OQ5) */}
+      <SettingsDisclosure title="Advanced: legacy engine recommendations" titleId="style-legacy-engine-title">
+        <div className="toggle-group">
+          <div className="toggle-info">
+            <span className="toggle-title">Enable legacy engine recommendations</span>
+            <p className="preference-desc">
+              Off by default (ledger mode): Home, Plan, and the week-ahead strip show imported sessions as authored with D-FLAGS, and no engine recommendations are generated or written. Turning this on re-enables legacy engine recommendations as a rollback. Turning it on during a D-EVAL block ends the block (D-EVAL criteria §1, C4).
+            </p>
+          </div>
+          <button
+            type="button"
+            className={`toggle-switch ${preferences.engineRecommendationsEnabled === true ? 'active' : ''}`}
+            onClick={() => updatePreference('engineRecommendationsEnabled', preferences.engineRecommendationsEnabled !== true)}
+            aria-label="Toggle legacy engine recommendations"
+            aria-pressed={preferences.engineRecommendationsEnabled === true}
+          >
+            <span className="toggle-slider" />
+          </button>
+        </div>
+      </SettingsDisclosure>
     </>
   );
 }

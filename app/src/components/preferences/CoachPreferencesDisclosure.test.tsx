@@ -157,6 +157,7 @@ describe('Coach Preferences progressive disclosure (#623)', () => {
       ['style-time-of-day-title', 'Preferred Time of Day'],
       ['style-explanation-title', 'Explanation Detail'],
       ['style-units-title', 'Units of Measurement'],
+      ['style-legacy-engine-title', 'Advanced: legacy engine recommendations'],
     ] as const) {
       expectDisclosure(html, titleId, title);
     }

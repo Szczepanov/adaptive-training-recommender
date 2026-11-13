@@ -1,6 +1,6 @@
 # ADR-0007: Adaptive Multi-Sport Engine Architecture & Utility Optimization Pipeline
 
-* **Status:** Accepted
+* **Status:** Superseded by [ADR-0052](./0052-user-ledger-and-external-ai-planning-authority.md) (Phase 2 switch-off, #1167)
 * **Date:** 2026-08-07
 * **Deciders:** Core Engineering Team
 

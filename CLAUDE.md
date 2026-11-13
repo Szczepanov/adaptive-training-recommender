@@ -1,8 +1,10 @@
 # CLAUDE.md — Operating Instructions for Claude Code
 
 `adaptive-training-recommender` is a hybrid repository: a Python Garmin/health ingestion
-backend (`src/garmin_sync/`) and a React + TypeScript + Firebase app (`app/`) whose engine
-turns recovery snapshots into adaptive training recommendations.
+backend (`src/garmin_sync/`) and a React + TypeScript + Firebase app (`app/`) that operates
+in **ledger mode** by default (ADR-0052 Phase 2: imported sessions run as authored with D-FLAGS),
+with the adaptive recommendation engine (`app/src/engine/`) retained behind a default-off
+rollback setting (`engineRecommendationsEnabled`).
 
 **This file is the rules. [`AGENTS.md`](./AGENTS.md) is the compact repository reference** — it
 holds the command router and high-level package map, with detailed inventories linked under
@@ -28,7 +30,7 @@ and say so instead of working around it.
 | I1 | **User scoping** | Recovery documents go to `users/{APP_USER_ID}/daily_recovery_snapshots/{YYYY-MM-DD}`. Never `daily_recovery_snapshot/{date}`, never a `"default_user"` document. (ADR-0002) |
 | I2 | **Warsaw calendar dates** | Use `local_today()` (Python) and `getLocalDateString()` (`app/src/utils/localDate.ts`). Never `new Date().toISOString().split('T')[0]` for a calendar date — it silently shifts the day for ~2 hours every night. (ADR-0003) |
 | I3 | **`D - 1` step semantics** | `totalSteps` in a snapshot is the *previous completed* calendar day. Rolling 7d/28d baselines normalize ambient surges; estimated activity steps are deducted in `derived/steps/activitySteps.ts`, consumed by `fatigue.ts`, so structured training is not counted twice. (ADR-0003) |
-| I4 | **Knowledge lineage** | Every engine threshold, weight, cadence or policy constant with decision authority is owned by a registered claim. Before touching one, see §2. (ADR-0033) |
+| I4 | **Knowledge lineage** | Flag thresholds and derived-metric definitions with decision-adjacent weight are owned by registered claims (engine recommendations are switched off by default in Phase 2; coverage items for switched-off engine modules are marked retired). Before touching one, see §2. (ADR-0033, ADR-0052) |
 | I5 | **Policy version** | A change that can alter a recommendation must bump `POLICY_VERSION` in `app/src/engine/policy.ts`. Verify with `node scripts/check-policy-drift.mjs <base-sha>` from `app/`. (ADR-0010) |
 | I6 | **No credential leaks** | Never commit or print `.env`, `.garth/` token directories, Firebase service-account files, or raw health JSON payloads. Health data is personal data. |
 

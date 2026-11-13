@@ -34,6 +34,8 @@ export interface EngineKnowledgeCoverageItem {
     knowledgeRefs: readonly string[];
     /** What remains unsupported or why external sports evidence is not applicable. */
     coverageRationale: string;
+    /** True when the covered surface belongs to an engine module switched off in ADR-0052 Phase 2. */
+    retiredInPhase2?: boolean;
 }
 
 export interface KnowledgeCoverageValidation { valid: boolean; errors: string[]; warnings: string[]; }
@@ -44,6 +46,7 @@ export interface KnowledgeCoverageSummary {
     byPriority: Record<KnowledgeResearchPriority, number>;
     highImpactUncovered: number;
     highSafetyUncovered: number;
+    retiredInPhase2: number;
 }
 
 /**
@@ -57,7 +60,7 @@ export interface KnowledgeCoverageSummary {
  */
 export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] = [
     {
-        id: 'periodization.event_development_authority', domain: 'periodization_taper', title: 'Event-bound development intent authority',
+        id: 'periodization.event_development_authority', retiredInPhase2: true, domain: 'periodization_taper', title: 'Event-bound development intent authority',
         currentRule: 'A single active reviewed event-bound block maps supported exact objectives/dose before Evergreen capacity packing; structured event/travel authority wins, future blocks are context only, changed event/entry evidence and unsupported maps fall back. VO2 exact identities override generic Base phase eligibility; volume intent removes generic quality priors. Existing safety and embedded capability gates remain authoritative.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'none',
         codeRefs: ['engine/developmentAuthority.ts:resolveDevelopmentAuthority', 'engine/developmentAuthority.ts:applyDevelopmentDose', 'engine/planningMode.ts:resolvePlanningContext', 'engine/evergreenPlanning.ts:resolveEvergreenPlan'],
@@ -65,7 +68,7 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'Explicit software authoring and authority policy; no physiological dose multiplier or automatic success/progression claim.',
     },
     {
-        id: 'periodization.season_roadmap', domain: 'periodization_taper', title: 'Season roadmap event roles and conflicts',
+        id: 'periodization.season_roadmap', retiredInPhase2: true, domain: 'periodization_taper', title: 'Season roadmap event roles and conflicts',
         currentRule: 'The first upcoming event in authority order is the primary season target; other events are benchmark peaks (A or 4-star B), benchmarks (B) or train-through (C). One event owns each date; shared dates, events inside a peak taper and peaks closer than 7 days to the next peak taper produce typed conflicts. Supporting events limit dose as a minimum (B taper to 0.85 volume, B+ 0.75; 1-2 recovery days at 0.8/0.6) except while the primary tapers or recovers; a C race within 3 days reduces one quality requirement by one instead of adding objectives (not on evergreen-programmed dates); a supporting event result adds a non-blocking review advisory to an event-bound development block.',
         classification: 'product_heuristic', coverage: 'partial', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'p1',
         codeRefs: ['engine/seasonRoadmap.ts:resolveSeasonRoadmap', 'engine/seasonSupport.ts:resolveSupportingEventScale', 'engine/developmentAuthority.ts:supportingOutcomeReviewAdvisories', 'engine/periodization.ts:resolveMultiEventObjectives', 'engine/periodization.ts:goalToUserEvent'],
@@ -80,7 +83,7 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'The rule is a cautious product implementation of conditional acute preparation and rehearsal evidence; it deliberately avoids a universal dose or injury-prevention claim.',
     },
     {
-        id: 'workout_catalog.performance_goal_deadlift_direct_practice', domain: 'workout_catalog', title: 'Conventional-deadlift performance-goal direct practice',
+        id: 'workout_catalog.performance_goal_deadlift_direct_practice', retiredInPhase2: true, domain: 'workout_catalog', title: 'Conventional-deadlift performance-goal direct practice',
         currentRule: 'The PG6 catalog candidate uses exact conventional-deadlift practice with 3x3 work sets at RIR 3-5 and 180 s rest; reduced keeps direct practice, while return-to-training removes the goal-specific loaded step.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'none',
         codeRefs: ['workouts/catalog/performance-goal-support.ts:strength_conventional_deadlift_practice_01', 'engine/performanceGoalPlanningRules.ts:workoutProvidesDirectCoverage'],
@@ -88,7 +91,7 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'External evidence supports loaded resistance training for strength and favors higher loads on average; the exact catalog dose is separately registered as explicit conservative product calibration and never uses aspirational goal 1RM as load authority.',
     },
     {
-        id: 'workout_catalog.performance_goal_cycling_sprint_power', domain: 'workout_catalog', title: 'Cycling peak-power performance-goal direct practice',
+        id: 'workout_catalog.performance_goal_cycling_sprint_power', retiredInPhase2: true, domain: 'workout_catalog', title: 'Cycling peak-power performance-goal direct practice',
         currentRule: 'The PG6 catalog candidate uses 5x8 s maximal cycling sprints with 240 s easy recovery; reduced keeps three maximal sprints, while return-to-training removes maximal sprint exposure.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'none',
         codeRefs: ['workouts/catalog/performance-goal-support.ts:cycling_sprint_power_5s_01', 'engine/performanceGoalPlanningRules.ts:workoutProvidesDirectCoverage'],
@@ -96,28 +99,28 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'Short sprint training is supported for anaerobic performance, while the exact repetition/recovery defaults are explicit product calibration. The goal wattage remains an outcome and never becomes the prescribed sprint wattage.',
     },
     {
-        id: 'evergreen.adult_aerobic_weekly_volume', domain: 'evergreen_dose', title: 'Adult aerobic health-volume floor and range',
+        id: 'evergreen.adult_aerobic_weekly_volume', retiredInPhase2: true, domain: 'evergreen_dose', title: 'Adult aerobic health-volume floor and range',
         currentRule: 'Evergreen health/balanced planning uses 150 min/week as the non-droppable aerobic floor and a 150-300 min target range.',
         classification: 'scientific_claim', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'low', researchPriority: 'none',
         codeRefs: ['engine/evergreenStrategy.ts:aerobicRequirement'], knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.adultAerobicHealthVolume],
         coverageRationale: 'Directly linked to the active WHO-backed adult aerobic-volume claim.',
     },
     {
-        id: 'evergreen.adult_strength_weekly_frequency', domain: 'evergreen_dose', title: 'Adult strength health-frequency floor',
+        id: 'evergreen.adult_strength_weekly_frequency', retiredInPhase2: true, domain: 'evergreen_dose', title: 'Adult strength health-frequency floor',
         currentRule: 'Evergreen health/balanced planning requires two strength sessions per week.',
         classification: 'scientific_claim', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'low', researchPriority: 'none',
         codeRefs: ['engine/evergreenStrategy.ts:strengthRequirement'], knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.adultStrengthHealthFrequency],
         coverageRationale: 'Directly linked to the active WHO-backed two-or-more-days strength claim.',
     },
     {
-        id: 'evergreen.strength_default_upper_target', domain: 'evergreen_dose', title: 'Evergreen strength default upper target',
+        id: 'evergreen.strength_default_upper_target', retiredInPhase2: true, domain: 'evergreen_dose', title: 'Evergreen strength default upper target',
         currentRule: 'The general Evergreen allocation target is bounded at three strength sessions per week.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'moderate', safetyImpact: 'low', researchPriority: 'none',
         codeRefs: ['engine/evergreenStrategy.ts:strengthRequirement'], knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.adultStrengthDefaultUpperTarget],
         coverageRationale: 'Explicitly registered as a product heuristic, separate from the WHO >=2-day recommendation.',
     },
     {
-        id: 'event.cycling_build_strength_support', domain: 'planning_capacity', title: 'Cycling build strength-support roles for durable strength intent',
+        id: 'event.cycling_build_strength_support', retiredInPhase2: true, domain: 'planning_capacity', title: 'Cycling build strength-support roles for durable strength intent',
         currentRule: 'For an event-directed cycling plan whose durable intent explicitly includes strength_muscle, the build block adds (evergreen strength floor 2 - 1 authored primary_strength role) = 1 exact compact_strength support role with requiredCredit 0 and reservationTier support. The weekly allocator resolves primary roles first with the unchanged search, then places support only on the remaining dates (never a primary-nominated or quality/event-specific anchor date, never invalidating a later primary reservation), reporting subordinate_to_required_roles or the ordinary typed reason when it cannot fit; the same-day ranking gives an unmet support minimum coverage tier 2. Peak, taper and race blocks carry no support role.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'none',
         codeRefs: ['engine/trainingIntent.ts:eventStrengthSupportSessions', 'engine/planSchedule.ts:buildCyclingEventPlan', 'engine/coverage.ts:buildCoverageState', 'engine/weeklyAllocation.ts:resolveWeeklyRoleReservations', 'engine/weeklyAllocation.ts:allocationValuePreserved', 'engine/weeklyAllocation.ts:primaryAllocationUnresolved', 'engine/coverage.ts:coverageNeedTierForTemplate', 'engine/planner.ts:generateWeekAheadPlan'],
@@ -125,7 +128,7 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'Issue #801 registers the translation of the existing strength floor into event build roles and the primary-first allocation rule as explicit product policy. The existing WHO strength-frequency claim supplies the numeric two-day count seed rather than a new constant; compact support identities are not asserted to independently satisfy WHO\'s major-muscle-group strengthening-day definition.',
     },
     {
-        id: 'evergreen.health_adherence_modality_intensity_prior', domain: 'evergreen_dose', title: 'Health adherence-friendly modality and intensity prior',
+        id: 'evergreen.health_adherence_modality_intensity_prior', retiredInPhase2: true, domain: 'evergreen_dose', title: 'Health adherence-friendly modality and intensity prior',
         currentRule: 'For event-free health plans without explicit Running support (Running preferred and neither deprioritized nor avoided), Walking/Cycling receive a soft aerobic ranking preference and quality endurance is limited to one prior session in a rolling seven-day window. Hard Endurance is withheld as generic quality filler only when no endurance, speed/power, or sport-readiness priority is also selected; Moderate Endurance remains available. Adverse-recovery forecasts withhold quality endurance until the next fresh planning check. Running remains available at non-hard intensity and strength requirements are unchanged.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'none',
         codeRefs: ['engine/healthPlanningPolicy.ts:resolveHealthPlanningPolicy', 'engine/optimizer.ts:evaluateRecoveryConstraints', 'engine/optimizer.ts:rankCandidates'],
@@ -133,7 +136,7 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'Registered as an explicit product-policy claim (`health.adherence.modality_intensity_prior_v1`) based on deterministic persona evidence and refined by issue #699. It is intentionally narrow, preserves explicit user preference, explicit performance-priority authority and event-directed authority, and only hard-gates unrequested Hard Endurance quality filler in health-focused non-performance plans.',
     },
     {
-        id: 'evergreen.high_intensity_weekly_prior', domain: 'evergreen_dose', title: 'Conditional high-intensity weekly prior',
+        id: 'evergreen.high_intensity_weekly_prior', retiredInPhase2: true, domain: 'evergreen_dose', title: 'Conditional high-intensity weekly prior',
         currentRule: 'When recent training evidence qualifies, Evergreen targets one high-intensity session and permits no more than two per week; acute adverse recovery, current pain/injury, illness or red-flag symptoms, and Post-Event Recovery withhold the prior. A packed quality occurrence may substitute up to one aerobic-volume reservation using that role\'s current packed dose, bounded so at least one full aerobic occurrence remains; the packer restores the full aerobic requirement when quality is not packed.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'none',
         codeRefs: ['engine/evergreenStrategy.ts:resolveEvidenceBackedStrategy',
@@ -141,7 +144,7 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'The weekly target/cap and bounded one-reservation transactional allocation rule are registered as product policy. Qualification thresholds are inventoried separately; the credit follows the current aerobic role dose, preserves at least one full aerobic occurrence, and does not rewrite the underlying WHO aerobic requirement.',
     },
     {
-        id: 'evergreen.power_maintenance_exposure', domain: 'evergreen_dose', title: 'Embedded neuromuscular power maintenance exposure',
+        id: 'evergreen.power_maintenance_exposure', retiredInPhase2: true, domain: 'evergreen_dose', title: 'Embedded neuromuscular power maintenance exposure',
         currentRule: 'An established hybrid athlete (high-quality, established recent history) whose Evergreen strategy already requires strength and whose priorities include endurance, speed/power, sport-readiness or balanced performance (also the default when none are saved) receives a separate neuromuscular_power requirement: target 1 exposure/week, at most 2 credited, no floor; a target for speed/power priority and optional otherwise. It is embedded in already-packed strength occurrences whose exact identities include a power identity and never consumes its own session slot; no host yields an embedded_host_unavailable shortfall. power_exposure is credited and reported but excluded from coverage-need ranking tiers. Power coverage is exact-identity only (strength_full_body_maintenance_01, strength_lower_body_01, strength_compact_power_01, strength_reactive_power_01 at full/reduced dose), denied to readiness-modified doses, and never earned by high_intensity/threshold/VO2 work. Withheld with power_exposure_withheld during adverse recovery, clinical symptoms, Peak/Taper, Post-Event Recovery or without sufficient consistent history.',
         classification: 'product_heuristic', coverage: 'partial', decisionImpact: 'moderate', safetyImpact: 'moderate', researchPriority: 'p2',
         codeRefs: ['engine/evergreenStrategy.ts:resolveEvidenceBackedStrategy', 'engine/weeklyDosePacking.ts:packWeeklyDose', 'engine/planSchedule.ts:buildEvergreenPlanDefinition', 'engine/coverage.ts:buildCoverageState', 'workouts/powerExposure.ts:POWER_QUALIFYING_IDENTITIES', 'workouts/event-plan.ts:EVERGREEN_SESSION_COVERAGE'],
@@ -149,7 +152,7 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'Issue #802 registers the target, ceiling, embedded delivery, identity mapping and suppression rules as explicit product policy. Low-certainty evidence supports low-frequency, intensity-preserving strength/peak-power maintenance in cyclists, but no reviewed evidence validates a power-specific minimum dose, contact count or maximum gap; that remains a research priority.',
     },
     {
-        id: 'evergreen.athletic_capability_maintenance', domain: 'evergreen_dose', title: 'Periodic multidirectional and skill capability maintenance',
+        id: 'evergreen.athletic_capability_maintenance', retiredInPhase2: true, domain: 'evergreen_dose', title: 'Periodic multidirectional and skill capability maintenance',
         currentRule: 'An explicit, default-off opt-in (TrainingIntentProfile.capabilityMaintenance, independent of sport_readiness) maintains linear_speed_skill, acceleration_deceleration, multidirectional_change_of_direction and sport_skill with a fixed 14-day maximum gap equal to the #804 continuity window: due when last qualifying exposure + 13 days falls in the horizon (not-before/target = that date), overdue past it or with no qualifying exposure in a complete observed interval, insufficient_history below 14 proven observed days. Reconstruct-only history without observation-span metadata fails closed at conservative operational coverage. Credit is exact per capability x workout x authored variant x retained steps; running, walk-run and reactive plyometrics never qualify. The opt-in adds an optional #804 mechanical requirement when not deliberately suspended, steers #804 with targetStage, and reuses one mechanical support occurrence whose candidate identities carry exact not-before dates into weekly allocation and current-date coverage urgency; active dates narrow to stage-eligible capability identities (or the highest eligible #804 identities for progression) with exact-identity consent to requiresExplicitModalityPreference; no requirement, objective or session is added. Unavailable modalities win, avoided modalities block injection, deprioritized stays soft. Event-directed mode reports deliberately_suspended/event_directed_mode. Owed blocked/unknown capabilities raise capability_maintenance_unfulfilled.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'moderate', safetyImpact: 'high', researchPriority: 'none',
         codeRefs: [
@@ -165,7 +168,7 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'Issue #805 registers the opt-in, 14-day interval, date-aware placement, identity mapping, consent precedence, progression steering and ADR-0044 status semantics as explicit product policy. A targeted literature check found no trained-adult evidence validating a 14-day (or 28-day) minimum for change-of-direction or ball-skill maintenance, so the interval is a product guardrail and a research priority.',
     },
     {
-        id: 'evergreen.mechanical_exposure', domain: 'evergreen_dose', title: 'Progressive mechanical and impact exposure model',
+        id: 'evergreen.mechanical_exposure', retiredInPhase2: true, domain: 'evergreen_dose', title: 'Progressive mechanical and impact exposure model',
         currentRule: 'Established evergreen athletes with sport_readiness or speed_power priorities, or endurance together with a strength-producing priority (health, balanced_performance, or strength_muscle), can receive a mechanical_exposure requirement (target 1, max 2 sessions/week, embedded in strength, running, or field occurrences); an explicit #805 capability-maintenance opt-in also produces it (optional) independent of priorities. Mechanical exposure progresses across 4 discrete stages: Stage 1 (landing/walk-run), Stage 2 (bilateral jump/linear running), Stage 3 (deceleration/braking), Stage 4 (multidirectional COD field). Progression is gated by positive normal tissue response evidence (RegionTissueResponse) and fails closed when follow-up evidence is missing. The held stage is the highest stage performed with explicit normal next-day follow-up inside the 14-day window, so a lower-stage session does not demote (#805). Regresses on adverse symptoms (mild/moderate/severe, soreness >= 5, painFlag) or gaps >= 14 days (re-entry at Stage 1); consecutive calendar-day exposures are withheld to protect tissue remodeling. High-impact work is immediately blocked by avoid_high_impact, knee swelling, or acute pain. Orchestration supplies >= 14 days of performed-exposure evidence (MECHANICAL_CONTINUITY_WINDOW_DAYS) and structured tissue check-ins through the decision date from every evergreen planning entry point (today, next-day, week-ahead). Evergreen planning requests a default target of Stage 2 but never below the latest performed stage; advancing from Stage 2 into Stage 3/4 requires an explicit higher target (issue #805 can supply one), while a recent already-performed higher stage is preserved rather than demoted.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'high', researchPriority: 'none',
         codeRefs: [
@@ -185,14 +188,14 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'Issue #804 registers the 4-stage discrete progression, response-gated advancement, symptom regression, 14-day re-entry, safety blocking, and the evergreen Stage-2 default target as explicit product policy. Moderate-certainty evidence supports connective and skeletal tissue adaptation to progressive mechanical loading; the exact spacing, re-entry interval, stage ladder, and default target remain product heuristics rather than evidence-derived thresholds.',
     },
     {
-        id: 'evergreen.quality_set_composition', domain: 'evergreen_dose', title: 'Optional evergreen quality workout set',
+        id: 'evergreen.quality_set_composition', retiredInPhase2: true, domain: 'evergreen_dose', title: 'Optional evergreen quality workout set',
         currentRule: 'The optional sustained_quality role permits controlled cycling threshold, controlled cycling tempo (40-minute default, authored 30-minute easier dose), and running tempo exact identities. The packer can reserve capacity for quality transactionally, while ordinary safety, time, spacing, load, exact-role coverage and weekly-capacity gates still apply.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'none',
         codeRefs: ['workouts/event-plan.ts:EVERGREEN_SESSION_COVERAGE', 'engine/templates.ts:TEMPLATES', 'engine/weeklyDosePacking.ts:packWeeklyDose', 'engine/eligibility.ts:evaluateTemplateEligibility', 'engine/optimizer.ts:rankCandidates', 'engine/planner.ts:generateWeekAheadPlan'], knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.evergreenQualitySetComposition],
         coverageRationale: 'Registered as an explicit exact-identity product-policy claim for issue #758, separate from the conditional weekly high-intensity prior and from catalog eligibility.',
     },
     {
-        id: 'evergreen.default_weekly_commitment', domain: 'evergreen_dose', title: 'Unsaved-profile weekly commitment default',
+        id: 'evergreen.default_weekly_commitment', retiredInPhase2: true, domain: 'evergreen_dose', title: 'Unsaved-profile weekly commitment default',
         currentRule: 'An athlete without a saved intent profile receives min/target/max session counts of 2/3/4.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'moderate', safetyImpact: 'low', researchPriority: 'none',
         codeRefs: ['engine/evergreenStrategy.ts:DEFAULT_TRAINING_INTENT_PROFILE'],
@@ -200,7 +203,7 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'Registered as an explicit product-policy claim (`policy.evergreen.default_weekly_commitment_v1`) with alignment testing. Authoring 2/3/4 provides an authored conservative starting baseline for unprofiled athletes; it is not a WHO-derived session-count recommendation.',
     },
     {
-        id: 'evergreen.training_history_qualification', domain: 'evergreen_dose', title: 'Training-history qualification for performance priors',
+        id: 'evergreen.training_history_qualification', retiredInPhase2: true, domain: 'evergreen_dose', title: 'Training-history qualification for performance priors',
         currentRule: 'History <14 days is insufficient; <28 days is limited; established requires >=28 observed days, >=12 sessions and >=720 total minutes.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'none',
         codeRefs: ['engine/evergreenStrategy.ts:inferAthleteTrainingState'],
@@ -208,7 +211,7 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'Registered as an explicit product-policy claim (`policy.evergreen.training_history_qualification_v1`) with alignment testing. Qualification floors prevent unwarranted high-intensity allocation without pretending to measure true biological training age.',
     },
     {
-        id: 'packing.legacy_session_spacing_tiebreak', domain: 'session_spacing', title: 'Legacy weekly session-spacing tie-break',
+        id: 'packing.legacy_session_spacing_tiebreak', retiredInPhase2: true, domain: 'session_spacing', title: 'Legacy weekly session-spacing tie-break',
         currentRule: 'For otherwise equivalent dose placements, preferred spacing is 3 days at 2 sessions/week, 2 days at 3, and 1 day at 4-6+.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'low', safetyImpact: 'low', researchPriority: 'none',
         codeRefs: ['engine/weeklyDosePacking.ts:LEGACY_SESSION_COUNT_TIE_BREAKER'],
@@ -224,7 +227,7 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'HRV and resting-HR evidence supports longitudinal, individualized, multi-signal interpretation; meaningful sleep loss is performance-relevant but consumer sleep scores retain measurement limits; nocturnal respiration can contribute contextual anomaly information but is not a specific illness/readiness marker. The exact weights, variability floors, z cap and chronic multiplier remain explicit product calibration rather than scientific coefficients.',
     },
     {
-        id: 'readiness.subjective_mode_thresholds', domain: 'readiness_recovery', title: 'Subjective readiness mode thresholds',
+        id: 'readiness.subjective_mode_thresholds', retiredInPhase2: true, domain: 'readiness_recovery', title: 'Subjective readiness mode thresholds',
         currentRule: 'Four-item physical fatigue average (fatigue, soreness, inverted readiness/sleep quality) >5 modifies and >7 recovers; motivation is excluded from the physical composite. Complete minimum-safety check-ins average only answered physical dimensions without neutral-default imputation. Additional fatigue/soreness/readiness/stress combinations at 3/4/6/8/9 thresholds can force modify/recover.',
         classification: 'product_heuristic', coverage: 'partial', decisionImpact: 'high', safetyImpact: 'high', researchPriority: 'p0',
         codeRefs: ['engine/rules.ts:evaluateReadinessAndSafetyEnvelope', 'engine/adapters.ts:mapCheckinToSubjectiveInput', 'engine/safetyCheckin.ts:getMinimumSafetyCheckinStatus'],
@@ -232,7 +235,7 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'SEP-C2 recalibrates the subjective classifier: motivation is decoupled from physical fatigue, unmeasured dimensions in partial check-ins participate dynamically without neutral-5 dilution, and clinical painFlag is decoupled from extreme fatigue. Direct action thresholds remain an explicit product heuristic rather than a universal constant; outcome-linked calibration remains P0 research debt.',
     },
     {
-        id: 'readiness.physical_work_mode_gates', domain: 'readiness_recovery', title: 'Physical-work raw-strain readiness mode gates',
+        id: 'readiness.physical_work_mode_gates', retiredInPhase2: true, domain: 'readiness_recovery', title: 'Physical-work raw-strain readiness mode gates',
         currentRule: 'For performed physical work, raw strain is min(1, intensity 0.45/0.70/0.88 x duration 0.65/1.00/1.25), with omitted detail defaulting to moderate/medium. Raw strain >=0.65 forces modify; raw strain >=0.85 with fatigue >=6 or soreness >=6 forces recover. The gate uses raw strain before occupational-baseline discount, unlike fatigue.physical_work_strain_mapping.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'high', researchPriority: 'none',
         codeRefs: ['engine/rules.ts:evaluateReadinessAndSafetyEnvelope', 'engine/occupationalLoad.ts:resolvePhysicalWorkRawStrain'],
@@ -240,7 +243,7 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'Registered as a distinct product-policy claim (`policy.readiness.physical_work_mode_gates_v1`) with alignment testing. These conservative raw-strain gates select mode independently of the baseline-discounted fatigue contribution.',
     },
     {
-        id: 'safety.physical_work_guardrails', domain: 'injury_safety', title: 'Physical-work area-specific session guardrails',
+        id: 'safety.physical_work_guardrails', retiredInPhase2: true, domain: 'injury_safety', title: 'Physical-work area-specific session guardrails',
         currentRule: 'Performed hard or exhausting lower_back_spine work adds avoid_heavy_spinal_loading; performed exhausting upper_body or grip_forearms work adds avoid_overhead_pressing. The additions are unioned with injury guardrails; omitted intensity/areas, moderate work and unperformed work add none.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'high', researchPriority: 'none',
         codeRefs: ['engine/adapters.ts:mapContextFromGoalsAndTrainingSettings', 'engine/knowledgeLineage.ts:readinessKnowledgeRefs'],
@@ -248,7 +251,7 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'Registered as an explicit product-policy claim (`policy.safety.physical_work_guardrails_v1`) with alignment testing. The runtime trace distinguishes a work-added guardrail from the same key independently supplied by injury policy.',
     },
     {
-        id: 'readiness.absolute_device_floors', domain: 'readiness_recovery', title: 'Absolute sleep-score and Body Battery floors',
+        id: 'readiness.absolute_device_floors', retiredInPhase2: true, domain: 'readiness_recovery', title: 'Absolute sleep-score and Body Battery floors',
         currentRule: 'Sleep score <50 adds 0.5 strain; Body Battery is penalized below 50 to a 0.3 cap at 25; Body Battery <=20 forces recover; envelope is Easy below Body Battery 30 or sleep score 55.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'none',
         codeRefs: ['engine/rules.ts:evaluateReadinessAndSafetyEnvelope', 'engine/rules.ts:evaluateEnvelopes'],
@@ -256,7 +259,7 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'Sleep loss is performance-relevant, but consumer sleep estimates and proprietary wellness scores have measurement/validation limits. The exact sleep-score and Body Battery floors are therefore explicit conservative product policy rather than claimed device-validated readiness thresholds.',
     },
     {
-        id: 'readiness.acute_biometric_floors', domain: 'readiness_recovery', title: 'Acute HRV/RHR hard modify floors',
+        id: 'readiness.acute_biometric_floors', retiredInPhase2: true, domain: 'readiness_recovery', title: 'Acute HRV/RHR hard modify floors',
         currentRule: 'RHR delta >=+6 bpm with >=0.6 acute contribution or HRV delta <=-15 ms with >=1.0 acute contribution can force modify independent of the total score.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'none',
         codeRefs: ['engine/rules.ts:evaluateReadinessAndSafetyEnvelope'],
@@ -264,7 +267,7 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'HRV/resting-HR changes can contribute to conservative training adjustment when interpreted against the athlete baseline, but the +6 bpm/-15 ms and contribution floors are explicitly product-authored cut-points rather than universal meaningful-change thresholds.',
     },
     {
-        id: 'readiness.recent_hard_session_penalty', domain: 'readiness_recovery', title: 'Recent hard-session readiness penalty',
+        id: 'readiness.recent_hard_session_penalty', retiredInPhase2: true, domain: 'readiness_recovery', title: 'Recent hard-session readiness penalty',
         currentRule: 'Two or more hard sessions in the prior three days adds 1.0 to readiness strain.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'none',
         codeRefs: ['engine/rules.ts:evaluateReadinessAndSafetyEnvelope'],
@@ -272,7 +275,7 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'Recovery literature supports accounting for accumulated stress and individual recovery; the exact 3-day/count-2/+1.0 translation is explicitly registered as product calibration rather than presented as a scientific cutoff.',
     },
     {
-        id: 'readiness.mode_score_thresholds', domain: 'readiness_recovery', title: 'Composite strain train/modify/recover thresholds',
+        id: 'readiness.mode_score_thresholds', retiredInPhase2: true, domain: 'readiness_recovery', title: 'Composite strain train/modify/recover thresholds',
         currentRule: 'Composite objective strain >=1.0 modifies and >=2.2 recovers; conservative mode adds 0.4 before those thresholds.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'high', researchPriority: 'none',
         codeRefs: ['engine/rules.ts:evaluateReadinessAndSafetyEnvelope'],
@@ -280,7 +283,7 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'The external evidence supports contextual multi-signal monitoring and conservative load adjustment, not a universal readiness score. The exact 1.0/2.2/+0.4 action thresholds are explicit high-safety product policy and remain candidates for simulation and athlete-outcome calibration.',
     },
     {
-        id: 'readiness.severe_adverse_recovery_reentry', domain: 'readiness_recovery', title: 'Severe adverse-recovery graduated re-entry window',
+        id: 'readiness.severe_adverse_recovery_reentry', retiredInPhase2: true, domain: 'readiness_recovery', title: 'Severe adverse-recovery graduated re-entry window',
         currentRule: 'Concordant severe recovery uses two recovery-only forecast days and reaches the unrestricted candidate pool on day 6; fresh subjective/adverse-wearable discordance uses one recovery-only day and reaches that pool on day 5. Low-cost non-Strength re-entry progresses at 0.35 then 0.5, with a light event-taper exception. Separately, after two projected Rest days systemic cost is capped at 0.75. During late severe-recovery re-entry after a Rest day, an Easy Endurance candidate that passes the shared gates is preferred over another Rest day.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'high', researchPriority: 'none',
         codeRefs: ['engine/planner.ts:RECOVERY_REENTRY_EARLY_MAX_SYSTEMIC_COST', 'engine/planner.ts:RECOVERY_REENTRY_LATE_MAX_SYSTEMIC_COST', 'engine/planner.ts:POST_REST_REENTRY_MAX_SYSTEMIC_COST'],
@@ -288,7 +291,7 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'Registered as an explicit product-policy claim (`policy.load_recovery.severe_adverse_recovery_reentry_v1`) with alignment testing. Recovery literature supports contextual, repeated subjective/objective monitoring before resuming quality work; forecast window lengths and cost ceilings are product calibration, and future readiness remains unknown.',
     },
     {
-        id: 'readiness.post_recover_buffer', domain: 'readiness_recovery', title: 'Post-recover one-day buffer',
+        id: 'readiness.post_recover_buffer', retiredInPhase2: true, domain: 'readiness_recovery', title: 'Post-recover one-day buffer',
         currentRule: 'A day that otherwise evaluates to train is downgraded to modify when the previous mode was recover.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'moderate', safetyImpact: 'moderate', researchPriority: 'none',
         codeRefs: ['engine/rules.ts:evaluateReadinessAndSafetyEnvelope'],
@@ -296,14 +299,14 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'Registered as an explicit product-policy claim (`policy.readiness.post_recover_buffer_v1`) with alignment testing. A conservative temporal hysteresis rule dampening rapid oscillation between recover and train modes.',
     },
     {
-        id: 'readiness.already_trained_fail_closed', domain: 'readiness_recovery', title: 'Already-trained same-day override',
+        id: 'readiness.already_trained_fail_closed', retiredInPhase2: true, domain: 'readiness_recovery', title: 'Already-trained same-day override',
         currentRule: 'A positive subjective already-trained answer or detected today training forces recover/no additional normal training.',
         classification: 'safety_invariant', coverage: 'not_applicable', decisionImpact: 'high', safetyImpact: 'high', researchPriority: 'none',
         codeRefs: ['engine/rules.ts:evaluateReadinessAndSafetyEnvelope'], knowledgeRefs: [],
         coverageRationale: 'Fail-closed duplicate-session prevention is a product safety invariant driven by known same-day work, not a claim that no athlete can ever train twice per day.',
     },
     {
-        id: 'readiness.plan_tier_cost_ceilings', domain: 'readiness_recovery', title: 'Readiness plan-tier systemic cost ceilings',
+        id: 'readiness.plan_tier_cost_ceilings', retiredInPhase2: true, domain: 'readiness_recovery', title: 'Readiness plan-tier systemic cost ceilings',
         currentRule: 'Rest/Mobility/Easy/Moderate/Hard tiers cap systemicCost at 0/0.15/0.5/0.8/infinity; modify also caps at 0.5.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'none',
         codeRefs: ['engine/rules.ts:PLAN_TIER_SYSTEMIC_COST_CEILING', 'engine/rules.ts:evaluateTrainingWithIntent'],
@@ -319,7 +322,7 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'Issue #809 separated exercise intensity from accumulated dose so a long aerobic session no longer counts as a hard session while still carrying its fatigue cost; the zone/IF/TE cut-points are registered as product calibration, not validated physiological thresholds.',
     },
     {
-        id: 'fatigue.dimension_half_lives', domain: 'fatigue_load', title: 'Dimensional fatigue decay half-lives',
+        id: 'fatigue.dimension_half_lives', retiredInPhase2: true, domain: 'fatigue_load', title: 'Dimensional fatigue decay half-lives',
         currentRule: 'Exponential half-lives are systemic 36h, cardiovascular 24h, lower-body 48h, upper-body 36h, impact tissue 48h and neuromuscular 36h.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'none',
         codeRefs: ['engine/fatigue.ts:DECAY_HALF_LIVES_HOURS', 'engine/fatigue.ts:decayFatigue'],
@@ -327,7 +330,7 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'Evidence supports heterogeneous residual fatigue after strenuous work; the exact six exponential half-lives are explicitly registered as a compact product model rather than scientific recovery constants.',
     },
     {
-        id: 'forecast.next_day_branch_strain_carry', domain: 'fatigue_load', title: 'Next-day measured strain carry',
+        id: 'forecast.next_day_branch_strain_carry', retiredInPhase2: true, domain: 'fatigue_load', title: 'Next-day measured strain carry',
         currentRule: 'Yellow and red next-day intent-aware branches take the element-wise maximum of their synthetic strain and today’s measured internal strain after 24 hours of registered dimensional decay; green and mandatory single-plan recovery do not carry it.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'none',
         codeRefs: ['engine/rules.ts:buildNextDayScenarios', 'engine/trainingIntent.ts:resolveTrainingIntent'],
@@ -335,7 +338,7 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'Explicit product forecast consistency policy using already registered dimensional half-lives.',
     },
     {
-        id: 'fatigue.internal_response_model', domain: 'fatigue_load', title: 'Internal response strain normalization and fusion weights',
+        id: 'fatigue.internal_response_model', retiredInPhase2: true, domain: 'fatigue_load', title: 'Internal response strain normalization and fusion weights',
         currentRule: 'HRV drop saturates at 15 ms, RHR rise at 10 bpm, sleep strain is (75 - score)/50 below score 75 (unclamped), Body Battery depletion begins below 50 and saturates at 20; base systemic is 0.3 subjective fatigue +0.25 HRV +0.25 sleep +0.2 Body Battery, cardiovascular 0.5 RHR +0.5 HRV, upper-body soreness multiplier 0.7, neuromuscular 0.5 fatigue +0.5 inverse motivation. Non-diluted floors override the weighted sums: systemic 0.60 at fatigue >=8 (0.65 with readiness <=4 or stress >=8, or at readiness <=3 with stress >=8), systemic 0.60 at stress >=9, systemic and cardiovascular 0.80 on concordant HRV <=-10 ms, RHR >=+5 bpm and Body Battery <=35, and soreness >=8 replaces normalized soreness with a 0.88 lower-body/impact tissue floor. Ambient step-surge strain (fatigue.ambient_step_surge) and unlogged physical-work strain are combined on top and are not owned by this item.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'none',
         codeRefs: ['engine/fatigue.ts:computeInternalResponseStrain'],
@@ -351,7 +354,7 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'Registered as an explicit product-policy claim (`policy.fatigue.ambient_step_surge_v1`) with alignment testing. Cadence deduction and ambient surge scaling protect against unrecorded ambulatory load.',
     },
     {
-        id: 'fatigue.physical_work_strain_mapping', domain: 'fatigue_load', title: 'Unlogged physical-work strain magnitude, baseline discount and dimensional mapping',
+        id: 'fatigue.physical_work_strain_mapping', retiredInPhase2: true, domain: 'fatigue_load', title: 'Unlogged physical-work strain magnitude, baseline discount and dimensional mapping',
         currentRule: 'Performed work strain is min(1, intensity 0.45/0.70/0.88 x duration 0.65/1.00/1.25), omitted detail defaulting to moderate/medium; an occupational baseline discounts min(raw, baseline strain x confidence x load-area overlap). Acute strain maps to systemic x0.60, upper-body x0.85 (no areas/upper_body/grip_forearms, else 0), lower-body x0.85 (no areas/legs_carrying, else 0), neuromuscular x0.75 (no areas/grip_forearms/lower_back_spine, else x0.40), impact-tissue x0.40 for legs_carrying at hard/exhausting only; each term is max-combined with other internal-response terms.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'moderate', safetyImpact: 'moderate', researchPriority: 'none',
         codeRefs: ['engine/occupationalLoad.ts:INTENSITY', 'engine/occupationalLoad.ts:DURATION', 'engine/occupationalLoad.ts:resolveOccupationalLoadContext', 'engine/fatigue.ts:computeInternalResponseStrain'],
@@ -359,7 +362,7 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'Registered as an explicit product-policy claim (`policy.fatigue.physical_work_strain_mapping_v1`) with alignment testing. The magnitude table, soft baseline discount and load-area multipliers are product calibration for coarse self-report; the ambient-step co-occurrence flag in `resolveOccupationalLoadContext` is diagnostic only. The raw-work-strain modify/recover gates in `rules.ts` `evaluateReadinessAndSafetyEnvelope` are a separate readiness-mode family and are not owned by this item.',
     },
     {
-        id: 'fatigue.max_fusion_policy', domain: 'fatigue_load', title: 'External/internal fatigue fusion policy',
+        id: 'fatigue.max_fusion_policy', retiredInPhase2: true, domain: 'fatigue_load', title: 'External/internal fatigue fusion policy',
         currentRule: 'Production combines external-load and internal-response fatigue by taking the maximum on each dimension; additive fusion is simulation-only.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'none',
         codeRefs: ['engine/fatigue.ts:combineFatigue'],
@@ -367,7 +370,7 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'Registered as an explicit product-policy claim (`policy.fatigue.max_fusion_policy_v1`) with alignment testing. The dimensional max operator prevents double-counting between external workload and internal autonomic strain.',
     },
     {
-        id: 'safety.minimum_checkin_gate', domain: 'injury_safety', title: 'Minimum safety check-in fail-closed gate',
+        id: 'safety.minimum_checkin_gate', retiredInPhase2: true, domain: 'injury_safety', title: 'Minimum safety check-in fail-closed gate',
         currentRule: 'Normal training requires answered pain/injury, illness and already-trained flags plus a valid fatigue or soreness score; missing/incomplete state returns provisional Rest.',
         classification: 'safety_invariant', coverage: 'not_applicable', decisionImpact: 'high', safetyImpact: 'high', researchPriority: 'none',
         codeRefs: ['engine/safetyCheckin.ts:getMinimumSafetyCheckinStatus', 'engine/safetyCheckin.ts:createProvisionalSafetyRecommendation'], knowledgeRefs: [],
@@ -381,42 +384,42 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'The specific red-flag categories, the Rest cap, and the mandatory-referral routing are conservative product policy (CLINICAL_ESCALATION_PRODUCT_POLICY_SOURCE, SEP-C4). Hainline 2017 IOC Pain Consensus and Herring 2024 Initial MSK Assessment support only the boundary that automated athletic prescription must defer to medical evaluation; neither validates this specific routing protocol.',
     },
     {
-        id: 'injury.tissue_response_severity', domain: 'injury_safety', title: 'Tissue-response to restriction severity mapping',
+        id: 'injury.tissue_response_severity', retiredInPhase2: true, domain: 'injury_safety', title: 'Tissue-response to restriction severity mapping',
         currentRule: 'Tissue response evaluates 24-hour response latency: severe at any point maps to exclude; persistent post-session or delayed next-morning moderate irritability (or waking state) maps to limit; transient during-session moderate loading discomfort that settles by next morning maps to monitor (tolerable loading, Escriche-Escuder 2020); mild maps to monitor; normal maps to null. Observed response can only preserve or tighten standing constraints.',
         classification: 'product_heuristic', coverage: 'partial', decisionImpact: 'high', safetyImpact: 'high', researchPriority: 'p0',
         codeRefs: ['engine/injuryPolicy.ts:deriveTissueSeverity', 'engine/injuryPolicy.ts:resolveEffectiveInjuryConstraints'], knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.tissueResponseTemporalMonitoring, KNOWLEDGE_CLAIM_IDS.tissueResponseSeverityPolicy],
         coverageRationale: 'SEP-C3 refines the latency model to distinguish tolerable during-session loading from persistent or delayed irritability using tendinopathy load-tolerance criteria. Comparative evidence across multiple tissues remains limited, so this high-safety mapping remains partial P0 debt.',
     },
     {
-        id: 'injury.standing_constraint_preserve_or_tighten', domain: 'injury_safety', title: 'Standing injury constraint preserve-or-tighten invariant',
+        id: 'injury.standing_constraint_preserve_or_tighten', retiredInPhase2: true, domain: 'injury_safety', title: 'Standing injury constraint preserve-or-tighten invariant',
         currentRule: 'An active standing injury constraint is never weakened or cleared by tissue response; a newly inferred response constraint is today-only and expired standing constraints remain inactive.',
         classification: 'safety_invariant', coverage: 'not_applicable', decisionImpact: 'high', safetyImpact: 'high', researchPriority: 'none',
         codeRefs: ['engine/injuryPolicy.ts:resolveEffectiveInjuryConstraints', 'engine/injuryPolicy.ts:resolveInjuryRestrictions'], knowledgeRefs: [],
         coverageRationale: 'This is a conservative software safety contract governing monotonicity, expiry and persistence scope, not an externally claimed rehabilitation threshold.',
     },
     {
-        id: 'injury.region_mapping.lower_limb_impact', domain: 'injury_safety', title: 'Lower-limb impact restriction mapping',
+        id: 'injury.region_mapping.lower_limb_impact', retiredInPhase2: true, domain: 'injury_safety', title: 'Lower-limb impact restriction mapping',
         currentRule: 'Knee, Achilles, ankle and calf limit/exclude constraints imply avoid-high-impact; exclude additionally restricts Running.',
         classification: 'product_heuristic', coverage: 'partial', decisionImpact: 'high', safetyImpact: 'high', researchPriority: 'p0',
         codeRefs: ['engine/injuryPolicy.ts:resolveInjuryRestrictions'], knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.returnToSportCriteriaBasedRiskManagement, KNOWLEDGE_CLAIM_IDS.lowerLimbImpactPolicy],
         coverageRationale: 'SEP-B records the return-to-sport assessment boundary and exact policy mapping. A body region is not a diagnosis, so neither source validates this region-only impact/Running restriction as a universal clinical rule.',
     },
     {
-        id: 'injury.region_mapping.lower_limb_strength', domain: 'injury_safety', title: 'Lower-limb strength restriction mapping',
+        id: 'injury.region_mapping.lower_limb_strength', retiredInPhase2: true, domain: 'injury_safety', title: 'Lower-limb strength restriction mapping',
         currentRule: 'Hamstring, quadriceps, adductor/groin and hip limit/exclude constraints imply avoid-heavy-lower-body; exclude additionally restricts Lower-body Strength and Full-body Strength.',
         classification: 'product_heuristic', coverage: 'partial', decisionImpact: 'high', safetyImpact: 'high', researchPriority: 'p0',
         codeRefs: ['engine/injuryPolicy.ts:resolveInjuryRestrictions'], knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.returnToSportCriteriaBasedRiskManagement, KNOWLEDGE_CLAIM_IDS.lowerLimbStrengthPolicy],
         coverageRationale: 'SEP-B records the return-to-sport assessment boundary and exact policy mapping. A body region is not a diagnosis, so neither source validates this broad strength restriction as a universal clinical rule.',
     },
     {
-        id: 'injury.region_mapping.lumbar_loading', domain: 'injury_safety', title: 'Lumbar loading restriction mapping',
+        id: 'injury.region_mapping.lumbar_loading', retiredInPhase2: true, domain: 'injury_safety', title: 'Lumbar loading restriction mapping',
         currentRule: 'Lower-back limit/exclude constraints imply avoid-heavy-spinal-loading; exclude additionally implies avoid-heavy-lower-body and avoid-high-impact.',
         classification: 'product_heuristic', coverage: 'partial', decisionImpact: 'high', safetyImpact: 'high', researchPriority: 'p0',
         codeRefs: ['engine/injuryPolicy.ts:resolveInjuryRestrictions'], knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.returnToSportCriteriaBasedRiskManagement, KNOWLEDGE_CLAIM_IDS.lumbarLoadingPolicy],
         coverageRationale: 'SEP-C3 adds avoid-high-impact to severe lower-back exclusions as conservative product policy (LUMBAR_LOADING_PRODUCT_POLICY_V2_SOURCE) to offload repetitive axial shock. Herring 2024 supports deferring to clinical assessment for lumbar injury, not this specific mapping; lower-back symptoms are heterogeneous, so this remains partial P0 debt.',
     },
     {
-        id: 'injury.region_mapping.upper_limb_loading', domain: 'injury_safety', title: 'Upper-limb loading restriction mapping',
+        id: 'injury.region_mapping.upper_limb_loading', retiredInPhase2: true, domain: 'injury_safety', title: 'Upper-limb loading restriction mapping',
         currentRule: 'Shoulder, elbow and wrist limit/exclude constraints imply avoid-overhead-pressing; exclude additionally restricts Upper-body Strength.',
         classification: 'product_heuristic', coverage: 'partial', decisionImpact: 'high', safetyImpact: 'high', researchPriority: 'p0',
         codeRefs: ['engine/injuryPolicy.ts:resolveInjuryRestrictions'], knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.returnToSportCriteriaBasedRiskManagement, KNOWLEDGE_CLAIM_IDS.upperLimbLoadingPolicy],
@@ -430,7 +433,7 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'SEP-B records a contextual symptom-assessment boundary and the exact combined clinical-symptom product policy. Neither source validates anatomy-agnostic Running restriction or Mobility ceiling as universal guidance, and illness/pain causes remain distinct; this stays partial P0 debt.',
     },
     {
-        id: 'injury.tissue_recheck_carry', domain: 'injury_safety', title: 'One-day tissue pending-recheck carry (issue #680)',
+        id: 'injury.tissue_recheck_carry', retiredInPhase2: true, domain: 'injury_safety', title: 'One-day tissue pending-recheck carry (issue #680)',
         currentRule: "A today-only tissue-derived limit/exclude constraint (no standing InjuryConstraint) carries forward exactly one additional local day when the next day reports no response of its own for that region; cleared by that day's own response (any severity) or by a standing injury already covering the region, and derived fresh from the prior day's raw response each time so it cannot compound past one day.",
         classification: 'product_heuristic', coverage: 'partial', decisionImpact: 'high', safetyImpact: 'high', researchPriority: 'p0',
         codeRefs: ['engine/injuryPolicy.ts:deriveCarriedRegionRestrictions', 'engine/injuryPolicy.ts:resolveEffectiveInjuryConstraintsWithRecheck', 'engine/composer.ts:composeDailyDecisionInput'],
@@ -446,21 +449,21 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'The flag is advisory (D-FLAGS: it never blocks or re-doses), so its decision impact is moderate, but a missed touch hides a safety signal. The table mirrors the engine region restrictions where they imply a pattern or modality and is otherwise a cautious proposal pending owner approval (#1164); a body region is not a diagnosis, so no source validates the region-to-pattern mapping and it stays partial.',
     },
     {
-        id: 'spacing.anchor_next_day', domain: 'session_spacing', title: 'Anchor/quality next-day spacing gate',
+        id: 'spacing.anchor_next_day', retiredInPhase2: true, domain: 'session_spacing', title: 'Anchor/quality next-day spacing gate',
         currentRule: 'A candidate anchor is rejected when an anchor occurred one day earlier.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'none',
         codeRefs: ['engine/optimizer.ts:evaluateRecoveryConstraints'], knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.trainingStressRecoveryBalance, KNOWLEDGE_CLAIM_IDS.anchorSpacing],
         coverageRationale: 'Recovery evidence supports protecting quality under accumulated stress but not a universal one-day rule; the exact previous-day exclusion is explicitly recorded as conservative product policy.',
     },
     {
-        id: 'spacing.rolling_hard_cap', domain: 'session_spacing', title: 'Rolling hard-session density cap',
+        id: 'spacing.rolling_hard_cap', retiredInPhase2: true, domain: 'session_spacing', title: 'Rolling hard-session density cap',
         currentRule: 'Sessions with systemicCost >=0.5 count as hard in the prior six days; a new >=0.5 session is rejected once three such sessions are present.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'high', researchPriority: 'none',
         codeRefs: ['engine/optimizer.ts:buildHistoryFeatureSummary', 'engine/optimizer.ts:evaluateRecoveryConstraints'], knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.enduranceIntensityDistribution, KNOWLEDGE_CLAIM_IDS.trainingStressRecoveryBalance, KNOWLEDGE_CLAIM_IDS.rollingHardDensityCap],
         coverageRationale: 'Endurance evidence supports structuring a smaller share of higher-intensity work and recovery-aware load management; the exact systemicCost >=0.5 / three-in-six rule remains an explicit product guardrail rather than a scientific maximum.',
     },
     {
-        id: 'spacing.hard_lower_body_recovery', domain: 'session_spacing', title: 'Hard lower-body minimum spacing and workout recovery hours',
+        id: 'spacing.hard_lower_body_recovery', retiredInPhase2: true, domain: 'session_spacing', title: 'Hard lower-body minimum spacing and workout recovery hours',
         currentRule: 'Lower-body cost >=0.6 is hard; default minimum gap is two days unless a workout declares minimumDaysAfterHardLowerBody. Declared recoveryHours are converted to ceil(hours/24) and can block hard/anchor work while unelapsed.',
         classification: 'product_heuristic', coverage: 'partial', decisionImpact: 'high', safetyImpact: 'high', researchPriority: 'p1',
         codeRefs: ['engine/optimizer.ts:evaluateRecoveryConstraints', 'engine/planningCandidate.ts:resolveMinimumDaysAfterHardLowerBody', 'engine/planningCandidate.ts:resolveRecoveryHoursForTemplate'],
@@ -468,28 +471,28 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'The scientific recovery boundary and default 0.6/two-day product fallback have explicit lineage. Audited in docs/analysis/2026-09-02-workout-catalog-recovery-metadata-audit.md and validated in validateWorkoutLibrary: all 46 workouts declare finite bounded recoveryHours [0, 96] and 21 declare minimumDays [1, 2]. Coverage remains partial at P1 because 11 workouts with lowerBodyCost >=0.6 declare 1-day spacing overrides that weaken the two-day fallback and require a separate behavior-calibration change.',
     },
     {
-        id: 'spacing.strength_key_cycling_adjacency', domain: 'session_spacing', title: 'Heavy lower-body strength vs key-cycling adjacency',
+        id: 'spacing.strength_key_cycling_adjacency', retiredInPhase2: true, domain: 'session_spacing', title: 'Heavy lower-body strength vs key-cycling adjacency',
         currentRule: 'Heavy lower-body strength and key cycling sessions cannot be placed within the same/previous-day 0-1 day window; post-heavy-strength strength also receives a next-day buffer unless a workout explicitly allows one day.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'none',
         codeRefs: ['engine/optimizer.ts:evaluateRecoveryConstraints'], knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.concurrentStrengthEnduranceContext, KNOWLEDGE_CLAIM_IDS.strengthEnduranceAdjacency],
         coverageRationale: 'Concurrent-training evidence says same-day modalities can be effective and effects are context-dependent; the exact 0-1-day exclusion is deliberately registered as a conservative product quality-protection rule, not a scientific requirement.',
     },
     {
-        id: 'spacing.pre_event_restrictions', domain: 'session_spacing', title: 'Pre-event strength, hard and exhaustive session restrictions',
+        id: 'spacing.pre_event_restrictions', retiredInPhase2: true, domain: 'session_spacing', title: 'Pre-event strength, hard and exhaustive session restrictions',
         currentRule: 'For A/B cycling/running/triathlon events: strength is blocked 1-3 days pre-race; hard work is blocked 1-2 days; generic Moderate/Hard Endurance is also blocked at D-3 while light Race-Specific Endurance may remain available; exhaustive work (systemicCost >=0.75 or VO2 title) is blocked 3-7 days. C-priority events without an active authored taper skip the D-3–D-7 restrictions, preserving normal build dose and quality through D-3, while D-1/D-2 strength/hard gates remain; an active athlete-authored taper restores the A/B-style D-3 restrictions, exhaustive restriction and repeat-session dampener for C. Across the full resolved taper window (same cycling/running/triathlon categories, not strength_meet): a second-or-later or non-light (systemicCost >0.35) strength candidate is excluded as nonessential, and a Moderate/Hard Endurance candidate is excluded within 3 days of a prior one.',
         classification: 'product_heuristic', coverage: 'partial', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'p1',
         codeRefs: ['engine/optimizer.ts:evaluateRecoveryConstraints'], knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.preEventRestrictionsPolicy, KNOWLEDGE_CLAIM_IDS.endurancePreEventTaper],
         coverageRationale: 'Recorded as an explicit product-policy claim (`policy.taper.pre_event_restrictions_v1`) so the exact 1-3/1-2/3-7-day windows have provenance, and linked to the moderate-certainty pre-event taper boundary that competition load should fall while quality is preserved. Stays partial/P1: that boundary supports reducing load before competition in general, but validates none of these modality-specific day counts, and Evidence Pack 6 found no literature establishing per-session-type pre-competition blocking windows. SKR1 runtime lineage does not yet emit this claim: the optimizer evaluates the restriction against exact days-to-event, while `trainingIntentKnowledgeRefs` only has a coarser taper-active signal available, and attributing on that coarser signal would over-claim lineage on days where the restriction never actually evaluates. Wiring precise days-to-event into runtime lineage is a separate change.',
     },
     {
-        id: 'optimizer.intensity_class_thresholds', domain: 'optimizer_scoring', title: 'Catalog systemic-cost intensity classification',
+        id: 'optimizer.intensity_class_thresholds', retiredInPhase2: true, domain: 'optimizer_scoring', title: 'Catalog systemic-cost intensity classification',
         currentRule: 'systemicCost >=0.6 is hard and >=0.3 is moderate; a hard candidate requires planned intensity >=0.8. Several history paths use 0.5-0.7 related hard/anchor cutoffs.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'none',
         codeRefs: ['engine/optimizer.ts:intensityClassForTemplate', 'engine/optimizer.ts:isIntensityClassAdmissible', 'engine/optimizer.ts:normalizeHistory'], knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.enduranceIntensityDistribution, KNOWLEDGE_CLAIM_IDS.internalLoadIntensityBands],
         coverageRationale: 'The scientific claim provides distribution-level context; exact internal 0..1 thresholds are separately registered as product semantics and are not physiological zones.',
     },
     {
-        id: 'optimizer.fatigue_cost_weights', domain: 'optimizer_scoring', title: 'Fatigue cost-penalty weights',
+        id: 'optimizer.fatigue_cost_weights', retiredInPhase2: true, domain: 'optimizer_scoring', title: 'Fatigue cost-penalty weights',
         currentRule: 'Candidate cost penalty weights systemic 2.0, cardiovascular 1.5, lower-body 2.5, upper-body 1.5, impact-tissue 2.0 and neuromuscular 1.8 against dimensional fatigue; extraRecoveryMargin, or conservativeBias when the margin is unset, adds +0.3 when systemicCost >0.5, and conservativeBias additionally adds +0.35 at systemicCost >=0.6.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'none',
         codeRefs: ['engine/optimizer.ts:calculateFatigueCostPenalty', 'engine/optimizer.ts:rankCandidates'],
@@ -497,7 +500,7 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'Registered as an explicit product-policy claim (`policy.optimizer.fatigue_cost_weights_v1`) with alignment testing. Residual fatigue evidence provides biological context for dimensional separation, while the exact penalty multipliers are explicit product heuristics rather than empirical constants.',
     },
     {
-        id: 'optimizer.stimulus_benefit_weights', domain: 'optimizer_scoring', title: 'Objective stimulus-benefit weights',
+        id: 'optimizer.stimulus_benefit_weights', retiredInPhase2: true, domain: 'optimizer_scoring', title: 'Objective stimulus-benefit weights',
         currentRule: 'Rest returns 0.1. With no stimulus profile or no unresolved objectives: Mobility/Recovery returns 0.2, Technical Skill 0.3, and other categories return min(0.75, 0.45 + 0.2*(aerobicEndurance + thresholdPower)). With objective scoring active, qualified threshold/surge/VO2 matches use 1.5, aerobic/fatigue-resistance 1.2, and strength uses 1.6*max(target maxStrength, target hypertrophy)*max(stimulus maxStrength, stimulus hypertrophy); sprintPower has no dedicated objective term. Mobility uses a 0.2 fallback/additive baseline and other non-Rest categories 0.5.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'moderate', safetyImpact: 'low', researchPriority: 'none',
         codeRefs: ['engine/optimizer.ts:calculateStimulusBenefit'],
@@ -505,7 +508,7 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'Registered as an explicit product-policy claim (`policy.optimizer.stimulus_benefit_weights_v1`) with alignment testing. The multipliers and strength-axis max fusion govern candidate ranking among feasible sessions; they represent product utility emphasis rather than adaptation magnitude claims.',
     },
     {
-        id: 'optimizer.field_catalog_explicit_preference', domain: 'optimizer_scoring', title: 'Specialized catalog modality opt-in',
+        id: 'optimizer.field_catalog_explicit_preference', retiredInPhase2: true, domain: 'optimizer_scoring', title: 'Specialized catalog modality opt-in',
         currentRule: 'Automatic catalog templates marked requiresExplicitModalityPreference are admitted only when the athlete explicitly prefers that modality, or when the planning date carries #805 capability-maintenance consent for that exact workout identity; an unavailable training type is a hard UNAVAILABLE_MODALITY exclusion checked first that no preference or consent can override. Current marked templates are the Field Maintenance and Field technical/sprint-mechanics families.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'none',
         codeRefs: ['engine/models.ts:SessionTemplate', 'engine/templates.ts:TEMPLATES', 'engine/optimizer.ts:rankCandidates', 'engine/coverage.ts:hasCapabilityConsent'],
@@ -513,7 +516,7 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'Issue #736 records the specialized-catalog opt-in as its own product-policy claim so this admission rule is not conflated with safety restrictions or general modality preference ranking.',
     },
     {
-        id: 'optimizer.unpreferred_modality_fallback', domain: 'optimizer_scoring', title: 'Unpreferred-modality fallback demotion',
+        id: 'optimizer.unpreferred_modality_fallback', retiredInPhase2: true, domain: 'optimizer_scoring', title: 'Unpreferred-modality fallback demotion',
         currentRule: 'When preferred non-recovery training is hard-feasible, a non-preferred non-recovery/non-event candidate remains eligible but receives 0.25x benefit and utility unless it strictly advances an unresolved objective that is not already advanced by any eligible preferred training candidate.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'low', researchPriority: 'none',
         codeRefs: ['engine/optimizer.ts:rankCandidates'],
@@ -521,7 +524,7 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'Issues #736 and #756 register the exact fallback multiplier and preferred-alternative-aware objective exemption as product policy with deterministic alignment coverage.',
     },
     {
-        id: 'optimizer.time_cap_easy_endurance_truncation', domain: 'optimizer_scoring', title: 'Time-capped Easy Endurance prescription truncation',
+        id: 'optimizer.time_cap_easy_endurance_truncation', retiredInPhase2: true, domain: 'optimizer_scoring', title: 'Time-capped Easy Endurance prescription truncation',
         currentRule: 'On non-modify days, a binding time cap truncates an Easy Endurance prescription within its authored duration range when the authored minimum fits and its easier dose starts below that minimum; the dose ratio is at least the easier-dose ratio and otherwise follows the midpoint-duration ratio. Modify-tier days keep the authored easier dose.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'moderate', safetyImpact: 'low', researchPriority: 'none',
         codeRefs: ['engine/optimizer.ts:resolveCapTruncatedPrescription'],
@@ -529,7 +532,7 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'Issue #744 registers the cap-truncation rule as product policy with alignment testing. A duration-feasible shorter ride can satisfy the current weekly coverage floor, while objective credit remains dose-scaled; neither result establishes aerobic-dose adequacy.',
     },
     {
-        id: 'optimizer.preferred_modality_today_tiebreak', domain: 'optimizer_scoring', title: 'Current-day preferred-modality tie-break',
+        id: 'optimizer.preferred_modality_today_tiebreak', retiredInPhase2: true, domain: 'optimizer_scoring', title: 'Current-day preferred-modality tie-break',
         currentRule: 'preferredModalityToday is honored only when also present in chronic preferredModalities and only after hard gates plus coverage/recovery/objective-benefit tiering, before utility and the final variety tie-break.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'moderate', safetyImpact: 'low', researchPriority: 'none',
         codeRefs: ['engine/optimizer.ts:rankCandidates'],
@@ -537,7 +540,7 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'Issue #736 registers same-day tie-breaking independently so a transient preference cannot be mistaken for a new safety or long-term planning authority.',
     },
     {
-        id: 'optimizer.symptom_compatible_strength_support', domain: 'optimizer_scoring', title: 'Symptom-compatible strength support ranking',
+        id: 'optimizer.symptom_compatible_strength_support', retiredInPhase2: true, domain: 'optimizer_scoring', title: 'Symptom-compatible strength support ranking',
         currentRule: 'When the active coverage state has an unmet primary_strength minimum, a shoulder_spinal_strength guardrail fallback receives coverage tier 2 ranking urgency only while avoid_heavy_spinal_loading or avoid_overhead_pressing is active; it gains no exact coverage credit and cannot fulfil or reserve the primary-strength occurrence.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'none',
         codeRefs: ['engine/coverage.ts:supportsUnmetPrimaryStrengthAsSymptomCompatibleFallback', 'engine/optimizer.ts:rankCandidates'],
@@ -545,7 +548,7 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'Registered as explicit product ranking policy rather than as a clinical or physiological-equivalence claim. Exact role identity remains governed by the coverage descriptor and ADR-0018 allocation contract.',
     },
     {
-        id: 'optimizer.readiness_modified_aerobic_support', domain: 'optimizer_scoring', title: 'Readiness-modified aerobic coverage exclusion',
+        id: 'optimizer.readiness_modified_aerobic_support', retiredInPhase2: true, domain: 'optimizer_scoring', title: 'Readiness-modified aerobic coverage exclusion',
         currentRule: 'On modify-tier days, easier-dose aerobic exposures are marked isReadinessModifiedDose and do not earn exact aerobic_volume coverage credit (remaining at coverage tier 3 when they advance no other role) even when their reduced duration meets a catalog minimumMin.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'low', researchPriority: 'none',
         codeRefs: ['engine/coverage.ts:coverageKeysForExposure', 'engine/coverage.ts:coverageKeysForTemplate', 'engine/optimizer.ts:rankCandidates'],
@@ -553,7 +556,7 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'Issue #756 registers modify-tier easier-dose coverage exclusion as product role-accounting policy with deterministic alignment testing.',
     },
     {
-        id: 'optimizer.residual_lower_body_strength_deferral', domain: 'optimizer_scoring', title: 'Residual lower-body primary-strength tier deferral',
+        id: 'optimizer.residual_lower_body_strength_deferral', retiredInPhase2: true, domain: 'optimizer_scoring', title: 'Residual lower-body primary-strength tier deferral',
         currentRule: 'When combined lower-body fatigue is at least 0.6, heavy lower-body strength whose tier-0/1 urgency comes only from primary_strength loses that urgency and keeps any other authored coverage tier (tier 3 only when no other role applies); exact coverage and reservations are unchanged.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'none',
         codeRefs: ['engine/optimizer.ts:rankCandidates'],
@@ -561,7 +564,7 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'Explicit product ranking policy for deferring heavy lower-body strength without changing the exact weekly-role ledger.',
     },
     {
-        id: 'optimizer.catalog_strength_adjacency', domain: 'optimizer_scoring', title: 'Automatic catalog adjacent-day strength exclusion',
+        id: 'optimizer.catalog_strength_adjacency', retiredInPhase2: true, domain: 'optimizer_scoring', title: 'Automatic catalog adjacent-day strength exclusion',
         currentRule: 'Automatic catalog ranking rejects a strength candidate on the local calendar day immediately after any strength exposure, across categories; authored-plan critique retains the shared recovery-spacing contract instead.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'none',
         codeRefs: ['engine/optimizer.ts:hasAdjacentStrengthExposure', 'engine/optimizer.ts:rankCandidates'],
@@ -569,7 +572,7 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'Issue #736 registers this conservative scheduling rule separately from modality preferences; the local-date adjacency is product policy, not a literal elapsed-hour physiological claim.',
     },
     {
-        id: 'optimizer.event_priority_multipliers', domain: 'optimizer_scoring', title: 'Event-priority and horizon ranking multipliers',
+        id: 'optimizer.event_priority_multipliers', retiredInPhase2: true, domain: 'optimizer_scoring', title: 'Event-priority and horizon ranking multipliers',
         currentRule: 'Event matching is modality-based: cycling->Cycling, running->Running, strength meet->Strength, triathlon->Swimming/Cycling/Running. Matching A/B candidates retain the existing 1.40/1.25 multipliers. C-priority cycling/running/triathlon candidates enter event-aware ranking with a neutral 1.00 multiplier, while C general targets and strength meets retain prior behavior. B events apply the 0.35 repeat dampener to a second race-specific exposure in six days; C events without an active authored taper defer it until D-2 so build load is retained through D-3, while an authored C taper restores the repeat dampener. During D-35..race for low-surge cycling durability profiles, Cycling candidates with repeatedSurges>=0.6 above event demand remain eligible but benefit is scaled by event repeatedSurges / candidate repeatedSurges; this factor is inactive earlier than D-35. Race-specific work >21 days out receives 0.50, except for cycling durability profiles (cycling_event with aerobicEndurance >=0.8 and fatigueResistance >=0.8 and repeatedSurges <0.6). Non-matching work is multiplied by 0.20 only with unresolved objectives when it is neither preferred nor itself objective-matching.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'moderate', safetyImpact: 'low', researchPriority: 'none',
         codeRefs: ['engine/optimizer.ts:rankCandidates'],
@@ -577,7 +580,7 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'Registered as an explicit product-policy claim (`policy.optimizer.event_priority_multipliers_v2`) with alignment testing. Multipliers shape candidate utility toward target event deadlines and priorities while preserving legacy A/B behavior, C general-target/strength-meet behavior, train-through build volume through D-3 for C events, and unrelated-work exceptions; the final 48-hour event restrictions remain authoritative.',
     },
     {
-        id: 'optimizer.recovery_streak_heuristics', domain: 'optimizer_scoring', title: 'Recovery alternation and training-streak heuristics',
+        id: 'optimizer.recovery_streak_heuristics', retiredInPhase2: true, domain: 'optimizer_scoring', title: 'Recovery alternation and training-streak heuristics',
         currentRule: 'Mixed recovery style alternates toward the opposite Rest/Mobility choice with a 1.40x multiplier. Across the contiguous prior non-recovery-day run (max 14 days), systemicCost >=0.40 days contribute to the streak count; with no unresolved objectives, count <3 boosts easy aerobic defaults 1.25x, while count >=3 boosts Rest/Mobility 2.0x and suppresses easy aerobic to 0.3x (0.1x at count >=4). If the most recent prior recorded session has systemicCost >=0.50, another >=0.50 candidate receives 0.35x.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'moderate', safetyImpact: 'moderate', researchPriority: 'none',
         codeRefs: ['engine/optimizer.ts:buildHistoryFeatureSummary', 'engine/optimizer.ts:rankCandidates'],
@@ -585,7 +588,7 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'Registered as an explicit product-policy claim (`policy.optimizer.recovery_streak_heuristics_v1`) with alignment testing. The mixed-recovery 1.40x alternation, 14-day/0.40 streak definition, 1.25x easy-aerobic default boost, 2.0x/0.3x/0.1x streak shaping and 0.50/0.35x intensity stacking penalty are all explicit product calibration.',
     },
     {
-        id: 'optimizer.performed_stimulus_quality_repetition', domain: 'optimizer_scoring', title: 'Performed stimulus quality anti-repetition penalty',
+        id: 'optimizer.performed_stimulus_quality_repetition', retiredInPhase2: true, domain: 'optimizer_scoring', title: 'Performed stimulus quality anti-repetition penalty',
         currentRule: 'When a confident quality exposure (tempo, threshold, vo2, race) occurred on D-1, candidate templates of the same quality family receive a 0.2 preference multiplier unless fulfilsNominatedAnchor is true; min(templateRepetition, stimulusRepetition) prevents penalty compounding to 0.04; consecutive Zone 2 endurance is exempt.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'none',
         codeRefs: ['engine/stimulusRecency.ts:evaluateCandidateStimulusRecency', 'engine/optimizer.ts:rankCandidates'],
@@ -593,7 +596,7 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'Issue #931 registers the D-1 quality anti-repetition penalty and Zone 2 exemption as product policy with deterministic alignment testing. The 0.2 multiplier and same-family matching govern candidate ranking without modifying exact weekly-role coverage or hard safety gates.',
     },
     {
-        id: 'optimizer.rolling_load_budget', domain: 'optimizer_scoring', title: 'Individualized rolling catalog-load budget',
+        id: 'optimizer.rolling_load_budget', retiredInPhase2: true, domain: 'optimizer_scoring', title: 'Individualized rolling catalog-load budget',
         currentRule: 'With at least three completed exposures spanning at least 14 days in the stable pre-window, derive per-dimension seven-day future catalog-load limits from the athlete\'s own 42-day baseline with 15% headroom and product floors; otherwise leave this new gate inactive and retain existing fatigue/safety controls. The day-1 provisional recommendation is charged to the fixed envelope but remains selected by the separate next-day evaluator; planned fixed-activity and schedule-overlay expected costs reserve capacity across their horizon dates; planner-generated day-2+ forecast exercise candidates are charged at their actual prescribed dose. Admission is candidate-specific by dimension: a non-participating contribution (cost within 1e-9 floating-point tolerance) does not inherit a pre-existing overage as a veto, while a dimension blocks admission with LOAD_BUDGET_EXCEEDED only when candidate cost exceeds 1e-9 and remaining capacity after admission is below -1e-9. No non-zero de minimis threshold is implied.',
         classification: 'product_heuristic', coverage: 'partial', decisionImpact: 'high', safetyImpact: 'high', researchPriority: 'p1',
         codeRefs: ['engine/rollingLoadBudget.ts:resolveRollingLoadBudgetProfile', 'engine/rollingLoadBudget.ts:evaluateRollingLoadBudget', 'engine/planner.ts:evaluateProjectedDate'],
@@ -601,7 +604,7 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'Longitudinal load monitoring and stress–recovery evidence support tracking accumulated load against an athlete\'s own history, while the exact catalog-cost dimensions, 42-day baseline, 15% headroom and product floors remain product calibration. Coverage is intentionally partial until prospective outcome calibration shows when this envelope improves planning without unnecessary under-training.',
     },
     {
-        id: 'periodization.phase_boundaries_scales', domain: 'periodization_taper', title: 'Base/Build/Specificity phase boundaries and dose scales',
+        id: 'periodization.phase_boundaries_scales', retiredInPhase2: true, domain: 'periodization_taper', title: 'Base/Build/Specificity phase boundaries and dose scales',
         currentRule: 'Policy-owned event horizon defaults place Specificity at <=35 days and Build at <=84 days; farther dates are Base (resolver supports overrides; no persisted input path yet). Build uses 0.6 event-demand blend, volume 1.1/intensity 0.9; Base uses 0.3 blend, volume 1.0/intensity 0.8; Specificity uses volume 1.0/intensity 1.1.',
         classification: 'product_heuristic', coverage: 'partial', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'p1',
         codeRefs: [
@@ -613,14 +616,14 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'Evidence Pack 6 registers low-certainty mixed evidence that block periodization is a viable organization model but is not consistently superior to progressively loaded traditional periodization, plus an explicit product-policy record of the exact scalars. Coverage stays partial at P1 because the default 35/84-day boundaries, 0.6/0.3 blend weights and volume/intensity scalars remain uncalibrated product choices resolved via eventHorizonPolicy; comparative cyclist evidence does not establish one universally optimal periodization sequence.',
     },
     {
-        id: 'periodization.taper_windows_volume', domain: 'periodization_taper', title: 'Event taper windows and volume reduction',
+        id: 'periodization.taper_windows_volume', retiredInPhase2: true, domain: 'periodization_taper', title: 'Event taper windows and volume reduction',
         currentRule: 'An athlete-authored taper start date overrides all defaults. Otherwise cycling A events taper from race-week Monday with a 3-day minimum; non-general-target A/B events fall back to 14/5 days. Taper intensityScale stays 1.0 while volumeScale linearly falls toward 0.6.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'none',
         codeRefs: ['engine/taperPolicy.ts:resolveEventTaper', 'engine/periodization.ts:evaluatePeriodizationPhase'], knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.endurancePreEventTaper, KNOWLEDGE_CLAIM_IDS.taperWindowsVolumePolicy],
         coverageRationale: 'The pre-event volume-reduction-while-preserving-intensity boundary has a moderate-certainty scientific claim; exact default scheduling (authored-start override precedence, cycling-A race-week alignment with a 3-day minimum, and legacy 14/5-day fallback for non-general targets) plus the 0.6 volume endpoint are separately registered as explicit product policy, not scientific constants. SKR1 runtime lineage (`knowledgeLineage.ts:trainingIntentKnowledgeRefs`) already emits both claims while a taper is active for an endurance event.',
     },
     {
-        id: 'periodization.olympic_triathlon_plan_taper_budget', domain: 'periodization_taper', title: 'Olympic-triathlon plan-level taper frequency and volume budget',
+        id: 'periodization.olympic_triathlon_plan_taper_budget', retiredInPhase2: true, domain: 'periodization_taper', title: 'Olympic-triathlon plan-level taper frequency and volume budget',
         currentRule: 'For an A-priority Olympic triathlon whose resolved taper is exactly 14 days, at least three measured pre-taper swim/bike/run sessions spanning seven days activate a final-14-day as-of budget: projected upper-bound minutes plus delivered minutes are capped at 0.59 of the prior 14-day recorded minutes and session count at the ceiling of 0.85 of the prior count, with a three-session floor. Dated pending fixed training with exact or authored identity also reserves its stated minutes and session slot, including future dates. Across the taper, remaining slots protect at least one opportunity for each race discipline not yet represented without bypassing eligibility gates. Each seven-day block spends at most half the minute allowance and half the session allowance, rounded up. A balanced baseline reserves a 30-minute swim and a bike and run touch per block where feasible; 30 cycling and 25 running minutes are reserved for D-4 through D-2, race-week swim is limited to 45 minutes, and the generated D-1 recommendation is Rest. Athlete-authored tapers of other lengths retain generic taper behavior.',
         classification: 'product_heuristic', coverage: 'partial', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'p1',
         codeRefs: ['engine/optimizer.ts:rankCandidates', 'engine/taperPlanBudget.ts:resolveOlympicTriathlonTaperBudget', 'engine/taperPlanBudget.ts:olympicTriathlonTaperExclusion', 'engine/knowledgeLineage.ts:trainingIntentKnowledgeRefs'],
@@ -628,49 +631,49 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'The registered moderate-certainty taper claim supports a substantial volume reduction with useful intensity; it does not establish the product 0.85 frequency cap, D-1 rest, or exact individual response. A separate policy claim owns those choices. Coverage remains partial pending athlete outcome calibration and validation across more histories.',
     },
     {
-        id: 'periodization.post_event_recovery_window', domain: 'periodization_taper', title: 'A-event post-event recovery window',
+        id: 'periodization.post_event_recovery_window', retiredInPhase2: true, domain: 'periodization_taper', title: 'A-event post-event recovery window',
         currentRule: 'A-priority cycling/running events completed or DNF within the last 3 days enter a Post-Event Recovery phase at volume/intensity 0.4; B/C events and events older than 3 days do not.',
         classification: 'product_heuristic', coverage: 'uncovered', decisionImpact: 'moderate', safetyImpact: 'moderate', researchPriority: 'p1',
         codeRefs: ['engine/periodization.ts:evaluatePeriodizationPhase'], knowledgeRefs: [],
         coverageRationale: 'Split out of periodization.taper_windows_volume (2026-09-02): this is an independently calibrated post-event rule, not a taper, and taper meta-analysis does not justify its 3-day window or 0.4/0.4 scale. It stays uncovered on its own rather than borrowing the adjacent taper claim by proximity.',
     },
     {
-        id: 'periodization.objective_thresholds', domain: 'periodization_taper', title: 'Demand-to-weekly-objective thresholds',
+        id: 'periodization.objective_thresholds', retiredInPhase2: true, domain: 'periodization_taper', title: 'Demand-to-weekly-objective thresholds',
         currentRule: 'Aerobic objective appears at demand >=0.4 and becomes two exposures at >=0.7; threshold at >=0.5; surge/VO2 at >=0.6; race-specific cycling at fatigue-resistance >=0.7 or surges >=0.6; qualification floors commonly use 0.6.',
         classification: 'product_heuristic', coverage: 'partial', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'p1',
         codeRefs: ['engine/periodization.ts:objectivesFromDemand', 'engine/microcycle.ts:generateWeeklyObjectives'], knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.objectiveThresholdsPolicy],
         coverageRationale: 'Evidence Pack 6 records the exact inclusion thresholds as an explicit product-policy claim, so they now have provenance and drift protection. No scientific claim is attached and none applies: the normalized 0-1 demand scale is product-defined, so no external study can validate a cut point on it. Stays partial at P1 pending empirical calibration against athlete outcomes.',
     },
     {
-        id: 'periodization.taper_sharpening_targets', domain: 'periodization_taper', title: 'Race-week sharpening and strength-primer targets',
+        id: 'periodization.taper_sharpening_targets', retiredInPhase2: true, domain: 'periodization_taper', title: 'Race-week sharpening and strength-primer targets',
         currentRule: 'Taper sharpening targets thresholdPower 0.5/repeatedSurges 0.4 with threshold qualification 0.3; strength primer targets maxStrength 0.3/hypertrophy 0.2.',
         classification: 'product_heuristic', coverage: 'partial', decisionImpact: 'moderate', safetyImpact: 'moderate', researchPriority: 'p2',
         codeRefs: ['engine/periodization.ts:TAPER_SHARPENING_TARGET_STIMULUS', 'engine/periodization.ts:TAPER_STRENGTH_TARGET_STIMULUS'], knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.taperSharpeningPolicy],
         coverageRationale: 'Now recorded as an explicit product-policy claim (`policy.taper.sharpening_targets_v1`), so the scalars have provenance and drift protection. The concepts align with freshness/maintenance goals from the taper literature, but the exact target values remain uncalibrated against outcomes, so this stays partial rather than covered.',
     },
     {
-        id: 'periodization.multi_event_contribution', domain: 'periodization_taper', title: 'Multi-event contribution window and taper authority',
+        id: 'periodization.multi_event_contribution', retiredInPhase2: true, domain: 'periodization_taper', title: 'Multi-event contribution window and taper authority',
         currentRule: 'Secondary events contribute objectives inside 35 days; authority taper can drop threshold work; each contributor uses its canonical resolved taper (athlete-authored start override first, cycling-A race-week alignment next, otherwise the applicable legacy A/B default), and same-key requirements merge by max rather than sum.',
         classification: 'product_heuristic', coverage: 'partial', decisionImpact: 'moderate', safetyImpact: 'moderate', researchPriority: 'p2',
         codeRefs: ['engine/periodization.ts:resolveMultiEventObjectives', 'engine/taperPolicy.ts:resolveEventTaper'], knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.multiEventContributionPolicy],
         coverageRationale: 'Evidence Pack 6 records the 35-day contribution window, the delegation of contributor taper resolution to the canonical taper policy, and the merge-by-max semantics as an explicit product-policy claim. Deliberately no scientific claim: this is deterministic conflict-resolution scheduling for concurrent goals, and no sports-science literature addresses it. Stays partial at P2 because the 35-day window, the taper defaults reached through the canonical policy, and the merge semantics all still alter training and remain uncalibrated.',
     },
     {
-        id: 'event.demand_presets', domain: 'event_demand', title: 'Sport/event demand profiles',
+        id: 'event.demand_presets', retiredInPhase2: true, domain: 'event_demand', title: 'Sport/event demand profiles',
         currentRule: 'Road race, criterium, TT, gran fondo, gravel, running distances, triathlon distances and strength events are mapped to authored 0..1 aerobic/threshold/VO2/surge/sprint/fatigue-resistance/neuromuscular demand vectors. HYROX Open Singles reuses the general-target vector without format-specific planning authority.',
         classification: 'product_heuristic', coverage: 'partial', decisionImpact: 'high', safetyImpact: 'low', researchPriority: 'p1',
         codeRefs: ['engine/eventPresets.ts:EVENT_PRESETS'], knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.eventDurationLimiterShift, KNOWLEDGE_CLAIM_IDS.eventDemandPresetsPolicy],
         coverageRationale: 'Evidence Pack 6 reclassifies this from scientific_claim to product_heuristic (an authored 0-1 vector table is an encoding, not a measured constant) and registers a moderate-certainty boundary that endurance demands shift with event duration and race morphology, plus a product-policy record of the 20 authored preset vectors. Stays partial at P1: the field literature supports broad demand differences but validates no individual axis value or exact preset mapping, and the strength_meet/general_target presets have no cited endurance-event-demand literature behind them.',
     },
     {
-        id: 'event.gran_fondo_durability', domain: 'event_demand', title: 'Gran-fondo durability objective and surge separation',
+        id: 'event.gran_fondo_durability', retiredInPhase2: true, domain: 'event_demand', title: 'Gran-fondo durability objective and surge separation',
         currentRule: 'High-durability cycling demand (raw aerobicEndurance>=0.8, fatigueResistance>=0.8, repeatedSurges<0.6) requests a cycling Race-Specific Endurance objective targeting aerobicEndurance 0.9/fatigueResistance 0.85/thresholdPower 0.6 with 0.6 floors on aerobicEndurance and fatigueResistance; compact criterium surge work requires governing-event repeatedSurges>=0.6; within D-35, higher-surge cycling candidates remain eligible but event-aware ranking scales benefit by event repeatedSurges / candidate repeatedSurges; long-horizon durability work is not halved solely for being race-specific.',
         classification: 'product_heuristic', coverage: 'partial', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'p1',
         codeRefs: ['engine/periodization.ts:objectivesFromDemand', 'engine/periodization.ts:isTemplatePhaseEligible', 'engine/optimizer.ts:rankCandidates', 'engine/templates.ts:TEMPLATES'], knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.granFondoDurabilityPolicy, KNOWLEDGE_CLAIM_IDS.eventPriorityMultipliersPolicy],
         coverageRationale: 'Issue #675 records the deterministic product calibration separately from the broader event-demand vector claim. The scenario and plan-judge evidence establish separation and feasibility, but do not validate the exact normalized thresholds or target stimulus as universal physiology; retain partial/P1 status for outcome calibration.',
     },
     {
-        id: 'stimulus.objective_credit_confidence', domain: 'stimulus_credit', title: 'Stimulus-evidence confidence discount',
+        id: 'stimulus.objective_credit_confidence', retiredInPhase2: true, domain: 'stimulus_credit', title: 'Stimulus-evidence confidence discount',
         currentRule: 'Objective credit weights exact/inferred/unknown stimulus evidence at 1.0/0.75/0.4 before dose completion scaling.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'moderate', safetyImpact: 'moderate', researchPriority: 'none',
         codeRefs: ['engine/stimulus.ts:CONFIDENCE_CREDIT_WEIGHT', 'engine/stimulus.ts:deriveObjectiveCreditFromProfile'],
@@ -678,7 +681,7 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'Registered as an explicit product-policy claim (`policy.stimulus.objective_credit_confidence_v1`) with alignment testing. Discounts unverified or inferred stimulus evidence to prevent overestimating weekly progress.',
     },
     {
-        id: 'stimulus.legacy_keyword_credit', domain: 'stimulus_credit', title: 'Legacy keyword compatibility credit',
+        id: 'stimulus.legacy_keyword_credit', retiredInPhase2: true, domain: 'stimulus_credit', title: 'Legacy keyword compatibility credit',
         currentRule: 'A legacy free-text objective match earns 0.5 credit per exposure and cannot resolve a one-credit objective by itself.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'low', safetyImpact: 'low', researchPriority: 'none',
         codeRefs: ['engine/microcycle.ts:LEGACY_KEYWORD_COMPATIBILITY_CREDIT', 'engine/microcycle.ts:updateMicrocycleProgress'],
@@ -686,7 +689,7 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'Registered as an explicit product-policy claim (`policy.stimulus.legacy_keyword_credit_v1`) with alignment testing. Conservative fallback credit for unstructured legacy catalog entries.',
     },
     {
-        id: 'stimulus.race_specific_credit_formula', domain: 'stimulus_credit', title: 'Race-specific objective credit formula',
+        id: 'stimulus.race_specific_credit_formula', retiredInPhase2: true, domain: 'stimulus_credit', title: 'Race-specific objective credit formula',
         currentRule: 'Race-specific credit uses max(fatigueResistance, 0.5*aerobicEndurance + 0.5*repeatedSurges); other objective keys select one canonical axis or max strength/hypertrophy.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'moderate', safetyImpact: 'low', researchPriority: 'none',
         codeRefs: ['engine/stimulus.ts:deriveObjectiveCreditFromProfile'],
@@ -694,14 +697,14 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'Registered as an explicit product-policy claim (`policy.stimulus.race_specific_credit_formula_v1`) with alignment testing. Internal stimulus blending formula balancing fatigue resistance and surge/aerobic combinations.',
     },
     {
-        id: 'stimulus.aerobic_volume_duration_floor', domain: 'stimulus_credit', title: 'Athlete-relative aerobic-volume session duration floor',
+        id: 'stimulus.aerobic_volume_duration_floor', retiredInPhase2: true, domain: 'stimulus_credit', title: 'Athlete-relative aerobic-volume session duration floor',
         currentRule: 'An aerobic-volume session earns exact weekly coverage only when its effective durationMin reaches one athlete-level floor, max(catalog minimum, round5(0.75 x median full-dose continuous aerobic session over 28 days)), with >=4 qualifying sessions and a catalog-minimum fallback; the packed aerobic_volume role is budgeted at the same floor.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'moderate', safetyImpact: 'low', researchPriority: 'none',
         codeRefs: ['engine/aerobicVolumeFloor.ts:resolveAerobicVolumeFloor', 'engine/coverage.ts:hasRequiredAerobicDose', 'engine/evergreenPlanning.ts:resolveEvergreenPlan'], knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.aerobicVolumeFloorPolicy],
         coverageRationale: 'Registered as an explicit product-policy claim (`policy.stimulus.aerobic_volume_athlete_relative_floor_v1`) with alignment testing (#757). The claim states that evidence does not support a sharp minimum-effective-session threshold; the floor is a coverage-admission heuristic, not a dose-adequacy claim.',
     },
     {
-        id: 'stimulus.weekly_aerobic_dose_envelope', domain: 'stimulus_credit', title: 'Athlete-relative weekly easy-aerobic dose envelope and long anchor',
+        id: 'stimulus.weekly_aerobic_dose_envelope', retiredInPhase2: true, domain: 'stimulus_credit', title: 'Athlete-relative weekly easy-aerobic dose envelope and long anchor',
         currentRule: 'After 28 observed days, established athletes with easy aerobic work in at least 3 of 4 weeks use a median weekly minute target (upper quartile in an endurance development phase) only when that selected history target exceeds 150 min/week; otherwise the 150/150/300 guideline fallback remains authoritative. Active athlete-history semantics use a lower-quartile-or-150-minute floor and may add an exact primary-modality anchor at the 75th-percentile session duration, capped to the allocator-executable standard template and real date capacity. Athlete-relative expansion may use declared target-session capacity but reserves feasible co-required required demand before extra aerobic occurrences.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'none',
         codeRefs: ['engine/weeklyAerobicDose.ts:resolveWeeklyAerobicDoseEnvelope', 'engine/weeklyDosePacking.ts:packWeeklyDose', 'engine/coverage.ts:buildCoverageState'],
@@ -709,7 +712,7 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'The history-derived range and anchor are explicit maintenance/productive-dose product policy. The guideline floor remains scientifically sourced rather than being relabelled as athlete-specific when history does not raise the selected target above it. Registry limitations state that recent exposure does not establish an optimum or biological minimum and that threshold/percentile/window choices need prospective review.',
     },
     {
-        id: 'stimulus.coverage_threshold', domain: 'stimulus_credit', title: 'Stimulus coverage qualification threshold',
+        id: 'stimulus.coverage_threshold', retiredInPhase2: true, domain: 'stimulus_credit', title: 'Stimulus coverage qualification threshold',
         currentRule: 'Generic stimulus coverage uses a 0.6 qualification threshold where consumed by compatibility/planning paths.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'moderate', safetyImpact: 'low', researchPriority: 'none',
         codeRefs: ['engine/microcycle.ts:STIMULUS_CREDIT_COVERAGE_THRESHOLD'],
@@ -717,13 +720,13 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'Registered as an explicit product-policy claim (`policy.stimulus.coverage_threshold_v1`) with alignment testing. Product qualification floor determining session admissibility for planning role coverage.',
     },
     {
-        id: 'planning.user_capacity_authority', domain: 'planning_capacity', title: 'User-authored time/equipment/environment capacity',
+        id: 'planning.user_capacity_authority', retiredInPhase2: true, domain: 'planning_capacity', title: 'User-authored time/equipment/environment capacity',
         currentRule: 'The engine takes the minimum of current-day and configured time caps, enforces required equipment/environment, and packs only into positive schedule windows.',
         classification: 'implementation_constant', coverage: 'not_applicable', decisionImpact: 'high', safetyImpact: 'low', researchPriority: 'none',
         codeRefs: ['engine/eligibility.ts:evaluateTemplateEligibility', 'engine/trainingCapacity.ts:resolveTrainingCapacity'], knowledgeRefs: [], coverageRationale: 'This applies explicit user/availability constraints and deterministic feasibility arithmetic; it is not a sports-knowledge claim.',
     },
     {
-        id: 'planning.search_budgets', domain: 'planning_capacity', title: 'Deterministic weekly allocation search budgets',
+        id: 'planning.search_budgets', retiredInPhase2: true, domain: 'planning_capacity', title: 'Deterministic weekly allocation search budgets',
         currentRule: 'Weekly role allocation is bounded to 7 dates, 14 occurrences, 4 candidates per occurrence and 1024 transitions.',
         classification: 'implementation_constant', coverage: 'not_applicable', decisionImpact: 'low', safetyImpact: 'low', researchPriority: 'none',
         codeRefs: ['engine/weeklyAllocation.ts:WEEKLY_ALLOCATION_SEARCH_BUDGET'], knowledgeRefs: [], coverageRationale: 'These are deterministic computational-resource bounds; scientific provenance would be category error. Budget exhaustion is surfaced rather than treated as physiological infeasibility.',
@@ -799,14 +802,16 @@ export function summarizeKnowledgeCoverage(
     const byPriority = emptyPriorityCounts();
     let highImpactUncovered = 0;
     let highSafetyUncovered = 0;
+    let retiredInPhase2 = 0;
     for (const item of items) {
         byCoverage[item.coverage] += 1;
         byClassification[item.classification] += 1;
         byPriority[item.researchPriority] += 1;
         if (item.coverage === 'uncovered' && item.decisionImpact === 'high') highImpactUncovered += 1;
         if (item.coverage === 'uncovered' && item.safetyImpact === 'high') highSafetyUncovered += 1;
+        if (item.retiredInPhase2) retiredInPhase2 += 1;
     }
-    return { total: items.length, byCoverage, byClassification, byPriority, highImpactUncovered, highSafetyUncovered };
+    return { total: items.length, byCoverage, byClassification, byPriority, highImpactUncovered, highSafetyUncovered, retiredInPhase2 };
 }
 
 /** Shadow/observability surfaces reviewed but intentionally outside live decision authority. */

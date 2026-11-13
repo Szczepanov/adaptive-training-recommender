@@ -280,18 +280,18 @@ describe('PlanPreview — external-plan@5 intent block preview', () => {
 
 describe('ExternalPlanImport — D-TRAVEL mode-aware prompt (#1167 P2-6, OQ4)', () => {
     it('switches prompt travel instructions deterministically with resolvePlanningAuthorityMode', () => {
-        const engineFromUnset = buildAiPromptTemplate(resolvePlanningAuthorityMode(undefined));
-        const engineFromNull = buildAiPromptTemplate(resolvePlanningAuthorityMode(null));
-        const engineFromEmpty = buildAiPromptTemplate(resolvePlanningAuthorityMode({}));
+        const ledgerFromUnset = buildAiPromptTemplate(resolvePlanningAuthorityMode(undefined));
+        const ledgerFromNull = buildAiPromptTemplate(resolvePlanningAuthorityMode(null));
+        const ledgerFromEmpty = buildAiPromptTemplate(resolvePlanningAuthorityMode({}));
         const engineFromTrue = buildAiPromptTemplate(resolvePlanningAuthorityMode({ engineRecommendationsEnabled: true }));
         const ledgerPrompt = buildAiPromptTemplate(resolvePlanningAuthorityMode({ engineRecommendationsEnabled: false }));
 
-        expect(engineFromUnset).toBe(engineFromNull);
-        expect(engineFromUnset).toBe(engineFromEmpty);
-        expect(engineFromUnset).toBe(engineFromTrue);
-        expect(engineFromUnset).toContain('Plan as if every otherwise scheduled day is available.');
-        expect(engineFromUnset).not.toContain('userContext.travel');
-        expect(engineFromUnset).not.toContain('venueRestrictions');
+        expect(ledgerFromUnset).toBe(ledgerFromNull);
+        expect(ledgerFromUnset).toBe(ledgerFromEmpty);
+        expect(ledgerFromUnset).toBe(ledgerPrompt);
+        expect(engineFromTrue).toContain('Plan as if every otherwise scheduled day is available.');
+        expect(engineFromTrue).not.toContain('userContext.travel');
+        expect(engineFromTrue).not.toContain('venueRestrictions');
 
         expect(ledgerPrompt).toContain('userContext.travel');
         expect(ledgerPrompt).toContain('venueRestrictions');
@@ -304,7 +304,10 @@ describe('ExternalPlanImport — D-TRAVEL mode-aware prompt (#1167 P2-6, OQ4)', 
         const engineHtml = renderToStaticMarkup(<ExternalPlanImport userId="u1" preferences={{ engineRecommendationsEnabled: true }} />);
         const ledgerHtml = renderToStaticMarkup(<ExternalPlanImport userId="u1" preferences={{ engineRecommendationsEnabled: false }} />);
 
-        expect(defaultHtml).toContain('Plan as if every otherwise scheduled day is available.');
+        expect(defaultHtml).toContain('userContext.travel');
+        expect(defaultHtml).toContain('venueRestrictions');
+        expect(defaultHtml).not.toContain('Plan as if every otherwise scheduled day is available.');
+
         expect(engineHtml).toContain('Plan as if every otherwise scheduled day is available.');
         expect(engineHtml).not.toContain('userContext.travel');
 

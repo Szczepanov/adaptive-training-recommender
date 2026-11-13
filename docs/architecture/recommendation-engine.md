@@ -2,6 +2,13 @@
 
 How `app/src/engine/` turns a morning's data into a prescribed session.
 
+> **Default mode (ADR-0052 Phase 2):** Ledger mode is now the default (`resolvePlanningAuthorityMode`
+> resolves an unset `engineRecommendationsEnabled` to `'ledger'`). By default, Home, Plan, and the
+> week-ahead strip show and run today's imported session as authored with D-FLAGS and do not
+> evaluate `app/src/engine/` or write `daily_recommendations`. The paths below remain in the tree
+> behind the default-off **Preferences → Advanced: legacy engine recommendations** rollback setting
+> (`engineRecommendationsEnabled: true`).
+>
 > **Accuracy note.** Rewritten 2026-08-08 against the engine as it actually is. The
 > previous version described a `REST / RECOVERY / AEROBIC_BASE / QUALITY_STRENGTH` mode
 > hierarchy with fixed thresholds ("HRV drop > 10%", "sleep score < 65") that the code has

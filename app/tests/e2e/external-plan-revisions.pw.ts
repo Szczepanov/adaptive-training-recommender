@@ -1,5 +1,5 @@
 import { expect, test } from './support/test';
-import { provisionAthlete, seedRecoverySnapshot, signInThroughUi } from './support/athlete';
+import { provisionAthlete, seedEngineModePreferences, seedRecoverySnapshot, signInThroughUi } from './support/athlete';
 import { seedExternalPlanningMode, mondayOfWeek } from './support/externalPlan';
 import { buildV6Plan, coachSession, checkIn, importPlan, previewPlan, planningBrief, readDocument, seedExternalPlanRevision, seedPlacement } from './support/roundTrip';
 import { addDaysToLocalDateString } from '../../src/utils/localDate';
@@ -36,6 +36,7 @@ for (const effective of ['tomorrow', 'today'] as const) {
     const tomorrow = addDaysToLocalDateString(today, 1);
     const plan = buildV6Plan(today);
     await seedExternalPlanningMode(athlete);
+    await seedEngineModePreferences(athlete, today);
     await signInThroughUi(page, athlete);
     await importPlan(page, plan);
     const successor = buildV6Plan(today, { revision: 2, sessions: [coachSession(today, { title: 'R2 today' }), coachSession(tomorrow, { id: 'session-tomorrow', title: 'R2 tomorrow', placement: { ...coachSession(tomorrow).placement, week: mondayOfWeek(tomorrow) === plan.startDate ? 1 : 2 } })] });
@@ -55,6 +56,7 @@ test('V3 revision-scoped move onto today survives a future successor import', as
   const yesterday = addDaysToLocalDateString(today, -1);
   const plan = buildV6Plan(yesterday, { sessions: [coachSession(yesterday, { placement: { ...coachSession(yesterday).placement, flexibility: 'preferred', ifMissed: 'carry_forward' } })] });
   await seedExternalPlanRevision(athlete, plan, yesterday);
+  await seedEngineModePreferences(athlete, today);
   // PlanView only renders today..today+6. Yesterday's authored row has no UI move
   // control, so the closeout plan's validated-overlay fallback is necessary.
   const proposal = proposeReplacement(plan, null, 'session-today', yesterday, {}, today);

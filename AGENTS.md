@@ -18,10 +18,12 @@ developer raising a client-specific instruction limit for correctness.
 
 * **Python backend** (`src/garmin_sync/`) — ingests health and training metrics from Garmin
   Connect (and Eight Sleep / Google Health transports) into user-scoped Firestore documents.
-* **Frontend app** (`app/`) — React + TypeScript + Vite + Firebase. Reads user recovery
-  snapshots and computes adaptive training recommendations. The decision engine lives in
-  `app/src/engine/`; its evaluators are pure, and only the orchestration entry points
-  reach for IO — as a lazily-imported default when no provider was injected.
+* **Frontend app** (`app/`) — React + TypeScript + Vite + Firebase. Defaults to **ledger mode**
+  (ADR-0052 Phase 2): reads user recovery snapshots, shows and runs imported sessions as authored
+  with D-FLAGS, and records performed training. The legacy decision engine in `app/src/engine/`
+  remains behind the default-off `engineRecommendationsEnabled` rollback setting; its evaluators
+  are pure, and only the orchestration entry points reach for IO — as a lazily-imported default
+  when no provider was injected.
 
 ---
 
@@ -33,7 +35,7 @@ Full statements, with rationale and the checks that enforce them, are in
 1. **User isolation** — write to `users/{APP_USER_ID}/daily_recovery_snapshots/{YYYY-MM-DD}`; never `daily_recovery_snapshot/{date}`, never `"default_user"` (ADR-0002).
 2. **Timezone semantics** — `Europe/Warsaw` for every calendar date, via `local_today()` / `getLocalDateString()`; never UTC `toISOString().split('T')[0]` (ADR-0003).
 3. **`D - 1` step semantics** — `totalSteps` is the previous completed day; baselines normalize ambient surges and estimated activity steps are deducted in `derived/steps/activitySteps.ts`, consumed by `fatigue.ts` (ADR-0003).
-4. **Knowledge lineage** — decision-authority constants are owned by registered claims with alignment tests; check `app/src/knowledge/` before changing one (ADR-0033).
+4. **Knowledge lineage** — flag thresholds and derived-metric definitions with decision-adjacent weight are owned by registered claims with alignment tests (engine recommendations are switched off by default in Phase 2); check `app/src/knowledge/` before changing one (ADR-0033, ADR-0052).
 5. **Policy version** — bump `POLICY_VERSION` when a change can alter a recommendation (ADR-0010).
 6. **No credential leaks** — never commit `.env`, `.garth/`, service-account files, or raw health JSON.
 

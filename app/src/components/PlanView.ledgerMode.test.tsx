@@ -167,7 +167,7 @@ beforeEach(() => {
 
 describe('PlanView planning authority modes (ADR-0052 Phase 2, #1167 P2-4)', () => {
     it('runs engine forecast + critique and renders ai_forecast tab and PlanAuthorityBanner in engine mode', async () => {
-        mocks.composeDailyDecisionInput.mockResolvedValue(decisionInputWithPreferences({}));
+        mocks.composeDailyDecisionInput.mockResolvedValue(decisionInputWithPreferences({ engineRecommendationsEnabled: true }));
         mocks.activePlan.mockResolvedValue(activePlanResponse);
 
         const elements = await mount();
@@ -253,7 +253,7 @@ describe('PlanView planning authority modes (ADR-0052 Phase 2, #1167 P2-4)', () 
     });
 
     it('keeps failing closed on unreadable plan blocks in engine mode', async () => {
-        mocks.composeDailyDecisionInput.mockResolvedValue(decisionInputWithPreferences({}));
+        mocks.composeDailyDecisionInput.mockResolvedValue(decisionInputWithPreferences({ engineRecommendationsEnabled: true }));
         mocks.activePlan.mockResolvedValue(activePlanResponse);
         mocks.blocksState.mockResolvedValue({ status: 'UNAVAILABLE', operation: 'read plan blocks', retryable: true });
 

@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import type { LedgerExport } from '../../src/ledger/export/schema';
 import { expect, test } from './support/test';
-import { provisionAthlete, seedRecoverySnapshot, signInThroughUi } from './support/athlete';
+import { provisionAthlete, seedEngineModePreferences, seedRecoverySnapshot, signInThroughUi } from './support/athlete';
 import { seedExternalPlanningMode } from './support/externalPlan';
 import {
   awaitPerformedOccurrences,
@@ -33,6 +33,7 @@ test('a validated v6 coach plan completes and Garmin enriches the same next-brie
   const today = await seedRecoverySnapshot(athlete);
   const plan = buildV6Plan(today);
   await seedExternalPlanningMode(athlete);
+  await seedEngineModePreferences(athlete, today);
   await signInThroughUi(page, athlete);
   expect(await planningBrief(page)).toContain('## External-plan execution round trip');
   await previewPlan(page, plan);
@@ -90,6 +91,7 @@ test('V12 abandoned external execution retains logged evidence and exact next-br
   const today = await seedRecoverySnapshot(athlete);
   const plan = buildV6Plan(today);
   await seedExternalPlanningMode(athlete);
+  await seedEngineModePreferences(athlete, today);
   await signInThroughUi(page, athlete);
   await previewPlan(page, plan);
   await page.getByRole('button', { name: 'Import this plan' }).click();

@@ -29,7 +29,7 @@ describe('SessionDestinationSheet (M3.3)', () => {
 
     it('renders all five destinations with their engine-effect copy when open', () => {
         const html = renderToStaticMarkup(
-            <SessionDestinationSheet userId="u1" definition={definition} isOpen={true} onClose={vi.fn()} onStartExecution={vi.fn()} />,
+            <SessionDestinationSheet userId="u1" definition={definition} isOpen={true} onClose={vi.fn()} onStartExecution={vi.fn()} planningAuthorityMode="engine" />,
         );
         expect(html).toContain('Full Body Maintenance');
         expect(html).toContain('destination-sheet-overlay overlay-viewport overlay-viewport--sheet');
