@@ -488,6 +488,8 @@ export const WeekAheadStrip = memo(function WeekAheadStrip({
   }
 
   if (planningAuthorityMode === 'ledger') {
+    // An imported plan with no resolved date yet is still loading, not missing.
+    if (externalPlan) return null;
     return (
       <div className="dashboard-card week-ahead-card week-ahead-ledger-empty" role="region" aria-label="Week ahead">
         <div className="card-header">
@@ -508,7 +510,7 @@ export const WeekAheadStrip = memo(function WeekAheadStrip({
               className="week-ahead-import-btn"
               onClick={onImportPlan}
             >
-              📥 Import Plan
+              <span aria-hidden="true">📥 </span>Import a training plan
             </button>
           </div>
         )}

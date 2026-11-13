@@ -62,6 +62,7 @@ import {
   resolvePlanningAuthorityMode,
   type PlanningAuthorityMode,
 } from '../ledger/planningAuthorityMode';
+import { hasRecordedRedFlag } from '../ledger/redFlagPause';
 
 interface PlanViewProps {
   userId: string;
@@ -138,17 +139,21 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
       ]);
 
       setDecisionInput(input);
+      const modeForLoad = planningAuthorityMode ?? resolvePlanningAuthorityMode(input.preferences);
+      // Ledger mode places imported sessions from fixed activities and the active plan only;
+      // authored plan blocks, goals and training settings feed the engine forecast alone.
+      const blocksRequired = modeForLoad === 'engine';
 
       // P0: Enforce strict DataState semantics. Do NOT silently convert unavailable/invalid
       // schedule data into empty arrays. These inputs have no owning repair screen, so the
       // copy names each failing status precisely and Retry remains the only local action.
-      if (actState.status !== 'AVAILABLE' || blocksState.status !== 'AVAILABLE') {
+      if (actState.status !== 'AVAILABLE' || (blocksRequired && blocksState.status !== 'AVAILABLE')) {
         const invalidInputs: string[] = [];
         const unavailableInputs: string[] = [];
         if (actState.status === 'INVALID') invalidInputs.push('fixed activities');
-        if (blocksState.status === 'INVALID') invalidInputs.push('plan blocks');
+        if (blocksRequired && blocksState.status === 'INVALID') invalidInputs.push('plan blocks');
         if (actState.status === 'UNAVAILABLE') unavailableInputs.push('fixed activities');
-        if (blocksState.status === 'UNAVAILABLE') unavailableInputs.push('plan blocks');
+        if (blocksRequired && blocksState.status === 'UNAVAILABLE') unavailableInputs.push('plan blocks');
 
         const statusParts: string[] = [];
         if (invalidInputs.length > 0) {
@@ -165,14 +170,12 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
         return;
       }
 
-      const decisionSourceFailure = resolveDecisionSourceRepairState(input.sourceStates);
+      const decisionSourceFailure = modeForLoad === 'engine' ? resolveDecisionSourceRepairState(input.sourceStates) : null;
       if (decisionSourceFailure) {
         setForecastRepairTargets(decisionSourceFailure.actions);
         setForecastUnavailable(decisionSourceFailure.message);
         return;
       }
-
-      const modeForLoad = planningAuthorityMode ?? resolvePlanningAuthorityMode(input.preferences);
 
       let wearableMode: WearablePlanningMode = 'wearable';
       if (modeForLoad === 'engine') {
@@ -210,7 +213,7 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
       }
 
       const acts = actState.data;
-      const blocks = blocksState.data;
+      const blocks = blocksState.status === 'AVAILABLE' ? blocksState.data : [];
       setFixedActivities(acts);
 
       // P0: Fail closed on activeExternalPlanState errors. INVALID or UNAVAILABLE must never
@@ -232,6 +235,12 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
 
       const currentPlan = activePlanState.status === 'AVAILABLE' ? activePlanState.data : null;
       setActivePlan(currentPlan);
+
+      if (modeForLoad === 'ledger') {
+        // ADR-0052 OQ2: a recorded red flag pauses launch in ledger mode; the plan week hides
+        // steps, export and reschedule controls for the same condition.
+        setClinicalEscalationRequired(hasRecordedRedFlag(input.subjectiveCheckin));
+      }
 
       if (modeForLoad === 'engine') {
         // P0/P1: Verify minimum safety check-in status before generating normal adaptive forecast
@@ -466,11 +475,11 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
   const effectiveViewMode = effectiveAuthorityMode === 'ledger' ? 'imported' : viewMode;
 
   const resolvedPlanningMode = useMemo(() => {
-    if (!decisionInput) return undefined;
+    if (!decisionInput || effectiveAuthorityMode === 'ledger') return undefined;
     const events = mapGoalsToUserEvents(decisionInput.activeGoals);
     const todayPhase = evaluatePeriodizationPhase(events, today);
     return resolvePlanningContext(decisionInput.trainingIntentProfile, todayPhase, today).mode;
-  }, [decisionInput, today]);
+  }, [decisionInput, effectiveAuthorityMode, today]);
 
   const safetyCheckinStatus = useMemo(
     () => getMinimumSafetyCheckinStatus(decisionInput?.subjectiveCheckin),
@@ -498,7 +507,7 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
       adaptiveTitleToday: adaptiveTodayRecommendation.template.title ?? null,
       coachFlaggedToday: (critique?.findings ?? []).some((finding) => finding.date === today),
     };
-  }, [activePlan, adaptiveTodayRecommendation, critique, today]);
+  }, [effectiveAuthorityMode, activePlan, adaptiveTodayRecommendation, critique, today]);
 
   return (
     <div className="plan-view-container">
@@ -568,7 +577,7 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
         </div>
       ) : forecastUnavailable ? (
         <div className="plan-unavailable-card">
-          <h3>7-Day Forecast Unavailable</h3>
+          <h3>{effectiveAuthorityMode === 'ledger' ? 'Plan Unavailable' : '7-Day Forecast Unavailable'}</h3>
           <p className="plan-unavailable-message">{forecastUnavailable}</p>
           {forecastRepairTargets.length > 0 && (
             <p className="plan-unavailable-message">

@@ -1,3 +1,4 @@
+import type { ActiveExternalPlan } from '../services/activeExternalPlanService';
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { WeekAheadStrip } from './WeekAheadStrip';
@@ -332,9 +333,21 @@ describe('WeekAheadStrip planningAuthorityMode (ADR-0052 Phase 2, #1167 P2-4)', 
 
     expect(html).toContain('No imported plan');
     expect(html).toContain('No active training plan is imported.');
-    expect(html).toContain('Import Plan');
+    expect(html).toContain('Import a training plan');
     expect(html).not.toContain('Recalculates daily as your data changes');
     expect(html).not.toContain('Engine forecast should never appear in ledger mode.');
+  });
+
+  it('renders nothing in ledger mode while an imported plan waits for today to resolve', () => {
+    const html = renderToStaticMarkup(
+      <WeekAheadStrip
+        plan={null}
+        externalPlan={{ plan: { planId: 'p', revision: 1 }, placed: [] } as unknown as ActiveExternalPlan}
+        planningAuthorityMode="ledger"
+        onImportPlan={() => {}}
+      />,
+    );
+    expect(html).toBe('');
   });
 
   it('renders an honest empty state in ledger mode even without onImportPlan', () => {

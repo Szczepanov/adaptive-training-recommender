@@ -318,9 +318,10 @@ describe('Home in ledger mode', () => {
     await vi.waitFor(() => expect(mocks.getActivePlanState).toHaveBeenCalledTimes(1));
     await new Promise(resolve => setTimeout(resolve, 0));
     const tree = renderHome();
-    const strip = tree.find(el => el.type === WeekAheadStrip) as ReactElement<{ clinicalEscalationRequired?: boolean }> | undefined;
+    const strip = tree.find(el => el.type === WeekAheadStrip) as ReactElement<{ clinicalEscalationRequired?: boolean; planningAuthorityMode?: string }> | undefined;
     expect(strip).toBeDefined();
     expect(strip!.props.clinicalEscalationRequired).toBe(true);
+    expect(strip!.props.planningAuthorityMode).toBe('ledger');
   });
 
   it('hides the empty 7-Day Outlook section when no imported plan is active', async () => {

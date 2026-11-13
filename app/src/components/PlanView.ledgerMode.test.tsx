@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
     evaluateNextDayPlanWithIntent: vi.fn(),
     generateWeekAheadPlanWithIntent: vi.fn(),
     garminConnectionState: vi.fn(),
+    blocksState: vi.fn(),
 }));
 
 vi.mock('react', async importOriginal => ({
@@ -47,9 +48,7 @@ vi.mock('../services/fixedActivityService', () => ({
     },
 }));
 vi.mock('../services/planBlockService', () => ({
-    planBlockService: {
-        getBlocksInRangeState: vi.fn(async () => ({ status: 'AVAILABLE', data: [], revision: null })),
-    },
+    planBlockService: { getBlocksInRangeState: mocks.blocksState },
 }));
 vi.mock('../services/garminConnectionService', () => ({
     garminConnectionService: { getConnectionState: mocks.garminConnectionState },
@@ -163,6 +162,7 @@ beforeEach(() => {
     });
     mocks.generateWeekAheadPlanWithIntent.mockResolvedValue({ days: [] });
     mocks.garminConnectionState.mockResolvedValue({ state: 'disconnected' });
+    mocks.blocksState.mockResolvedValue({ status: 'AVAILABLE', data: [], revision: null });
 });
 
 describe('PlanView planning authority modes (ADR-0052 Phase 2, #1167 P2-4)', () => {
@@ -224,5 +224,52 @@ describe('PlanView planning authority modes (ADR-0052 Phase 2, #1167 P2-4)', () 
         (strip?.props.onImportPlan as () => void)();
         const afterImportClick = render();
         expect(find(afterImportClick, ExternalPlanImport)).toBeDefined();
+    });
+
+    it('locks plan-week steps and export for a recorded red flag in ledger mode (ADR-0052 OQ2)', async () => {
+        mocks.composeDailyDecisionInput.mockResolvedValue({
+            ...decisionInputWithPreferences({ engineRecommendationsEnabled: false }),
+            subjectiveCheckin: { redFlags: { present: true, categories: ['chest_pain'] } },
+        });
+        mocks.activePlan.mockResolvedValue(activePlanResponse);
+
+        const elements = await mount();
+
+        expect(find(elements, ExternalPlanWeek)?.props.clinicalEscalationRequired).toBe(true);
+        expect(mocks.evaluateTrainingWithIntent).not.toHaveBeenCalled();
+    });
+
+    it('still shows the imported plan in ledger mode when engine-only plan blocks are unreadable', async () => {
+        mocks.composeDailyDecisionInput.mockResolvedValue(
+            decisionInputWithPreferences({ engineRecommendationsEnabled: false }),
+        );
+        mocks.activePlan.mockResolvedValue(activePlanResponse);
+        mocks.blocksState.mockResolvedValue({ status: 'UNAVAILABLE', operation: 'read plan blocks', retryable: true });
+
+        const elements = await mount();
+
+        expect(find(elements, ExternalPlanWeek)).toBeDefined();
+        expect(elements.some(item => item.props.className === 'plan-unavailable-card')).toBe(false);
+    });
+
+    it('keeps failing closed on unreadable plan blocks in engine mode', async () => {
+        mocks.composeDailyDecisionInput.mockResolvedValue(decisionInputWithPreferences({}));
+        mocks.activePlan.mockResolvedValue(activePlanResponse);
+        mocks.blocksState.mockResolvedValue({ status: 'UNAVAILABLE', operation: 'read plan blocks', retryable: true });
+
+        const elements = await mount();
+
+        expect(find(elements, ExternalPlanWeek)).toBeUndefined();
+        expect(elements.some(item => item.props.className === 'plan-unavailable-card')).toBe(true);
+        expect(mocks.evaluateTrainingWithIntent).not.toHaveBeenCalled();
+    });
+
+    it('lets the planningAuthorityMode prop override stored preferences', async () => {
+        mocks.composeDailyDecisionInput.mockResolvedValue(decisionInputWithPreferences({}));
+        mocks.activePlan.mockResolvedValue(activePlanResponse);
+
+        const ledgerElements = await mount({ planningAuthorityMode: 'ledger' });
+        expect(mocks.evaluateTrainingWithIntent).not.toHaveBeenCalled();
+        expect(ledgerElements.filter(item => item.props.role === 'tab')).toHaveLength(0);
     });
 });
