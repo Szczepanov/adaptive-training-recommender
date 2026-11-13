@@ -156,10 +156,22 @@ function isPositiveFinite(value: unknown): value is number {
     return typeof value === 'number' && Number.isFinite(value) && value > 0;
 }
 
+/** Provider labels that positively assert an uncontrolled outdoor run (Garmin uses `street_running`). */
+const OUTDOOR_RUNNING_ACTIVITY_TYPES = new Set(['street_running', 'road_running', 'outdoor_running']);
+/** Provider labels that contradict a given explicit controlled venue. Labels never establish a venue. */
+const VENUE_CONFLICTING_ACTIVITY_TYPES: Record<'calibrated_treadmill' | 'verified_standard_track', ReadonlySet<string>> = {
+    calibrated_treadmill: new Set(['track_running']),
+    verified_standard_track: new Set(['treadmill_running', 'indoor_running', 'virtual_run']),
+};
+
+function normalizeActivityType(activityType: string | undefined): string | undefined {
+    return activityType?.trim().toLowerCase() || undefined;
+}
+
 function isOutdoorOrTrailActivityType(activityType: string | undefined): boolean {
-    if (!activityType) return false;
-    const normalized = activityType.trim().toLowerCase();
-    return normalized.includes('trail') || normalized === 'outdoor_running' || normalized === 'road_running';
+    const normalized = normalizeActivityType(activityType);
+    if (!normalized) return false;
+    return normalized.includes('trail') || OUTDOOR_RUNNING_ACTIVITY_TYPES.has(normalized);
 }
 
 /**
@@ -242,14 +254,21 @@ function evaluateSessionEligibility(
         reasons.push(`${side}: ${venue.kind} activities are excluded`);
     } else if (venue.kind === 'unverified') {
         reasons.push(`${side}: unverified running venue context`);
-    } else if (venue.kind === 'calibrated_treadmill') {
+    } else if (
+        (venue.kind === 'calibrated_treadmill' || venue.kind === 'verified_standard_track')
+        && VENUE_CONFLICTING_ACTIVITY_TYPES[venue.kind].has(normalizeActivityType(session.activity?.type) ?? '')
+    ) {
+        state = 'not_comparable';
+        reasons.push(`${side}: provider activity type (${session.activity?.type}) conflicts with ${venue.kind} venue`);
+    }
+    if (venue?.kind === 'calibrated_treadmill') {
         if (!venue.treadmillCalibrated) {
             reasons.push(`${side}: treadmill calibration not verified`);
         }
         if (!venue.inclineLocked || !Number.isFinite(venue.inclinePct)) {
             reasons.push(`${side}: treadmill incline not locked`);
         }
-    } else if (venue.kind === 'verified_standard_track') {
+    } else if (venue?.kind === 'verified_standard_track') {
         if (!venue.trackVerified) {
             reasons.push(`${side}: standard track venue not verified`);
         }
@@ -415,6 +434,15 @@ export function evaluateControlledRunningPaceHrComparison(
             hrReasons: [],
         };
     }
+    if (!(prior.localDate < current.localDate)) {
+        return {
+            state: 'not_comparable',
+            resultKind: 'controlled_pace_hr_response_proxy',
+            authority: 'display_only',
+            rejectionReasons: [`prior session date (${prior.localDate}) is not before current (${current.localDate})`],
+            hrReasons: [],
+        };
+    }
 
     const left = evaluateSessionEligibility('current', current);
     const right = evaluateSessionEligibility('prior', prior);
@@ -471,6 +499,12 @@ export function evaluateControlledRunningPaceHrComparison(
         ) {
             compatibilityRejections.push('conflicting track lane');
         }
+    }
+
+    if (left.paceDistanceProvenance !== right.paceDistanceProvenance) {
+        compatibilityRejections.push(
+            `conflicting pace/distance provenance (${left.paceDistanceProvenance} vs ${right.paceDistanceProvenance})`,
+        );
     }
 
     compatibilityRejections.push(...compareProtocols(left.protocol, right.protocol));

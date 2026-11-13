@@ -284,9 +284,9 @@ An audit of already-acquired Garmin provider fields (`src/garmin_sync/mapper.py`
 
 For explicitly evidenced sessions, `app/src/derived/training/runningPaceHrEvidence.ts` (`evaluateControlledRunningPaceHrComparison`, `evaluateRunningPaceHrAuthority`) defines the pure, display-only, fail-closed eligibility and comparability contract outside `app/scripts/decision-affecting-files.json` (`POLICY_VERSION` unchanged). A pair is comparable only when both sessions establish:
 
-1. explicit controlled venue (`calibrated_treadmill` with verified calibration and locked incline, or `verified_standard_track`; `outdoor_road` and `trail` are deterministically excluded);
+1. explicit controlled venue (`calibrated_treadmill` with verified calibration and locked incline, or `verified_standard_track`; `outdoor_road` and `trail` are deterministically excluded, as are provider `street_running`/trail labels and labels that contradict the explicit venue, e.g. `track_running` on a treadmill — labels can disqualify a venue but never establish one);
 2. completed, matching standardized executed protocol (`protocolId`, revision/hash when present, step identities, durations, and target speeds);
-3. verified/acceptable pace-distance quality with controlled provenance (`calibrated_treadmill_console`, `verified_track_splits`, or `calibrated_footpod`; `gps` and `unverified` are rejected);
+3. verified/acceptable pace-distance quality with controlled provenance (`calibrated_treadmill_console`, `verified_track_splits`, or `calibrated_footpod`; `gps` and `unverified` are rejected, and both sessions must share the same provenance);
 4. running-specific HR-use authority requiring `electrode_chest_strap`, `external` source, `confirmed` provenance, `high` measurement confidence, `clean` signal quality, and `verified_same_effective_trace` summary compatibility (optical `wrist_ppg`, `unknown`, `unreliable`, and discordant traces are rejected).
 
 Eligible pairs emit a bounded `controlled_pace_hr_response_proxy` with `confidenceCeiling: 'moderate'`, explicit provenance and limitations, and never claim `"running economy"`.

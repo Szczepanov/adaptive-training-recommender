@@ -325,6 +325,83 @@ describe('evaluateControlledRunningPaceHrComparison', () => {
         });
     });
 
+    it('excludes Garmin street_running and rejects provider types that contradict the explicit venue', () => {
+        const prior = makeSession({
+            sessionId: 'run-prior',
+            localDate: '2026-10-29',
+            performedOccurrenceId: 'pto-prior',
+        });
+        const activity = (type: string): NormalizedGarminActivity => ({
+            activityId: `a-${type}`,
+            date: '2026-11-12',
+            type,
+            durationMin: 40,
+            trainingEffectAerobic: 3.0,
+            trainingEffectAnaerobic: 0,
+            averageHr: 148,
+            activityTrainingLoad: 70,
+            intensityTag: 'easy',
+        });
+
+        expect(evaluateControlledRunningPaceHrComparison(
+            makeSession({ activity: activity('street_running') }), prior,
+        )).toMatchObject({
+            state: 'not_comparable',
+            rejectionReasons: ['current: outdoor/trail activity type excluded'],
+        });
+
+        expect(evaluateControlledRunningPaceHrComparison(
+            makeSession({ activity: activity('track_running') }), prior,
+        )).toMatchObject({
+            state: 'not_comparable',
+            rejectionReasons: ['current: provider activity type (track_running) conflicts with calibrated_treadmill venue'],
+        });
+
+        const trackVenue = { kind: 'verified_standard_track' as const, trackVerified: true };
+        expect(evaluateControlledRunningPaceHrComparison(
+            makeSession({
+                venueContext: trackVenue,
+                activity: activity('treadmill_running'),
+                paceDistanceEvidence: {
+                    provenance: 'verified_track_splits', quality: 'verified', distanceMeters: 6300, durationSeconds: 1800,
+                },
+            }),
+            prior,
+        )).toMatchObject({
+            state: 'not_comparable',
+            rejectionReasons: expect.arrayContaining([
+                'current: provider activity type (treadmill_running) conflicts with verified_standard_track venue',
+            ]),
+        });
+
+        // A matching treadmill label is consistent, but never required.
+        expect(evaluateControlledRunningPaceHrComparison(
+            makeSession({ activity: activity('treadmill_running') }), prior,
+        ).state).toBe('comparable');
+    });
+
+    it('rejects pairs with different pace/distance provenance or a non-chronological date order', () => {
+        const prior = makeSession({
+            sessionId: 'run-prior',
+            localDate: '2026-10-29',
+            performedOccurrenceId: 'pto-prior',
+        });
+        const footpod = makeSession({
+            paceDistanceEvidence: {
+                provenance: 'calibrated_footpod', quality: 'verified', distanceMeters: 6300, durationSeconds: 1800,
+            },
+        });
+        expect(evaluateControlledRunningPaceHrComparison(footpod, prior)).toMatchObject({
+            state: 'not_comparable',
+            rejectionReasons: ['conflicting pace/distance provenance (calibrated_footpod vs calibrated_treadmill_console)'],
+        });
+
+        expect(evaluateControlledRunningPaceHrComparison(prior, makeSession())).toMatchObject({
+            state: 'not_comparable',
+            rejectionReasons: ['prior session date (2026-11-12) is not before current (2026-10-29)'],
+        });
+    });
+
     it('rejects poor/unverified pace-distance quality and GPS provenance', () => {
         const prior = makeSession({
             sessionId: 'run-prior',
