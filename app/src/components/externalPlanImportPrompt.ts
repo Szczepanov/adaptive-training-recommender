@@ -5,7 +5,7 @@ const ENGINE_MODE_TRAVEL_INSTRUCTION =
     'Do not encode travel weeks, illness, or externally imposed time off as restDays — those are handled separately by the app\'s own calendar. restDays is only for deliberate plan-authored protected rest such as sequencing, taper or deload intent. Plan as if every otherwise scheduled day is available.';
 
 const LEDGER_MODE_TRAVEL_INSTRUCTION =
-    'Plan around `userContext.travel` (startDate, endDate, volumeScale, intensityScale) and `venueRestrictions` (date, title, environment, equipment) from the ledger export — adjust session volume, intensity, environment, and equipment on those dates directly in the authored sessions rather than assuming every day is available. Use restDays only for deliberate plan-authored protected rest such as sequencing, taper, deload, or travel-enforced rest.';
+    'Plan around `userContext.travel` (startDate, endDate, volumeScale, intensityScale) and `userContext.venueRestrictions` (date, title, environment, equipment) from the ledger export — adjust session volume, intensity, environment, and equipment on those dates directly in the authored sessions rather than assuming every day is available. Use restDays only for deliberate plan-authored protected rest such as sequencing, taper, deload, or travel-enforced rest.';
 
 export function buildAiPromptTemplate(mode: PlanningAuthorityMode): string {
     const travelInstruction = mode === 'ledger'
@@ -36,5 +36,3 @@ Never include a "systemicCost" or similar calibrated load figure anywhere in def
 
 Output as a downloadable JSON file.`;
 }
-
-export const AI_PROMPT_TEMPLATE = buildAiPromptTemplate('engine');

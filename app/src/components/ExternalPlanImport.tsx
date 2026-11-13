@@ -2,10 +2,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { impliedDate } from '../engine/externalPlacement';
 import { type ExternalPlanHeader, type ObjectiveKey } from '../engine/models';
 import { externalPlanService } from '../services/externalPlanService';
-import { preferencesService } from '../services/preferencesService';
-import { resolvePlanningAuthorityMode } from '../ledger/planningAuthorityMode';
+import { resolvePlanningAuthorityMode, type PlanningAuthorityMode } from '../ledger/planningAuthorityMode';
 import type { UserPreferences } from '../ledger/models';
-import { AI_PROMPT_TEMPLATE, buildAiPromptTemplate } from './externalPlanImportPrompt';
+import { buildAiPromptTemplate } from './externalPlanImportPrompt';
+import { loadPromptPlanningAuthorityMode } from './externalPlanImportPromptMode';
 import { preflightExternalPlanImport, type ExternalPlanImportPreflight } from '../services/externalPlanImportPreflight';
 import { activateIntentBlocksFromPlan, type IntentBlockActivationResult } from '../services/externalPlanV5ActivationService';
 import { addDaysToLocalDateString, getLocalDateString } from '../utils/localDate';
@@ -67,25 +67,30 @@ export function ExternalPlanImport({ userId, onImported, preferences }: External
     const [preflight, setPreflight] = useState<ExternalPlanImportPreflight | null>(null);
     const [preflightAcknowledged, setPreflightAcknowledged] = useState(false);
     const [promptCopied, setPromptCopied] = useState(false);
-    const [loadedPreferences, setLoadedPreferences] = useState<Pick<UserPreferences, 'engineRecommendationsEnabled'> | null>(null);
+    const [loadedMode, setLoadedMode] = useState<PlanningAuthorityMode | null>(null);
+    // The prompt's travel instruction depends on the mode, so Copy waits until the stored
+    // preferences have settled; otherwise a quick click copies the engine-mode default.
+    const [preferencesSettled, setPreferencesSettled] = useState(false);
     const today = getLocalDateString();
 
     useEffect(() => {
         if (preferences !== undefined) return;
         let current = true;
-        void preferencesService.getPreferencesState(userId)
-            .then(result => {
-                if (current) setLoadedPreferences(result.status === 'AVAILABLE' ? result.data : null);
-            })
-            .catch(() => {
-                if (current) setLoadedPreferences(null);
-            });
+        setPreferencesSettled(false);
+        void loadPromptPlanningAuthorityMode(userId).then(mode => {
+            if (!current) return;
+            setLoadedMode(mode);
+            setPreferencesSettled(true);
+        });
         return () => { current = false; };
     }, [preferences, userId]);
 
-    const planningAuthorityMode = resolvePlanningAuthorityMode(preferences !== undefined ? preferences : loadedPreferences);
+    const planningAuthorityMode = preferences !== undefined
+        ? resolvePlanningAuthorityMode(preferences)
+        : loadedMode ?? resolvePlanningAuthorityMode(null);
+    const promptReady = preferences !== undefined || preferencesSettled;
     const promptTemplate = useMemo(
-        () => (planningAuthorityMode === 'engine' ? AI_PROMPT_TEMPLATE : buildAiPromptTemplate(planningAuthorityMode)),
+        () => buildAiPromptTemplate(planningAuthorityMode),
         [planningAuthorityMode],
     );
 
@@ -202,6 +207,7 @@ export function ExternalPlanImport({ userId, onImported, preferences }: External
                                 type="button"
                                 className="external-import-secondary"
                                 onClick={handleCopyPrompt}
+                                disabled={!promptReady}
                             >
                                 {promptCopied ? 'Copied prompt to clipboard!' : 'Copy AI prompt template'}
                             </button>
