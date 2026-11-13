@@ -8,6 +8,7 @@ import { parseSessionOccurrenceDocument } from '../persistence/parsers/sessionDe
 import { assertValidSessionOccurrence } from '../sessions/validation';
 import { windowReservationId } from './sessionOccurrenceService';
 import { deepEqual } from '../utils/deepEqual';
+import { resolveUserPlanningAuthorityMode } from './planningAuthorityModeService';
 
 /**
  * Schedules replacement intent, then transfers authority only when its adjudicated
@@ -41,6 +42,9 @@ export class ManualRecommendationReplacementService {
         };
         // Issue #1202 (ADR-0053): validated before any Firestore call.
         assertValidSessionOccurrence(replacement);
+        if (await resolveUserPlanningAuthorityMode(userId) === 'ledger') {
+            throw new Error('Replacing today’s recommendation is disabled in ledger mode.');
+        }
         const recommendationRef = doc(this.db, 'users', userId, 'daily_recommendations', date);
         const replacementRef = doc(this.db, 'users', userId, 'session_occurrences', occurrenceId);
 

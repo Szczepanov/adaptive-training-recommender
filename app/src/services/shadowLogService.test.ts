@@ -138,4 +138,18 @@ describe('ShadowLogService', () => {
         const result = await new ShadowLogService().build('u1', START, END);
         expect(result.unavailableSources).toContain('decision journal');
     });
+
+    it('treats a missing daily_recommendations day as no engine record without marking recommendations unavailable (#1167 P2-5)', async () => {
+        services.getRecommendationsInRange.mockResolvedValue({ status: 'AVAILABLE', data: [], revision: null });
+        const result = await new ShadowLogService().build('u1', START, END);
+        expect(result.unavailableSources).not.toContain('recommendations and feedback');
+        expect(result.rows).toHaveLength(3);
+        expect(result.rows[0]).toMatchObject({
+            date: START,
+            engineVerdict: null,
+            engineMode: null,
+            agreement: null,
+            adherenceFollowed: null,
+        });
+    });
 });

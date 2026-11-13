@@ -1,9 +1,11 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useOverlayDialog } from '../useOverlayDialog';
 import '../overlayContract.css';
 import type { SessionDefinition, SessionOccurrence } from '../../sessions/models';
 import type { PreparedSessionLaunch } from '../../sessions/sessionLaunch';
 import { validateSessionDefinition } from '../../sessions/validation';
+import type { PlanningAuthorityMode } from '../../ledger/planningAuthorityMode';
+import { usePlanningAuthorityMode } from '../../hooks/usePlanningAuthorityMode';
 import { sessionDefinitionService } from '../../services/sessionDefinitionService';
 import { prepareUnplannedSessionLaunch } from '../../services/sessionAuthoringService';
 import { sessionOccurrenceService } from '../../services/sessionOccurrenceService';
@@ -34,6 +36,7 @@ interface SessionDestinationSheetProps {
     onStartExecution: (session: PreparedSessionLaunch) => void;
     onSaved?: () => void;
     onOccurrenceCreated?: (occurrence: SessionOccurrence) => void;
+    planningAuthorityMode?: PlanningAuthorityMode;
 }
 
 export const SessionDestinationSheet: React.FC<SessionDestinationSheetProps> = ({
@@ -44,13 +47,20 @@ export const SessionDestinationSheet: React.FC<SessionDestinationSheetProps> = (
     onStartExecution,
     onSaved,
     onOccurrenceCreated,
+    planningAuthorityMode,
 }) => {
     const [selectedDestination, setSelectedDestination] = useState<DestinationChoice>('start_unplanned');
     const [scheduleDate, setScheduleDate] = useState<string>(getLocalDateString());
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const { mode: effectiveMode } = usePlanningAuthorityMode(userId, planningAuthorityMode, isOpen);
     const dialogRef = useRef<HTMLDivElement>(null);
     useOverlayDialog(isOpen, dialogRef, saving ? undefined : onClose, 'input[type="radio"]');
+
+    useEffect(() => {
+        if (effectiveMode !== 'ledger') return;
+        setSelectedDestination(current => current === 'replace_recommendation' ? 'start_unplanned' : current);
+    }, [effectiveMode]);
 
     if (!isOpen) return null;
 
@@ -97,6 +107,9 @@ export const SessionDestinationSheet: React.FC<SessionDestinationSheetProps> = (
             const definitionRef = { definitionId: definition.id, revision: definition.revision, contentHash };
             let occurrence: SessionOccurrence;
             if (selectedDestination === 'replace_recommendation') {
+                if (effectiveMode === 'ledger') {
+                    throw new Error('Replacing today’s recommendation is disabled in ledger mode.');
+                }
                 occurrence = await manualRecommendationReplacementService.replaceRecommendationOccurrence(
                     userId,
                     occurrenceDate,
@@ -133,7 +146,7 @@ export const SessionDestinationSheet: React.FC<SessionDestinationSheetProps> = (
                 </header>
 
                 <div className="destination-options-list">
-                    {(['start_unplanned', 'schedule', 'replace_recommendation', 'additional_session', 'save_only'] as DestinationChoice[]).map(choice => (
+                    {(['start_unplanned', 'schedule', ...(effectiveMode === 'ledger' ? [] : ['replace_recommendation' as const]), 'additional_session', 'save_only'] as DestinationChoice[]).map(choice => (
                         <label key={choice} className={`destination-option ${selectedDestination === choice ? 'selected' : ''}`}>
                             <input
                                 type="radio"

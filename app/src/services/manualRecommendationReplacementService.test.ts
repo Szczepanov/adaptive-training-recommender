@@ -19,6 +19,10 @@ vi.mock('../persistence/parsers/trainingHistory', () => ({
 vi.mock('../persistence/parsers/sessionDefinition', () => ({
     parseSessionOccurrenceDocument: parsers.parseSessionOccurrenceDocument,
 }));
+const mockResolveMode = vi.hoisted(() => vi.fn(async () => 'engine' as 'engine' | 'ledger'));
+vi.mock('./planningAuthorityModeService', () => ({
+    resolveUserPlanningAuthorityMode: mockResolveMode,
+}));
 
 import { ManualRecommendationReplacementService } from './manualRecommendationReplacementService';
 
@@ -243,6 +247,14 @@ describe('ManualRecommendationReplacementService write-side validation (#1202)',
         const service = new ManualRecommendationReplacementService({} as never);
         await expect(service.replaceRecommendationOccurrence('u1', '2026-10-05', { ...definitionRef, revision: 0 }))
             .rejects.toThrow('Invalid session occurrence: definitionRef: Invalid definitionRef');
+        expect(firestore.runTransaction).not.toHaveBeenCalled();
+    });
+
+    it('refuses to replace today’s recommendation in ledger mode without opening a transaction', async () => {
+        mockResolveMode.mockResolvedValueOnce('ledger');
+        const service = new ManualRecommendationReplacementService({} as never);
+        await expect(service.replaceRecommendationOccurrence('u1', '2026-10-05', definitionRef))
+            .rejects.toThrow('disabled in ledger mode');
         expect(firestore.runTransaction).not.toHaveBeenCalled();
     });
 });

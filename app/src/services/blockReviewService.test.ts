@@ -359,4 +359,17 @@ describe('BlockReviewService exports and process joins', () => {
         expect(read.report?.reviewProvenance?.limitations).toContain('recommendations:truncated');
         expect(read.report?.reasons).toContain('review_sources_incomplete');
     });
+
+    it('treats missing daily_recommendations as no engine record rather than unreadable or rest (#1167 P2-5)', async () => {
+        const { service, deps } = await setup();
+        deps.recommendations.getRecommendationsInRange.mockResolvedValue({ status: 'AVAILABLE', data: [], revision: null });
+        const read = await service.loadReview('u1', selection, asOfDate);
+        expect(read.sources.find(s => s.source === 'recommendations')).toEqual({
+            source: 'recommendations',
+            status: 'missing',
+            recordCount: 0,
+        });
+        expect(read.report?.reviewProvenance?.limitations).not.toContain('recommendations:unreadable');
+        expect(read.report?.reviewProvenance?.limitations).not.toContain('recommendations:truncated');
+    });
 });

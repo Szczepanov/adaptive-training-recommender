@@ -207,4 +207,11 @@ describe('DataView null-input empty state', () => {
     // name the dashboard refresh as the recourse).
     expect(html).not.toContain('>Retry<');
   });
+
+  it('renders the adherence tab shell; the empty-reader case is covered in recommendationService.test.ts (#1167 P2-5)', () => {
+    const html = renderToStaticMarkup(
+      <DataView decisionInput={recoveryDecisionInput(5)} userId="athlete-1" initialTab="adherence" onBack={() => {}} />,
+    );
+    expect(html).toContain('Adherence (last 30 days)');
+  });
 });
