@@ -37,6 +37,14 @@ update this document in the same PR.
 
 ## Global shell
 
+By default (`ledger` mode, ADR-0052 Phase 2), Home's `LedgerTodayCard` shows today's imported
+sessions as authored, renders D-FLAGS (`FlagStrip`) and launches them. Plan (`PlanView`, imported
+`ExternalPlanWeek` tab only) and `WeekAheadStrip` show imported placements without flags or a
+launch action. None of these surfaces runs recommendation-engine evaluations or writes
+`daily_recommendations`. Legacy engine recommendations (`MorningDecisionCard`, `ai_forecast`,
+`AdherencePrompt`) remain available as a rollback via **Preferences → Advanced: legacy engine
+recommendations** (`engineRecommendationsEnabled: true`).
+
 `App.tsx` keeps a `Screen` value in React state and mirrors safe top-level destinations to the
 private `?screen=<screen>` query parameter. `handleNavigate` pushes a browser-history entry;
 Back and Forward reconcile that entry into app state without reloading. A valid deep link is

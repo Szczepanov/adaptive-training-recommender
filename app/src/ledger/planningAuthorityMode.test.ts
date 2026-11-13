@@ -4,12 +4,12 @@ import {
     UNSET_PLANNING_AUTHORITY_MODE,
 } from './planningAuthorityMode';
 
-describe('resolvePlanningAuthorityMode (ADR-0052 Phase 2, #1167 P2-1)', () => {
-    it('keeps today\'s engine behaviour while the setting is unset (until the P2-8 flip)', () => {
-        expect(UNSET_PLANNING_AUTHORITY_MODE).toBe('engine');
-        expect(resolvePlanningAuthorityMode(undefined)).toBe('engine');
-        expect(resolvePlanningAuthorityMode(null)).toBe('engine');
-        expect(resolvePlanningAuthorityMode({})).toBe('engine');
+describe('resolvePlanningAuthorityMode (ADR-0052 Phase 2, #1167 P2-8)', () => {
+    it('defaults to ledger mode while the setting is unset (P2-8 flip)', () => {
+        expect(UNSET_PLANNING_AUTHORITY_MODE).toBe('ledger');
+        expect(resolvePlanningAuthorityMode(undefined)).toBe('ledger');
+        expect(resolvePlanningAuthorityMode(null)).toBe('ledger');
+        expect(resolvePlanningAuthorityMode({})).toBe('ledger');
     });
 
     it('honours an explicit athlete choice in both directions', () => {

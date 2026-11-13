@@ -118,10 +118,11 @@ Export purpose: diagnostic — bounded forensic telemetry and observation-only c
 - Planning date: 2026-08-15 (Europe/Warsaw calendar date).
 - Effective planning mode today: evergreen.
 - Sensors — configured vs observed (observed = canonical activities 2026-07-19..2026-08-15, 1 in window; observation is evidence, not ownership):
-  - Power meter: configuration unavailable (training settings and preferences not readable); recent cycling power observed on 1 activity; latest 2026-08-14.
-  - Heart-rate monitor: configuration unavailable (training settings and preferences not readable); recent HR observed on 1 activity; latest 2026-08-14.
-  - Cadence: configuration unavailable (training settings and preferences not readable); not observable — cadence is not carried by canonical activity fields in this export.
+  - Power meter: configuration unknown; recent cycling power observed on 1 activity; latest 2026-08-14.
+  - Heart-rate monitor: configuration unknown; recent HR observed on 1 activity; latest 2026-08-14.
+  - Cadence: configuration unknown; not observable — cadence is not carried by canonical activity fields in this export.
   - Prescription rule: only configured-available sensors are guaranteed for future sessions. Do not assume permanent availability from observation alone; when configuration is unknown or unavailable, give sensor-dependent sessions an executable RPE/feel (or HR, if HR is configured available) fallback.
+- Planning preferences: recovery style undefined · preferred time undefined · conservative bias off · extra recovery margin not set.
 - Latest wearable snapshot: 2026-08-15; Garmin sync timestamp 2026-08-15T06:15:00Z.
 > Check-in caution: no subjective check-in is available in the exported window.
 - No activity record is currently dated to the planning date. Same-day Garmin activity can lag until a post-session sync, so this is not proof that no training occurred.
@@ -307,10 +308,11 @@ Export purpose: planning — sections are ordered by decision authority; forensi
 - Planning date: 2026-08-15 (Europe/Warsaw calendar date).
 - Effective planning mode today: evergreen.
 - Sensors — configured vs observed (observed = canonical activities 2026-07-19..2026-08-15, 1 in window; observation is evidence, not ownership):
-  - Power meter: configuration unavailable (training settings and preferences not readable); recent cycling power observed on 1 activity; latest 2026-08-14.
-  - Heart-rate monitor: configuration unavailable (training settings and preferences not readable); recent HR observed on 1 activity; latest 2026-08-14.
-  - Cadence: configuration unavailable (training settings and preferences not readable); not observable — cadence is not carried by canonical activity fields in this export.
+  - Power meter: configuration unknown; recent cycling power observed on 1 activity; latest 2026-08-14.
+  - Heart-rate monitor: configuration unknown; recent HR observed on 1 activity; latest 2026-08-14.
+  - Cadence: configuration unknown; not observable — cadence is not carried by canonical activity fields in this export.
   - Prescription rule: only configured-available sensors are guaranteed for future sessions. Do not assume permanent availability from observation alone; when configuration is unknown or unavailable, give sensor-dependent sessions an executable RPE/feel (or HR, if HR is configured available) fallback.
+- Planning preferences: recovery style undefined · preferred time undefined · conservative bias off · extra recovery margin not set.
 - Latest wearable snapshot: 2026-08-15; Garmin sync timestamp 2026-08-15T06:15:00Z.
 > Check-in caution: no subjective check-in is available in the exported window.
 - No activity record is currently dated to the planning date. Same-day Garmin activity can lag until a post-session sync, so this is not proof that no training occurred.

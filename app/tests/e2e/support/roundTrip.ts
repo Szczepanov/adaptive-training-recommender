@@ -16,6 +16,7 @@ import { EXTERNAL_PLAN_SCHEMA_V6, type ExternalTrainingPlanV6, type ExternalPlan
 import { dismissOnboardingIfVisible, submitTypicalCheckin, type E2EAthlete } from './athlete';
 import { inspectAthlete, seedWithRulesDisabled } from './emulator';
 import { mondayOfWeek, seedExternalPlanningMode, weekdayOf } from './externalPlan';
+import { openMoreDestination } from './navigation';
 
 export const strengthDefinition: SessionDefinition = JSON.parse(readFileSync(new URL('../../../src/sessions/fixtures/01-full-body-maintenance.json', import.meta.url), 'utf8'));
 
@@ -195,8 +196,7 @@ export async function checkInLedgerMode(page: Page): Promise<void> {
 
 export async function planningBrief(page: Page, expectedHeading = '## External-plan execution round trip'): Promise<string> {
   await dismissOnboardingIfVisible(page, 200);
-  await page.getByRole('button', { name: 'More' }).click();
-  await page.getByRole('button', { name: /^📤 Export Context for AI/ }).click();
+  await openMoreDestination(page, /^📤 Export Context for AI/);
   await page.getByRole('button', { name: /Block Planning/ }).click();
   const brief = page.locator('textarea.brief-text');
   await expect.poll(() => brief.inputValue()).toContain(expectedHeading);

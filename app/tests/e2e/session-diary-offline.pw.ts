@@ -2,6 +2,7 @@ import { collection, doc, getDoc, getDocs, writeBatch } from 'firebase/firestore
 import { expect, test } from './support/test';
 import { openFixturePicker, provisionAthlete, readSessionExecutions, signInThroughUi } from './support/athlete';
 import { FIRESTORE_EMULATOR_ROUTE, inspectAthlete } from './support/emulator';
+import { openMoreDestination } from './support/navigation';
 
 test('offline diary survives a browser reload with corrections, tombstones and undo (#895 WP1)', async ({ page, context }) => {
   test.setTimeout(120_000);
@@ -35,8 +36,7 @@ test('offline diary survives a browser reload with corrections, tombstones and u
   await page.reload();
   // An incomplete daily check-in intentionally precedes deep-link restoration.
   await page.getByRole('button', { name: 'Skip to Dashboard', exact: true }).click();
-  await page.getByRole('button', { name: 'More' }).click();
-  await page.getByRole('button', { name: /Sessions/ }).click();
+  await openMoreDestination(page, /Sessions/);
   await expect(page.locator('.session-runner-container')).toBeVisible();
   await expect(page.locator('.entry-row')).toHaveCount(2, { timeout: 45_000 });
   await expect(page.locator('.entry-row').first()).toContainText('10 reps');
@@ -108,8 +108,7 @@ test('a conflicting offline correction remains failed with its attempted values 
     await context.setOffline(false);
     await page.reload();
     await page.getByRole('button', { name: 'Skip to Dashboard', exact: true }).click();
-    await page.getByRole('button', { name: 'More' }).click();
-    await page.getByRole('button', { name: /Sessions/ }).click();
+    await openMoreDestination(page, /Sessions/);
     await expect(page.locator('.entry-row').first()).toContainText('10 reps', { timeout: 45_000 });
     await page.unroute(FIRESTORE_EMULATOR_ROUTE);
     await expect(page.locator('.sync-pill')).toHaveText('unavailable', { timeout: 45_000 });

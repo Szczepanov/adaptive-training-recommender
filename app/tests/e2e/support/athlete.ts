@@ -3,6 +3,7 @@ import { collection, doc, getDoc, getDocs, setDoc } from 'firebase/firestore';
 import { expect, type Page } from '@playwright/test';
 import { getLocalDateString } from '../../../src/utils/localDate';
 import { AUTH_EMULATOR_URL, inspectAthlete, seedWithRulesDisabled } from './emulator';
+import { openMoreDestination } from './navigation';
 
 const password = 'E2ePassword!42';
 
@@ -50,6 +51,34 @@ export async function provisionAthlete(): Promise<E2EAthlete> {
     throw new Error('Auth Emulator did not return a user id for the test athlete.');
   }
   return { email, password, userId: created.localId };
+}
+
+export async function seedEngineModePreferences(
+  athlete: E2EAthlete,
+  date = getLocalDateString(),
+): Promise<void> {
+  const timestamp = `${date}T06:00:00.000Z`;
+  await seedWithRulesDisabled(db =>
+    setDoc(doc(db, 'users', athlete.userId, 'preferences', 'profile'), {
+      userId: athlete.userId,
+      preferredRecoveryStyle: 'mixed',
+      defaultWeekdayTimeMin: 45,
+      defaultWeekendTimeMin: 60,
+      preferredTimeOfDay: 'flexible',
+      preferredModalities: [],
+      deprioritizedModalities: [],
+      avoidedModalities: [],
+      unavailableModalities: [],
+      explanationVerbosity: 'detailed',
+      conservativeBias: false,
+      shadowModeEnabled: false,
+      engineRecommendationsEnabled: true,
+      preferredUnits: { distance: 'km', weight: 'kg', temperature: 'celsius' },
+      schemaVersion: 1,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    }),
+  );
 }
 
 export async function seedRecoverySnapshot(
@@ -164,8 +193,7 @@ export async function signUpThroughUi(page: Page): Promise<{ email: string; pass
 }
 
 export async function openFixturePicker(page: Page): Promise<void> {
-  await page.getByRole('button', { name: 'More' }).click();
-  await page.getByRole('button', { name: /Sessions/ }).click();
+  await openMoreDestination(page, /Sessions/);
   await page.getByRole('button', { name: '＋ New session', exact: true }).click();
   await page.getByRole('button', { name: 'From fixture', exact: true }).click();
   await page.getByRole('button', { name: 'Start Session →', exact: true }).first().waitFor();
@@ -189,7 +217,10 @@ export async function completeTypicalCheckin(page: Page, athlete: E2EAthlete, da
   // onCheckinSaved), the same async work that makes the onboarding wizard eligible to show
   // again for a goal-less athlete -- dismiss it here too, or it can intercept assertions.
   await dismissOnboardingIfVisible(page);
-  await expect(page.getByLabel("Today's Morning Training Decision")).toBeVisible();
+  await expect(
+    page.getByRole('region', { name: "Today's training plan" })
+      .or(page.getByLabel("Today's Morning Training Decision")),
+  ).toBeVisible();
 }
 
 export async function readSessionExecutions(athlete: E2EAthlete): Promise<PersistedSessionExecution[]> {

@@ -18,10 +18,12 @@ developer raising a client-specific instruction limit for correctness.
 
 * **Python backend** (`src/garmin_sync/`) — ingests health and training metrics from Garmin
   Connect (and Eight Sleep / Google Health transports) into user-scoped Firestore documents.
-* **Frontend app** (`app/`) — React + TypeScript + Vite + Firebase. Reads user recovery
-  snapshots and computes adaptive training recommendations. The decision engine lives in
-  `app/src/engine/`; its evaluators are pure, and only the orchestration entry points
-  reach for IO — as a lazily-imported default when no provider was injected.
+* **Frontend app** (`app/`) — React + TypeScript + Vite + Firebase. Defaults to **ledger mode**
+  (ADR-0052 Phase 2): reads user recovery snapshots, shows and runs imported sessions as authored
+  with D-FLAGS, and records performed training. The legacy decision engine in `app/src/engine/`
+  remains behind the default-off `engineRecommendationsEnabled` rollback setting; its evaluators
+  are pure, and only the orchestration entry points reach for IO — as a lazily-imported default
+  when no provider was injected.
 
 ---
 
@@ -33,7 +35,7 @@ Full statements, with rationale and the checks that enforce them, are in
 1. **User isolation** — write to `users/{APP_USER_ID}/daily_recovery_snapshots/{YYYY-MM-DD}`; never `daily_recovery_snapshot/{date}`, never `"default_user"` (ADR-0002).
 2. **Timezone semantics** — `Europe/Warsaw` for every calendar date, via `local_today()` / `getLocalDateString()`; never UTC `toISOString().split('T')[0]` (ADR-0003).
 3. **`D - 1` step semantics** — `totalSteps` is the previous completed day; baselines normalize ambient surges and estimated activity steps are deducted in `derived/steps/activitySteps.ts`, consumed by `fatigue.ts` (ADR-0003).
-4. **Knowledge lineage** — decision-authority constants are owned by registered claims with alignment tests; check `app/src/knowledge/` before changing one (ADR-0033).
+4. **Knowledge lineage** — flag thresholds and derived-metric definitions with decision-adjacent weight are owned by registered claims with alignment tests (engine recommendations are switched off by default in Phase 2); check `app/src/knowledge/` before changing one (ADR-0033, ADR-0052).
 5. **Policy version** — bump `POLICY_VERSION` when a change can alter a recommendation (ADR-0010).
 6. **No credential leaks** — never commit `.env`, `.garth/`, service-account files, or raw health JSON.
 
@@ -252,7 +254,7 @@ fails the PR if any required job on that path fails.
 | Code | Python test suite | `uv lock --check`, repository-hygiene `pre-commit`, `ruff check`, `ruff format --check`, `mypy` (`src/garmin_sync` + `scripts/`), `pytest` with coverage, `uvx pip-audit` |
 | Code | Frontend hygiene & static gates | `npm run audit` (`npm audit --audit-level=high`), `typecheck`, `lint`, `validate:knowledge`, `validate:knowledge-coverage`, `validate:knowledge-freshness` (reports only, non-blocking), `validate:workouts`, policy-version drift vs the PR base, `build:bundle` |
 | Code | Frontend unit tests, Firestore rules & browser E2E | `npm run test:coverage` then `npm run test:perf`, `npm run test:rules`, `npm run test:e2e` (emulators + Java + Chromium), run as parallel jobs; the rules and E2E suites are each split into two `--shard` jobs with their own emulator, and one aggregate check passes only when every job and shard passes |
-| Engine-affecting (ADR-0052 D-CI) | Engine simulations & AI gates | `simulate:scenarios` plus committed-baseline `git diff --exit-code`, `simulate:plan-judge`, persona corpus build; `simulate:diff` is advisory (`continue-on-error`). Runs only when `scripts/engine_impact.py` reports `engine_affected`: the change is on `app/scripts/decision-affecting-files.json` (shared with the policy-drift check), matches an engine/simulation path rule, or is in the base or head import graph of the engine and simulation entry points. Classification fails safe, so the job runs on any uncertainty or build/resolution config change. Local `make verify` always runs the simulations |
+| Engine-affecting (ADR-0052 D-CI) | Engine simulations & AI gates | `simulate:scenarios` plus committed-baseline `git diff --exit-code`, `simulate:plan-judge`, persona corpus build, and `simulate:diff` — all advisory (`continue-on-error`) since ADR-0052 Phase 2 (P2-8); the policy-drift check in the static-gates job stays blocking. Runs only when `scripts/engine_impact.py` reports `engine_affected`: the change is on `app/scripts/decision-affecting-files.json` (shared with the policy-drift check), matches an engine/simulation path rule, or is in the base or head import graph of the engine and simulation entry points. Classification fails safe, so the job runs on any uncertainty or build/resolution config change. Local `make verify` always runs the simulations |
 | Code | Docker build & compose smoke | root image build, Compose config/build/up, smoke checks |
 
 `make check` already covers Python lint **and formatting**, mypy, pytest, frontend dependency

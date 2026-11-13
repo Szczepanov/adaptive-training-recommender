@@ -13,11 +13,11 @@ export type PlanningAuthorityMode = 'engine' | 'ledger';
 /**
  * The mode for an athlete who has never set `engineRecommendationsEnabled`.
  *
- * Stays `engine` while ledger mode is built (P2-1…P2-7), so no default behaviour changes.
- * P2-8 flips it to `ledger`, after device acceptance. The preference service never writes a
+ * Flipped to `ledger` in P2-8 (ADR-0052 Phase 2, #1167). The preference service never writes a
  * default for the field, so this flip reaches every account that has not chosen explicitly.
+ * Setting `engineRecommendationsEnabled: true` restores legacy engine behaviour as a rollback.
  */
-export const UNSET_PLANNING_AUTHORITY_MODE: PlanningAuthorityMode = 'engine';
+export const UNSET_PLANNING_AUTHORITY_MODE: PlanningAuthorityMode = 'ledger';
 
 export function resolvePlanningAuthorityMode(
     preferences: Pick<UserPreferences, 'engineRecommendationsEnabled'> | null | undefined,

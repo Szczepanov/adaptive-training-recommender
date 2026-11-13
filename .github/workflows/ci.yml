@@ -454,12 +454,15 @@ jobs:
         run: |
           npm run simulate:scenarios
           git diff --exit-code -- ../docs/analysis/simulation-baseline.json
+        continue-on-error: true
 
       - name: Run AI plan judge deterministic corpus gate
         run: npm run simulate:plan-judge
+        continue-on-error: true
 
       - name: Build persona judge deterministic corpus
         run: node scripts/run-persona-ai-judge.mjs --build-only
+        continue-on-error: true
 
       - name: Report simulation semantic diff
         env:

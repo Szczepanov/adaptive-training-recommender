@@ -30,6 +30,7 @@ const mocks = vi.hoisted(() => ({
   recordActualVerdict: vi.fn(),
   assembleMorningDecisionEvidence: vi.fn(),
   replayRecommendationAuditAgainstSessions: vi.fn(),
+  getBlocksInRangeState: vi.fn(),
 }));
 
 vi.mock('react', async importOriginal => ({
@@ -105,7 +106,7 @@ vi.mock('../services/recoverySnapshotService', () => ({
   recoverySnapshotService: { getRecoverySnapshotState: vi.fn().mockResolvedValue({ status: 'MISSING' }) },
 }));
 vi.mock('../services/planBlockService', () => ({
-  planBlockService: { getBlocksInRangeState: vi.fn().mockResolvedValue({ status: 'AVAILABLE', data: [], revision: null }) },
+  planBlockService: { getBlocksInRangeState: mocks.getBlocksInRangeState },
 }));
 vi.mock('../services/intentBlockService', () => ({
   intentBlockService: {
@@ -207,6 +208,7 @@ beforeEach(() => {
   mocks.getActivePlanState.mockResolvedValue({ status: 'AVAILABLE', data: activePlan, revision: null });
   mocks.getActivitiesInRangeState.mockResolvedValue({ status: 'AVAILABLE', data: [], revision: null });
   mocks.getConnectionState.mockResolvedValue({ state: 'disconnected' });
+  mocks.getBlocksInRangeState.mockResolvedValue({ status: 'AVAILABLE', data: [], revision: null });
 });
 
 describe('Home in ledger mode', () => {
@@ -286,6 +288,33 @@ describe('Home in ledger mode', () => {
 
       expectLedgerCardWithTodayPlan(await loadLedgerHome());
       expect(mocks.getConnectionState).not.toHaveBeenCalled();
+    });
+
+    it('runs an imported session inside a travel block as authored when the setting is unset (P2-8 default)', async () => {
+      const unsetPreferences = { ...ledgerDecisionInput.preferences! };
+      delete unsetPreferences.engineRecommendationsEnabled;
+      mocks.composeDailyDecisionInput.mockResolvedValue({ ...ledgerDecisionInput, preferences: unsetPreferences });
+      mocks.getBlocksInRangeState.mockResolvedValue({
+        status: 'AVAILABLE',
+        data: [{
+          id: 'trip', userId: 'u1', phase: 'travel', startDate: '2026-11-12', endDate: '2026-11-13',
+          volumeScale: 0.5, intensityScale: 0.8, createdAt: '', updatedAt: '',
+        }],
+        revision: null,
+      });
+
+      const tree = await loadLedgerHome();
+
+      expect(mocks.getBlocksInRangeState).toHaveBeenCalled();
+      expectLedgerCardWithTodayPlan(tree);
+      const card = tree.find(el => el.type === LedgerTodayCard) as ReactElement<{ sessions: Array<{ session: unknown }> }>;
+      // The authored session reaches the card untouched: no travel re-dose of its 30-40 min gating.
+      expect(card.props.sessions[0].session).toBe(todaySession);
+      expect(todaySession.gating).toMatchObject({ durationMin: 30, durationMax: 40 });
+      expect(mocks.evaluateSameDayRecommendation).not.toHaveBeenCalled();
+      expect(mocks.evaluateReadinessAndSafetyEnvelope).not.toHaveBeenCalled();
+      expect(mocks.adjustSessionRecommendation).not.toHaveBeenCalled();
+      expect(mocks.saveRecommendation).not.toHaveBeenCalled();
     });
 
     it.each(['UNAVAILABLE', 'INVALID'] as const)('loads the plan when the recovery snapshot is %s', async status => {

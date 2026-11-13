@@ -2,6 +2,7 @@ import { expect, test } from '../support/test';
 import {
   completeTypicalCheckin,
   provisionAthlete,
+  seedEngineModePreferences,
   seedRecoverySnapshot,
   signInThroughUi,
 } from '../support/athlete';
@@ -58,6 +59,7 @@ for (const verdictCase of CASES) {
     const athlete = await provisionAthlete();
     const date = await seedRecoverySnapshot(athlete, verdictCase.depleted ? { bodyBatteryWake: 25 } : {});
     const seed = await seedExternalPlanForToday(athlete, verdictCase.kind);
+    await seedEngineModePreferences(athlete, date);
     await signInThroughUi(page, athlete);
     await completeTypicalCheckin(page, athlete, date);
 

@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from './support/test';
-import { provisionAthlete, seedRecoverySnapshot, signInThroughUi, openFixturePicker } from './support/athlete';
+import { provisionAthlete, seedEngineModePreferences, seedRecoverySnapshot, signInThroughUi, openFixturePicker } from './support/athlete';
 import { mondayOfWeek, weekdayOf, seedExternalPlanForToday, seedExternalPlanningMode } from './support/externalPlan';
 import { buildV6Plan, coachSession, strengthDefinition, seedExternalPlanRevision, seedPlacement, seedBundleWindows, importPlan, checkIn, planningBrief, finishStrength, terminalExecution, executionRow, readExecutionPrescription, awaitPerformedOccurrences, readExecutions, readOccurrences, readDocument } from './support/roundTrip';
 import { addDaysToLocalDateString } from '../../src/utils/localDate';
@@ -9,10 +9,12 @@ import { resolvePlacement } from '../../src/engine/externalPlacement';
 import type { SessionDefinition } from '../../src/sessions/models';
 import { parseDailyRecommendation } from '../../src/persistence/parsers/trainingHistory';
 import { assertEffectiveTarget } from './support/mobileAssertions';
+import { openMoreDestination } from './support/navigation';
 
 test('an additional imported session without its own verdict remains read-only', async ({ page }) => {
   const athlete = await provisionAthlete();
   const today = await seedRecoverySnapshot(athlete);
+  await seedEngineModePreferences(athlete, today);
   const plan = buildV6Plan(today, { sessions: [
     coachSession(today, { id: 'primary', title: 'Adjudicated primary' }),
     coachSession(today, { id: 'second', title: 'Unadjudicated second', priority: 'supporting' }),
@@ -41,6 +43,7 @@ test('an additional imported session without its own verdict remains read-only',
 test('V4 scale freezes the exact reduced definition and reports app dose modified', async ({ page }) => {
   const athlete = await provisionAthlete();
   const today = await seedRecoverySnapshot(athlete, { bodyBatteryWake: 25 });
+  await seedEngineModePreferences(athlete, today);
   const full: SessionDefinition = {
     schemaVersion: 1, id: 'scaled-spin', revision: 1, title: 'Scaled spin', intent: 'training', dominantModality: 'cycling', duration: { min: 45, max: 45 },
     blocks: [{ id: 'main', role: 'main', executionMode: 'sequential', steps: [{ id: 'ride', kind: 'exercise', title: 'Ride', exerciseRef: { kind: 'catalog', exerciseId: 'cycling-work' }, dose: { kind: 'duration', seconds: 2700 } }] }],
@@ -77,6 +80,7 @@ test('V4 scale freezes the exact reduced definition and reports app dose modifie
 test('V6 authored rest records unexpected work without inventing an authored session', async ({ page }) => {
   const athlete = await provisionAthlete();
   const today = await seedRecoverySnapshot(athlete);
+  await seedEngineModePreferences(athlete, today);
   const tomorrow = addDaysToLocalDateString(today, 1);
   const plan = buildV6Plan(today, { sessions: [coachSession(tomorrow, { placement: { ...coachSession(tomorrow).placement, week: mondayOfWeek(tomorrow) === mondayOfWeek(today) ? 1 : 2 } })], restDays: [{ id: 'rest-today', week: 1, day: weekdayOf(today) }] });
   await seedExternalPlanRevision(athlete, plan, today);
@@ -101,6 +105,7 @@ test('V6 authored rest records unexpected work without inventing an authored ses
 test('V6 an active plan with no authored session today renders no row for today', async ({ page }) => {
   const athlete = await provisionAthlete();
   const today = await seedRecoverySnapshot(athlete);
+  await seedEngineModePreferences(athlete, today);
   const tomorrow = addDaysToLocalDateString(today, 1);
   const plan = buildV6Plan(today, { sessions: [coachSession(tomorrow, { placement: { ...coachSession(tomorrow).placement, week: mondayOfWeek(tomorrow) === mondayOfWeek(today) ? 1 : 2 } })] });
   await seedExternalPlanRevision(athlete, plan, today);
@@ -112,6 +117,7 @@ test('V6 an active plan with no authored session today renders no row for today'
 test('V7 a gate replacement has exact labels and creates no external occurrence', async ({ page }) => {
   const athlete = await provisionAthlete();
   const today = await seedRecoverySnapshot(athlete);
+  await seedEngineModePreferences(athlete, today);
   const seed = await seedExternalPlanForToday(athlete, 'skip');
   await signInThroughUi(page, athlete);
   await checkIn(page);
@@ -122,8 +128,7 @@ test('V7 a gate replacement has exact labels and creates no external occurrence'
 });
 
 async function importManualDefinition(page: Page): Promise<void> {
-  await page.getByRole('button', { name: 'More' }).click();
-  await page.getByRole('button', { name: /Sessions/ }).click();
+  await openMoreDestination(page, /Sessions/);
   await page.getByRole('button', { name: '＋ New session', exact: true }).click();
   await page.getByRole('button', { name: /Import JSON/ }).click();
   await page.getByLabel('Session definition or Workout Export JSON').fill(JSON.stringify(strengthDefinition));
@@ -134,6 +139,7 @@ async function importManualDefinition(page: Page): Promise<void> {
 test('V8 UI manual replacement names its exact replacement occurrence', async ({ page }) => {
   const athlete = await provisionAthlete();
   const today = await seedRecoverySnapshot(athlete);
+  await seedEngineModePreferences(athlete, today);
   const plan = buildV6Plan(today);
   await seedExternalPlanRevision(athlete, plan, today);
   // Replacement attribution requires a readable, exact singleton placement,
@@ -169,6 +175,7 @@ test('V8 UI manual replacement names its exact replacement occurrence', async ({
 test('V9 plain fixed same-day sessions retain two distinct next-brief rows', async ({ page }) => {
   const athlete = await provisionAthlete();
   const today = await seedRecoverySnapshot(athlete);
+  await seedEngineModePreferences(athlete, today);
   const plan = buildV6Plan(today, { sessions: [coachSession(today, { id: 'primary' }), coachSession(today, { id: 'second', priority: 'supporting' })] });
   expect(resolvePlacement(plan, null).map(item => item.date)).toEqual([today, today]);
   await seedExternalPlanRevision(athlete, plan, today);
@@ -184,6 +191,7 @@ test('V9 plain fixed same-day sessions retain two distinct next-brief rows', asy
 test('V9 an intraday bundle retains two session rows and two genuine workouts', async ({ page }) => {
   const athlete = await provisionAthlete();
   const today = await seedRecoverySnapshot(athlete);
+  await seedEngineModePreferences(athlete, today);
   const shortDefinition = structuredClone(strengthDefinition);
   shortDefinition.duration = { min: 10, max: 15 };
   shortDefinition.blocks = [{ ...shortDefinition.blocks[0], executionMode: 'sequential', steps: [shortDefinition.blocks[0].steps[0]] }];

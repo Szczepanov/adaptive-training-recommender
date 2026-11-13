@@ -1,6 +1,6 @@
 # ADR-0012: Plan Intent and Sequence Planning are the Training Authorities
 
-* **Status:** Accepted
+* **Status:** Superseded by [ADR-0052](./0052-user-ledger-and-external-ai-planning-authority.md) (Phase 2 switch-off, #1167)
 * **Date:** 2026-08-08
 * **Deciders:** Core Engineering Team
 * **Addresses:** F16, F17, F9

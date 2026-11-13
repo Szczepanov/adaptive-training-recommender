@@ -145,7 +145,16 @@ describe('ContextBriefService', () => {
         services.getRecommendationsInRange.mockResolvedValue({ status: 'AVAILABLE', data: [], revision: null });
         services.getTrainingSettingsState.mockResolvedValue({ status: 'MISSING' });
         services.peekTrainingSettingsState.mockResolvedValue({ status: 'MISSING' });
-        services.getPreferencesState.mockResolvedValue({ status: 'MISSING' });
+        services.getPreferencesState.mockResolvedValue({
+            status: 'AVAILABLE',
+            data: {
+                engineRecommendationsEnabled: true,
+                avoidedModalities: [],
+                deprioritizedModalities: [],
+                preferredModalities: [],
+                unavailableModalities: [],
+            },
+        });
         services.getProfileState.mockResolvedValue({ status: 'MISSING' });
         services.getActiveGoalsState.mockResolvedValue({ status: 'MISSING' });
         services.getFixedActivitiesInRangeState.mockResolvedValue({ status: 'AVAILABLE', data: [], revision: null });
@@ -1928,10 +1937,11 @@ describe('ContextBriefService', () => {
     it('reports a failed preferences read, because it owns a hard modality exclusion', async () => {
         services.getPreferencesState.mockResolvedValue({ status: 'UNAVAILABLE', operation: 'read preferences', retryable: true });
         const result = await new ContextBriefService().build('u1', AS_OF, 14);
-        expect(result.unavailableSources).toContain('preferences (modality exclusions may be missing)');
+        expect(result.unavailableSources).toContain('preferences');
     });
 
     it('treats an absent preferences document as configured-nothing, not as a failure', async () => {
+        services.getPreferencesState.mockResolvedValue({ status: 'MISSING' });
         const result = await new ContextBriefService().build('u1', AS_OF, 14);
         expect(result.unavailableSources.join()).not.toContain('preferences');
     });
@@ -2037,13 +2047,12 @@ describe('ContextBriefService', () => {
         services.getRecoverySnapshotsInRangeState.mockRejectedValue(new Error('offline'));
 
         const result = await new ContextBriefService().build('u1', AS_OF, 14);
-        expect(result.text).toContain('# Training context brief');
-        expect(result.unavailableSources).toContain('recovery snapshots');
-        expect(result.unavailableSources).toContain('training settings');
-        expect(result.unavailableSources).toContain('plan blocks / travel overlays');
-        expect(result.unavailableSources).toContain('body measurements');
-        expect(result.text).toContain('Do not assume any equipment or absence of injury');
-        expect(result.text).toContain('DATA INCOMPLETE');
+        expect(result.text).toContain('# Ledger export');
+        expect(result.unavailableSources).toContain('daily_recovery_snapshots');
+        expect(result.unavailableSources).toContain('training_settings');
+        expect(result.unavailableSources).toContain('plan_blocks');
+        expect(result.unavailableSources).toContain('preferences');
+        expect(result.text).toContain('state: unavailable');
     });
 
     it('marks recommendations as unreadable when the read fails, showing "unknown, not none"', async () => {

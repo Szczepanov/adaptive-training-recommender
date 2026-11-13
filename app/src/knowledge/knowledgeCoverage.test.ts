@@ -224,6 +224,9 @@ describe('engine knowledge coverage inventory', () => {
         });
         expect(summary.highImpactUncovered).toBe(0);
         expect(summary.highSafetyUncovered).toBe(0);
+        expect(summary.retiredInPhase2).toBe(78);
+        expect(byId('periodization.event_development_authority')?.retiredInPhase2).toBe(true);
+        expect(byId('goal_feasibility.strength_required_change_bands')?.retiredInPhase2).toBeUndefined();
     });
 
     it('records shadow/observability models outside live decision coverage', () => {

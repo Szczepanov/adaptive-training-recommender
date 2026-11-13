@@ -30,7 +30,7 @@ test('structured ledger download preserves source states and legacy brief at 390
     return rows.docs.some(row => row.data().observedOn === date && row.data().id === 'illness_risk_symptom'
       && row.data().state === 'measured');
   }), { timeout: 20_000 }).toBe(true);
-  const originalBrief = await planningBrief(page);
+  const originalBrief = await planningBrief(page, 'purpose: planning');
   const button = page.getByRole('button', { name: 'Export ledger (JSON)', exact: true });
   await expect(button).toBeVisible();
   await expectActionWithinViewport(page, button, 390, testInfo.outputPath('ledger-actions-390.png'));

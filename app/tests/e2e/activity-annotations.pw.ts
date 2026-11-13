@@ -2,6 +2,7 @@ import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { expect, test } from './support/test';
 import { completeTypicalCheckin, dismissOnboardingIfVisible, provisionAthlete, seedRecoverySnapshot, signInThroughUi } from './support/athlete';
 import { inspectAthlete, seedWithRulesDisabled } from './support/emulator';
+import { openMoreDestination } from './support/navigation';
 
 test('airbike lap watts and RPE stay separate from workout effort and original Garmin telemetry', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 390, height: 844 });
@@ -30,8 +31,7 @@ test('airbike lap watts and RPE stay separate from workout effort and original G
   });
   await signInThroughUi(page, athlete);
   await completeTypicalCheckin(page, athlete, date);
-  await page.getByRole('button', { name: 'More' }).click();
-  await page.getByRole('dialog', { name: 'Navigation & Settings' }).getByRole('button', { name: /Data/ }).click();
+  await openMoreDestination(page, /Data/);
   await dismissOnboardingIfVisible(page);
   await page.getByRole('button', { name: 'Activities', exact: true }).click();
   const laps = page.getByRole('region', { name: 'Lap summaries', exact: true });
