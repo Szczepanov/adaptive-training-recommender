@@ -16,6 +16,7 @@ export function isWorkingEntry(entry: SessionEntry): boolean {
     switch (payload.kind) {
         case 'repetition': return payload.reps > 0 && payload.isWarmup !== true;
         case 'duration': return payload.seconds > 0;
+        case 'distance': return payload.meters > 0;
         case 'checkoff': return payload.completed;
         default: return false;
     }

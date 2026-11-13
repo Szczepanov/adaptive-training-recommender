@@ -20,13 +20,16 @@ describe('deliveredPatternWork (#803 delivered-exposure rule)', () => {
             workingSet('b', { stepId: 'step-up' }),
             entry('c', { kind: 'duration', seconds: 30 }),
             entry('d', { kind: 'checkoff', completed: true }, { stepId: 'lunge' }),
-        ], 'unilateral_lower_body')).toEqual({ workingSets: 4, stepIds: ['lunge', 'split-squat', 'step-up'] });
+            entry('e', { kind: 'distance', meters: 40 }, { stepId: 'walking-lunge' }),
+        ], 'unilateral_lower_body')).toEqual({ workingSets: 5, stepIds: ['lunge', 'split-squat', 'step-up', 'walking-lunge'] });
     });
 
     it.each([
         ['a warm-up set', workingSet('w', { payload: { kind: 'repetition', setIndex: 1, reps: 10, isWarmup: true } })],
         ['a zero-rep set', workingSet('z', { payload: { kind: 'repetition', setIndex: 1, reps: 0 } })],
+        ['a zero-distance set', entry('zd', { kind: 'distance', meters: 0 })],
         ['a deleted set', workingSet('x', { deletedAt: '2026-10-17T08:05:00.000Z' })],
+        ['a deleted distance set', entry('xd', { kind: 'distance', meters: 40 }, { deletedAt: '2026-10-17T08:05:00.000Z' })],
         ['a set without the pattern', workingSet('n', { compositionPatterns: ['knee_dominant_bilateral'] })],
         ['a set with no composition evidence', workingSet('u', { compositionPatterns: undefined })],
         ['an unchecked item', entry('k', { kind: 'checkoff', completed: false })],

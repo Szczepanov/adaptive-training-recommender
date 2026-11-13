@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | `In progress` — the read-only ledgers and #803 unilateral delivered exposure have shipped; #806 long-aerobic-anchor, tissue-specific families and taper/event suppression remain open |
+| **Status** | `Implemented` — read-only ledgers and #803 unilateral delivered exposure (including `distance` working sets) shipped; remaining items closed by owner decision on 2026-11-13 |
 | **Source** | [issue #813](https://github.com/Szczepanov/adaptive-training-recommender/issues/813) |
 | **Behaviour reference** | [`recommendation-engine.md` § Stressor and physical-capability exposure ledgers](../architecture/recommendation-engine.md) |
 | **Authority** | Presentation only. No decision-authority constant, no `POLICY_VERSION` change. |
@@ -40,25 +40,29 @@
     added (ADR-0033 applies to decision-authority rules).
   - `deliveredPatternWork` is the canonical "delivered" reading for this row. It trusts only
     the entry's own stamp. `workouts/movementComposition.ts`
-    `deriveMovementCompositionEvidence` (tests only today) now delegates its `performed`
-    status to `deliveredPatternWork` and shares its `isWorkingEntry` predicate (2026-10-24):
-    authored step metadata no longer credits a set, so pre-#845 unstamped, warm-up-only and
-    distance logs report `unknown`, and deleted sets carry no evidence. A declared
+    `deriveMovementCompositionEvidence` (tests only today) delegates its `performed`
+    status to `deliveredPatternWork` and shares its `isWorkingEntry` predicate (2026-10-24,
+    extended to `distance` entries with `meters > 0` on 2026-11-13):
+    authored step metadata never credits a set, so pre-#845 unstamped, warm-up-only and
+    zero-distance logs report `unknown`, and deleted sets carry no evidence. A declared
     `degradedComposition` still reports `degraded` on any logged set.
-  - Tests: `deliveredComposition.test.ts`, the #803 cases in
+  - Tests: `deliveredComposition.test.ts`, `sessions/movementComposition.test.ts`, the #803 cases in
     `contextBriefExposureLedger.test.ts`, `performedTrainingFactsService.deliveredComposition.test.ts`,
     and the refreshed golden service artifacts.
 
-## Remaining
+## Closure decisions (2026-11-13)
 
-| Item | State | What is missing |
+| Item | Resolution | Rationale / disposition |
 |---|---|---|
-| `long_aerobic_anchor` (#806) | Renders `unknown` | #806 owns a *planning requirement*: `weeklyAerobicDose.ts` `resolveWeeklyAerobicDoseEnvelope` derives `longAnchor` (workout id + minimum duration) from 28-day history. There is no completed-exposure credit helper, and "was a long anchor completed" depends on that athlete-specific per-run duration, which the brief would have to receive as a resolved result from evergreen planning (as #805 does) — and which this export path does not currently carry. Re-deriving it in the ledger would create a second owner of the threshold. **Blocker (2026-10-17):** the clamped duration exists only inside `aerobicPackingForFloor` and is never exposed. The only transport, a runtime-only readout on `Recommendation` beside `capabilityMaintenance`, means an executable change to `rules.ts`, and `check-policy-drift.mjs` then requires a `POLICY_VERSION` bump with no recommendation change behind it. Options are recorded on #813. |
-| #803 evidence coverage | Mostly closed | Catalog tagging (2026-10-18): `split_squat`, `reverse_lunge`, `lateral_lunge`, `step_down` and `single_leg_hip_thrust` now carry `unilateral_lower_body`, so their logged sets (including the re-entry strength split-squat step and swaps to them) confirm the row. Unilateral hops stay #804 impact work, and single-leg calf work belongs to the unmodelled calf family. The runner stamp and swap logic now live in pure `sessions/compositionStamping.ts` (`entryCompositionStamp`, `swappedStepComposition`) with unit tests. Manual authoring (2026-10-20): `ManualSessionBuilder` and `sessionDraft.ts` `createDraftAlternative` now copy the chosen catalog exercise's `compositionPatterns` onto steps and alternatives through `compositionStamping.ts` `authoredComposition`. Changing the movement replaces the stamp; a free-text movement stays untagged even when its name matches a catalog exercise; renaming an alternative keeps its stamp. An alternative that does not preserve a component its step names declares an explicit degradation, and editing a template relaxes a required component that no step still evidences (`relaxUnevidencedRequirements`, shared with saving as a template). JSON import (2026-10-21): `SessionJsonImport` now stamps catalog exercise `compositionPatterns` onto steps and alternatives at import through `compositionStamping.ts` (`stampImportedSessionComposition` using `authoredComposition`). Tags the JSON carries itself are kept; free-text movements stay untagged. Alternatives that do not preserve a step's component declare an explicit `degradedComposition`, and `relaxUnevidencedRequirements` relaxes unevidenced required components. The re-entry workout's unloaded warm-up reverse lunge is now tagged too; it stays out only because warm-up blocks pre-tick `isWarmup`, so an athlete who unticks it would confirm the row (athlete-asserted, low risk). Still open: distance-dosed sets (`distance` entries) never count; a catalog session without an authored requirement treats the step's own patterns as required, so a swap now records an unread `degradedComposition`; and entries logged before #845 carry no stamp. The tests-only `deriveMovementCompositionEvidence` now follows the `deliveredPatternWork` rule (2026-10-24). |
-| Hamstring knee-flexion / calf-soleus / grip-carry | Explicit `unknown`, no exposure date | No issue or canonical model exists. Intentionally never inferred from generic strength. |
-| Taper / event-specific suppression | Deferred | Needs design; not represented outside #805. |
+| Distance-dosed working entries (`kind: 'distance'`) | **Implemented** (2026-11-13) | `isWorkingEntry` in `sessions/deliveredComposition.ts` now counts non-deleted `distance` entries with `meters > 0` alongside `repetition` (`reps > 0`, `!isWarmup`), `duration` (`seconds > 0`), and `checkoff` (`completed`), so `deliveredPatternWork` and `deriveMovementCompositionEvidence` credit stamped distance sets (e.g. walking lunges). |
+| Step-level `degradedComposition` on catalog swaps | **Closed — intentionally unread** (2026-11-13) | Step-level `degradedComposition` recorded on a catalog swap remains intentionally unread by the brief because delivered exposure trusts only the logged entry's own `compositionPatterns` stamp (`entryCompositionStamp` / `swappedStepComposition`). |
+| `long_aerobic_anchor` (#806) | **Parked under ADR-0052 (`#962`)** | #806 owns an engine-authority planning requirement (`weeklyAerobicDose.ts` `resolveWeeklyAerobicDoseEnvelope`). Engine-authority features are parked under ADR-0052 (`#962`), so the row stays explicit `unknown` without a `rules.ts` / `POLICY_VERSION` change. |
+| Taper / event-specific suppression | **Parked under ADR-0052 (`#962`)** | Engine-authority suppression outside `#805`; parked under ADR-0052 (`#962`). |
+| Hamstring knee-flexion / calf-soleus / grip-carry | **Closed — explicit `unknown` by design** | No canonical model exists; intentionally never inferred from generic strength. |
 
 ## Context Brief contract version decision (#894 D3)
+
+**2026-11-13 (#813 `distance` working entries):** counting `kind: 'distance'` (`meters > 0`) in `deliveredPatternWork` leaves the rendered Context Brief format and `unilateral_lower_body` field semantics unchanged, so `CONTEXT_BRIEF_CONTRACT_VERSION` stays unchanged.
 
 **v9 (2026-10-17, #803):** the unilateral lower-body row changes from permanently `unknown`
 to evidence-backed `confirmed`, the explanatory paragraph changes, and the row moves next to

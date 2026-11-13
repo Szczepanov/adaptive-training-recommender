@@ -54,7 +54,7 @@ export function deriveMovementCompositionEvidence(
     const onRequirementSteps = (entry: SessionEntry) => requirement.stepIds.includes(entry.stepId!);
     const deliveredEntries = deliveredPatternEntries(logged.filter(onRequirementSteps), requirement.pattern);
     const hasPerformed = deliveredEntries.length > 0;
-    // A declared degradation is classified evidence even on a non-working (e.g. distance) set.
+    // A declared degradation is classified evidence even on a non-working (e.g. warm-up or zero-distance) set.
     const degradedEntries = logged.filter(entry =>
       onRequirementSteps(entry) && entry.degradedComposition?.pattern === requirement.pattern);
     const evidenceEntries = hasPerformed ? deliveredEntries : degradedEntries;
