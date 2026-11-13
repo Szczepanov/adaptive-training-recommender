@@ -34,6 +34,17 @@ import { SessionEntryActions } from './SessionEntryActions';
 import { ExerciseSwapModal } from './ExerciseSwapModal';
 import { isAddedExercisesBlock } from '../../sessions/addedExerciseStep';
 import { SessionDefinitionPreview } from './SessionDefinitionPreview';
+import { FlagStrip } from '../FlagStrip';
+import { resolveTodayFlagStripItems, type FlagStripItem } from '../../derived/flags/flagStripItems';
+import { evaluateIllnessRiskSymptom } from '../../derived/flags/illnessRiskSymptom';
+import { evaluateInjuryConstraintTouchesSession } from '../../derived/flags/injuryConstraintTouchesSession';
+import type { PersistedFlagEvaluation } from '../../ledger/flagEvaluation';
+import type { DailySubjectiveCheckin, InjuryConstraint } from '../../ledger/models';
+import { hasRecordedRedFlag } from '../../ledger/redFlagPause';
+import { checkinService } from '../../services/checkinService';
+import { flagEvaluationRepository } from '../../services/flagEvaluationPersistence';
+import { trainingSettingsService } from '../../services/trainingSettingsService';
+import { getLocalDateString } from '../../utils/localDate';
 import { isSoundEnabled, setSoundEnabled } from '../../utils/audioFeedback';
 import { SCREEN_LABELS } from '../../types/navigation';
 import { nextSyncAnnouncement } from './syncAnnouncement';
@@ -189,6 +200,10 @@ interface SessionRunnerProps {
     /** Chrome-only execution context. `'assessment'` tints the header and labels the
      * completion sheet with the AssessmentAttempt record; persistence is unchanged. */
     mode?: 'session' | 'assessment';
+    /** Optional check-in override for tests/launch surfaces; otherwise loaded for today. */
+    todayCheckIn?: DailySubjectiveCheckin | null;
+    /** Optional flag items override for tests; otherwise loaded/evaluated for today. */
+    flags?: readonly FlagStripItem[];
 }
 
 /**
@@ -220,6 +235,8 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
     onSessionStateChange,
     onClose,
     mode = 'session',
+    todayCheckIn,
+    flags,
 }) => {
     const runner = useSessionRunner(userId, AVAILABLE_FIXTURES);
     const [syncAnnouncement, setSyncAnnouncement] = useState<string | null>(() => nextSyncAnnouncement(null, runner.syncStatus));
@@ -260,6 +277,38 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
     const [editingSavedDefinitionId, setEditingSavedDefinitionId] = useState<string | null>(null);
     const [updatingSavedDefinitionId, setUpdatingSavedDefinitionId] = useState<string | null>(null);
     const [showArchivedDefinitions, setShowArchivedDefinitions] = useState(false);
+    const [loadedCheckIn, setLoadedCheckIn] = useState<DailySubjectiveCheckin | null>(null);
+    const [capturedFlags, setCapturedFlags] = useState<readonly PersistedFlagEvaluation[]>([]);
+    const [injuryConstraints, setInjuryConstraints] = useState<readonly InjuryConstraint[] | null>(null);
+    const launchToday = getLocalDateString();
+
+    useEffect(() => {
+        let cancelled = false;
+        if (!userId || runner.definition) return () => { cancelled = true; };
+        Promise.all([
+            todayCheckIn !== undefined
+                ? Promise.resolve(null)
+                : checkinService.getCheckinState(userId, launchToday).catch(() => null),
+            flags !== undefined
+                ? Promise.resolve(null)
+                : flagEvaluationRepository.getInRangeState(userId, launchToday, launchToday).catch(() => null),
+            flags !== undefined
+                ? Promise.resolve(null)
+                : trainingSettingsService.peekTrainingSettingsState(userId).catch(() => null),
+        ]).then(([checkinState, flagState, settingsState]) => {
+            if (cancelled) return;
+            if (checkinState?.status === 'AVAILABLE') {
+                setLoadedCheckIn(checkinState.data);
+            }
+            if (flagState?.status === 'AVAILABLE') {
+                setCapturedFlags(flagState.data);
+            }
+            if (settingsState?.status === 'AVAILABLE') {
+                setInjuryConstraints(settingsState.data.injuries ?? null);
+            }
+        });
+        return () => { cancelled = true; };
+    }, [userId, launchToday, runner.definition, todayCheckIn, flags]);
     // #495: session creation collapses to one "New session" entry. The chooser keeps all
     // four sources reachable (saved template, reviewed fixture, JSON import, manual build)
     // without presenting four parallel top-level actions. Import/build delegate to the
@@ -755,17 +804,44 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                 </div>
             );
         }
+        const effectiveCheckIn = todayCheckIn !== undefined ? todayCheckIn : loadedCheckIn;
+        const redFlagPaused = hasRecordedRedFlag(effectiveCheckIn);
+        const launchFlagItems: readonly FlagStripItem[] = flags ?? resolveTodayFlagStripItems({
+            capturedFlags,
+            ...(previewDefinition ? {
+                sessionEvaluations: [{
+                    sessionRef: previewDefinition.header
+                        ? `saved:${previewDefinition.header.definitionId}`
+                        : `fixture:${previewDefinition.definition.id}`,
+                    sessionTitle: previewDefinition.definition.title,
+                    evaluation: evaluateInjuryConstraintTouchesSession(
+                        injuryConstraints,
+                        launchToday,
+                        previewDefinition.definition,
+                    ),
+                }],
+            } : {}),
+            fallbackIllnessRisk: effectiveCheckIn ? evaluateIllnessRiskSymptom(effectiveCheckIn) : null,
+        });
+
         return (
             <div className="session-runner-container no-active">
+                {redFlagPaused && (
+                    <div className="ledger-today-redflag-pause" role="alert">
+                        <strong>Training paused for clinical evaluation</strong>
+                        Today&apos;s check-in recorded a clinical red-flag symptom. Seek clinical evaluation before starting a session.
+                    </div>
+                )}
                 {previewDefinition ? (
                     <section className="session-definition-preview-screen" aria-labelledby="session-definition-preview-title">
                         <button type="button" className="preview-back-button" onClick={() => setPreviewDefinition(null)}>
                             ← All {SCREEN_LABELS.sessions}
                         </button>
                         <h2 id="session-definition-preview-title" className="sr-only">Session preview</h2>
+                        <FlagStrip flags={launchFlagItems} />
                         <SessionDefinitionPreview
                             definition={previewDefinition.definition}
-                            onStart={() => {
+                            onStart={redFlagPaused ? undefined : () => {
                                 if (previewDefinition.header) {
                                     void startSavedDefinition(previewDefinition.header);
                                 } else {
@@ -799,6 +875,7 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                         </div>
                     )}
                 </header>
+                <FlagStrip flags={launchFlagItems} />
                 {savedDefinitionsError && <p className="session-runner-error" role="alert">{savedDefinitionsError}</p>}
                 {creationSource === 'template' && activeSavedDefinitions.length === 0 && archivedSavedDefinitions.length === 0 && !savedDefinitionsError && (
                     <p className="session-runner-subtitle">
@@ -823,9 +900,11 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                                 >
                                     {previewingSavedDefinitionId === header.definitionId ? 'Loading…' : 'Preview'}
                                 </button>
-                                <button type="button" className="start-fixture-btn" disabled={startingSavedDefinitionId !== null} onClick={() => { void startSavedDefinition(header); }}>
-                                    {startingSavedDefinitionId === header.definitionId ? 'Starting…' : 'Start session'}
-                                </button>
+                                {!redFlagPaused && (
+                                    <button type="button" className="start-fixture-btn" disabled={startingSavedDefinitionId !== null} onClick={() => { void startSavedDefinition(header); }}>
+                                        {startingSavedDefinitionId === header.definitionId ? 'Starting…' : 'Start session'}
+                                    </button>
+                                )}
                                 {onBuildSession && <button type="button" className="preview-fixture-btn" disabled={editingSavedDefinitionId !== null} onClick={() => { void editSavedDefinition(header, false); }}>
                                     {editingSavedDefinitionId === header.definitionId ? 'Loading…' : 'Edit'}
                                 </button>}
@@ -872,13 +951,15 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                                 <button type="button" className="preview-fixture-btn" onClick={() => setPreviewDefinition({ definition: fixture })}>
                                     Preview
                                 </button>
-                                <button
-                                    type="button"
-                                    className="start-fixture-btn"
-                                    onClick={() => { void runner.startFixtureSession(fixture); }}
-                                >
-                                    Start Session →
-                                </button>
+                                {!redFlagPaused && (
+                                    <button
+                                        type="button"
+                                        className="start-fixture-btn"
+                                        onClick={() => { void runner.startFixtureSession(fixture); }}
+                                    >
+                                        Start Session →
+                                    </button>
+                                )}
                             </div>
                         </div>
                     ))}

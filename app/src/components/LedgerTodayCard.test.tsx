@@ -346,6 +346,36 @@ describe('LedgerTodayCard', () => {
     expect(baseProps.onStartSession).toHaveBeenLastCalledWith(authoredBinding, { allowDuplicateCompleted: true });
   });
 
+  it('surfaces active D-FLAGS including injury_constraint_touches_session without blocking Start', async () => {
+    const flagOverrides = {
+      flags: [
+        {
+          id: 'injury_constraint_touches_session' as const,
+          active: true,
+          state: 'measured' as const,
+          reasonCode: 'constraint_touches_session',
+          threshold: 'Active knee constraint overlaps Lower Body Strength',
+          sessionRef: 'external_plan:plan-1@2:strength-today',
+          sessionTitle: 'Lower Body Strength',
+          inputs: [
+            { name: 'matched_regions', value: { value: 'knee', source: 'training_settings', state: 'measured' as const } },
+          ],
+        },
+      ],
+    };
+    const html = renderHtml(flagOverrides);
+    expect(html).toContain('Injury constraint touches session');
+    expect(html).toContain('Active (true)');
+    expect(html).toContain('Active knee constraint overlaps Lower Body Strength');
+    expect(html).toContain('Start Lower Body Strength');
+
+    const tree = renderTree(flagOverrides);
+    const startBtn = tree.find(el => el.type === 'button' && el.props['aria-label'] === 'Start Lower Body Strength');
+    expect(startBtn).toBeDefined();
+    startBtn!.props.onClick!();
+    await vi.waitFor(() => expect(baseProps.onStartSession).toHaveBeenCalledTimes(1));
+  });
+
   it('surfaces a resume failure with busy state instead of an unhandled rejection', async () => {
     mocks.slots[0] = {
       'strength-today': { ...authoredBinding, state: 'in_progress' } as SessionExecution,

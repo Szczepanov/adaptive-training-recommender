@@ -1,9 +1,17 @@
 import { useEffect, useState } from 'react';
 import type { ExternalPlacementStatus, ExternalPrescriptionStep } from '../engine/models';
+import type { InjuryConstraint } from '../ledger/models';
 import type { PlacedSession } from '../engine/externalPlacement';
 import { externalSessionDisplayPrescription } from '../engine/externalSessionProfiles';
+import type { PersistedFlagEvaluation } from '../ledger/flagEvaluation';
 import type { DailySubjectiveCheckin } from '../ledger/models';
 import { hasRecordedRedFlag } from '../ledger/redFlagPause';
+import { resolveTodayFlagStripItems, type FlagStripItem, type SessionFlagInput } from '../derived/flags/flagStripItems';
+import { evaluateIllnessRiskSymptom } from '../derived/flags/illnessRiskSymptom';
+import { evaluateInjuryConstraintTouchesSession } from '../derived/flags/injuryConstraintTouchesSession';
+import { flagEvaluationRepository } from '../services/flagEvaluationPersistence';
+import { trainingSettingsService } from '../services/trainingSettingsService';
+import { FlagStrip } from './FlagStrip';
 import {
   externalRestContextForDate,
   type ActiveExternalPlan,
@@ -68,6 +76,7 @@ export interface LedgerTodayCardProps {
   activeExternalPlan: ActiveExternalPlan | null;
   sessions: readonly PlacedSession[];
   todayCheckIn: DailySubjectiveCheckin | null;
+  flags?: readonly FlagStripItem[];
   onNavigate: (screen: Screen) => void;
   onStartSession?: (binding: SessionReferenceBinding, options?: { allowDuplicateCompleted?: boolean }) => void | Promise<void>;
 }
@@ -78,12 +87,15 @@ export function LedgerTodayCard({
   activeExternalPlan,
   sessions,
   todayCheckIn,
+  flags,
   onNavigate,
   onStartSession,
 }: LedgerTodayCardProps) {
   const [executionsBySessionId, setExecutionsBySessionId] = useState<Record<string, SessionExecution>>({});
   const [launchingKey, setLaunchingKey] = useState<string | null>(null);
   const [launchError, setLaunchError] = useState<string | null>(null);
+  const [capturedFlags, setCapturedFlags] = useState<readonly PersistedFlagEvaluation[]>([]);
+  const [injuryConstraints, setInjuryConstraints] = useState<readonly InjuryConstraint[] | null>(null);
 
   const planId = activeExternalPlan?.plan.planId ?? null;
   const revision = activeExternalPlan?.plan.revision ?? null;
@@ -120,6 +132,44 @@ export function LedgerTodayCard({
       });
     return () => { cancelled = true; };
   }, [userId, date, planId, revision, sessions]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (flags !== undefined || !userId || !date) return () => { cancelled = true; };
+    Promise.all([
+      flagEvaluationRepository.getInRangeState(userId, date, date).catch(() => null),
+      trainingSettingsService.peekTrainingSettingsState(userId).catch(() => null),
+    ]).then(([flagState, settingsState]) => {
+      if (cancelled) return;
+      if (flagState?.status === 'AVAILABLE') {
+        setCapturedFlags(flagState.data);
+      } else {
+        setCapturedFlags([]);
+      }
+      if (settingsState?.status === 'AVAILABLE') {
+        setInjuryConstraints(settingsState.data.injuries ?? null);
+      } else {
+        setInjuryConstraints(null);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [userId, date, flags]);
+
+  const flagStripItems: readonly FlagStripItem[] = flags ?? resolveTodayFlagStripItems({
+    capturedFlags,
+    sessionEvaluations: activeExternalPlan
+      ? sessions.map((item): SessionFlagInput => {
+        const sessionRef = `external_plan:${activeExternalPlan.plan.planId}@${activeExternalPlan.plan.revision}:${item.session.id}`;
+        const definition = 'definition' in item.session ? item.session.definition : null;
+        return {
+          sessionRef,
+          sessionTitle: item.session.title,
+          evaluation: evaluateInjuryConstraintTouchesSession(injuryConstraints, date, definition),
+        };
+      })
+      : undefined,
+    fallbackIllnessRisk: todayCheckIn ? evaluateIllnessRiskSymptom(todayCheckIn) : null,
+  });
 
   if (!activeExternalPlan) {
     return (
@@ -405,6 +455,8 @@ export function LedgerTodayCard({
           );
         })}
       </ul>
+
+      <FlagStrip flags={flagStripItems} />
     </section>
   );
 }

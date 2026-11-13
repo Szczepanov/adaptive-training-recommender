@@ -4,6 +4,7 @@ import { resolveRedFlagFindings } from './redFlagFindings';
 
 function makeCheckin(overrides: Partial<DailySubjectiveCheckin> = {}): DailySubjectiveCheckin {
     return {
+        userId: 'user-1',
         date: '2026-11-13',
         readiness: 7,
         sleepQuality: 7,
@@ -14,8 +15,9 @@ function makeCheckin(overrides: Partial<DailySubjectiveCheckin> = {}): DailySubj
         painOrInjury: false,
         illnessSymptoms: false,
         alreadyTrainedToday: false,
+        unusuallyLimitedTime: false,
         ...overrides,
-    };
+    } as DailySubjectiveCheckin;
 }
 
 describe('resolveRedFlagFindings', () => {
