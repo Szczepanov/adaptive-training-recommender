@@ -122,8 +122,10 @@ command matrix in prompts.
   `cd app && npm run check` when you want the same frontend-only gate without the Python
   checks.
 - Engine or policy change → `make simulate` (scenario run, aggregate-bounds gate) plus
-  `cd app && npm run simulate:plan-judge` and the policy-drift check (I5). All three gate
-  CI; `simulate:diff` is advisory there, so read it but do not block on it.
+  `cd app && npm run simulate:plan-judge` and the policy-drift check (I5). Since ADR-0052
+  Phase 2 (P2-8) only the policy-drift check blocks CI; the simulations, plan judge and
+  persona corpus build are advisory there (`continue-on-error`), and local `make verify`
+  still runs and blocks on them. Read their output rather than ignoring a red step.
 - Firestore rules change → `cd app && npm run test:rules` (needs the emulator and Java).
   CI runs it on every code change, not only rules changes.
 - Material UI/UX change → verify the affected states against
