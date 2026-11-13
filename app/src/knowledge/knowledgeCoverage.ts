@@ -377,7 +377,7 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         id: 'safety.clinical_escalation_protocol', domain: 'injury_safety', title: 'Red-flag and clinical escalation protocol',
         currentRule: 'Red-flag presentations (neurological deficit, acute traumatic non-weight-bearing / instability, severe systemic infection with high fever, or rapidly worsening symptoms) halt all physical training recommendations, cap the plan envelope at Rest, and mandate medical evaluation before resuming physical loading.',
         classification: 'safety_invariant', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'high', researchPriority: 'none',
-        codeRefs: ['engine/models.ts:RedFlagFinding', 'engine/adapters.ts:resolveRedFlagFindings', 'engine/rules.ts:evaluateEnvelopes'], knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.clinicalEscalationProtocol],
+        codeRefs: ['ledger/models.ts:RedFlagFinding', 'derived/flags/redFlagFindings.ts:resolveRedFlagFindings', 'engine/rules.ts:evaluateEnvelopes'], knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.clinicalEscalationProtocol],
         coverageRationale: 'The specific red-flag categories, the Rest cap, and the mandatory-referral routing are conservative product policy (CLINICAL_ESCALATION_PRODUCT_POLICY_SOURCE, SEP-C4). Hainline 2017 IOC Pain Consensus and Herring 2024 Initial MSK Assessment support only the boundary that automated athletic prescription must defer to medical evaluation; neither validates this specific routing protocol.',
     },
     {

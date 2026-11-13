@@ -146,7 +146,8 @@ export default defineConfig({
             id.includes('/derived/baselines/multisourceBaselines') ||
             id.includes('/derived/flags/recoveryBeyondBaseline') ||
             id.includes('/derived/flags/illnessRiskSymptom') ||
-            id.includes('/derived/flags/injuryConstraintTouchesSession')
+            id.includes('/derived/flags/injuryConstraintTouchesSession') ||
+            id.includes('/derived/flags/redFlagFindings')
           ) {
             return 'engine-context';
           }

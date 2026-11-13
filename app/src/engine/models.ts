@@ -21,6 +21,7 @@ import type {
     OccupationalLoadBaseline,
     PhysicalWorkCheckin,
     RedFlagCategory,
+    RedFlagFinding,
     SessionCategory,
     SportAccessKey,
     TrainingEnvironment,
@@ -191,12 +192,6 @@ export interface DailyReadiness {
  * record. */
 export type InjuryRegionMappingFamily = 'lower_limb_impact' | 'lower_limb_strength' | 'lumbar_loading' | 'upper_limb_loading';
 export type ClinicalEnvelopeSource = 'pain_or_injury' | 'non_allergy_illness' | 'red_flag';
-
-export interface RedFlagFinding {
-    category: RedFlagCategory;
-    source: 'explicit_checkin' | 'severe_systemic_symptoms';
-    description: string;
-}
 
 export interface InjuryPolicyTrace {
     tissueSeverityApplied: boolean;
