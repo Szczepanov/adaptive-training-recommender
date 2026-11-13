@@ -53,6 +53,12 @@ export interface RedFlagCheckin {
     notes?: string | null;
 }
 
+export interface RedFlagFinding {
+    category: RedFlagCategory;
+    source: 'explicit_checkin' | 'severe_systemic_symptoms';
+    description: string;
+}
+
 /** A user-authored calendar overlay. Travel is intentionally explicit: no event date or
  * activity venue can fabricate one. These blocks are stored under the owning user. */
 export interface AuthoredPlanBlock {

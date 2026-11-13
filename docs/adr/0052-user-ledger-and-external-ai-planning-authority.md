@@ -123,7 +123,7 @@ Rules:
 
 #### Amendment (2026-11-12): red-flag symptoms keep a launch pause (#1167 OQ2)
 
-Red-flag symptoms reported at check-in (ADR-0032; today derived by `engine/adapters.ts`
+Red-flag symptoms reported at check-in (ADR-0032; derived by `derived/flags/redFlagFindings.ts`
 `resolveRedFlagFindings` and surfaced as `clinicalEscalationRequired`) are **not** one of the
 four flags above. They are a medical-escalation stop, and today they pause every session
 launch for that date. The owner decided on 2026-11-12 that they keep doing so after Phase 2:

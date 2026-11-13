@@ -8,6 +8,7 @@ import {
     resolveNextDueStep,
     resolveRestPreviewStep,
     resolveInitialSessionStartOptions,
+    resolveRedFlagLaunchGate,
 } from './SessionRunner';
 import { useSessionRunner } from '../../hooks/useSessionRunner';
 import { formatSessionLoad } from '../../sessions/loadDisplay';
@@ -594,5 +595,99 @@ describe('resolveInitialSessionStartOptions', () => {
     it('leaves the choice absent when the launch did not record one, never inferring authored (#1152)', () => {
         const options = resolveInitialSessionStartOptions({ definition, binding: { sessionSource, prescriptionHash: 'hash-1' } });
         expect(options.executedDefinition).toBeUndefined();
+    });
+});
+
+describe('SessionRunner launch FlagStrip and red-flag pause', () => {
+    it('renders FlagStrip on the launch screen without blocking when no red flag is recorded', () => {
+        const html = renderToStaticMarkup(
+            <SessionRunner
+                userId="user-1"
+                todayCheckIn={null}
+                flags={[
+                    {
+                        id: 'injury_constraint_touches_session',
+                        active: true,
+                        state: 'measured',
+                        reasonCode: 'constraint_touches_session',
+                        threshold: 'Knee constraint touches session',
+                        inputs: [],
+                    },
+                    {
+                        id: 'illness_anomaly',
+                        active: null,
+                        state: 'not_yet_supported',
+                        reasonCode: 'ha7_release_gate_unmet',
+                        threshold: 'Withheld until the HA7 release gate is met',
+                        inputs: [],
+                    },
+                ]}
+            />,
+        );
+        expect(html).toContain('Safety &amp; readiness flags');
+        expect(html).toContain('Injury constraint touches session');
+        expect(html).toContain('Not yet supported (HA7 withheld)');
+        expect(html).not.toContain('Training paused for clinical evaluation');
+    });
+
+    it('shows clinical-evaluation pause and offers no Start when a red flag is recorded', () => {
+        const html = renderToStaticMarkup(
+            <SessionRunner
+                userId="user-1"
+                todayCheckIn={{
+                    userId: 'user-1',
+                    date: '2026-11-13',
+                    readiness: 5,
+                    sleepQuality: 6,
+                    fatigue: 5,
+                    soreness: 4,
+                    mentalStress: 4,
+                    motivation: 6,
+                    painOrInjury: true,
+                    illnessSymptoms: false,
+                    alreadyTrainedToday: false,
+                    unusuallyLimitedTime: false,
+                    redFlags: { present: true, categories: ['neurological'] },
+                } as never}
+                flags={[]}
+            />,
+        );
+        expect(html).toContain('Training paused for clinical evaluation');
+        expect(html).not.toContain('Start session');
+        expect(html).not.toContain('Start Session →');
+    });
+});
+
+describe('resolveRedFlagLaunchGate (#1167 OQ2)', () => {
+    const redFlagCheckIn = { redFlags: { present: true, categories: ['neurological'] } } as never;
+    const cleanCheckIn = { redFlags: { present: false, categories: [] } } as never;
+
+    it('drops an App-level import/build launch and blocks every start when a red flag is recorded', () => {
+        const gate = resolveRedFlagLaunchGate({ todayCheckIn: undefined, loadedCheckIn: redFlagCheckIn, checkInLoad: 'loaded', hasUser: true });
+        expect(gate).toMatchObject({ redFlagPaused: true, launchBlocked: true, initialLaunch: 'drop' });
+    });
+
+    it('holds launches while the check-in read is in flight instead of failing open', () => {
+        const gate = resolveRedFlagLaunchGate({ todayCheckIn: undefined, loadedCheckIn: null, checkInLoad: 'loading', hasUser: true });
+        expect(gate).toMatchObject({ redFlagPaused: false, redFlagCheckPending: true, launchBlocked: true, initialLaunch: 'wait' });
+    });
+
+    it('allows a launch with a notice when the check-in cannot be read', () => {
+        const gate = resolveRedFlagLaunchGate({ todayCheckIn: undefined, loadedCheckIn: null, checkInLoad: 'unavailable', hasUser: true });
+        expect(gate).toMatchObject({ redFlagCheckUnavailable: true, launchBlocked: false, initialLaunch: 'start' });
+    });
+
+    it('starts immediately when the check-in is clean or missing', () => {
+        expect(resolveRedFlagLaunchGate({ todayCheckIn: undefined, loadedCheckIn: cleanCheckIn, checkInLoad: 'loaded', hasUser: true }))
+            .toMatchObject({ launchBlocked: false, initialLaunch: 'start', redFlagCheckUnavailable: false });
+        expect(resolveRedFlagLaunchGate({ todayCheckIn: undefined, loadedCheckIn: null, checkInLoad: 'loaded', hasUser: true }))
+            .toMatchObject({ launchBlocked: false, initialLaunch: 'start' });
+    });
+
+    it('trusts an injected check-in prop over the loader state', () => {
+        expect(resolveRedFlagLaunchGate({ todayCheckIn: redFlagCheckIn, loadedCheckIn: null, checkInLoad: 'loading', hasUser: true }))
+            .toMatchObject({ redFlagPaused: true, initialLaunch: 'drop' });
+        expect(resolveRedFlagLaunchGate({ todayCheckIn: null, loadedCheckIn: null, checkInLoad: 'loading', hasUser: true }))
+            .toMatchObject({ launchBlocked: false, initialLaunch: 'start' });
     });
 });

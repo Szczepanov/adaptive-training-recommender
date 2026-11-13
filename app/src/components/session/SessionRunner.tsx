@@ -34,6 +34,17 @@ import { SessionEntryActions } from './SessionEntryActions';
 import { ExerciseSwapModal } from './ExerciseSwapModal';
 import { isAddedExercisesBlock } from '../../sessions/addedExerciseStep';
 import { SessionDefinitionPreview } from './SessionDefinitionPreview';
+import { FlagStrip } from '../FlagStrip';
+import { resolveTodayFlagStripItems, type FlagStripItem } from '../../derived/flags/flagStripItems';
+import { evaluateIllnessRiskSymptom } from '../../derived/flags/illnessRiskSymptom';
+import { evaluateInjuryConstraintTouchesSession } from '../../derived/flags/injuryConstraintTouchesSession';
+import type { PersistedFlagEvaluation } from '../../ledger/flagEvaluation';
+import type { DailySubjectiveCheckin, InjuryConstraint } from '../../ledger/models';
+import { hasRecordedRedFlag } from '../../ledger/redFlagPause';
+import { checkinService } from '../../services/checkinService';
+import { flagEvaluationRepository } from '../../services/flagEvaluationPersistence';
+import { trainingSettingsService } from '../../services/trainingSettingsService';
+import { getLocalDateString } from '../../utils/localDate';
 import { isSoundEnabled, setSoundEnabled } from '../../utils/audioFeedback';
 import { SCREEN_LABELS } from '../../types/navigation';
 import { nextSyncAnnouncement } from './syncAnnouncement';
@@ -189,6 +200,10 @@ interface SessionRunnerProps {
     /** Chrome-only execution context. `'assessment'` tints the header and labels the
      * completion sheet with the AssessmentAttempt record; persistence is unchanged. */
     mode?: 'session' | 'assessment';
+    /** Optional check-in override for tests/launch surfaces; otherwise loaded for today. */
+    todayCheckIn?: DailySubjectiveCheckin | null;
+    /** Optional flag items override for tests; otherwise loaded/evaluated for today. */
+    flags?: readonly FlagStripItem[];
 }
 
 /**
@@ -211,6 +226,33 @@ export function resolveInitialSessionStartOptions(initialSession: NonNullable<Se
     };
 }
 
+export type CheckInLoadState = 'loading' | 'loaded' | 'unavailable';
+
+/**
+ * #1167 OQ2 launch gate shared by every SessionRunner start path. A recorded red flag
+ * blocks every launch; an in-flight check-in read holds launches (never fails open);
+ * an unreadable check-in allows a launch but must surface a notice.
+ */
+export function resolveRedFlagLaunchGate(options: {
+    readonly todayCheckIn: DailySubjectiveCheckin | null | undefined;
+    readonly loadedCheckIn: DailySubjectiveCheckin | null;
+    readonly checkInLoad: CheckInLoadState;
+    readonly hasUser: boolean;
+}) {
+    const fromProp = options.todayCheckIn !== undefined;
+    const redFlagPaused = hasRecordedRedFlag(fromProp ? options.todayCheckIn ?? null : options.loadedCheckIn);
+    const redFlagCheckPending = !fromProp && options.hasUser && options.checkInLoad === 'loading';
+    const redFlagCheckUnavailable = !fromProp && options.checkInLoad === 'unavailable';
+    const initialLaunch: 'wait' | 'drop' | 'start' = redFlagPaused ? 'drop' : redFlagCheckPending ? 'wait' : 'start';
+    return {
+        redFlagPaused,
+        redFlagCheckPending,
+        redFlagCheckUnavailable,
+        launchBlocked: redFlagPaused || redFlagCheckPending,
+        initialLaunch,
+    };
+}
+
 export const SessionRunner: React.FC<SessionRunnerProps> = ({
     userId,
     initialSession,
@@ -220,6 +262,8 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
     onSessionStateChange,
     onClose,
     mode = 'session',
+    todayCheckIn,
+    flags,
 }) => {
     const runner = useSessionRunner(userId, AVAILABLE_FIXTURES);
     const [syncAnnouncement, setSyncAnnouncement] = useState<string | null>(() => nextSyncAnnouncement(null, runner.syncStatus));
@@ -260,6 +304,53 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
     const [editingSavedDefinitionId, setEditingSavedDefinitionId] = useState<string | null>(null);
     const [updatingSavedDefinitionId, setUpdatingSavedDefinitionId] = useState<string | null>(null);
     const [showArchivedDefinitions, setShowArchivedDefinitions] = useState(false);
+    const [loadedCheckIn, setLoadedCheckIn] = useState<DailySubjectiveCheckin | null>(null);
+    // OQ2: red-flag pause must not fail open while today's check-in is still being read.
+    // 'unavailable' (read failed / invalid) still allows a start but surfaces a notice.
+    const [checkInLoad, setCheckInLoad] = useState<CheckInLoadState>('loading');
+    const [capturedFlags, setCapturedFlags] = useState<readonly PersistedFlagEvaluation[]>([]);
+    const [injuryConstraints, setInjuryConstraints] = useState<readonly InjuryConstraint[] | null>(null);
+    const launchToday = getLocalDateString();
+
+    useEffect(() => {
+        let cancelled = false;
+        if (!userId || runner.definition) return () => { cancelled = true; };
+        Promise.all([
+            todayCheckIn !== undefined
+                ? Promise.resolve(null)
+                : checkinService.getCheckinState(userId, launchToday).catch(() => null),
+            flags !== undefined
+                ? Promise.resolve(null)
+                : flagEvaluationRepository.getInRangeState(userId, launchToday, launchToday).catch(() => null),
+            flags !== undefined
+                ? Promise.resolve(null)
+                : trainingSettingsService.peekTrainingSettingsState(userId).catch(() => null),
+        ]).then(([checkinState, flagState, settingsState]) => {
+            if (cancelled) return;
+            if (checkinState?.status === 'AVAILABLE') {
+                setLoadedCheckIn(checkinState.data);
+            }
+            if (todayCheckIn === undefined) {
+                setCheckInLoad(checkinState?.status === 'AVAILABLE' || checkinState?.status === 'MISSING' ? 'loaded' : 'unavailable');
+            }
+            if (flagState?.status === 'AVAILABLE') {
+                setCapturedFlags(flagState.data);
+            }
+            if (settingsState?.status === 'AVAILABLE') {
+                setInjuryConstraints(settingsState.data.injuries ?? null);
+            }
+        });
+        return () => { cancelled = true; };
+    }, [userId, launchToday, runner.definition, todayCheckIn, flags]);
+
+    const effectiveCheckIn = todayCheckIn !== undefined ? todayCheckIn : loadedCheckIn;
+    // Every start path (picker, preview, companion, App-level import/build launch) honours this.
+    const { redFlagPaused, redFlagCheckUnavailable, launchBlocked, initialLaunch } = resolveRedFlagLaunchGate({
+        todayCheckIn,
+        loadedCheckIn,
+        checkInLoad,
+        hasUser: Boolean(userId),
+    });
     // #495: session creation collapses to one "New session" entry. The chooser keeps all
     // four sources reachable (saved template, reviewed fixture, JSON import, manual build)
     // without presenting four parallel top-level actions. Import/build delegate to the
@@ -432,14 +523,22 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
     useEffect(() => {
         if (!initialSession || runner.isRestoring || initialLaunchAttempted.current) return;
         if (runner.execution) return;
+        if (initialLaunch === 'wait') return;
         initialLaunchAttempted.current = true;
+        if (initialLaunch === 'drop') {
+            // OQ2: no Start for any session while a red flag is recorded. Drop the launch;
+            // the picker renders the clinical-evaluation alert instead.
+            onInitialSessionHandled?.();
+            return;
+        }
         runner.startSession(initialSession.definition, initialSession.binding.sessionSource, resolveInitialSessionStartOptions(initialSession))
             .then(() => onInitialSessionHandled?.()).catch(() => {
             initialLaunchAttempted.current = false;
         });
-    }, [initialSession, onInitialSessionHandled, runner]);
+    }, [initialSession, onInitialSessionHandled, runner, initialLaunch]);
 
     const startSavedDefinition = async (header: SessionDefinitionHeader) => {
+        if (launchBlocked) return;
         const archivedError = archivedSavedDefinitionError(header, 'This template');
         if (archivedError) {
             setSavedDefinitionsError(archivedError);
@@ -527,6 +626,7 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
      * manual definitions -- and starts it as its own independent, no-selection-authority
      * execution (D-MAUTH `unplanned_log`), exactly like starting any other unplanned session. */
     const startCompanion = async (companion: NonNullable<SessionDefinition['companionSessions']>[number]) => {
+        if (launchBlocked) return;
         if (companionPrompt && !isCompanionEligibleNow(companion, companionPrompt.finishedAt, companionPromptNow)) {
             setCompanionError(`"${companion.definitionRef}" isn't available yet -- it opens ${companion.notEarlierThanMinutesAfter} minutes after the primary session finished.`);
             return;
@@ -723,7 +823,7 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                                     <button
                                         type="button"
                                         className="start-fixture-btn"
-                                        disabled={startingCompanionId !== null || !eligible}
+                                        disabled={startingCompanionId !== null || !eligible || launchBlocked}
                                         onClick={() => startCompanion(companion)}
                                     >
                                         {startingCompanionId === companion.id ? 'Starting…' : eligible ? 'Start companion →' : 'Not yet available'}
@@ -755,17 +855,47 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                 </div>
             );
         }
+        const launchFlagItems: readonly FlagStripItem[] = flags ?? resolveTodayFlagStripItems({
+            capturedFlags,
+            ...(previewDefinition ? {
+                sessionEvaluations: [{
+                    sessionRef: previewDefinition.header
+                        ? `saved:${previewDefinition.header.definitionId}`
+                        : `fixture:${previewDefinition.definition.id}`,
+                    sessionTitle: previewDefinition.definition.title,
+                    evaluation: evaluateInjuryConstraintTouchesSession(
+                        injuryConstraints,
+                        launchToday,
+                        previewDefinition.definition,
+                    ),
+                }],
+            } : {}),
+            fallbackIllnessRisk: effectiveCheckIn ? evaluateIllnessRiskSymptom(effectiveCheckIn) : null,
+        });
+
         return (
             <div className="session-runner-container no-active">
+                {redFlagPaused && (
+                    <div className="session-runner-redflag-pause" role="alert">
+                        <strong>Training paused for clinical evaluation</strong>
+                        Today&apos;s check-in recorded a clinical red-flag symptom. Seek clinical evaluation before starting a session.
+                    </div>
+                )}
+                {redFlagCheckUnavailable && (
+                    <p className="session-runner-redflag-unavailable" role="status">
+                        Today&apos;s check-in could not be read, so red-flag symptoms could not be confirmed. If you have any, seek clinical evaluation before starting a session.
+                    </p>
+                )}
                 {previewDefinition ? (
                     <section className="session-definition-preview-screen" aria-labelledby="session-definition-preview-title">
                         <button type="button" className="preview-back-button" onClick={() => setPreviewDefinition(null)}>
                             ← All {SCREEN_LABELS.sessions}
                         </button>
                         <h2 id="session-definition-preview-title" className="sr-only">Session preview</h2>
+                        <FlagStrip flags={launchFlagItems} />
                         <SessionDefinitionPreview
                             definition={previewDefinition.definition}
-                            onStart={() => {
+                            onStart={launchBlocked ? undefined : () => {
                                 if (previewDefinition.header) {
                                     void startSavedDefinition(previewDefinition.header);
                                 } else {
@@ -799,6 +929,7 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                         </div>
                     )}
                 </header>
+                <FlagStrip flags={launchFlagItems} />
                 {savedDefinitionsError && <p className="session-runner-error" role="alert">{savedDefinitionsError}</p>}
                 {creationSource === 'template' && activeSavedDefinitions.length === 0 && archivedSavedDefinitions.length === 0 && !savedDefinitionsError && (
                     <p className="session-runner-subtitle">
@@ -823,9 +954,11 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                                 >
                                     {previewingSavedDefinitionId === header.definitionId ? 'Loading…' : 'Preview'}
                                 </button>
-                                <button type="button" className="start-fixture-btn" disabled={startingSavedDefinitionId !== null} onClick={() => { void startSavedDefinition(header); }}>
-                                    {startingSavedDefinitionId === header.definitionId ? 'Starting…' : 'Start session'}
-                                </button>
+                                {!launchBlocked && (
+                                    <button type="button" className="start-fixture-btn" disabled={startingSavedDefinitionId !== null} onClick={() => { void startSavedDefinition(header); }}>
+                                        {startingSavedDefinitionId === header.definitionId ? 'Starting…' : 'Start session'}
+                                    </button>
+                                )}
                                 {onBuildSession && <button type="button" className="preview-fixture-btn" disabled={editingSavedDefinitionId !== null} onClick={() => { void editSavedDefinition(header, false); }}>
                                     {editingSavedDefinitionId === header.definitionId ? 'Loading…' : 'Edit'}
                                 </button>}
@@ -872,13 +1005,15 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                                 <button type="button" className="preview-fixture-btn" onClick={() => setPreviewDefinition({ definition: fixture })}>
                                     Preview
                                 </button>
-                                <button
-                                    type="button"
-                                    className="start-fixture-btn"
-                                    onClick={() => { void runner.startFixtureSession(fixture); }}
-                                >
-                                    Start Session →
-                                </button>
+                                {!launchBlocked && (
+                                    <button
+                                        type="button"
+                                        className="start-fixture-btn"
+                                        onClick={() => { void runner.startFixtureSession(fixture); }}
+                                    >
+                                        Start Session →
+                                    </button>
+                                )}
                             </div>
                         </div>
                     ))}

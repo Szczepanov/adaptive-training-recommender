@@ -41,6 +41,10 @@
       "reason": "Maps the persisted check-in/goals/settings into SubjectiveInput and UserContext (painFlag, restrictedModalities, clinicalFlagActive) before rules.ts runs, so a change can alter a persisted decision exactly as a change to rules.ts does."
     },
     {
+      "path": "app/src/derived/flags/redFlagFindings.ts",
+      "reason": "resolveRedFlagFindings (relocated from engine/adapters.ts, #1167 P2-3) feeds rules.ts evaluateEnvelopes' clinical red-flag Rest cap, so a change can alter a persisted decision."
+    },
+    {
       "path": "app/src/engine/injuryPolicy.ts",
       "reason": "Structured injury composition creates hard modality/category/guardrail restrictions before rules.ts evaluates the shared safety envelope; guarded beside the adapter so an injury mapping change cannot silently keep an old persisted policy identity."
     },
