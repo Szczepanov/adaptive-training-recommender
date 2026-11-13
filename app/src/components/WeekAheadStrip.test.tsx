@@ -1,3 +1,4 @@
+import type { ActiveExternalPlan } from '../services/activeExternalPlanService';
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { WeekAheadStrip } from './WeekAheadStrip';
@@ -284,5 +285,81 @@ describe('WeekAheadStrip imported plan Today + Next 7 Days multi-session view', 
     expect(html).toContain('Evening Lower Strength');
     expect(html).not.toContain('95-100% FTP');
     expect(html).not.toContain('Workout steps');
+  });
+
+  it('renders imported placements in ledger mode even if an engine plan is also supplied', () => {
+    const html = renderToStaticMarkup(
+      <WeekAheadStrip
+        plan={weekAheadPlan('Engine forecast should not render.')}
+        externalPlan={sampleExternalPlan}
+        today="2026-09-14"
+        userId="u1"
+        planningAuthorityMode="ledger"
+      />,
+    );
+
+    expect(html).toContain('Today &amp; Next 7 Days · Hybrid Build Block');
+    expect(html).toContain('Morning Threshold Ride');
+    expect(html).not.toContain('Recalculates daily as your data changes');
+    expect(html).not.toContain('Engine forecast should not render.');
+  });
+});
+
+describe('WeekAheadStrip planningAuthorityMode (ADR-0052 Phase 2, #1167 P2-4)', () => {
+  it('renders the engine WeekAheadPlan in engine mode when no external plan is active', () => {
+    const html = renderToStaticMarkup(
+      <WeekAheadStrip
+        plan={weekAheadPlan('Easy aerobic day.')}
+        externalPlan={null}
+        planningAuthorityMode="engine"
+      />,
+    );
+
+    expect(html).toContain('Next 7 Days');
+    expect(html).toContain('Recalculates daily as your data changes');
+    expect(html).toContain('Easy aerobic day.');
+    expect(html).not.toContain('No imported plan');
+  });
+
+  it('never renders the engine WeekAheadPlan in ledger mode and shows an empty state with import link', () => {
+    const html = renderToStaticMarkup(
+      <WeekAheadStrip
+        plan={weekAheadPlan('Engine forecast should never appear in ledger mode.')}
+        externalPlan={null}
+        planningAuthorityMode="ledger"
+        onImportPlan={() => {}}
+      />,
+    );
+
+    expect(html).toContain('No imported plan');
+    expect(html).toContain('No active training plan is imported.');
+    expect(html).toContain('Import a training plan');
+    expect(html).not.toContain('Recalculates daily as your data changes');
+    expect(html).not.toContain('Engine forecast should never appear in ledger mode.');
+  });
+
+  it('renders nothing in ledger mode while an imported plan waits for today to resolve', () => {
+    const html = renderToStaticMarkup(
+      <WeekAheadStrip
+        plan={null}
+        externalPlan={{ plan: { planId: 'p', revision: 1 }, placed: [] } as unknown as ActiveExternalPlan}
+        planningAuthorityMode="ledger"
+        onImportPlan={() => {}}
+      />,
+    );
+    expect(html).toBe('');
+  });
+
+  it('renders an honest empty state in ledger mode even without onImportPlan', () => {
+    const html = renderToStaticMarkup(
+      <WeekAheadStrip
+        plan={null}
+        externalPlan={null}
+        planningAuthorityMode="ledger"
+      />,
+    );
+
+    expect(html).toContain('No imported plan');
+    expect(html).toContain('Open Plan to import a coach or AI plan');
   });
 });

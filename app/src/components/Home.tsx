@@ -1841,6 +1841,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
                 externalPlan={activeExternalPlan}
                 today={decisionInput?.date}
                 userId={userId}
+                planningAuthorityMode={isLedgerMode ? 'ledger' : 'engine'}
                 clinicalEscalationRequired={
                   isLedgerMode
                     ? hasRecordedRedFlag(decisionInput?.subjectiveCheckin)

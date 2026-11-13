@@ -526,3 +526,27 @@
   justify-content: flex-end;
   margin-top: 0.2rem;
 }
+
+.week-ahead-empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.week-ahead-import-btn {
+  min-height: var(--touch-target-min, 44px);
+  padding: 0.5rem 1rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  background: var(--color-bg-elevated, #334155);
+  color: var(--color-text-primary, #f8fafc);
+  border: 1px solid var(--color-border, #475569);
+  border-radius: var(--radius-control, 10px);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.week-ahead-import-btn:hover {
+  background: #475569;
+}
