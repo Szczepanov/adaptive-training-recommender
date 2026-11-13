@@ -3,7 +3,27 @@ import type { LedgerExport } from '../../src/ledger/export/schema';
 import { expect, test } from './support/test';
 import { provisionAthlete, seedRecoverySnapshot, signInThroughUi } from './support/athlete';
 import { seedExternalPlanningMode } from './support/externalPlan';
-import { buildV6Plan, checkIn, previewPlan, planningBrief, finishStrength, terminalExecution, executionRow, awaitPerformedOccurrences, readPerformedOccurrences, seedActivityForExecution, readCollection, readDocument } from './support/roundTrip';
+import {
+  awaitPerformedOccurrences,
+  buildV5Plan,
+  buildV6Plan,
+  checkIn,
+  checkInLedgerMode,
+  coachSession,
+  executionRow,
+  exportLedgerJson,
+  finishStrength,
+  ledgerPlanningBrief,
+  planningBrief,
+  previewPlan,
+  readCollection,
+  readDocument,
+  readPerformedOccurrences,
+  seedActivityForExecution,
+  seedLedgerModePreferences,
+  strengthDefinition,
+  terminalExecution,
+} from './support/roundTrip';
 import type { SessionEntry } from '../../src/sessions/models';
 import { addDaysToLocalDateString } from '../../src/utils/localDate';
 import { parseDailyRecommendation } from '../../src/persistence/parsers/trainingHistory';
@@ -84,4 +104,108 @@ test('V12 abandoned external execution retains logged evidence and exact next-br
   const recommendation = await readDocument(athlete, `daily_recommendations/${today}`);
   expect(parseDailyRecommendation(recommendation, `users/${athlete.userId}/daily_recommendations/${today}`)).toMatchObject({ status: 'AVAILABLE' });
   expect(await planningBrief(page)).toContain(executionRow(today, plan, execution));
+});
+
+test('ledger mode exports, imports external-plan@6 with reducedDefinition, executes offline, and re-exports executedDefinition (P2-7)', async ({ page, context }) => {
+  const athlete = await provisionAthlete();
+  const today = await seedRecoverySnapshot(athlete);
+  await seedLedgerModePreferences(athlete, today);
+  await seedExternalPlanningMode(athlete);
+
+  const reducedDefinition = {
+    ...structuredClone(strengthDefinition),
+    title: 'E2E coach strength (Reduced)',
+    summary: 'Reduced maintenance strength.',
+    duration: { min: 15, max: 25 },
+    blocks: structuredClone(strengthDefinition.blocks.slice(0, 2)),
+  };
+  const session = coachSession(today, {
+    scaling: {
+      reducible: true,
+      reducedSummary: 'Cut volume in half.',
+      reducedDefinition,
+    },
+  });
+  const plan = buildV6Plan(today, { sessions: [session] });
+
+  await signInThroughUi(page, athlete);
+
+  // 1. Export the ledger before importing.
+  const initialBrief = await ledgerPlanningBrief(page);
+  expect(initialBrief).toContain('schemaVersion: ledger-export-v1');
+  const initialLedger = await exportLedgerJson(page);
+  expect(initialLedger.facts.performedTraining.items).toHaveLength(0);
+
+  // 2. Import an external-plan@6 plan containing scaling.reducedDefinition.
+  await previewPlan(page, plan);
+  await page.getByRole('button', { name: 'Import this plan' }).click();
+  await expect(page.getByRole('heading', { name: `This week in ${plan.title}` })).toBeVisible();
+
+  // 3. Check in and execute the reduced session offline through LedgerTodayCard.
+  await checkInLedgerMode(page);
+  await page.getByRole('button', { name: `Start reduced version of ${session.title}`, exact: true }).click();
+  await expect(page).toHaveURL(/\?screen=sessions$/);
+  await expect(page.getByRole('button', { name: 'Log repetition set' })).toBeVisible();
+
+  await context.setOffline(true);
+  await page.getByLabel('Warm-up').uncheck();
+  await page.getByRole('button', { name: 'Log repetition set' }).click();
+  await expect(page.locator('.entry-row')).toHaveCount(1);
+  await expect(page.locator('.sync-pill')).toHaveText('queued');
+
+  await context.setOffline(false);
+  await expect(page.locator('.sync-pill')).toHaveText('synced', { timeout: 30_000 });
+  await page.getByRole('button', { name: /Finish Session \(/ }).click();
+  await page.getByRole('button', { name: 'Finish & Save Session', exact: true }).click();
+  await expect(page).toHaveURL(/\?screen=home$/);
+
+  const execution = await terminalExecution(athlete);
+  expect(execution.sessionSource).toMatchObject({ kind: 'external_plan', planId: plan.planId, revision: 1, sessionId: 'session-today' });
+  expect(execution.executedDefinition).toBe('reduced');
+
+  const [performed] = await awaitPerformedOccurrences(athlete, today, 1);
+
+  // 4. Re-export the ledger and verify performed occurrence + executedDefinition.
+  await ledgerPlanningBrief(page);
+  const reexported = await exportLedgerJson(page);
+  expect(reexported.facts.performedTraining.items).toHaveLength(1);
+  expect(reexported.facts.performedTraining.items[0].id).toBe(performed.performedOccurrenceId);
+  expect(reexported.facts.performedTraining.items[0].fields.executedDefinitions.value).toEqual([
+    { executionId: execution.executionId, executedDefinition: 'reduced' },
+  ]);
+  expect(reexported.coachingHistory.plannedToPerformed.items[0].fields).toMatchObject({
+    planId: { value: plan.planId },
+    sessionId: { value: 'session-today' },
+    performedOccurrenceRef: { value: performed.performedOccurrenceId },
+  });
+});
+
+test('v5 compatibility: external-plan@5 imports, executes, and exports in ledger mode', async ({ page }) => {
+  const athlete = await provisionAthlete();
+  const today = await seedRecoverySnapshot(athlete);
+  await seedLedgerModePreferences(athlete, today);
+  await seedExternalPlanningMode(athlete);
+  const plan = buildV5Plan(today);
+
+  await signInThroughUi(page, athlete);
+  await previewPlan(page, plan);
+  await page.getByRole('button', { name: 'Import this plan' }).click();
+  await expect(page.getByRole('heading', { name: `This week in ${plan.title}` })).toBeVisible();
+
+  await checkInLedgerMode(page);
+  await page.getByRole('button', { name: `Start ${plan.sessions[0].title}`, exact: true }).click();
+  await finishStrength(page);
+
+  const execution = await terminalExecution(athlete);
+  expect(execution.sessionSource).toMatchObject({ kind: 'external_plan', planId: plan.planId, revision: 1, sessionId: 'session-today' });
+  expect(execution.executedDefinition).toBe('authored');
+
+  const [performed] = await awaitPerformedOccurrences(athlete, today, 1);
+  await ledgerPlanningBrief(page);
+  const ledger = await exportLedgerJson(page);
+  expect(ledger.facts.performedTraining.items).toHaveLength(1);
+  expect(ledger.facts.performedTraining.items[0].id).toBe(performed.performedOccurrenceId);
+  expect(ledger.facts.performedTraining.items[0].fields.executedDefinitions.value).toEqual([
+    { executionId: execution.executionId, executedDefinition: 'authored' },
+  ]);
 });
