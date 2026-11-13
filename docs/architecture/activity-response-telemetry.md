@@ -270,6 +270,27 @@ acceptance criterion is at least 95% preservation of source-supported features, 
 calibration reports. This harness is evaluation infrastructure; it does not dynamically
 change recommendation policy or persist a downsampled raw trace.
 
+## Controlled running pace–HR evidence gate (Issue #920)
+
+Live `running_steady_pace_hr` comparison in `decideSessionComparability` (`app/src/engine/contextBriefComparability.ts`) remains unwired for provider-only records, and no new Garmin provider request or persisted provider-field expansion is made.
+
+An audit of already-acquired Garmin provider fields (`src/garmin_sync/mapper.py` `activity_to_firestore_dict`, `src/garmin_sync/activity_response.py` `supports_activity_response`, `src/garmin_sync/_hr_fidelity_devices.py` `derive_hr_source_from_devices`, `app/src/ledger/models.ts` `NormalizedGarminActivity`) and structured execution records (`app/src/sessions/models.ts` `SessionDefinition`, `SessionExecution`, `SessionEntry`) established the following gaps:
+
+- **Existing provider fields**: `NormalizedGarminActivity.type`, `durationMin`, `averageHr`, `maxHr`, `stimulusDomain`, `fitWorkoutFingerprint`, `laps` (`ActivityLapSummary`: `durationSeconds`, `distanceMeters`, `averageSpeedMps`, `averageHrBpm`, `maxHrBpm`, `averagePowerWatts`), `runningDynamics` (`RunningDynamics`), and `hrMeasurement` (`HrMeasurement`). `supports_activity_response` restricts `activityResponse` derivation to `_CYCLING_TYPES`, so running activities do not receive `activityResponse` telemetry.
+- **Missing controlled-venue signal**: provider-only records and current unannotated structured execution records do not capture treadmill speed/distance calibration, locked incline, verified standard track geometry, or outdoor route/grade/wind/surface controls. Garmin `type` labels (such as `treadmill_running` or `track_running`), `runningDynamics`, pace stability, and matching duration do not establish controlled conditions.
+- **Missing standardized executed protocol**: `fitWorkoutFingerprint` identifies workout structure only by workout name and step indices, and `laps` may be auto-laps without semantic protocol adherence.
+- **Missing running pace/distance quality signal**: `ActivityLapSummary.distanceMeters` and `averageSpeedMps` carry no GPS, footpod, or treadmill-console calibration/accuracy provenance.
+- **Missing running pace–HR use case in `activityHrFidelity.ts`**: `HrUseCase` (`USE_CASE_POLICY` in `app/src/engine/activityHrFidelity.ts`) has no running pace–HR policy, and its `AEROBIC_DECOUPLING` / `INTERVAL_RESPONSE` rules do not enforce chest-strap provenance for running motion risk.
+
+For explicitly evidenced sessions, `app/src/derived/training/runningPaceHrEvidence.ts` (`evaluateControlledRunningPaceHrComparison`, `evaluateRunningPaceHrAuthority`) defines the pure, display-only, fail-closed eligibility and comparability contract outside `app/scripts/decision-affecting-files.json` (`POLICY_VERSION` unchanged). A pair is comparable only when both sessions establish:
+
+1. explicit controlled venue (`calibrated_treadmill` with verified calibration and locked incline, or `verified_standard_track`; `outdoor_road` and `trail` are deterministically excluded);
+2. completed, matching standardized executed protocol (`protocolId`, revision/hash when present, step identities, durations, and target speeds);
+3. verified/acceptable pace-distance quality with controlled provenance (`calibrated_treadmill_console`, `verified_track_splits`, or `calibrated_footpod`; `gps` and `unverified` are rejected);
+4. running-specific HR-use authority requiring `electrode_chest_strap`, `external` source, `confirmed` provenance, `high` measurement confidence, `clean` signal quality, and `verified_same_effective_trace` summary compatibility (optical `wrist_ppg`, `unknown`, `unreliable`, and discordant traces are rejected).
+
+Eligible pairs emit a bounded `controlled_pace_hr_response_proxy` with `confidenceCeiling: 'moderate'`, explicit provenance and limitations, and never claim `"running economy"`.
+
 ## Boundaries and non-goals
 
 This work does not:
