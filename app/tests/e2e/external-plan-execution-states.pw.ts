@@ -9,6 +9,7 @@ import { resolvePlacement } from '../../src/engine/externalPlacement';
 import type { SessionDefinition } from '../../src/sessions/models';
 import { parseDailyRecommendation } from '../../src/persistence/parsers/trainingHistory';
 import { assertEffectiveTarget } from './support/mobileAssertions';
+import { openMoreDestination } from './support/navigation';
 
 test('an additional imported session without its own verdict remains read-only', async ({ page }) => {
   const athlete = await provisionAthlete();
@@ -127,8 +128,7 @@ test('V7 a gate replacement has exact labels and creates no external occurrence'
 });
 
 async function importManualDefinition(page: Page): Promise<void> {
-  await page.getByRole('button', { name: 'More' }).click();
-  await page.getByRole('button', { name: /Sessions/ }).click();
+  await openMoreDestination(page, /Sessions/);
   await page.getByRole('button', { name: '＋ New session', exact: true }).click();
   await page.getByRole('button', { name: /Import JSON/ }).click();
   await page.getByLabel('Session definition or Workout Export JSON').fill(JSON.stringify(strengthDefinition));

@@ -72,8 +72,11 @@ const settings: TrainingSettings = {
   updatedAt: TIMESTAMP,
 };
 
+// The engine-mode fixtures (morning card, AI forecast, verdict) opt in explicitly: since the
+// ADR-0052 P2-8 flip an unset setting resolves to ledger mode. Ledger fixtures set `false`.
 const preferences: UserPreferences = {
   userId: VISUAL_USER_ID,
+  engineRecommendationsEnabled: true,
   preferredRecoveryStyle: 'active',
   defaultWeekdayTimeMin: 60,
   defaultWeekendTimeMin: 90,
@@ -187,6 +190,9 @@ const eventGoal: UserGoal & { id: string } = {
   createdAt: TIMESTAMP,
   updatedAt: TIMESTAMP,
 };
+
+/** An athlete who never chose a planning authority: resolves to ledger mode (P2-8 default). */
+const defaultModePreferences: UserPreferences = { ...preferences, engineRecommendationsEnabled: undefined };
 
 function buildFixture(
   overrides: Partial<Pick<VisualFixture, 'settings' | 'preferences' | 'checkin' | 'recovery' | 'goals' | 'activities' | 'externalPlan' | 'strengthSession' | 'savedTemplates' | 'decisionJournalEntry' | 'initialSession' | 'resumeExecution'>> = {},
@@ -868,8 +874,11 @@ export const VISUAL_SCENARIOS: VisualScenario[] = [
     id: 'coach-preferences',
     title: 'Coach preferences',
     screen: 'preferences',
-    expectedFocus: ['Preference groups and save affordances are clear.'],
-    fixture: standardFixture,
+    expectedFocus: [
+      'Preference groups and save affordances are clear.',
+      'Advanced: legacy engine recommendations shows its default (off) state.',
+    ],
+    fixture: buildFixture({ preferences: defaultModePreferences }),
   },
   {
     id: 'session-runner-in-progress',

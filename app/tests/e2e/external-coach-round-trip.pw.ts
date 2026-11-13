@@ -27,6 +27,7 @@ import {
 import type { SessionEntry } from '../../src/sessions/models';
 import { addDaysToLocalDateString } from '../../src/utils/localDate';
 import { parseDailyRecommendation } from '../../src/persistence/parsers/trainingHistory';
+import { openMoreDestination } from './support/navigation';
 
 test('a validated v6 coach plan completes and Garmin enriches the same next-brief occurrence (V10)', async ({ page }) => {
   const athlete = await provisionAthlete();
@@ -50,8 +51,7 @@ test('a validated v6 coach plan completes and Garmin enriches the same next-brie
   const [performed] = await awaitPerformedOccurrences(athlete, today, 1);
   expect(text).toContain(executionRow(today, plan, execution, performed.performedOccurrenceId));
   const activityId = await seedActivityForExecution(athlete, execution);
-  await page.getByRole('button', { name: 'More' }).click();
-  await page.getByRole('button', { name: /Data/ }).click();
+  await openMoreDestination(page, /Data/);
   await page.getByRole('button', { name: 'Activities', exact: true }).click();
   // .env.e2e enables the canonical Activities read model, so opening Activities already
   // sweeps; calling the window loader directly additionally pins the sweep to this date

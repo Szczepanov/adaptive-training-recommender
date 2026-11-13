@@ -3,6 +3,7 @@ import { collection, doc, getDoc, getDocs, setDoc } from 'firebase/firestore';
 import { expect, type Page } from '@playwright/test';
 import { getLocalDateString } from '../../../src/utils/localDate';
 import { AUTH_EMULATOR_URL, inspectAthlete, seedWithRulesDisabled } from './emulator';
+import { openMoreDestination } from './navigation';
 
 const password = 'E2ePassword!42';
 
@@ -192,8 +193,7 @@ export async function signUpThroughUi(page: Page): Promise<{ email: string; pass
 }
 
 export async function openFixturePicker(page: Page): Promise<void> {
-  await page.getByRole('button', { name: 'More' }).click();
-  await page.getByRole('button', { name: /Sessions/ }).click();
+  await openMoreDestination(page, /Sessions/);
   await page.getByRole('button', { name: '＋ New session', exact: true }).click();
   await page.getByRole('button', { name: 'From fixture', exact: true }).click();
   await page.getByRole('button', { name: 'Start Session →', exact: true }).first().waitFor();

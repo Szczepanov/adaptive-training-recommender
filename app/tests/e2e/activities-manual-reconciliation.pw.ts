@@ -14,6 +14,7 @@ import type { NormalizedGarminActivity } from '../../src/engine/models';
 import type { SessionExecution } from '../../src/sessions/models';
 import { parseNormalizedGarminActivity } from '../../src/persistence/parsers/trainingHistory';
 import { addDaysToLocalDateString } from '../../src/utils/localDate';
+import { openMoreDestination } from './support/navigation';
 
 // DataView swallows these (console.warn) so the UI keeps rendering; a swallowed failure
 // would otherwise look like a missing card rather than the real defect.
@@ -61,8 +62,7 @@ const seedActivity = (athlete: E2EAthlete, activity: NormalizedGarminActivity) =
 
 async function openActivities(page: Page): Promise<Locator> {
   await dismissOnboardingIfVisible(page, 200);
-  await page.getByRole('button', { name: 'More' }).click();
-  await page.getByRole('button', { name: /Data/ }).click();
+  await openMoreDestination(page, /Data/);
   await page.getByRole('button', { name: 'Activities', exact: true }).click();
   return page.locator('article.activity-telemetry-card');
 }
