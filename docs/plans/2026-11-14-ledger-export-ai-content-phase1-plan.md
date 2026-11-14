@@ -6,7 +6,7 @@
 
 **Goal:** After a session, one tap copies a compact, planned-vs-performed Markdown session report for the external AI chat.
 
-**Architecture:** Extend the existing per-workout export (`completed_workout_v1`, built from the History read model `CompletedWorkoutView`) with the missing fields. Add a pure Markdown view of the same export. Wire a **Copy for AI** action on the History card and in the runner's post-completion state. No ledger-export or engine change.
+**Architecture:** Extend the existing per-workout export (`completed_workout_v1`, built from the History read model `CompletedWorkoutView`) with the missing fields. Add a pure Markdown view of the same export. Wire a **Copy for AI** action on the History card and on Home's `LedgerTodayCard` (`LedgerSessionAiCopyButton`). No ledger-export or engine change.
 
 **Tech Stack:** React + TypeScript, Vitest, Playwright (browser E2E, Firebase emulators).
 

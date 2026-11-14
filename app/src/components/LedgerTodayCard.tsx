@@ -412,7 +412,7 @@ export function LedgerTodayCard({
                     />
                   )}
                   {existingExec?.state === 'completed' && (
-                    <LedgerSessionAiCopyButton userId={userId} execution={existingExec} />
+                    <LedgerSessionAiCopyButton userId={userId} execution={existingExec} title={session.title} />
                   )}
                   {canLaunch && (
                     <>

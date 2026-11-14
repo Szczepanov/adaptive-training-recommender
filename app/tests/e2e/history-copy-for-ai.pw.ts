@@ -46,10 +46,10 @@ test('a completed session copies a Markdown report for AI from Home and History'
   await expect.poll(async () => (await readExecutions(athlete)).filter(e => e.state === 'completed').length).toBe(1);
 
   // Home: the post-session entry point on the completed LedgerTodayCard row.
-  const homeButton = page.getByRole('button', { name: 'Copy session for AI', exact: true });
+  const homeButton = page.getByRole('button', { name: `Copy ${session.title} for AI`, exact: true });
   await expect(homeButton).toBeVisible();
   await homeButton.click();
-  await expect(page.getByRole('button', { name: '✓ Copied for AI' })).toBeVisible();
+  await expect(homeButton).toHaveText('✓ Copied for AI');
   expectSessionReport(await readClipboard(page));
 
   // History: Data > Activities, at phone and desktop width.

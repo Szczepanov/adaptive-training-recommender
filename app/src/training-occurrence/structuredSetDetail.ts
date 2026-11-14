@@ -20,6 +20,7 @@ import type {
     SessionRestEvent,
     SessionStep,
 } from '../sessions/models';
+import { resolveEffectiveChoiceEntries } from '../sessions/choiceResolution';
 import { exerciseRefKey, exerciseRefName, stepName } from '../sessions/stepDisplay';
 
 export interface PrescribedStepTarget {
@@ -109,7 +110,7 @@ function isWarmupPayload(payload: SessionEntryPayload): boolean {
     return payload.kind === 'repetition' && payload.isWarmup === true;
 }
 
-/** Steps with neither a prescription nor logged work (e.g. a pure `transition`/`rest`
+/** Steps with neither a prescription, logged work nor a recorded choice (e.g. a pure `transition`/`rest`
  * step nobody logged against) are omitted -- they carry nothing to compare. */
 export function buildStructuredStepDetails(
     definition: SessionDefinition,
@@ -141,7 +142,7 @@ export function buildStructuredStepDetails(
         for (const step of block.steps) {
             definedStepIds.add(step.id);
             const stepEntries = sortedByCompletion(entriesByStepId.get(step.id) ?? []);
-            if (step.kind !== 'exercise' && stepEntries.length === 0) continue;
+            if (step.kind !== 'exercise' && stepEntries.length === 0 && !choicesByStepId.has(step.id)) continue;
             details.push({
                 stepId: step.id,
                 ...(step.exerciseRef ? { exerciseRef: step.exerciseRef } : {}),
@@ -172,9 +173,10 @@ function collectChoices(
 ): Map<string, StepChoiceDetail[]> {
     const optionSets = definition.blocks.flatMap(block => block.optionSets ?? []);
     const byStepId = new Map<string, StepChoiceDetail[]>();
-    for (const entry of sortedByCompletion(entries)) {
+    // Only the effective entry of each correction chain governed the session.
+    const live = entries.filter(entry => !entry.deletedAt);
+    for (const entry of resolveEffectiveChoiceEntries(live)) {
         const payload = entry.payload;
-        if (entry.deletedAt || payload.kind !== 'choice') continue;
         const optionSet = optionSets.find(set => set.id === payload.choiceId);
         const stepId = entry.stepId ?? optionSet?.appliesAtStepId;
         if (!stepId) continue;

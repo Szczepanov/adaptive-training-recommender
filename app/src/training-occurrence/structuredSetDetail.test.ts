@@ -204,6 +204,52 @@ describe('buildStructuredStepDetails', () => {
         expect(squat?.sets).toEqual([]);
     });
 
+    it('exports only the effective choice of a supersession chain', () => {
+        const def = {
+            ...definition,
+            blocks: [{ ...definition.blocks[0], optionSets: [{
+                id: 'c1',
+                appliesAtStepId: 'squat',
+                trigger: { kind: 'athlete_observed', description: 'knee pain' },
+                options: [
+                    { id: 'o1', label: 'Skip', actions: [] },
+                    { id: 'o2', label: 'Goblet squat', actions: [] },
+                ],
+            }] }],
+        } as SessionDefinition;
+        const mk = (id: string, at: string, optionId: string, extra: object = {}) => ({
+            id, executionId: 'exec-1', completedAt: at, createdAt: at, updatedAt: at,
+            payload: { kind: 'choice', choiceId: 'c1', optionId }, ...extra,
+        }) as SessionEntry;
+        const entries = [
+            mk('ch-1', '2026-08-26T07:01:00.000Z', 'o1'),
+            mk('ch-2', '2026-08-26T07:02:00.000Z', 'o2', { supersedesChoiceEntryId: 'ch-1' }),
+        ];
+        const squat = buildStructuredStepDetails(def, entries, []).find(step => step.stepId === 'squat');
+        expect(squat?.choices).toEqual([{ choiceId: 'c1', optionId: 'o2', optionLabel: 'Goblet squat', completedAt: '2026-08-26T07:02:00.000Z' }]);
+    });
+
+    it('keeps a choice anchored at a non-exercise step', () => {
+        const def = {
+            ...definition,
+            blocks: [{ ...definition.blocks[0],
+                steps: [...definition.blocks[0].steps, { id: 'gate', kind: 'transition', title: 'Gate' }],
+                optionSets: [{
+                    id: 'c9',
+                    appliesAtStepId: 'gate',
+                    trigger: { kind: 'athlete_observed', description: 'tired' },
+                    options: [{ id: 'oa', label: 'End early', actions: [] }],
+                }] }],
+        } as unknown as SessionDefinition;
+        const at = '2026-08-26T07:03:00.000Z';
+        const choice = {
+            id: 'ch-9', executionId: 'exec-1', completedAt: at, createdAt: at, updatedAt: at,
+            payload: { kind: 'choice', choiceId: 'c9', optionId: 'oa' },
+        } as SessionEntry;
+        const gate = buildStructuredStepDetails(def, [choice], []).find(step => step.stepId === 'gate');
+        expect(gate?.choices?.[0]?.optionLabel).toBe('End early');
+    });
+
     it('excludes tombstoned entries from sets and choices', () => {
         const def = {
             ...definition,

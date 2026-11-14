@@ -14,6 +14,7 @@ import { manualLinkCandidatesFor, type CompletedWorkoutView, type ManualLinkCand
 import type { PerformedRestDetail, PrescribedStepTarget } from '../training-occurrence/structuredSetDetail';
 import { sourceKeyForRef } from '../training-occurrence/sourceIdentity';
 import { formatCompletedWorkoutJson, resolveCompletedWorkoutDuration } from '../training-occurrence/completedWorkoutJsonExport';
+import { copyDeferredText } from '../utils/copyDeferredText';
 import { sessionResponseService } from '../services/sessionResponseService';
 import { buildWorkoutAiCopy, loadWorkoutResponses, type ResponseLoader } from './completedWorkoutCopy';
 import {
@@ -366,29 +367,35 @@ export function CompletedWorkoutList({ workouts, exportWindow, windowSweep, onRe
     ? executionId => sessionResponseService.getResponsesForSource(userId, { kind: 'execution', id: executionId })
     : undefined;
 
-  const flashCopied = (key: string) => {
+  const flash = (key: string) => {
     setCopiedId(key);
     setTimeout(() => setCopiedId(curr => (curr === key ? null : curr)), 2000);
   };
 
-  const handleCopy = async (workout: CompletedWorkoutView) => {
+  // The text promise is created synchronously in the click so the clipboard write keeps the
+  // user gesture (WebKit rejects writes that follow an await on Firestore reads).
+  const copyWorkout = async (key: string, errorLabel: string, text: Promise<string>) => {
     try {
-      const responses = await loadWorkoutResponses(workout, responseLoader);
-      await navigator.clipboard.writeText(formatCompletedWorkoutJson(workout, new Date().toISOString(), responses));
-      flashCopied(workout.performedOccurrenceId);
+      await copyDeferredText(text);
+      flash(key);
     } catch (err) {
-      console.error('Failed to copy activity JSON', err);
+      console.error(errorLabel, err);
+      flash(`fail:${key}`);
     }
   };
 
-  const handleCopyForAi = async (workout: CompletedWorkoutView) => {
-    try {
-      await navigator.clipboard.writeText(await buildWorkoutAiCopy(workout, new Date().toISOString(), responseLoader));
-      flashCopied(`ai:${workout.performedOccurrenceId}`);
-    } catch (err) {
-      console.error('Failed to copy session report for AI', err);
-    }
-  };
+  const handleCopy = (workout: CompletedWorkoutView) => copyWorkout(
+    workout.performedOccurrenceId,
+    'Failed to copy activity JSON',
+    loadWorkoutResponses(workout, responseLoader)
+      .then(responses => formatCompletedWorkoutJson(workout, new Date().toISOString(), responses)),
+  );
+
+  const handleCopyForAi = (workout: CompletedWorkoutView) => copyWorkout(
+    `ai:${workout.performedOccurrenceId}`,
+    'Failed to copy session report for AI',
+    buildWorkoutAiCopy(workout, new Date().toISOString(), responseLoader),
+  );
 
   return (
     <>
@@ -422,7 +429,7 @@ export function CompletedWorkoutList({ workouts, exportWindow, windowSweep, onRe
                       title="Copy what was performed: exercises, sets, weights, RPE, rest and actual duration"
                       onClick={() => handleCopy(workout)}
                     >
-                      {copiedId === workout.performedOccurrenceId ? '✓ Copied JSON' : '📋 Copy JSON'}
+                      {copiedId === `fail:${workout.performedOccurrenceId}` ? 'Copy failed' : copiedId === workout.performedOccurrenceId ? '✓ Copied JSON' : '📋 Copy JSON'}
                     </button>
                   )}
                   {(workout.structured || workout.garmin) && (
@@ -432,7 +439,7 @@ export function CompletedWorkoutList({ workouts, exportWindow, windowSweep, onRe
                       title="Copy a Markdown session report to paste into an AI assistant"
                       onClick={() => handleCopyForAi(workout)}
                     >
-                      {copiedId === `ai:${workout.performedOccurrenceId}` ? '✓ Copied for AI' : '📋 Copy for AI'}
+                      {copiedId === `fail:ai:${workout.performedOccurrenceId}` ? 'Copy failed' : copiedId === `ai:${workout.performedOccurrenceId}` ? '✓ Copied for AI' : '📋 Copy for AI'}
                     </button>
                   )}
                   {onReclassify && workout.garmin && (
