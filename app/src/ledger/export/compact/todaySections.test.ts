@@ -12,8 +12,11 @@ function withBaselines(ledger: LedgerExport): LedgerExport {
     const biometric = ledger.derived.find(metric => metric.id === 'biometric_baselines');
     if (!subjective?.metrics || !biometric?.metrics) throw new Error('fixture lacks baseline metrics');
     subjective.metrics.readiness_longAvg = num(7.2);
+    subjective.metrics.readiness_delta28d = num(-1.2);
     biometric.metrics.sleepScore28dAvg = num(75);
+    biometric.metrics.sleepScore_delta28d = num(6);
     biometric.metrics.hrv28dAvg = num(64);
+    biometric.metrics.hrvOvernightAvg_delta28d = num(-2);
     return ledger;
 }
 
@@ -35,12 +38,23 @@ describe('renderTodaySections', () => {
         expect(lines.some(line => /^readiness: \d+ score_1_10 \(28d/.test(line))).toBe(true);
     });
 
-    it('labels a non-measured baseline with its state and still prints the delta', () => {
+    it('labels a non-measured baseline with its state and prints the delta leaf state', () => {
         const ledger = withBaselines(build());
         const metrics = ledger.derived.find(metric => metric.id === 'subjective_baselines')!.metrics!;
         metrics.readiness_longAvg = { value: 7.2, source: 'adaptive', state: 'stale' };
+        metrics.readiness_delta28d = { value: null, source: 'adaptive', state: 'stale' };
         ledger.facts.checkins.items.find(row => row.observedOn === '2026-11-20')!.fields.readiness.value = 6;
-        expect(renderTodaySections(ledger).lines).toContain('readiness: 6 score_1_10 (28d 7.2 (stale), −1.2)');
+        expect(renderTodaySections(ledger).lines).toContain('readiness: 6 score_1_10 (28d 7.2 (stale), delta: stale)');
+    });
+
+    it('reads the delta from the JSON leaf instead of computing it', () => {
+        const ledger = withBaselines(build());
+        const metrics = ledger.derived.find(metric => metric.id === 'biometric_baselines')!.metrics!;
+        metrics.sleepScore_delta28d = num(4.25);
+        delete metrics.hrvOvernightAvg_delta28d;
+        const { lines } = renderTodaySections(ledger);
+        expect(lines).toContain('sleepScore: 81 (28d 75, +4.3)');
+        expect(lines).toContain('hrvOvernightAvg: 62 ms (28d 64, delta: unavailable)');
     });
 
     it('prints missing baseline state without a delta', () => {
@@ -65,20 +79,46 @@ describe('renderTodaySections', () => {
         expect(lines).toContain('recovery: no record for 2026-11-20 (unavailable)');
     });
 
-    it("renders yesterday's session line with sRPE from responses", () => {
+    it("renders yesterday's session line with validated set counts and the linked sRPE", () => {
         const ledger = build();
         const occ = ledger.facts.performedTraining.items[0];
-        occ.fields.structuredEntries = { value: { exerciseCount: 5, setCount: 15 }, source: 'adaptive', state: 'measured' };
         occ.fields.executedDefinitions = { value: [{ executionId: 'e1', executedDefinition: 'reduced' }], source: 'adaptive', state: 'measured' };
         const { lines } = renderTodaySections(ledger);
         expect(lines).toContain('## Yesterday (2026-11-19)');
-        expect(lines).toContain('Cycling · 60 min · 5 exercises / 15 sets · sRPE 6 · reduced · planned: Endurance ride (plan-1@2:s1 → occ-1)');
+        expect(lines).toContain('Cycling · 60 min · 4/5 work sets (+1 warm-up) · sRPE 6 · reduced · planned: Endurance ride (plan-1@2:s1 → occ-1)');
         expect(lines).toContain('detail: copy the session report from History');
     });
 
-    it('prints absent yesterday parts as not recorded', () => {
-        const { lines } = renderTodaySections(build());
-        expect(lines).toContain('Cycling · 60 min · structuredEntries: not_yet_supported · sRPE 6 · executedDefinition: unavailable · planned: Endurance ride (plan-1@2:s1 → occ-1)');
+    it('keeps a missing denominator and missing warm-ups explicit', () => {
+        const ledger = build();
+        const fields = ledger.facts.performedTraining.items[0].fields;
+        fields.plannedSets = { value: null, source: 'adaptive', state: 'unavailable' };
+        fields.warmupSets = { value: null, source: 'adaptive', state: 'invalid' };
+        const line = renderTodaySections(ledger).lines.find(row => row.startsWith('Cycling'))!;
+        expect(line).toContain('4 work sets (planned: unavailable; warm-up: invalid)');
+        fields.workSets = { value: null, source: 'adaptive', state: 'unavailable' };
+        const noWork = renderTodaySections(ledger).lines;
+        expect(noWork.find(row => row.startsWith('Cycling'))).toContain('work sets: unavailable');
+        expect(noWork).not.toContain('detail: copy the session report from History');
+    });
+
+    it('takes sRPE only from a response linked through the structured source ref', () => {
+        const ledger = build();
+        const fields = ledger.facts.performedTraining.items[0].fields;
+        fields.linkedResponseIds = { value: [], source: 'adaptive', state: 'measured' };
+        // resp-1 still names occ-1 as its planning occurrenceId; that is not a link.
+        expect(renderTodaySections(ledger).lines.find(row => row.startsWith('Cycling'))).toContain('sRPE: not recorded');
+        fields.linkedResponseIds = { value: null, source: 'adaptive', state: 'unavailable' };
+        expect(renderTodaySections(ledger).lines.find(row => row.startsWith('Cycling'))).toContain('sRPE: unavailable');
+    });
+
+    it('prints absent yesterday parts with their states', () => {
+        const ledger = build();
+        for (const key of ['plannedSets', 'workSets', 'warmupSets'] as const) {
+            ledger.facts.performedTraining.items[0].fields[key] = { value: null, source: 'adaptive', state: 'not_applicable' };
+        }
+        const { lines } = renderTodaySections(ledger);
+        expect(lines).toContain('Cycling · 60 min · work sets: not_applicable · sRPE 6 · executedDefinition: unavailable · planned: Endurance ride (plan-1@2:s1 → occ-1)');
         expect(lines).not.toContain('detail: copy the session report from History');
     });
 
@@ -155,7 +195,7 @@ describe('renderTodaySections', () => {
 
     it('prints the real state for absent yesterday parts', () => {
         const { lines } = renderTodaySections(build());
-        expect(lines.some(line => line.includes('structuredEntries: not_yet_supported') && line.includes('executedDefinition: unavailable'))).toBe(true);
+        expect(lines.some(line => line.includes('4/5 work sets') && line.includes('executedDefinition: unavailable'))).toBe(true);
     });
 
     it('is pure and does not mutate the ledger', () => {

@@ -314,6 +314,8 @@ export const occurrence: OccurrenceInput = withExtra({
     startedAt: '2026-11-19T16:00:00Z',
     endedAt: '2026-11-19T17:00:00Z',
     modality: 'Cycling',
+    structuredExecutionIds: ['exec-1'],
+    setCounts: { planned: { value: 5 }, work: { value: 4 }, warmup: { value: 1 } },
 }, { userId: FAKE_USER_ID });
 
 /** A fully populated record set exercising every collection. */

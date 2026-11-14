@@ -39,18 +39,20 @@ bump is required.
 leaf that is missing, stale or unavailable stays visible, grouped into one `missing:` line per item
 rather than printed as zero or false. Some recorded detail is summarised, with the full record in the
 JSON: a placement's status history is a count and the latest change date, a performed occurrence's
-structured entries are an exercise/set count, a consumed placement or link row is printed once
+set counts are one `<work>/<planned> work sets (+<warmup> warm-up)` phrase, a consumed placement or link row is printed once
 (under Today, Yesterday or Upcoming; its collection then prints `<name>: <n> shown above`), and an
 active flag's `evaluatedAt` and `definitionVersion` are omitted. Placement headers and the planned
 part of a yesterday line carry the record ids (`plan-1@2:s4`, `plan-1@2:s1 → occ-1`). `renderLedgerExport` remains the verbose diagnostic view.
 Output starts with `# Ledger update — <asOfDate> (<purpose>)`, then:
 
 1. `## Today (<date>)` (`todaySections.ts` `renderTodaySections`): today's check-in and recovery
-   values with their 28-day baselines and deltas (a missing baseline prints its state, never a
-   delta), today's evaluated flags, and today's placements in full.
-2. `## Yesterday (<date>)` (`yesterdaySection.ts`): one line per performed occurrence, with
-   session RPE joined from `sessionResponses`, the executed definition, and the planned session
-   title joined through `plannedToPerformed`.
+   values with their 28-day baselines and the exported `<field>_delta28d` leaves (a missing
+   baseline prints its state; a delta that is not measured prints `delta: <state>`; the renderer
+   never subtracts), today's evaluated flags, and today's placements in full.
+2. `## Yesterday (<date>)` (`yesterdaySection.ts`): one line per performed occurrence, with the
+   validated `workSets`/`plannedSets`/`warmupSets` (an absent count prints its state, never 0),
+   session RPE from the responses named in `linkedResponseIds`, the executed definition, and the
+   planned session title joined through `plannedToPerformed`.
 3. `## Upcoming (<from>…<to>)`: placements after the as-of date in date order, each with title,
    priority, status, summary, step notes and fallback. The section is omitted when the purpose
    has no forward window (diagnostic).
@@ -71,7 +73,18 @@ Placement rows are bounded by `window.startDate` through `window.endDate` plus
 windows and the `overrides` bounds are unchanged. Dated placements outside that range are counted in
 the additive `droppedOutOfWindow` field of the placements `LedgerCollection`, in the
 same way `droppedUndated` counts undated rows; the compact renderer prints it as
-`placements outside window: <n>`.
+`placements outside window: <n>`. Placement events stay cut off at `asOfDate`: a status change
+recorded after the export date is neither applied nor listed in `statusHistory`, even for a
+future placement.
+
+The same extended bound decides which revision headers `planRevisions` keeps, so a future
+placement on an older revision exports both its content and that revision's header. The service
+reads such a revision even when it is referenced only by a placement: besides the header, the
+activation history and performed links, it reads the plan's legacy (unscoped) placement overlay
+and adds its revision when an assignment falls inside the placement bounds. That revision is
+hash-verified like any other; when no attesting hash can be read, its placement content stays
+`unavailable` and no header is exported. An unreadable legacy overlay degrades the placement
+source.
 
 ### Abbreviating unchanged user context
 
@@ -133,6 +146,23 @@ never inferred from the session source. Missing or unreadable linked executions 
 Validated execution entries supply a bounded occurrence-level exercise/set
 summary, excluding deleted entries and choice events. Missing entry evidence is not a zero
 summary. A linked provider activity does not create a second performed row.
+
+Phase 2b adds four additive performed-training fields. `plannedSets`, `workSets` and
+`warmupSets` (unit `sets`) are separate state-bearing counts built by
+`services/ledgerStructuredWork.ts`. `plannedSets` sums the block-aware target
+(`targetEntriesForGroupStep`) of every exercise step of each linked execution's pinned
+definition, resolved through `resolveSessionDefinition` from its `prescriptionHash` (or the
+source's own definition); step alternatives and rest/transition steps are never summed, and
+optional steps count as prescribed. A missing, invalid or unreadable definition leaves
+`plannedSets` `missing`/`invalid`/`unavailable`, never 0. `workSets` counts live, non-choice,
+non-warm-up entries with the runner's set rule (a left/right hold is one set once both sides are
+logged); `warmupSets` counts live warm-up entries. Linked provider work is never added. An
+unreadable or missing linked execution leaves all three `unavailable`; an occurrence with no
+structured execution reports them `not_applicable`. `linkedResponseIds` lists, ordered by date
+then id, the session responses whose `sourceSession` is `{ kind: 'execution', id }` for one of the
+occurrence's `structured_execution` refs. `SessionResponse.occurrenceId` is a planning identity
+and is never used as this link. The field is `unavailable` when responses or the execution refs
+could not be read and `not_applicable` without structured work.
 
 Response reads use recorded response dates, including later-day/next-morning records.
 Assessment loading reuses the brief's bounded goal/completed-attempt discovery and current
@@ -230,6 +260,16 @@ container's scalar `value` is null/`not_applicable` when readable because there
 is no single aggregate value. Missing/corrupt/unavailable sources retain their states.
 Biometric leaves use the as-of snapshot's 7d/28d readiness and stored averages,
 variability and units. Source-specific multisource/identity pipelines are not activated.
+
+Phase 2b adds `<field>_delta28d` leaves (`baselineDeltas.ts` `BASELINE_DELTA_KEYS`):
+`biometric_baselines` carries `sleepScore_delta28d` (vs `sleepScore28dAvg`),
+`restingHr_delta28d` (`restingHr28dAvg`), `hrvOvernightAvg_delta28d` (`hrv28dAvg`) and
+`respirationAvg_delta28d` (`respiration28dAvg`); `subjective_baselines` carries
+`<field>_delta28d` for the six check-in scores against `<field>_longAvg`. Each is the as-of day's
+value minus its baseline, in the value's unit, rounded to thousandths. It is `measured` only when
+the value and the baseline are both measured and describe the same semantic date. Otherwise the
+value is null with the worst contributing state (`stale` when a measured value describes an
+earlier date). Metrics with no matching baseline, including D−1 `totalSteps`, get no delta.
 
 Subjective baseline computation uses the extracted estimator over the 28 days strictly
 before the as-of date. The six dimensions are readiness, sleep quality, fatigue,

@@ -131,6 +131,7 @@ export const CHECKIN_FIELDS = [
 ] as const;
 export const PERFORMED_TRAINING_FIELDS = [
     'status', 'modality', 'startedAt', 'endedAt', 'durationMin', 'structuredEntries', 'executedDefinitions',
+    'plannedSets', 'workSets', 'warmupSets', 'linkedResponseIds',
 ] as const;
 export const SESSION_RESPONSE_FIELDS = [
     'window', 'sourceSession', 'occurrenceId', 'sessionRpe', 'completedFraction', 'unexpectedFatigue',

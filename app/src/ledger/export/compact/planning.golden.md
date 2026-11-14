@@ -35,7 +35,8 @@ summary: Short activation ride
 missing: stepNotes (not_recorded), fallback (not_recorded), statusHistory (not_yet_supported)
 
 ## Yesterday (2026-11-19)
-Cycling · 60 min · structuredEntries: not_yet_supported · sRPE 6 · executedDefinition: unavailable · planned: Endurance ride (plan-1@2:s1 → occ-1)
+Cycling · 60 min · 4/5 work sets (+1 warm-up) · sRPE 6 · executedDefinition: unavailable · planned: Endurance ride (plan-1@2:s1 → occ-1)
+detail: copy the session report from History
 
 ## Upcoming (2026-11-21…2026-12-04)
 2026-11-22 Tempo intervals [key] (planned) plan-1@2:s3
@@ -91,6 +92,10 @@ modality: Cycling
 startedAt: 2026-11-19T16:00:00Z
 endedAt: 2026-11-19T17:00:00Z
 durationMin: 60 min
+plannedSets: 5 sets
+workSets: 4 sets
+warmupSets: 1 sets
+linkedResponseIds: &#91;"resp-1"&#93;
 missing: executedDefinitions (unavailable), structuredEntries (not_yet_supported)
 
 ### sessionResponses
@@ -164,13 +169,13 @@ missing: fieldSize (not_recorded), elapsedSeconds (not_recorded), distanceM (not
 ### biometric_baselines
 definition: Rolling biometric baselines (ADR-0024)
 window: 7d,28d
-missing: value (not_applicable), sleepScore7dAvg (missing), sleepScore28dAvg (missing), sleepScore28dStdev (missing), restingHr7dAvg (missing), restingHr28dAvg (missing), restingHr28dStdev (missing), hrv7dAvg (missing), hrv28dAvg (missing), hrv28dStdev (missing), respiration7dAvg (missing), respiration28dAvg (missing), respiration28dMad (missing)
+missing: value (not_applicable), sleepScore7dAvg (missing), sleepScore28dAvg (missing), sleepScore28dStdev (missing), restingHr7dAvg (missing), restingHr28dAvg (missing), restingHr28dStdev (missing), hrv7dAvg (missing), hrv28dAvg (missing), hrv28dStdev (missing), respiration7dAvg (missing), respiration28dAvg (missing), respiration28dMad (missing), sleepScore_delta28d (missing), restingHr_delta28d (missing), hrvOvernightAvg_delta28d (missing), respirationAvg_delta28d (missing)
 ### subjective_baselines
 definition: Subjective baseline averages and variability
 window: 7d,28d
 recentRecordedDays: 0 days
 longRecordedDays: 0 days
-missing: value (not_applicable), readiness_recentAvg (missing), readiness_longAvg (missing), readiness_variability (missing), sleepQuality_recentAvg (missing), sleepQuality_longAvg (missing), sleepQuality_variability (missing), fatigue_recentAvg (missing), fatigue_longAvg (missing), fatigue_variability (missing), soreness_recentAvg (missing), soreness_longAvg (missing), soreness_variability (missing), mentalStress_recentAvg (missing), mentalStress_longAvg (missing), mentalStress_variability (missing), motivation_recentAvg (missing), motivation_longAvg (missing), motivation_variability (missing)
+missing: value (not_applicable), readiness_recentAvg (missing), readiness_longAvg (missing), readiness_variability (missing), sleepQuality_recentAvg (missing), sleepQuality_longAvg (missing), sleepQuality_variability (missing), fatigue_recentAvg (missing), fatigue_longAvg (missing), fatigue_variability (missing), soreness_recentAvg (missing), soreness_longAvg (missing), soreness_variability (missing), mentalStress_recentAvg (missing), mentalStress_longAvg (missing), mentalStress_variability (missing), motivation_recentAvg (missing), motivation_longAvg (missing), motivation_variability (missing), readiness_delta28d (missing), sleepQuality_delta28d (missing), fatigue_delta28d (missing), soreness_delta28d (missing), mentalStress_delta28d (missing), motivation_delta28d (missing)
 ### d_minus_1_step_normalization
 definition: D-1 step normalization (I3, ADR-0003)
 window: 7d,28d

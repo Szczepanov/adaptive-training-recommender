@@ -29,20 +29,40 @@ function definitions(value: LedgerValue<unknown>): string | null {
     return names.length ? names.map(text).join(', ') : null;
 }
 
-function occurrenceLine(ledger: LedgerExport, row: LedgerExport['facts']['performedTraining']['items'][number], consumed: Set<string>): string[] {
-    const { modality, durationMin, structuredEntries, executedDefinitions } = row.fields;
-    const rpe = ledger.facts.sessionResponses.items
-        .find(item => item.fields.occurrenceId.value === row.id && present(item.fields.sessionRpe))?.fields.sessionRpe;
-    const counts = structuredEntries.value as { exerciseCount?: number; setCount?: number } | null;
+type Occurrence = LedgerExport['facts']['performedTraining']['items'][number];
+
+/** `<work>/<planned> work sets (+<warmup> warm-up)`, with every absent count named by its state. */
+function setsPart({ workSets, plannedSets, warmupSets }: Occurrence['fields']): string {
+    if (!present(workSets)) return `work sets: ${absent(workSets)}`;
+    const notes = [
+        ...(present(plannedSets) ? [] : [`planned: ${absent(plannedSets)}`]),
+        ...(present(warmupSets) ? [] : [`warm-up: ${absent(warmupSets)}`]),
+    ];
+    const ratio = present(plannedSets) ? `${text(workSets.value)}/${text(plannedSets.value)}` : text(workSets.value);
+    const warmups = present(warmupSets) ? ` (+${text(warmupSets.value)} warm-up)` : '';
+    return `${ratio} work sets${warmups}${notes.length ? ` (${notes.join('; ')})` : ''}`;
+}
+
+/** sRPE only from responses linked through the structured execution refs (never `occurrenceId`). */
+function rpePart(ledger: LedgerExport, linked: LedgerValue<unknown>): string {
+    if (!Array.isArray(linked.value)) return `sRPE: ${absent(linked)}`;
+    const ids = linked.value as string[];
+    const rpe = ids.map(id => ledger.facts.sessionResponses.items.find(item => item.id === id)?.fields.sessionRpe)
+        .find(value => value !== undefined && present(value));
+    return rpe ? `sRPE ${text(rpe.value)}` : 'sRPE: not recorded';
+}
+
+function occurrenceLine(ledger: LedgerExport, row: Occurrence, consumed: Set<string>): string[] {
+    const { modality, durationMin, executedDefinitions, workSets, linkedResponseIds } = row.fields;
     const parts = [
         present(modality) ? text(modality.value) : `modality: ${absent(modality)}`,
         present(durationMin) ? `${text(durationMin.value)} min` : `durationMin: ${absent(durationMin)}`,
-        counts ? `${text(counts.exerciseCount)} exercises / ${text(counts.setCount)} sets` : `structuredEntries: ${absent(structuredEntries)}`,
-        rpe ? `sRPE ${text(rpe.value)}` : 'sRPE: not recorded',
+        setsPart(row.fields),
+        rpePart(ledger, linkedResponseIds),
         definitions(executedDefinitions) ?? `executedDefinition: ${absent(executedDefinitions)}`,
         plannedTitle(ledger, row.id, consumed),
     ];
-    return [parts.join(' · '), ...(counts ? ['detail: copy the session report from History'] : [])];
+    return [parts.join(' · '), ...(present(workSets) ? ['detail: copy the session report from History'] : [])];
 }
 
 export function yesterdaySection(ledger: LedgerExport, consumed: Set<string>): string[] {

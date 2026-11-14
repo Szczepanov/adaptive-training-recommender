@@ -99,12 +99,12 @@ describe('renderLedgerExportCompact', () => {
     it('prints not recorded for a measured but empty yesterday value', () => {
         const ledger = buildLedgerExport(fullInput());
         const fields = ledger.facts.performedTraining.items[0].fields;
-        fields.structuredEntries = { value: null, source: 'adaptive', state: 'measured' };
+        fields.workSets = { value: null, source: 'adaptive', state: 'measured' };
         fields.executedDefinitions = { value: [], source: 'adaptive', state: 'measured' };
         const out = renderLedgerExportCompact(ledger);
-        expect(out).toContain('structuredEntries: not recorded');
+        expect(out).toContain('work sets: not recorded');
         expect(out).toContain('executedDefinition: not recorded');
-        expect(out).not.toContain('structuredEntries: measured');
+        expect(out).not.toContain('work sets: measured');
     });
 
     it('labels totalSteps as D-1', () => {

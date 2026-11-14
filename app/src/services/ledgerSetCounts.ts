@@ -1,0 +1,51 @@
+/**
+ * Phase 2b validated set counts for one performed occurrence (ledger export service side).
+ * Planned sets come from the pinned prescription's resolved definition; work and warm-up sets
+ * come from live structured entries. Linked provider work is never counted.
+ */
+import { targetEntriesForGroupStep } from '../sessions/groupProgression';
+import type { SessionDefinition, SessionEntry, SessionStep } from '../sessions/models';
+import { completedPrescribedSets, countsTowardPrescribedSets, isWarmupEntry } from '../sessions/workSets';
+
+/** Prescribed exercise steps, block-aware (rounds override a step's sets); alternatives are never summed. */
+export function plannedSetCount(definition: SessionDefinition): number {
+    return definition.blocks.reduce((sum, block) => sum + block.steps
+        .filter(step => step.kind === 'exercise')
+        .reduce((blockSum, step) => blockSum + targetEntriesForGroupStep(block, step), 0), 0);
+}
+
+/** Without the definition, logged left/right holds still pair into one set. */
+function inferredStep(stepId: string, entries: readonly SessionEntry[]): SessionStep {
+    const sided = entries.some(entry => entry.payload.kind === 'duration' && (entry.side === 'left' || entry.side === 'right'));
+    return sided
+        ? { id: stepId, kind: 'exercise', laterality: 'per_side', dose: { kind: 'duration', seconds: 0 } }
+        : { id: stepId, kind: 'exercise' };
+}
+
+function workSetCount(entries: readonly SessionEntry[], definition: SessionDefinition | null): number {
+    const steps = new Map((definition?.blocks ?? []).flatMap(block => block.steps.map(step => [step.id, step] as const)));
+    const byStep = new Map<string, SessionEntry[]>();
+    for (const entry of entries.filter(countsTowardPrescribedSets)) {
+        const key = entry.stepId ?? `entry:${entry.id}`;
+        byStep.set(key, [...(byStep.get(key) ?? []), { ...entry, stepId: key }]);
+    }
+    return [...byStep].reduce((sum, [stepId, stepEntries]) =>
+        sum + completedPrescribedSets(steps.get(stepId) ?? inferredStep(stepId, stepEntries), stepEntries), 0);
+}
+
+export interface ExecutionSetInput {
+    /** Every stored entry of one linked execution (deleted and choice entries are filtered here). */
+    entries: readonly SessionEntry[];
+    /** The resolved pinned definition, or null when it could not be resolved. */
+    definition: SessionDefinition | null;
+}
+
+export function performedSetCounts(executions: readonly ExecutionSetInput[]): { work: number; warmup: number } {
+    return executions.reduce((totals, { entries, definition }) => {
+        const live = entries.filter(entry => !entry.deletedAt);
+        return {
+            work: totals.work + workSetCount(live, definition),
+            warmup: totals.warmup + live.filter(isWarmupEntry).length,
+        };
+    }, { work: 0, warmup: 0 });
+}

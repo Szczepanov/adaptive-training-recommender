@@ -140,6 +140,10 @@ observedOn: 2026-11-19
 | durationMin | 60 | min | adaptive | measured | 2026-11-19 |
 | executedDefinitions | Not recorded | Not specified | adaptive | unavailable | 2026-11-19 |
 | structuredEntries | Not recorded | Not specified | adaptive | not_yet_supported | Not recorded |
+| plannedSets | 5 | sets | adaptive | measured | 2026-11-19 |
+| workSets | 4 | sets | adaptive | measured | 2026-11-19 |
+| warmupSets | 1 | sets | adaptive | measured | 2026-11-19 |
+| linkedResponseIds | &#91;"resp-1"&#93; | Not specified | adaptive | measured | 2026-11-19 |
 
 ### sessionResponses
 
@@ -303,6 +307,10 @@ inputs: &#91;&#93;
 | respiration7dAvg | Not recorded | breaths/min | daily_recovery_snapshots | missing | 2026-11-20 |
 | respiration28dAvg | Not recorded | breaths/min | daily_recovery_snapshots | missing | 2026-11-20 |
 | respiration28dMad | Not recorded | breaths/min | daily_recovery_snapshots | missing | 2026-11-20 |
+| sleepScore_delta28d | Not recorded | score | daily_recovery_snapshots | missing | 2026-11-20 |
+| restingHr_delta28d | Not recorded | bpm | daily_recovery_snapshots | missing | 2026-11-20 |
+| hrvOvernightAvg_delta28d | Not recorded | ms | daily_recovery_snapshots | missing | 2026-11-20 |
+| respirationAvg_delta28d | Not recorded | breaths/min | daily_recovery_snapshots | missing | 2026-11-20 |
 
 ### subjective_baselines
 
@@ -335,6 +343,12 @@ inputs: &#91;&#93;
 | motivation_variability | Not recorded | 1-10 | daily_subjective_checkins | missing | 2026-11-20 |
 | recentRecordedDays | 0 | days | daily_subjective_checkins | measured | 2026-11-20 |
 | longRecordedDays | 0 | days | daily_subjective_checkins | measured | 2026-11-20 |
+| readiness_delta28d | Not recorded | score_1_10 | daily_subjective_checkins | missing | 2026-11-20 |
+| sleepQuality_delta28d | Not recorded | score_1_10 | daily_subjective_checkins | missing | 2026-11-20 |
+| fatigue_delta28d | Not recorded | score_1_10 | daily_subjective_checkins | missing | 2026-11-20 |
+| soreness_delta28d | Not recorded | score_1_10 | daily_subjective_checkins | missing | 2026-11-20 |
+| mentalStress_delta28d | Not recorded | score_1_10 | daily_subjective_checkins | missing | 2026-11-20 |
+| motivation_delta28d | Not recorded | score_1_10 | daily_subjective_checkins | missing | 2026-11-20 |
 
 ### d_minus_1_step_normalization
 

@@ -118,3 +118,55 @@ describe('placement session content', () => {
         expect(JSON.stringify(result)).not.toMatch(/owner-secret|a@b\.com/);
     });
 });
+
+describe('revisions referenced only by a future placement', () => {
+    const OLDER: PlanRevisionInput = { ...REVISION, revision: 1, contentHash: 'sha256:old', importedAt: '2026-10-01T08:00:00Z',
+        sessions: [{ id: 'old-1', title: 'Old plan ride', summary: 'Kept from revision 1' }] };
+    const LATEST: PlanRevisionInput = { ...REVISION, sessions: [] };
+    const build = (purpose: 'morning' | 'planning', date: string, revisions: readonly PlanRevisionInput[] = [OLDER, LATEST]) =>
+        buildLedgerExport(fullInput({
+            purpose,
+            records: { ...fullRecords(), planRevisions: revisions, plannedToPerformed: [],
+                placements: [{ planId: 'plan-1', revision: 1, assignments: [{ sessionId: 'old-1', date, status: 'planned' }] }] },
+        }));
+
+    it.each([['morning', '2026-11-27'], ['planning', '2026-12-04']] as const)(
+        'exports the %s placement content and the revision-1 header at the inclusive forward bound', (purpose, date) => {
+            const result = build(purpose, date);
+            const [placement] = result.coachingHistory.placements.items;
+            expect(placement.fields).toMatchObject({ revision: { value: 1 }, title: { value: 'Old plan ride', state: 'measured' },
+                summary: { value: 'Kept from revision 1' } });
+            expect(result.coachingHistory.planRevisions.items.map(row => row.id)).toEqual(['plan-1@1', 'plan-1@2']);
+        });
+
+    it('does not retain the older revision when its only placement is past the forward bound', () => {
+        const result = build('morning', '2026-11-28');
+        expect(result.coachingHistory.placements.items).toEqual([]);
+        expect(result.coachingHistory.planRevisions.items.map(row => row.id)).toEqual(['plan-1@2']);
+    });
+
+    it('keeps content unavailable when the older revision could not be read', () => {
+        const result = build('morning', '2026-11-25', [LATEST]);
+        expect(result.coachingHistory.placements.items[0].fields.title).toMatchObject({ value: null, state: 'unavailable' });
+        expect(result.coachingHistory.planRevisions.items.map(row => row.id)).toEqual(['plan-1@2']);
+    });
+});
+
+describe('placement events stay cut off at asOfDate', () => {
+    it('omits a status change recorded after asOfDate from a future placement', () => {
+        const event = (changedOn: string, date: string) => ({
+            userId: 'u', planId: 'plan-1', revision: 2, changedOn, recordedAt: `${changedOn}T08:00:00Z`,
+            previous: [{ sessionId: 's3', date: '2026-11-21', status: 'planned' as const }],
+            assignments: [{ sessionId: 's3', date, status: 'moved' as const }], successors: {},
+        });
+        const result = buildLedgerExport(fullInput({
+            purpose: 'morning',
+            records: { ...fullRecords(), placementHistory: [event('2026-11-19', '2026-11-22'), event('2026-11-21', '2026-11-24')] },
+        }));
+        const s3 = result.coachingHistory.placements.items.find(row => row.fields.sessionId.value === 's3')!;
+        // The as-of state is the 2026-11-19 change; the later move is not visible yet.
+        expect(s3.observedOn).toBe('2026-11-22');
+        const history = s3.fields.statusHistory.value as { changedOn: string }[];
+        expect(history.map(item => item.changedOn)).toEqual(['2026-11-19']);
+    });
+});

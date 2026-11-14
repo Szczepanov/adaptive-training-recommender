@@ -13,7 +13,7 @@ import type {
     PLANNED_TO_PERFORMED_FIELDS,
 } from './schema.ts';
 import { addDaysToLocalDateString } from '../../utils/localDate.ts';
-import { inBounds, isLocalDate, PLACEMENT_FORWARD_DAYS, warsawDateOf, windowBounds } from './window.ts';
+import { inBounds, isLocalDate, PLACEMENT_FORWARD_DAYS, warsawDateOf, windowBounds, type DateBounds } from './window.ts';
 
 const SOURCE = 'adaptive';
 const OVERRIDE_STATUSES: readonly string[] = ['dropped', 'moved'];
@@ -49,13 +49,17 @@ function sessionContent(row: FlatAssignment, records: LedgerExportRecords, conte
     return { session: revision.sessions.find(item => item.id === row.sessionId), absent: 'not_recorded' };
 }
 
+/** Historical window plus the purpose's inclusive forward days (upcoming sessions). */
+function placementBounds(context: BuildContext): DateBounds {
+    return { from: context.window.startDate, to: addDaysToLocalDateString(context.window.endDate, PLACEMENT_FORWARD_DAYS[context.purpose]) };
+}
+
 function buildPlacements(flat: FlatAssignment[] | undefined, records: LedgerExportRecords, context: BuildContext) {
-    const forwardEnd = addDaysToLocalDateString(context.window.endDate, PLACEMENT_FORWARD_DAYS[context.purpose]);
     const result = collect(context, {
         key: 'external_plan_placements',
         records: flat,
         dateOf: row => row.date,
-        bounds: { from: context.window.startDate, to: forwardEnd },
+        bounds: placementBounds(context),
         toItem: row => {
             const base = { source: SOURCE, observedOn: row.date };
             const history = records.placementHistory?.filter(event => event.planId === row.planId && event.revision === row.revision
@@ -141,7 +145,8 @@ function buildPlanRevisions(
     context: BuildContext,
 ) {
     const bounds = windowBounds(context.window);
-    const referenced = new Set((flat ?? []).filter(row => inBounds(row.date, bounds))
+    // An exported placement keeps its revision header, including a future one on an older revision.
+    const referenced = new Set((flat ?? []).filter(row => inBounds(row.date, placementBounds(context)))
         .map(row => `${row.planId}@${row.revision}`));
     for (const link of records.plannedToPerformed ?? []) {
         if (inBounds(link.date, bounds)) referenced.add(`${link.planId}@${link.revision}`);
