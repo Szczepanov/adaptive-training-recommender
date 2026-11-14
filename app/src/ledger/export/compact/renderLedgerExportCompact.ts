@@ -1,3 +1,4 @@
+import { addDaysToLocalDateString } from '../../../utils/localDate.ts';
 import { text } from '../markdownText.ts';
 import type {
     ActivityCollection, ContextRecord, DerivedMetric, LedgerCollection, LedgerExport, LedgerFlag, LedgerRecord,
@@ -26,8 +27,8 @@ function recordEntries(row: LedgerRecord): FieldEntry[] {
 function recordLines(row: LedgerRecord): string[] {
     const entries = recordEntries(row);
     const collapsed = collapsedLine(row.id, entries);
-    if (collapsed) return [collapsed];
     const date = row.observedOn ? ` (${text(row.observedOn)})` : '';
+    if (collapsed) return [`${collapsed}${date}`];
     return [`#### ${text(row.id)}${date}`, ...entryLines(entries)];
 }
 
@@ -37,7 +38,7 @@ export function collectionLines(name: string, rows: LedgerCollection<LedgerRecor
         rows.droppedUndated > 0 ? `droppedUndated: ${rows.droppedUndated}` : '',
         (rows.droppedOutOfWindow ?? 0) > 0 ? `droppedOutOfWindow: ${rows.droppedOutOfWindow}` : '',
     ].filter(Boolean);
-    if (!rows.items.length) return [[`${text(name)}: ${text(rows.state)}, no rows`, ...dropped].join(', ')];
+    if (!rows.items.length) return [[`${text(name)}: ${text(rows.state)}, no rows`, ...dropped].join(', '), ''];
     if (!items.length) return [];
     const meta = [
         rows.state === 'measured' ? '' : `state: ${text(rows.state)}; source: ${text(rows.source)}`,
@@ -67,20 +68,26 @@ function dateRange(dates: string[]): string {
 }
 
 function flagLabel(flag: LedgerFlag): string {
-    return flag.active === false ? 'inactive' : flag.state;
+    if (flag.active === false) return flag.state === 'measured' ? 'inactive' : `inactive (${flag.state})`;
+    return `unknown (${flag.state})`;
 }
 
 function activeFlagLines(flag: LedgerFlag): string[] {
     const entries: FieldEntry[] = flag.inputs.map(input => [input.name, input.value]);
     return [
         `#### ${text(flag.id)} (${text(flag.observedOn)})`,
+        ...(flag.state === 'measured' ? [] : [`state: ${text(flag.state)}`]),
         ...(flag.sessionRef ? [`sessionRef: ${text(flag.sessionRef)}`] : []),
         `threshold: ${text(flag.threshold)}`,
         ...entryLines(entries),
     ];
 }
 
-/** Non-active flags: one line per run of consecutive dates sharing a state. */
+/**
+ * Non-active flags: one line per run of calendar-consecutive dates sharing a label. A gap day or
+ * an active evaluation of the same id between two dates ends the run, so a range never implies
+ * days that were not evaluated.
+ */
 function inactiveFlagLines(flags: LedgerFlag[]): string[] {
     const lines: string[] = [];
     for (const id of new Set(flags.map(flag => flag.id))) {
@@ -92,8 +99,11 @@ function inactiveFlagLines(flags: LedgerFlag[]): string[] {
             run = [];
         };
         for (const flag of own) {
-            if (flagLabel(flag) !== label) flush();
-            label = flagLabel(flag);
+            if (flag.active === true) { flush(); continue; }
+            const next = flagLabel(flag);
+            const last = run[run.length - 1];
+            if (next !== label || (last !== undefined && addDaysToLocalDateString(last, 1) !== flag.observedOn)) flush();
+            label = next;
             run.push(flag.observedOn);
         }
         flush();
@@ -104,8 +114,7 @@ function inactiveFlagLines(flags: LedgerFlag[]): string[] {
 export function flagsSection(ledger: LedgerExport): string[] {
     if (!ledger.flags.length) return ['## Flags', 'flags: none evaluated', ''];
     const active = ledger.flags.filter(flag => flag.active === true);
-    const rest = ledger.flags.filter(flag => flag.active !== true);
-    return ['## Flags', ...active.flatMap(activeFlagLines), ...inactiveFlagLines(rest), ''];
+    return ['## Flags', ...active.flatMap(activeFlagLines), ...inactiveFlagLines(ledger.flags), ''];
 }
 
 export function factsSection(ledger: LedgerExport, skipIds: SkipIds = NO_SKIP): string[] {

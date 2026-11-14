@@ -6,10 +6,10 @@ window: 2026-11-07…2026-11-20
 flag_evaluations: unavailable
 
 ## Flags
-illness_anomaly: unavailable 2026-11-07…2026-11-20
-illness_risk_symptom: unavailable 2026-11-07…2026-11-20
-injury_constraint_touches_session: unavailable 2026-11-07…2026-11-20
-recovery_beyond_baseline: unavailable 2026-11-07…2026-11-20
+illness_anomaly: unknown (unavailable) 2026-11-07…2026-11-20
+illness_risk_symptom: unknown (unavailable) 2026-11-07…2026-11-20
+injury_constraint_touches_session: unknown (unavailable) 2026-11-07…2026-11-20
+recovery_beyond_baseline: unknown (unavailable) 2026-11-07…2026-11-20
 
 ## Facts
 ### recovery

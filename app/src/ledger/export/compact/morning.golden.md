@@ -6,10 +6,10 @@ window: 2026-11-19…2026-11-20
 flag_evaluations: unavailable
 
 ## Flags
-illness_anomaly: unavailable 2026-11-19…2026-11-20
-illness_risk_symptom: unavailable 2026-11-19…2026-11-20
-injury_constraint_touches_session: unavailable 2026-11-19…2026-11-20
-recovery_beyond_baseline: unavailable 2026-11-19…2026-11-20
+illness_anomaly: unknown (unavailable) 2026-11-19…2026-11-20
+illness_risk_symptom: unknown (unavailable) 2026-11-19…2026-11-20
+injury_constraint_touches_session: unknown (unavailable) 2026-11-19…2026-11-20
+recovery_beyond_baseline: unknown (unavailable) 2026-11-19…2026-11-20
 
 ## Facts
 ### recovery
@@ -84,7 +84,9 @@ sessionRpe: 6 rpe_0_10
 missing: completedFraction (not_recorded), unexpectedFatigue (not_recorded), techniqueNote (not_recorded), note (not_recorded)
 
 assessments: measured, no rows
+
 bodyComposition: measured, no rows
+
 ### nutrition
 #### nutrition-2026-11-19 (2026-11-19)
 energyIntakeKcal: 2800 kcal
@@ -109,6 +111,7 @@ segments: &#91;{"segmentIndex":0,"segmentType":"work","durationSeconds":60,"aver
 missing: maxHr (missing)
 
 events: measured, no rows
+
 ## Derived
 ### biometric_baselines
 definition: Rolling biometric baselines (ADR-0024)
@@ -253,6 +256,7 @@ date: 2026-11-19
 missing: statusHistory (not_yet_supported), title (unavailable), priority (unavailable), summary (unavailable), stepNotes (unavailable), fallback (unavailable)
 
 overrides: measured, no rows
+
 ### plannedToPerformed
 #### plan-1@2:s1:occ-1 (2026-11-19)
 planId: plan-1

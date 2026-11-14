@@ -19,7 +19,7 @@ export function fieldLine(name: string, value: LedgerValue<unknown>): string {
 export function missingLine(entries: readonly FieldEntry[]): string | null {
     const missing = entries.filter(([, value]) => isMissing(value));
     return missing.length
-        ? `missing: ${missing.map(([name, value]) => `${text(name)} (${text(value.state)})`).join(', ')}`
+        ? `missing: ${missing.map(([name, value]) => `${text(name)} (${text(value.state)}${value.state === 'measured' ? ', null' : ''})`).join(', ')}`
         : null;
 }
 

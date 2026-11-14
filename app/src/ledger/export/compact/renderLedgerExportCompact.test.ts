@@ -52,11 +52,54 @@ describe('renderLedgerExportCompact', () => {
         ];
         const out = renderLedgerExportCompact(ledger);
         expect(out).toContain('illness_anomaly: inactive 2026-11-18…2026-11-20');
-        expect(out).toContain('recovery_beyond_baseline: unavailable 2026-11-19');
+        expect(out).toContain('recovery_beyond_baseline: unknown (unavailable) 2026-11-19');
         expect(out).toContain('#### illness_risk_symptom (2026-11-20)');
         expect(out).toContain('sessionRef: s-1');
         expect(out).toContain('threshold: any');
         expect(out).toContain('fever: 38 C');
+    });
+
+    it('does not imply unevaluated days or span an active day in flag ranges', () => {
+        const ledger = buildLedgerExport(fullInput());
+        ledger.flags = [
+            flag('illness_anomaly', '2026-11-18'), flag('illness_anomaly', '2026-11-20'),
+            flag('recovery_beyond_baseline', '2026-11-18'),
+            flag('recovery_beyond_baseline', '2026-11-19', { active: true }),
+            flag('recovery_beyond_baseline', '2026-11-20'),
+        ];
+        const out = renderLedgerExportCompact(ledger);
+        expect(out).toContain('illness_anomaly: inactive 2026-11-18\n');
+        expect(out).toContain('illness_anomaly: inactive 2026-11-20\n');
+        expect(out).not.toContain('2026-11-18…2026-11-20');
+        expect(out).toContain('recovery_beyond_baseline: inactive 2026-11-18\n');
+        expect(out).toContain('recovery_beyond_baseline: inactive 2026-11-20\n');
+        expect(out).toContain('#### recovery_beyond_baseline (2026-11-19)');
+    });
+
+    it('keeps flag state visible instead of folding it into inactive or measured', () => {
+        const ledger = buildLedgerExport(fullInput());
+        ledger.flags = [
+            flag('illness_anomaly', '2026-11-19', { state: 'stale' }),
+            flag('illness_risk_symptom', '2026-11-19', { active: null, state: 'measured' }),
+            flag('recovery_beyond_baseline', '2026-11-19', { active: true, state: 'stale' }),
+        ];
+        const out = renderLedgerExportCompact(ledger);
+        expect(out).toContain('illness_anomaly: inactive (stale) 2026-11-19');
+        expect(out).toContain('illness_risk_symptom: unknown (measured) 2026-11-19');
+        expect(out).toMatch(/#### recovery_beyond_baseline \(2026-11-19\)\nstate: stale/);
+    });
+
+    it('marks a measured-but-null value as null in the missing line', () => {
+        const ledger = buildLedgerExport(fullInput());
+        ledger.facts.recovery.items[0].fields.weightKg = { value: null, source: 'garmin', state: 'measured' };
+        expect(renderLedgerExportCompact(ledger)).toContain('weightKg (measured, null)');
+    });
+
+    it('keeps the record date on a collapsed record line', () => {
+        const ledger = buildLedgerExport(fullInput());
+        const rec = ledger.facts.recovery.items[0];
+        for (const value of Object.values(rec.fields)) { value.value = null; value.state = 'missing'; }
+        expect(renderLedgerExportCompact(ledger)).toContain(`${rec.id}: missing 11 fields (missing x11) (${rec.observedOn})`);
     });
 
     it('prints only non-measured sources', () => {
