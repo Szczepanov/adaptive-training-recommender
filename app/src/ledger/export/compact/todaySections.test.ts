@@ -85,7 +85,7 @@ describe('renderTodaySections', () => {
         occ.fields.executedDefinitions = { value: [{ executionId: 'e1', executedDefinition: 'reduced' }], source: 'adaptive', state: 'measured' };
         const { lines } = renderTodaySections(ledger);
         expect(lines).toContain('## Yesterday (2026-11-19)');
-        expect(lines).toContain('Cycling · 60 min · 4/5 work sets (+1 warm-up) · sRPE 6 · reduced · planned: Endurance ride (plan-1@2:s1 → occ-1)');
+        expect(lines).toContain('Cycling · 60 min · 4/5 work sets (+1 warm-up) · sRPE 6 (source athlete) · reduced · planned: Endurance ride (plan-1@2:s1 → occ-1)');
         expect(lines).toContain('detail: copy the session report from History');
     });
 
@@ -126,7 +126,7 @@ describe('renderTodaySections', () => {
             ledger.facts.performedTraining.items[0].fields[key] = { value: null, source: 'adaptive', state: 'not_applicable' };
         }
         const { lines } = renderTodaySections(ledger);
-        expect(lines).toContain('Cycling · 60 min · work sets: not_applicable · sRPE 6 · executedDefinition: unavailable · planned: Endurance ride (plan-1@2:s1 → occ-1)');
+        expect(lines).toContain('Cycling · 60 min · work sets: not_applicable · sRPE 6 (source athlete) · executedDefinition: unavailable · planned: Endurance ride (plan-1@2:s1 → occ-1)');
         expect(lines).not.toContain('detail: copy the session report from History');
     });
 
@@ -134,7 +134,7 @@ describe('renderTodaySections', () => {
         const ledger = build();
         const placements = ledger.coachingHistory.placements;
         const copy = { ...placements.items.find(row => row.id.endsWith(':s3'))!, id: 'plan-1@2:s5', observedOn: '2026-11-21' };
-        copy.fields = { ...copy.fields, title: { value: 'Earlier ride', source: 'x', state: 'measured' } };
+        copy.fields = { ...copy.fields, title: { value: 'Earlier ride', source: 'adaptive', state: 'measured' } };
         placements.items = [...placements.items, copy].reverse();
         const { lines } = renderTodaySections(ledger);
         const upcoming = lines.slice(lines.indexOf('## Upcoming (2026-11-21…2026-11-27)'));

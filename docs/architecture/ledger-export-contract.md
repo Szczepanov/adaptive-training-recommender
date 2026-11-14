@@ -40,9 +40,35 @@ leaf that is missing, stale or unavailable stays visible, grouped into one `miss
 rather than printed as zero or false. Some recorded detail is summarised, with the full record in the
 JSON: a placement's status history is a count and the latest change date, a performed occurrence's
 set counts are one `<work>/<planned> work sets (+<warmup> warm-up)` phrase, a consumed placement or link row is printed once
-(under Today, Yesterday or Upcoming; its collection then prints `<name>: <n> shown above`), and an
-active flag's `evaluatedAt` and `definitionVersion` are omitted. Placement headers and the planned
-part of a yesterday line carry the record ids (`plan-1@2:s4`, `plan-1@2:s1 → occ-1`). `renderLedgerExport` remains the verbose diagnostic view.
+(under Today, Yesterday or Upcoming; its collection then prints `<name>: <n> shown above`). An
+inactive or unavailable flag is a summary line; an active flag prints in full, with its
+`definitionVersion` and `evaluatedAt` when persisted. Placement headers and the planned
+part of a yesterday line carry the record ids (`plan-1@2:s4`, `plan-1@2:s1 → occ-1`).
+
+Provenance (spec 2a): the header declares `states: measured unless noted; source shown per group`,
+so `measured` is never printed per field. Source is provenance, not a state: each record group line
+carries `(<collection>; <field source>)` once, for example `### recovery (daily_recovery_snapshots; garmin)`
+(a singleton prints just `(<field source>)`; the group source is the most common field source). A field prints its
+source only as an exception, `(source X)`, or `(X, stale, <observed date>)` alongside a non-measured
+state; semantic dates (`D-1` steps, stale observation dates) and units stay on the line. A
+non-measured collection state prints as `state: <state>` under the group line, and an unreadable empty
+collection is one line ending in its collection name.
+
+Source and omission handling: `## Sources` abbreviates successful sources (`sources: all measured`
+or only the non-measured ones, each with `newestObservedOn` and `reason`). Every omission count
+(`droppedUndated`, `<name> outside window`) and the activities truncation warning
+(`truncated: <bool>; totalInWindow: <n>; exported: <n>`, also on an empty activities collection)
+stay on the collection's own line.
+
+Flag ranges: inactive/unavailable evaluations of one id collapse only when calendar-consecutive
+and identical in label (`inactive`, `unknown (<state>)`, `inactive (<state>)`), `definitionVersion`
+and `sessionRef`; a version or session change breaks the range and each line names its
+`(definition <v>; session <ref>)`. Two evaluations of the same id on one date are never merged:
+each prints on its own line with `evaluated <evaluatedAt>`. Unavailable dates never fold into inactive.
+
+Size targets on the fixture morning export (asserted in `previousContext.test.ts`): at most 8,145
+characters with a matching `previousContext`, 13,032 without. `renderLedgerExport` remains the verbose diagnostic view.
+`renderLedgerExport` remains the verbose diagnostic view.
 Output starts with `# Ledger update — <asOfDate> (<purpose>)`, then:
 
 1. `## Today (<date>)` (`todaySections.ts` `renderTodaySections`): today's check-in and recovery

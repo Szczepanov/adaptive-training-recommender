@@ -1,12 +1,14 @@
-import { addDaysToLocalDateString } from '../../../utils/localDate.ts';
 import { text } from '../markdownText.ts';
 import type {
-    ActivityCollection, ContextRecord, DerivedMetric, LedgerCollection, LedgerExport, LedgerFlag, LedgerRecord,
+    ActivityCollection, ContextRecord, DerivedMetric, LedgerCollection, LedgerExport, LedgerRecord,
     LedgerValue, SourceState,
 } from '../schema.ts';
-import { collapsedLine, entryLines, type FieldEntry } from './compactLines.ts';
+import { collapsedLine, dominantSource, entryLines, type FieldEntry, groupLabel } from './compactLines.ts';
+import { flagsSection } from './flagLines.ts';
 import { contextDelta, type PreviousContext, unchangedLines, userContextItemHashes, userContextStates } from './previousContext.ts';
 import { renderTodaySections } from './todaySections.ts';
+
+export { flagsSection };
 
 export interface CompactRenderOptions {
     previousContext?: PreviousContext;
@@ -25,31 +27,33 @@ function recordEntries(row: LedgerRecord): FieldEntry[] {
     return entries;
 }
 
-function recordLines(row: LedgerRecord): string[] {
+function recordLines(row: LedgerRecord, group: string | undefined): string[] {
     const entries = recordEntries(row);
     const collapsed = collapsedLine(row.id, entries);
     const date = row.observedOn ? ` (${text(row.observedOn)})` : '';
     if (collapsed) return [`${collapsed}${date}`];
-    return [`#### ${text(row.id)}${date}`, ...entryLines(entries)];
+    return [`#### ${text(row.id)}${date}`, ...entryLines(entries, group)];
 }
+
+const fieldSourceOf = (rows: LedgerCollection<LedgerRecord>) => dominantSource(rows.items.flatMap(row => Object.entries(row.fields)));
 
 export function collectionLines(name: string, rows: LedgerCollection<LedgerRecord>, skipIds: SkipIds = NO_SKIP): string[] {
     const items = rows.items.filter(row => !skipIds.has(row.id));
+    const group = fieldSourceOf(rows);
     const dropped = [
         rows.droppedUndated > 0 ? `droppedUndated: ${rows.droppedUndated}` : '',
         (rows.droppedOutOfWindow ?? 0) > 0 ? `${text(name)} outside window: ${rows.droppedOutOfWindow}` : '',
     ].filter(Boolean);
-    if (!rows.items.length) return [[`${text(name)}: ${text(rows.state)}, no rows`, ...dropped].join(', '), ''];
-    const meta = [
-        rows.state === 'measured' ? '' : `state: ${text(rows.state)}; source: ${text(rows.source)}`,
-        ...dropped,
-    ].filter(Boolean);
-    if ('truncated' in rows) {
-        const activities = rows as ActivityCollection<LedgerRecord>;
-        meta.push(`truncated: ${activities.truncated}; totalInWindow: ${activities.totalInWindow}; exported: ${rows.items.length}`);
+    const truncation = 'truncated' in rows
+        ? [`truncated: ${(rows as ActivityCollection<LedgerRecord>).truncated}; totalInWindow: ${(rows as ActivityCollection<LedgerRecord>).totalInWindow}; exported: ${rows.items.length}`]
+        : [];
+    if (!rows.items.length) {
+        const source = rows.state === 'measured' ? '' : ` (${text(rows.source)})`;
+        return [`${[`${text(name)}: ${text(rows.state)}, no rows`, ...dropped, ...truncation].join(', ')}${source}`, ''];
     }
+    const meta = [rows.state === 'measured' ? '' : `state: ${text(rows.state)}`, ...dropped, ...truncation].filter(Boolean);
     if (!items.length) return [[`${text(name)}: ${rows.items.length} shown above`, ...meta].join('; '), ''];
-    return [`### ${text(name)}`, ...meta, ...items.flatMap(recordLines), ''];
+    return [`### ${text(name)} (${groupLabel(rows.source, group)})`, ...meta, ...items.flatMap(row => recordLines(row, group)), ''];
 }
 
 function sourceSection(sources: SourceState[]): string[] {
@@ -64,74 +68,18 @@ function sourceSection(sources: SourceState[]): string[] {
     return ['## Sources', ...body, ''];
 }
 
-function dateRange(dates: string[]): string {
-    return dates.length === 1 ? text(dates[0]) : `${text(dates[0])}…${text(dates[dates.length - 1])}`;
-}
-
-function flagLabel(flag: LedgerFlag): string {
-    if (flag.active === false) return flag.state === 'measured' ? 'inactive' : `inactive (${flag.state})`;
-    return `unknown (${flag.state})`;
-}
-
-function activeFlagLines(flag: LedgerFlag): string[] {
-    const entries: FieldEntry[] = flag.inputs.map(input => [input.name, input.value]);
-    return [
-        `#### ${text(flag.id)} (${text(flag.observedOn)})`,
-        ...(flag.state === 'measured' ? [] : [`state: ${text(flag.state)}`]),
-        ...(flag.sessionRef ? [`sessionRef: ${text(flag.sessionRef)}`] : []),
-        `threshold: ${text(flag.threshold)}`,
-        ...entryLines(entries),
-    ];
-}
-
-/**
- * Non-active flags: one line per run of calendar-consecutive dates sharing a label. A gap day or
- * an active evaluation of the same id between two dates ends the run, so a range never implies
- * days that were not evaluated.
- */
-function inactiveFlagLines(flags: LedgerFlag[]): string[] {
-    const lines: string[] = [];
-    for (const id of new Set(flags.map(flag => flag.id))) {
-        const own = flags.filter(flag => flag.id === id).sort((a, b) => a.observedOn.localeCompare(b.observedOn));
-        let run: string[] = [];
-        let label = '';
-        const flush = () => {
-            if (run.length) lines.push(`${text(id)}: ${text(label)} ${dateRange(run)}`);
-            run = [];
-        };
-        for (const flag of own) {
-            if (flag.active === true) { flush(); continue; }
-            const next = flagLabel(flag);
-            const last = run[run.length - 1];
-            if (next !== label || (last !== undefined && addDaysToLocalDateString(last, 1) !== flag.observedOn)) flush();
-            label = next;
-            run.push(flag.observedOn);
-        }
-        flush();
-    }
-    return lines;
-}
-
-export function flagsSection(ledger: LedgerExport): string[] {
-    if (!ledger.flags.length) return ['## Flags', 'flags: none evaluated', ''];
-    // Today's non-active evaluations are summarised under Today; active detail stays here.
-    const shown = ledger.flags.filter(flag => flag.observedOn !== ledger.asOfDate || flag.active === true);
-    if (!shown.length) return ['## Flags', `flags: only ${text(ledger.asOfDate)} evaluated (see Today)`, ''];
-    const active = shown.filter(flag => flag.active === true);
-    return ['## Flags', ...active.flatMap(activeFlagLines), ...inactiveFlagLines(shown), ''];
-}
-
 export function factsSection(ledger: LedgerExport, skipIds: SkipIds = NO_SKIP): string[] {
     return ['## Facts', ...Object.entries(ledger.facts).flatMap(([name, rows]) => collectionLines(name, rows, skipIds))];
 }
 
 function derivedLines(metric: DerivedMetric): string[] {
     const entries: FieldEntry[] = [['value', metric.value], ...Object.entries(metric.metrics ?? {})];
+    const group = metric.value.source;
     return [
-        `### ${text(metric.id)}`,
+        `### ${text(metric.id)}${entries.some(([, value]) => value.value !== null && value.value !== undefined) ? ` (${groupLabel(undefined, group)})` : ''}`,
         `definition: ${text(metric.definition)}`,
         `window: ${text(metric.window)}${metric.inputs.length ? `; inputs: ${metric.inputs.map(text).join(', ')}` : ''}`,
-        ...entryLines(entries),
+        ...entryLines(entries, group),
     ];
 }
 
@@ -142,7 +90,8 @@ export function derivedSection(ledger: LedgerExport): string[] {
 function singletonLines(name: string, row: ContextRecord): string[] {
     const entries = recordEntries(row);
     const collapsed = collapsedLine(name, entries);
-    return collapsed ? [collapsed] : [`### ${text(name)}`, ...entryLines(entries)];
+    const group = dominantSource(Object.entries(row.fields));
+    return collapsed ? [collapsed] : [`### ${text(name)} (${groupLabel(undefined, group)})`, ...entryLines(entries, group)];
 }
 
 export function userContextSection(ledger: LedgerExport, previous?: PreviousContext): string[] {
@@ -171,6 +120,7 @@ function header(ledger: LedgerExport): string[] {
     return [
         `# Ledger update — ${text(ledger.asOfDate)} (${text(ledger.purpose)})`,
         `schema: ${text(ledger.schemaVersion)} · exportedAt ${text(ledger.exportedAt)}`,
+        'states: measured unless noted; source shown per group',
         `window: ${text(ledger.window.startDate)}…${text(ledger.window.endDate)}`,
         '',
     ];

@@ -1,6 +1,7 @@
 import { addDaysToLocalDateString } from '../../../utils/localDate.ts';
 import { text } from '../markdownText.ts';
 import type { LedgerExport, LedgerValue } from '../schema.ts';
+import { dominantSource, sourceTag } from './compactLines.ts';
 
 const present = (value: LedgerValue<unknown>) => value.value !== null && value.value !== undefined;
 
@@ -44,21 +45,21 @@ function setsPart({ workSets, plannedSets, warmupSets }: Occurrence['fields']): 
 }
 
 /** sRPE only from responses linked through the structured execution refs (never `occurrenceId`). */
-function rpePart(ledger: LedgerExport, linked: LedgerValue<unknown>): string {
+function rpePart(ledger: LedgerExport, linked: LedgerValue<unknown>, group: string | undefined): string {
     if (!Array.isArray(linked.value)) return `sRPE: ${absent(linked)}`;
     const ids = linked.value as string[];
     const rpe = ids.map(id => ledger.facts.sessionResponses.items.find(item => item.id === id)?.fields.sessionRpe)
         .find(value => value !== undefined && present(value));
-    return rpe ? `sRPE ${text(rpe.value)}` : 'sRPE: not recorded';
+    return rpe ? `sRPE ${text(rpe.value)}${sourceTag(rpe, group)}` : 'sRPE: not recorded';
 }
 
-function occurrenceLine(ledger: LedgerExport, row: Occurrence, consumed: Set<string>): string[] {
+function occurrenceLine(ledger: LedgerExport, row: Occurrence, consumed: Set<string>, group: string | undefined): string[] {
     const { modality, durationMin, executedDefinitions, workSets, linkedResponseIds } = row.fields;
     const parts = [
         present(modality) ? text(modality.value) : `modality: ${absent(modality)}`,
         present(durationMin) ? `${text(durationMin.value)} min` : `durationMin: ${absent(durationMin)}`,
         setsPart(row.fields),
-        rpePart(ledger, linkedResponseIds),
+        rpePart(ledger, linkedResponseIds, group),
         definitions(executedDefinitions) ?? `executedDefinition: ${absent(executedDefinitions)}`,
         plannedTitle(ledger, row.id, consumed),
     ];
@@ -70,8 +71,9 @@ export function yesterdaySection(ledger: LedgerExport, consumed: Set<string>): s
     const performed = ledger.facts.performedTraining;
     const rows = performed.items.filter(row => row.observedOn === date)
         .sort((a, b) => String(a.fields.startedAt.value ?? '').localeCompare(String(b.fields.startedAt.value ?? '')));
+    const group = dominantSource(performed.items.flatMap(row => Object.entries(row.fields)));
     const body = rows.length
-        ? rows.flatMap(row => occurrenceLine(ledger, row, consumed))
+        ? rows.flatMap(row => occurrenceLine(ledger, row, consumed, group))
         : [`performed: none recorded for ${text(date)} (${text(performed.state)})`];
     return [`## Yesterday (${text(date)})`, ...body, ''];
 }

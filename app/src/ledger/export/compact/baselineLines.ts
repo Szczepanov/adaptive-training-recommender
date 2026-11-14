@@ -36,16 +36,18 @@ function baselineSuffix(baseline: LedgerValue<number> | null, delta: LedgerValue
 /** `readiness: 6 (28d 7.2, −1.2)`; a missing value prints its state and stays in the missing line. */
 function baselineLine(
     name: string, value: LedgerValue<unknown>, baseline: LedgerValue<number> | null, delta: LedgerValue<number> | null,
+    group: string | undefined,
 ): string {
     if (value.value === null || value.value === undefined) return `${text(name)}: ${text(value.state)}`;
     const unit = value.unit && value.unit !== 'score' ? ` ${text(value.unit)}` : '';
-    const provenance = fieldLine(name, { ...value, unit: undefined }).slice(`${text(name)}: ${text(value.value)}`.length);
+    const provenance = fieldLine(name, { ...value, unit: undefined }, group).slice(`${text(name)}: ${text(value.value)}`.length);
     return `${text(name)}: ${text(value.value)}${unit}${baselineSuffix(baseline, delta)}${provenance}`;
 }
 
 /** A record's fields: baselined fields with value + 28d + delta, then the rest and one missing line. */
 export function baselinedRecordLines(
     ledger: LedgerExport, row: LedgerRecord, derivedId: string, baselines: Readonly<Record<string, string>>,
+    group: string | undefined,
 ): string[] {
     const entries = Object.entries(row.fields);
     const withBaseline = entries.filter(([name]) => name in baselines);
@@ -53,8 +55,8 @@ export function baselinedRecordLines(
     const missingBaselined: FieldEntry[] = withBaseline.filter(([, value]) => value.value === null || value.value === undefined);
     return [
         ...withBaseline.map(([name, value]) => baselineLine(name, value,
-            baselineOf(ledger, derivedId, baselines[name]), baselineOf(ledger, derivedId, deltaKeyOf(name)))),
-        ...entryLines([...rest, ...missingBaselined]),
+            baselineOf(ledger, derivedId, baselines[name]), baselineOf(ledger, derivedId, deltaKeyOf(name)), group)),
+        ...entryLines([...rest, ...missingBaselined], group),
     ];
 }
 
