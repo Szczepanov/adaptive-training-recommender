@@ -1,6 +1,8 @@
 # Ledger export content for a long-lived external-AI chat
 
-- **Status:** Proposed (design, 2026-11-14). Awaiting owner approval before any code.
+- **Status:** Approved (owner, 2026-11-14: "proceed with recommendations e2e"). The open
+  questions were not answered explicitly, so they take the agent's recommended defaults below;
+  the owner can override either before the affected phase merges.
 - **Decision source:** [ADR-0052](../adr/0052-user-ledger-and-external-ai-planning-authority.md) (D-EXPORT, D-COACHLOG), [ledger export contract](../architecture/ledger-export-contract.md), [#1145 plan](./2026-10-25-issue-1145-ledger-export-v1.md).
 - **Tracking:** #962 (Lane 0). Issues are filed per phase after approval.
 
@@ -290,14 +292,14 @@ still says Copy/Download use the legacy brief, but since #1249 and #1254 ledger 
 `renderLedgerExport`. Fix that in Phase 2. Also update `docs/architecture/user-flows.md` §9
 and `docs/plans/README.md`.
 
-## Open questions for the owner
+## Owner questions (defaults applied 2026-11-14)
 
-1. **Q1 — D-EVAL timing.** Should the qualifying D-EVAL block start only after Phases 1–2
-   ship? The agent recommends yes, because export content is an input to the planning AI.
-   Otherwise, freeze export content for the block's duration.
-2. **Q2 — Drop/move reasons (Phase 3).** Is free text enough, or should there be a short
-   fixed list (time, fatigue, pain, equipment, travel, other) plus optional text? A fixed
-   list is easier for the AI to aggregate across weeks.
+1. **Q1 — D-EVAL timing.** Default: the qualifying D-EVAL block starts only after Phases 1–2
+   ship, because export content is an input to the planning AI. If the block is already
+   running when a phase is ready, hold that phase's merge until the block ends.
+2. **Q2 — Drop/move reasons (Phase 3).** Default: a fixed list (`time`, `fatigue`, `pain`,
+   `equipment`, `travel`, `other`) plus optional free text, because a fixed list is easier
+   for the AI to aggregate across weeks.
 
 ## Left to the builder
 
