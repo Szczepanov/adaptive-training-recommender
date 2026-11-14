@@ -14,6 +14,8 @@ import { manualLinkCandidatesFor, type CompletedWorkoutView, type ManualLinkCand
 import type { PerformedRestDetail, PrescribedStepTarget } from '../training-occurrence/structuredSetDetail';
 import { sourceKeyForRef } from '../training-occurrence/sourceIdentity';
 import { formatCompletedWorkoutJson, resolveCompletedWorkoutDuration } from '../training-occurrence/completedWorkoutJsonExport';
+import { sessionResponseService } from '../services/sessionResponseService';
+import { buildWorkoutAiCopy, loadWorkoutResponses, type ResponseLoader } from './completedWorkoutCopy';
 import {
   formatRunningPower,
   formatTrainingEffectDescriptor,
@@ -360,13 +362,31 @@ export function CompletedWorkoutList({ workouts, exportWindow, windowSweep, onRe
     );
   }
 
+  const responseLoader: ResponseLoader | undefined = userId
+    ? executionId => sessionResponseService.getResponsesForSource(userId, { kind: 'execution', id: executionId })
+    : undefined;
+
+  const flashCopied = (key: string) => {
+    setCopiedId(key);
+    setTimeout(() => setCopiedId(curr => (curr === key ? null : curr)), 2000);
+  };
+
   const handleCopy = async (workout: CompletedWorkoutView) => {
     try {
-      await navigator.clipboard.writeText(formatCompletedWorkoutJson(workout, new Date().toISOString()));
-      setCopiedId(workout.performedOccurrenceId);
-      setTimeout(() => setCopiedId(curr => (curr === workout.performedOccurrenceId ? null : curr)), 2000);
+      const responses = await loadWorkoutResponses(workout, responseLoader);
+      await navigator.clipboard.writeText(formatCompletedWorkoutJson(workout, new Date().toISOString(), responses));
+      flashCopied(workout.performedOccurrenceId);
     } catch (err) {
       console.error('Failed to copy activity JSON', err);
+    }
+  };
+
+  const handleCopyForAi = async (workout: CompletedWorkoutView) => {
+    try {
+      await navigator.clipboard.writeText(await buildWorkoutAiCopy(workout, new Date().toISOString(), responseLoader));
+      flashCopied(`ai:${workout.performedOccurrenceId}`);
+    } catch (err) {
+      console.error('Failed to copy session report for AI', err);
     }
   };
 
@@ -403,6 +423,16 @@ export function CompletedWorkoutList({ workouts, exportWindow, windowSweep, onRe
                       onClick={() => handleCopy(workout)}
                     >
                       {copiedId === workout.performedOccurrenceId ? '✓ Copied JSON' : '📋 Copy JSON'}
+                    </button>
+                  )}
+                  {(workout.structured || workout.garmin) && (
+                    <button
+                      type="button"
+                      className="btn-copy-activity-json"
+                      title="Copy a Markdown session report to paste into an AI assistant"
+                      onClick={() => handleCopyForAi(workout)}
+                    >
+                      {copiedId === `ai:${workout.performedOccurrenceId}` ? '✓ Copied for AI' : '📋 Copy for AI'}
                     </button>
                   )}
                   {onReclassify && workout.garmin && (
