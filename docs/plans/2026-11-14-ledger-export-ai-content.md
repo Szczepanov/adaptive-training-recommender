@@ -69,8 +69,11 @@ found that the export serves this badly.
   hold.
 - **Non-determinism in the pure builder/renderer.** "Since last export" comes from an
   explicit input, never from a clock or a store read inside the builder.
-- **A second export pipeline.** Every new output is rendered from `LedgerExport` (D-EXPORT:
-  one canonical schema, Markdown rendered from it).
+- **A second export pipeline.** Phases 2–4 render every new output from `LedgerExport`
+  (D-EXPORT: one canonical ledger schema, Markdown rendered from it). Phase 1 is the
+  scoped exception chosen in the corrected design below: extend the existing
+  `completed_workout_v1` session export from `CompletedWorkoutView` and render its Markdown
+  view, reusing its hydration path rather than creating another pipeline.
 
 ## Constraints
 
@@ -223,8 +226,8 @@ It is not exposed in the UI by default.
   plan notes" means these existing fields. A new authored field would need a new
   external-plan schema version and is out of scope._
 
-**2c. User context since the last export.** Change detection is by **content hash**, not
-by date.
+**2c. User context since the last confirmed chat delivery.** Change detection is by
+**content hash**, not by date.
 
 - Almost no user-context item has a recorded change date (`revisions` is
   `not_yet_supported`, and `updatedAt` is deliberately not trusted), so date-based change
@@ -237,9 +240,15 @@ by date.
 - New, changed and removed items print in full; a removed item gets a `removed:` line.
 - Without `previousContext`, everything prints in full.
 - The JSON always carries the full user context. Only the Markdown is abbreviated.
-- After a successful copy or download, the UI stores the last export's date and item
-  hashes per purpose on the device (local storage). A visible "include full context" toggle
-  ignores them.
+- Copying or downloading alone never advances the checkpoint. After pasting into the
+  intended chat, the user explicitly confirms "Added to this chat" for that export. Only
+  then does the UI store that export's date and item hashes on the device (local storage),
+  scoped by authenticated user, selected chat and purpose. Confirm the exported snapshot,
+  not content recomputed after copying. Chat selection is a local label, not an integration
+  with the external AI service; it and the user id are never included in the export.
+  - No selected chat or no confirmed checkpoint means full context. Starting or switching
+    to a new chat must not reuse another chat's checkpoint; another user's checkpoint is
+    never read. A visible "include full context" toggle ignores prior checkpoints.
   - Losing that store only means the next export is full. Nothing is written to Firestore,
     so there is no rules impact.
   - The builder and renderer stay pure: the hashes are an explicit input.
@@ -290,11 +299,14 @@ would need new change tracking in Firestore._
   execution, and the Warsaw midnight boundary.
 - **Contract:** JSON Schema and contract tests updated. Redaction tests run on notes and
   free text. The forbidden-opinion-key inventory is unchanged.
+- **Checkpoint:** copy/download without confirmation leaves dates and hashes unchanged;
+  confirmation records the exported snapshot for only the selected user/chat/purpose;
+  missing checkpoints, a new user/chat and "include full context" render full context.
 - **Goldens:**
   - existing verbose goldens, which stay byte-identical where the content did not change;
   - new compact goldens for morning, planning and session;
   - a size assertion for the compact morning export.
-- **Browser E2E:** session export from the completion sheet and from History, and the
+- **Browser E2E:** session export from the Home completed-session row and from History, and the
   morning export with upcoming sessions, at mobile and desktop widths.
 - **Repository:** `make verify`. No `POLICY_VERSION` change, and the policy-drift check
   stays clean.
@@ -319,6 +331,7 @@ and `docs/plans/README.md`.
 ## Left to the builder
 
 - Exact TypeScript type names and file split; keep files under 400 lines.
-- How the UI stores the last export date, within existing preference patterns.
+- How the UI stores the confirmed chat checkpoint, within existing preference patterns
+  and the user/chat/purpose scoping required by Phase 2c.
 - Exact compact line formats, as long as they meet the rules and size target above.
 - Whether Phase 1 lands as one PR or as a builder PR followed by a UI PR.
