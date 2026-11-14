@@ -21,7 +21,11 @@ found that the export serves this badly.
    repeats in full each time (37% of the file). Inactive and unavailable flags are listed
    for every date (40% of the planning file). In a long chat, the repeated copies pile up
    and contradict each other.
-2. **A finished session is close to invisible.** `performedTraining.structuredEntries` is
+2. **A finished session is close to invisible in the ledger export.** The History card's
+   per-workout **Copy JSON** (`completed_workout_v1`) has the detail, but it is JSON-only,
+   lacks choice reasons, tempo, notes and later-window responses, and is not offered right
+   after a session (see the Phase 1 correction). In the ledger export,
+   `performedTraining.structuredEntries` is
    `{ exerciseCount, setCount }` only (`services/ledgerExportService.ts`); `setCount`
    includes warm-ups. Not exported:
    - per-set reps, load, RIR/RPE gauge, side and corrections;
@@ -41,7 +45,7 @@ found that the export serves this badly.
 ## Goals
 
 - **G1 — Session report:** after a session, one export gives the AI a complete,
-  planned-vs-performed account of that session.
+  planned-vs-performed account of that session (built on `completed_workout_v1`).
 - **G2 — Morning update:** a morning export small enough to paste every day without
   flooding the chat. It shows today, yesterday and the next 7 days.
 - **G3 — Coaching continuity:** the export shows missed sessions, swaps and omissions, and
@@ -77,8 +81,7 @@ found that the export serves this badly.
 - Every leaf keeps `value`/`source`/`state` (+ `unit` for numbers), as today.
 - No identity in output: the existing redaction and identity tests apply to new fields,
   including free-text notes.
-- The ledger module boundary test forbids engine imports. Planned-vs-performed matching uses
-  `sessions/` data, not `engine/`.
+- The ledger module boundary test forbids engine imports (Phases 2–4).
 - Warsaw dates (I2): every date uses `getLocalDateString`/`addDaysToLocalDateString`.
 - **D-EVAL timing:** export content is an input to the planning AI. Changing it during the
   qualifying block changes what is being evaluated. Phases 1 and 2 should ship before the
@@ -86,85 +89,93 @@ found that the export serves this badly.
 
 ## Approaches considered
 
-1. **New `session` purpose inside the ledger export (chosen).** It reuses the schema,
-   provenance, missingness, redaction, contract tests and the Markdown renderer. It is one
-   canonical source, as D-EXPORT intends. Cost: schema and test additions.
-2. **A separate Markdown renderer built from session data.** Faster to build, but it is a
-   second export path that drifts from the ledger and skips its missingness and redaction
-   guarantees. Rejected.
-3. **Making the existing per-workout "Copy JSON" richer.** Raw documents, no provenance or
-   prescription join, no Markdown. Rejected as the main path. It may stay as a debug aid.
+**Correction (2026-11-14, during implementation planning).** The original analysis missed
+that the History card's **Copy JSON** already exports a planned-vs-performed session
+(`training-occurrence/completedWorkoutJsonExport.ts`, schema `completed_workout_v1`). It
+covers:
 
-Recommended by the agent; the owner said "proceed" on 2026-11-14.
+- each exercise with its prescribed target (sets, reps/seconds/meters, load, RPE/RIR target,
+  rest);
+- every logged set (reps, kg, duration, distance, effort gauge, warm-up flag, swapped
+  exercise) with the performed rest after it;
+- added (unplanned) exercises;
+- the execution's state, `executedDefinition`, sRPE, completed fraction, fatigue and note;
+- the full linked Garmin activity.
+
+Approach 3 was rejected for having "no prescription join", which is wrong. With the
+corrected facts, Phase 1 takes approach 3.
+
+1. **New `session` purpose inside the ledger export.** This would duplicate an existing,
+   tested planned-vs-performed export and a second hydration path. It is no longer chosen.
+2. **A separate Markdown renderer built from raw session data.** Rejected: it would be a
+   third path.
+3. **Extend `completed_workout_v1` and add a Markdown rendering of it (chosen for Phase 1).**
+   It reuses the History read model (`getCompletedWorkoutsInRange`), which already joins the
+   prescription, sets, rest and Garmin data. It adds only the missing fields and a compact
+   Markdown view.
+
+Phases 2–4 still change the ledger export itself, as designed.
 
 ## Design
 
 ### Phase 1 — Session report (G1)
 
-**Purpose and scope.** Add a `session` purpose. Its scope is **one structured execution**,
-not a date window:
+**Scope.** One completed workout (a `CompletedWorkoutView`). Abandoned executions and
+completions whose reconciliation failed have no performed occurrence, so they are out of
+scope for Phase 1; the morning export still reports them. This limitation is named in the UI
+copy only if an export is attempted without a view.
 
-- `BuildLedgerExportInput` takes a `focus: { executionId }`.
-- The canonical performed occurrence (`SessionExecution.performedOccurrenceId`) is joined
-  when it exists.
-- When it does not exist (an abandoned execution, or a completion whose reconciliation
-  failed), the report still renders from the execution. The occurrence is shown with an
-  explicit `not_recorded` state, never omitted.
-- A Garmin-only activity with no structured execution is out of scope for `session`; it
-  appears in the morning/planning exports as today.
-- `window` is the execution's local date, and the header names the execution and session.
+**Additive fields in `completed_workout_v1`.** No field is renamed or removed, so the schema
+id stays.
 
-_Agent's call (builder check): keyed on the execution, because performed occurrences exist
-only for completed executions whose reconciliation succeeded._
+- `exercises[].prescribed.tempo` and `exercises[].prescribed.notes`, from the authored
+  `SessionStep`.
+- `exercises[].choices[]`: the athlete's `ChoiceEntryPayload`s for that step, each with
+  `choiceId`, `optionId`, the option's label when resolvable, and `reason`.
+- `session.techniqueNote`, and `responses[]`: every `SessionResponse` linked to this
+  occurrence (`window`, `sessionRpe`, `completedFraction`, `unexpectedFatigue`,
+  `techniqueNote`, `note`). This covers the later-day and next-morning windows.
+- `providerActivity` stays as is. The Markdown view selects fields, so raw ids never appear
+  in the Markdown.
 
-The five layers stay. Facts carry only that session plus same-day context (check-in,
-recovery, flags). User context includes **all** active injuries, constraints, guardrails and
-equipment, unfiltered.
-
-_Agent's call: unfiltered. Filtering by region would need body-region mapping data that lives
-in `engine/`, which the ledger boundary forbids, and too narrow a filter would hide a safety
-constraint._
-
-**New fact: `sessionDetail`.** It is attached to the performed occurrence, in `facts`:
-
-- `executions[]`: `state`, `startedAt`, `completedAt`, `executedDefinition`, `notes`,
-  execution `sessionRpe`.
-- `steps[]`, in prescription order, one per prescribed step plus added steps:
-  - **Prescribed** (from `ExecutionPrescription`/`SessionDefinition`): exercise name,
-    dose (sets × reps / duration / distance), load target, effort target (RIR/RPE),
-    rest seconds, tempo.
-  - **Performed:** ordered entries, each with set index, reps / duration / distance,
-    `weightKg`, gauge (scale + value), `isWarmup`, `side`, and whether it was corrected.
-    Tombstoned entries are excluded and counted.
-  - **Choice:** `select_alternative` (with the alternative's name), `omit_step`,
-    `reduce_*`, or `added`.
-  - **Rest:** prescribed vs actual seconds per rest event, with `endReason`.
-- `provider`: the Garmin activity linked through `sourceRefs`, if any. It carries
-  duration, average/max HR, training load, training effect (aerobic/anaerobic), time in HR
-  zones, and laps/segments (uncapped for this one activity). If no link exists yet, state
-  `not_recorded` with reason `awaiting_provider_sync`.
-
-`sessionResponses` for the occurrence are included in full, as today.
-
-**Markdown rendering for `session`** is a readable session sheet, not field tables:
+**Markdown view** (`formatCompletedWorkoutMarkdown(view, exportedAt)`, pure). It is a
+session sheet, not field tables:
 
 ```
+# Session: Heavy Squat Day — 2026-11-14 (authored, completed)
+duration: 62 min (app) · sRPE 7 · completed 100% · fatigue: no
+note: …
+
 ## Back Squat — planned 3×5 @ 100 kg, RIR 2, rest 180 s
-warm-up: 8 @ 40, 5 @ 70
-1: 5 @ 100, RIR 2 · rest 200 s
-2: 5 @ 100, RIR 1 · rest 240 s
-3: 4 @ 100, RIR 0
-## Romanian Deadlift — swapped to: Hip Thrust (select_alternative)
-...
-missing: tempo (not_recorded)
+warm-up: 8 @ 40 kg, 5 @ 70 kg
+1: 5 @ 100 kg, RIR 2 · rest 200 s
+2: 5 @ 100 kg, RIR 1 · rest 240 s
+3: 4 @ 100 kg, RIR 0
+## Romanian Deadlift — swapped to Hip Thrust (reason: back tight)
+…
+## Added: Face Pull (unplanned)
+…
+## Not performed: Nordic Curl (planned 3×6)
+
+Garmin: 64 min · avg HR 128 · max 171 · load 95 · TE 3.1/1.2 · zones …
+responses: next_morning: soreness note …
+missing: performed rest (not_recorded)
 ```
+
+Rules:
+
+- Missing values are named, never shown as zero.
+- A prescribed step with no performed sets renders as **Not performed**.
+- Units are always shown.
+- The header carries no ids. One trailing `ref:` line holds the occurrence id, so the AI can
+  correlate it with the morning export.
 
 **Entry points:**
 
-- an **Export session for AI** action on the completion sheet, after the session response
-  is saved (Copy Markdown, Download JSON);
-- the same action on a completed session in History, so the report can be re-exported
-  once Garmin data arrives.
+- **Copy for AI** (Markdown) beside the existing **Copy JSON** on the History card.
+- After a session is completed, the runner's post-completion state offers the same action
+  for the just-finished workout, once its view is readable. While the occurrence is not yet
+  readable, it says "available in History".
 
 ### Phase 2 — Morning update (G2)
 
