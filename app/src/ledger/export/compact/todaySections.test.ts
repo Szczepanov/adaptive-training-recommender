@@ -102,6 +102,14 @@ describe('renderTodaySections', () => {
         expect(noWork).not.toContain('detail: copy the session report from History');
     });
 
+    it('prints no ratio when the planned denominator is unavailable', () => {
+        const ledger = build();
+        ledger.facts.performedTraining.items[0].fields.plannedSets = { value: null, source: 'adaptive', state: 'unavailable' };
+        const line = renderTodaySections(ledger).lines.find(row => row.startsWith('Cycling'))!;
+        expect(line).toContain('· 4 work sets (+1 warm-up) (planned: unavailable) ·');
+        expect(line).not.toMatch(/\d+\/\d+ work sets/);
+    });
+
     it('takes sRPE only from a response linked through the structured source ref', () => {
         const ledger = build();
         const fields = ledger.facts.performedTraining.items[0].fields;

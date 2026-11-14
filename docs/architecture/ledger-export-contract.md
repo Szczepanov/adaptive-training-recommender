@@ -152,11 +152,20 @@ Phase 2b adds four additive performed-training fields. `plannedSets`, `workSets`
 `services/ledgerStructuredWork.ts`. `plannedSets` sums the block-aware target
 (`targetEntriesForGroupStep`) of every exercise step of each linked execution's pinned
 definition, resolved through `resolveSessionDefinition` from its `prescriptionHash` (or the
-source's own definition); step alternatives and rest/transition steps are never summed, and
-optional steps count as prescribed. A missing, invalid or unreadable definition leaves
-`plannedSets` `missing`/`invalid`/`unavailable`, never 0. `workSets` counts live, non-choice,
-non-warm-up entries with the runner's set rule (a left/right hold is one set once both sides are
-logged); `warmupSets` counts live warm-up entries. Linked provider work is never added. An
+source's own definition). Step alternatives and rest/transition steps are never summed. Optional
+steps count as prescribed, as in `comparePlannedVsPerformed`. A `reduced` execution with no
+`prescriptionHash` has no pinned reduced definition, so `plannedSets` is `unavailable` rather than
+the authored count. A missing, invalid or unreadable definition leaves `plannedSets`
+`missing`/`invalid`/`unavailable`, never 0. One prescription is one denominator: an occurrence
+linked to more than one structured execution (for example an abandoned run and a re-run) is
+unresolved, as `canonicalBroadHistory.ts` treats multiple structured sources, so `plannedSets` is
+`unavailable` while `workSets` and `warmupSets` still sum the real performed sets of every run, and
+the compact line then prints no ratio (`9 work sets (+1 warm-up) (planned: unavailable)`).
+`workSets` counts live, non-choice, non-warm-up entries with the runner's set rule (a left/right
+hold is one set once both sides are logged); `warmupSets` counts live entries flagged
+`isWarmup`. A warm-up *block* is not a warm-up set: its exercise steps count toward
+`plannedSets`, and sets logged on them without the flag count as work. Linked provider work is
+never added. An
 unreadable or missing linked execution leaves all three `unavailable`; an occurrence with no
 structured execution reports them `not_applicable`. `linkedResponseIds` lists, ordered by date
 then id, the session responses whose `sourceSession` is `{ kind: 'execution', id }` for one of the

@@ -4,7 +4,6 @@
  * structured execution ids the builder links session responses through.
  */
 import type { OccurrenceInput, SetCountInput } from '../ledger/export/inputs';
-import { worstState } from '../ledger/export/ledgerValue';
 import type { LedgerState } from '../ledger/export/schema';
 import type { NormalizedExecutionRecord } from '../sessions/legacyStrengthAdapter';
 import type { SessionDefinition } from '../sessions/models';
@@ -18,6 +17,9 @@ const absentCount = (state: LedgerState): SetCountInput => ({ value: null, state
 
 /** The pinned definition (prescription hash, else the source's own definition), or why it is unreadable. */
 async function resolvePinned(userId: string, row: NormalizedExecutionRecord): Promise<Resolved> {
+    // A reduced run without its pinned prescription would fall back to the authored definition,
+    // which is not what was prescribed.
+    if (row.execution.executedDefinition === 'reduced' && !row.execution.prescriptionHash) return { state: 'unavailable' };
     try {
         const result = await resolveSessionDefinition(userId, row.execution.sessionSource, row.execution.prescriptionHash);
         if (result.status === 'AVAILABLE') return { definition: result.data };
@@ -31,6 +33,17 @@ function entrySummary(rows: readonly NormalizedExecutionRecord[]): StructuredWor
     const entries = rows.flatMap(row => row.entries).filter(entry => entry.payload.kind !== 'choice' && !entry.deletedAt);
     const exercises = entries.map(entry => (entry.exerciseRef?.kind === 'catalog' ? entry.exerciseRef.exerciseId : entry.exerciseRef?.name) ?? entry.stepId);
     return { exerciseCount: new Set(exercises.filter(Boolean)).size, setCount: entries.length };
+}
+
+/**
+ * One prescription is one denominator. Several structured runs on one occurrence (an abandoned
+ * run and a re-run) are unresolved, as in `canonicalBroadHistory.ts`, so planned is unavailable
+ * rather than a sum of prescriptions; their performed sets still add up.
+ */
+function plannedFor(resolved: readonly Resolved[]): SetCountInput {
+    if (resolved.length !== 1) return absentCount('unavailable');
+    const [only] = resolved;
+    return 'definition' in only ? { value: plannedSetCount(only.definition) } : absentCount(only.state);
 }
 
 export async function projectStructuredWork(
@@ -49,15 +62,13 @@ export async function projectStructuredWork(
     const rows = linked as NormalizedExecutionRecord[];
     const resolved = await Promise.all(rows.map(row => resolvePinned(userId, row)));
     const definitions = resolved.map(item => ('definition' in item ? item.definition : null));
-    const failed = resolved.flatMap(item => ('state' in item ? [item.state] : []));
     const counts = performedSetCounts(rows.map((row, i) => ({ entries: row.entries, definition: definitions[i] })));
     return {
         structuredExecutionIds: ids,
         executedDefinitions: rows.map(row => ({ executionId: row.execution.executionId, executedDefinition: row.execution.executedDefinition ?? 'unknown' })),
         structuredEntries: entrySummary(rows),
         setCounts: {
-            planned: failed.length ? absentCount(worstState(failed))
-                : { value: definitions.reduce((sum, definition) => sum + plannedSetCount(definition!), 0) },
+            planned: plannedFor(resolved),
             work: { value: counts.work },
             warmup: { value: counts.warmup },
         },

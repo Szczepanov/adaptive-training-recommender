@@ -52,7 +52,7 @@ describe('performedSetCounts', () => {
         expect(performedSetCounts([{ entries, definition: null }])).toEqual({ work: 1, warmup: 0 });
     });
 
-    it('counts work on an added, unplanned step and sums several executions', () => {
+    it('counts work on an added, unplanned step and sums performed work across executions', () => {
         const first = { entries: [rep('added'), rep('added')], definition };
         const second = { entries: [rep('squat')], definition: null };
         expect(performedSetCounts([first, second])).toEqual({ work: 3, warmup: 0 });
