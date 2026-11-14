@@ -209,6 +209,23 @@ describe('exportCompletedWorkoutToJson', () => {
         expect(added.name).toBe('Back Extension');
     });
 
+    it('flags a choice-only step without claiming a prescription', () => {
+        const view: CompletedWorkoutView = {
+            ...structuredView,
+            structured: {
+                ...structuredView.structured!,
+                steps: [{
+                    stepId: 'gate', title: 'Gate', isOptional: false, choiceOnly: true, prescribed: { sets: 0 },
+                    choices: [{ choiceId: 'c', optionId: 'o', completedAt: '2026-08-26T07:00:00.000Z' }], sets: [],
+                }],
+            },
+        };
+        const [gate] = exportCompletedWorkoutToJson(view, EXPORTED_AT).exercises;
+        expect(gate.choiceOnly).toBe(true);
+        expect(gate.prescribed.sets).toBe(0);
+        expect(exportCompletedWorkoutToJson(structuredView, EXPORTED_AT).exercises.some(e => e.choiceOnly)).toBe(false);
+    });
+
     const withFirstStep = (patch: Record<string, unknown>): CompletedWorkoutView => ({
         ...structuredView,
         structured: {

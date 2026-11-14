@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { copyDeferredText } from './copyDeferredText';
+import { copyDeferredText, StaleCopyError } from './copyDeferredText';
 
 class FakeClipboardItem {
   readonly items: Record<string, Promise<Blob>>;
@@ -44,6 +44,21 @@ describe('copyDeferredText', () => {
     stubClipboard({ writeText }, false);
     await copyDeferredText(Promise.resolve('hi'));
     expect(writeText).toHaveBeenCalledWith('hi');
+  });
+
+  it('does not let an older request overwrite a newer one on the writeText fallback', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    stubClipboard({ writeText }, false);
+    let resolveOld!: (t: string) => void;
+    let resolveNew!: (t: string) => void;
+    const older = copyDeferredText(new Promise<string>(r => { resolveOld = r; }));
+    const newer = copyDeferredText(new Promise<string>(r => { resolveNew = r; }));
+    resolveNew('newer report');
+    await newer;
+    resolveOld('older report');
+    await expect(older).rejects.toBeInstanceOf(StaleCopyError);
+    expect(writeText).toHaveBeenCalledTimes(1);
+    expect(writeText).toHaveBeenCalledWith('newer report');
   });
 
   it('throws when no clipboard API exists', async () => {

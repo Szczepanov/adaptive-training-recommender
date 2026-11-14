@@ -84,6 +84,7 @@ const providerOnlyView: CompletedWorkoutView = {
     structured: undefined,
     sourceBadge: { hasStructured: false, hasProvider: true, providers: ['garmin'] },
     garmin: { ...structuredView.garmin!, trainingEffectAerobic: null, trainingEffectAnaerobic: null, averageHr: null, maxHr: undefined, activityTrainingLoad: null },
+    sourceReads: { ...completeReads, structured: { status: 'not_linked' } },
 };
 
 const response = (over: Partial<SessionResponse>): SessionResponse => ({
@@ -159,6 +160,55 @@ describe('formatCompletedWorkoutMarkdown', () => {
         }]), EXPORTED_AT);
         expect(md).toContain('## Not performed: Deadlift (planned 3×5)');
         expect(md).toContain('warm-up: 5 @ 60 kg');
+    });
+
+    it('says unavailable, not provider-only, when the structured execution could not be read', () => {
+        const unreadable = (structured: CompletedWorkoutView['sourceReads']['structured']): CompletedWorkoutView => ({
+            ...providerOnlyView,
+            sourceReads: { ...completeReads, structured },
+        });
+        const missing = formatCompletedWorkoutMarkdown(unreadable({ status: 'execution_missing' }), EXPORTED_AT);
+        expect(missing).toContain('structured log: unavailable (execution_missing)');
+        expect(missing).not.toContain('provider recording only');
+        expect(formatCompletedWorkoutMarkdown(unreadable({ status: 'execution_invalid' }), EXPORTED_AT))
+            .toContain('structured log: unavailable (execution_invalid)');
+        expect(formatCompletedWorkoutMarkdown(unreadable({ status: 'execution_unavailable' }), EXPORTED_AT))
+            .toContain('structured log: unavailable (execution_unavailable)');
+        expect(formatCompletedWorkoutMarkdown(unreadable({ status: 'entries_unavailable' }), EXPORTED_AT))
+            .toContain('structured log: unavailable (entries_unavailable)');
+        expect(formatCompletedWorkoutMarkdown(unreadable({ status: 'definition_unresolved', definition: 'MISSING' }), EXPORTED_AT))
+            .toContain('structured log: unavailable (definition_unresolved: MISSING)');
+    });
+
+    it('says no exercise steps were recorded when structured data is available but empty', () => {
+        const md = formatCompletedWorkoutMarkdown(
+            { ...structuredView, structured: { ...structuredView.structured!, steps: [] } },
+            EXPORTED_AT,
+        );
+        expect(md).toContain('structured log: no exercise steps recorded');
+        expect(md).not.toContain('provider recording only');
+        expect(md).not.toContain('unavailable');
+    });
+
+    it('does not claim a provider recording when nothing is linked at all', () => {
+        const md = formatCompletedWorkoutMarkdown(
+            { ...providerOnlyView, garmin: undefined, sourceBadge: { hasStructured: false, hasProvider: false, providers: [] } },
+            EXPORTED_AT,
+        );
+        expect(md).toContain('structured log: none');
+        expect(md).not.toContain('provider recording only');
+    });
+
+    it('renders a choice-only step as a Choice heading with no prescription or Not performed', () => {
+        const md = formatCompletedWorkoutMarkdown(withSteps([{
+            stepId: 'gate', title: 'Gate', isOptional: false, choiceOnly: true, prescribed: { sets: 0 },
+            choices: [{ choiceId: 'c', optionId: 'reduced', optionLabel: 'Reduced version', reason: 'Tired', completedAt: stamp }],
+            sets: [],
+        }]), EXPORTED_AT);
+        expect(md).toContain('## Choice: Gate');
+        expect(md).toContain('choice: Reduced version (reason: Tired)');
+        expect(md).not.toContain('Not performed: Gate');
+        expect(md).not.toContain('planned');
     });
 
     it('prints responses: none recorded for an empty list', () => {

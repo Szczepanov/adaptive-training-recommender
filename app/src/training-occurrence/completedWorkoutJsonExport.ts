@@ -81,6 +81,8 @@ export interface ExportedExercise {
     performedExercise?: ExerciseRef;
     /** True for an exercise the athlete added during the session (no prescription). */
     unplanned?: true;
+    /** True for a non-exercise step kept only for a recorded choice (`prescribed.sets` is 0). */
+    choiceOnly?: true;
     optional: boolean;
     prescribed: ExportedPrescription;
     /** Authored choices the athlete resolved during the step. */
@@ -276,6 +278,7 @@ function exportExercise(step: StructuredStepDetail): ExportedExercise {
         ...(step.exerciseRef ? { exercise: step.exerciseRef } : {}),
         ...(step.performedExerciseRef ? { performedExercise: step.performedExerciseRef } : {}),
         ...(step.unplanned ? { unplanned: true as const } : {}),
+        ...(step.choiceOnly ? { choiceOnly: true as const } : {}),
         optional: step.isOptional,
         prescribed: exportPrescription(step.prescribed),
         ...(step.choices && step.choices.length > 0 ? { choices: step.choices.map(choice => ({ ...choice })) } : {}),

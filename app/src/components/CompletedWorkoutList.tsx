@@ -14,7 +14,7 @@ import { manualLinkCandidatesFor, type CompletedWorkoutView, type ManualLinkCand
 import type { PerformedRestDetail, PrescribedStepTarget } from '../training-occurrence/structuredSetDetail';
 import { sourceKeyForRef } from '../training-occurrence/sourceIdentity';
 import { formatCompletedWorkoutJson, resolveCompletedWorkoutDuration } from '../training-occurrence/completedWorkoutJsonExport';
-import { copyDeferredText } from '../utils/copyDeferredText';
+import { copyDeferredText, StaleCopyError } from '../utils/copyDeferredText';
 import { sessionResponseService } from '../services/sessionResponseService';
 import { buildWorkoutAiCopy, loadWorkoutResponses, type ResponseLoader } from './completedWorkoutCopy';
 import {
@@ -379,6 +379,7 @@ export function CompletedWorkoutList({ workouts, exportWindow, windowSweep, onRe
       await copyDeferredText(text);
       flash(key);
     } catch (err) {
+      if (err instanceof StaleCopyError) return; // a newer copy superseded this one
       console.error(errorLabel, err);
       flash(`fail:${key}`);
     }

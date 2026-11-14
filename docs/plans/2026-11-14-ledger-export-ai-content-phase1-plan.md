@@ -1,8 +1,6 @@
 # Session report for AI (Phase 1) Implementation Plan
 
-**Status:** Phase 1 implemented on branch `feat/ledger-export-session-report` (PR pending). Phases 2–4 are planned separately.
-
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+**Status:** Phase 1 implemented on branch `feat/ledger-export-session-report` (PR #1258). Phases 2–4 are planned separately.
 
 **Goal:** After a session, one tap copies a compact, planned-vs-performed Markdown session report for the external AI chat.
 
@@ -32,152 +30,44 @@
 
 ---
 
-### Task 1: Prescription tempo/notes and step choices in the step detail
+## Outcome by task
 
-**Files:**
-- Modify: `app/src/training-occurrence/structuredSetDetail.ts`
-- Test: `app/src/training-occurrence/structuredSetDetail.test.ts`
+### Task 1: Prescription tempo/notes and step choices in the step detail (shipped)
 
-**Interfaces:**
-- Produces:
-  - `PrescribedStepTarget` gains `tempo?: string; notes?: string`, copied from `SessionStep.tempo` / `SessionStep.notes`.
-  - `StructuredStepDetail` gains `choices?: StepChoiceDetail[]`.
-  - `export interface StepChoiceDetail { choiceId: string; optionId: string; optionLabel?: string; reason?: string; completedAt: string }`.
-  - Choices attach to `entry.stepId` when set; otherwise to the `SessionChoice.appliesAtStepId` whose `id === payload.choiceId` in any block's `optionSets`. A choice that resolves to no step is dropped from steps. `optionLabel` is the matching `SessionOption.label`.
-  - Entries with `deletedAt` are excluded from sets and choices.
+`buildStructuredStepDetails` copies `tempo` and `notes` into `PrescribedStepTarget` and attaches the effective choices to their step as `StepChoiceDetail` (matched by `entry.stepId`, else by the option set's `appliesAtStepId`). Tombstoned entries never appear as sets or choices. Superseded choices are resolved with `resolveEffectiveChoiceEntries`, so only the effective one is reported.
+- Ruling (review fix): a non-exercise step kept only because a choice was recorded carries `choiceOnly: true` and `prescribed.sets === 0`, so it never reads as missed work.
+- Files: `app/src/training-occurrence/structuredSetDetail.ts` and its test.
 
-- [ ] **Step 1: Write failing tests** in `structuredSetDetail.test.ts`:
-  - `copies tempo and notes into the prescribed target`: a step with `tempo: '31X0'`, `notes: 'brace'` gives `prescribed.tempo === '31X0'` and `prescribed.notes === 'brace'`.
-  - `attaches a choice entry to its step with label and reason`: given a definition block with `optionSets: [{ id: 'c1', appliesAtStepId: 'squat', options: [{ id: 'o2', label: 'Goblet squat', actions: [] }], trigger: {...} }]` and a choice entry `{ stepId: undefined, payload: { kind: 'choice', choiceId: 'c1', optionId: 'o2', reason: 'knee' } }`, the `squat` detail has `choices` equal to `[{ choiceId: 'c1', optionId: 'o2', optionLabel: 'Goblet squat', reason: 'knee', completedAt }]`.
-  - `excludes tombstoned entries from sets and choices`: an entry with `deletedAt: '2026-11-14T10:00:00Z'` produces no set row and no choice.
-- [ ] **Step 2: Run them and confirm they fail.** Run `cd app && npx vitest run src/training-occurrence/structuredSetDetail.test.ts`; expect 3 failures.
-- [ ] **Step 3: Implement** in `structuredSetDetail.ts` per the Interfaces block.
-- [ ] **Step 4: Rerun the test file.** Expect all tests to pass, including the existing ones.
-- [ ] **Step 5: Commit** with `feat(history): carry tempo, notes and choices in structured step detail`.
+### Task 2: Additive `completed_workout_v1` fields (shipped)
 
-### Task 2: Additive `completed_workout_v1` fields
+`ExportedPrescription` gained `tempo` and `notes`, `ExportedExercise` gained `choices` (and `choiceOnly`), and the export gained `responses` (`ExportedSessionResponse[]` in window order, or `'unavailable'`). `exportCompletedWorkoutToJson` and `formatCompletedWorkoutJson` take an optional `responses` argument; the key is omitted when it is not supplied. The schema id is unchanged.
+- Files: `app/src/training-occurrence/completedWorkoutJsonExport.ts` and its test.
 
-**Files:**
-- Modify: `app/src/training-occurrence/completedWorkoutJsonExport.ts`
-- Test: `app/src/training-occurrence/completedWorkoutJsonExport.test.ts`
+### Task 3: Markdown session report (shipped)
 
-**Interfaces:**
-- Consumes: Task 1 `PrescribedStepTarget.tempo/notes` and `StructuredStepDetail.choices`.
-- Produces:
-  - `ExportedPrescription` gains `tempo?: string; notes?: string`.
-  - `ExportedExercise` gains `choices?: StepChoiceDetail[]`.
-  - `CompletedWorkoutExport` gains `responses?: ExportedSessionResponse[] | 'unavailable'`.
-  - `export interface ExportedSessionResponse { window: SessionResponse['window']; sessionRpe?: number; completedFraction?: number; unexpectedFatigue?: boolean; techniqueNote?: string; note?: string }`.
-  - New signature: `exportCompletedWorkoutToJson(view: CompletedWorkoutView, exportedAt: string, responses?: readonly SessionResponse[] | 'unavailable'): CompletedWorkoutExport`. `formatCompletedWorkoutJson` gains the same optional third parameter.
-  - `responses` is omitted when the argument is `undefined`, so existing callers and snapshots are unchanged. Responses are ordered `immediate`, `later_day`, `next_morning`, then by `createdAt`.
+`formatCompletedWorkoutMarkdown` renders the JSON export, so the two cannot disagree. Swapped, added, not-performed, warm-up-only and choice-only steps have their own headings; missing values are named, never `0`.
+- Ruling (review fix): with no exercise steps, the `structured log:` line follows `view.sourceReads.structured`: `none (provider recording only)` only when the structured source is confirmed not linked and a provider recording exists; `unavailable (<status>)` when the execution or its definition or entries could not be read; `no exercise steps recorded` when structured data is available but empty.
+- Files: `app/src/training-occurrence/completedWorkoutMarkdown.ts`, its test and golden file.
 
-- [ ] **Step 1: Write failing tests:**
-  - `exports prescribed tempo and notes`.
-  - `exports step choices`.
-  - `includes responses in window order and omits the key when not supplied`.
-  - `marks responses unavailable`: the argument `'unavailable'` gives `responses === 'unavailable'`.
-- [ ] **Step 2: Run them and confirm they fail.** Run `npx vitest run src/training-occurrence/completedWorkoutJsonExport.test.ts`.
-- [ ] **Step 3: Implement** per the Interfaces block.
-- [ ] **Step 4: Rerun the test file.** Expect all to pass, and existing expectations unchanged.
-- [ ] **Step 5: Commit** with `feat(history): add choices, tempo, notes and responses to completed_workout_v1`.
+### Task 4: Copy for AI on the History card (shipped)
 
-### Task 3: Markdown session report
+A **Copy for AI** button beside **Copy JSON** on the History card; Copy JSON now also carries responses. A rejected response read becomes `responses: unavailable`. A failed copy shows **Copy failed**.
+- Ruling: `copyDeferredText` hands a promise to `ClipboardItem` inside the click, so the user gesture survives the Firestore reads (Safari/iOS). On the `writeText` fallback a newer request supersedes an older one: the older call rejects with `StaleCopyError`, which callers treat as a silent no-op.
+- Files: `app/src/components/CompletedWorkoutList.tsx`, `app/src/components/completedWorkoutCopy.ts`, `app/src/utils/copyDeferredText.ts` and their tests.
 
-**Files:**
-- Create: `app/src/training-occurrence/completedWorkoutMarkdown.ts`
-- Test: `app/src/training-occurrence/completedWorkoutMarkdown.test.ts`, with golden file `app/src/training-occurrence/completedWorkoutMarkdown.golden.md`
+### Task 5: Copy for AI after finishing a session (shipped, different entry point)
 
-**Interfaces:**
-- Consumes: `exportCompletedWorkoutToJson` from Task 2. Render from its output, so JSON and Markdown cannot disagree.
-- Produces: `formatCompletedWorkoutMarkdown(view: CompletedWorkoutView, exportedAt: string, responses?: readonly SessionResponse[] | 'unavailable'): string`.
+- Ruling: the action is **not** in `SessionRunner`, which closes right after completion unless companion sessions exist. It is a **Copy session for AI** button (`LedgerSessionAiCopyButton`) on completed session rows of Home's `LedgerTodayCard`. Until the workout is readable it says it is not ready yet.
+- Ruling (review fix): the accessible name is `Copy session for AI: <title>` (it contains the visible text), and one always-mounted `role="status"` region announces `Copied for AI`, the not-ready message and the failure message.
+- Files: `app/src/components/LedgerSessionAiCopyButton.tsx`, `app/src/components/LedgerTodayCard.tsx` and `.css`.
 
-**Line format (fixed by the spec):**
-- Header: `# Session: <title> — <localDate> (<executedDefinition ?? 'definition unknown'>, <state>)`.
-- Summary line: `duration: <min> min (<source>) · sRPE <n> · completed <pct>% · fatigue: yes|no`. Each absent part reads `<name>: not recorded`.
-- `note:` line, only when present.
-- Per exercise:
-  - Heading: `## <name> — planned <sets>×<reps|s|m> @ <load>, RIR|RPE <target>, rest <s> s, tempo <t>`. Only parts present in the prescription are printed.
-  - Swapped: `## <plannedName> — swapped to <name>`.
-  - Unplanned: `## Added: <name> (unplanned)`.
-  - A prescribed step with no sets: `## Not performed: <name> (planned …)`.
-  - `notes:` line from the prescription, when present.
-  - One `choice:` line per choice: `<optionLabel ?? optionId>` plus ` (reason: <reason>)` when a reason exists.
-  - `warm-up:` line listing warm-up sets as `<reps> @ <kg> kg`, comma-separated.
-  - Work sets as `<n>: <reps> @ <kg> kg[, RIR x | RPE x][ · rest <actual> s]`. Duration sets use `<s> s` and distance sets `<m> m`, with `@ <kg> kg` when a load exists.
-- Garmin line, only when `providerActivity` is present: `Garmin: <durationMin> min · avg HR <n> · max HR <n> · load <n>`, plus `· TE <aerobic>/<anaerobic>` when those fields exist on the activity. Never dump the raw object.
-- When there is no structured log: `structured log: none (provider recording only)`.
-- `responses:` — one line per response: `<window>: sRPE …, fatigue …, technique: …, note: …`. When unavailable: `responses: unavailable`.
-- `missing:` — one final line naming absent sections (for example `performed rest (not_recorded)`), only when something is absent.
-- Last line: `ref: <performedOccurrenceId>`.
+### Task 6: Browser E2E and docs (shipped)
 
-- [ ] **Step 1: Write a failing golden test.** `renders the session sheet` builds a view with a swapped step, an unplanned step, a not-performed step, warm-ups, rest, a choice with a reason, Garmin data and two responses, then runs `expect(md).toMatchFileSnapshot('./completedWorkoutMarkdown.golden.md')`.
-- [ ] **Step 2: Write the remaining failing tests:**
-  - `renders a provider-only workout without a structured log`.
-  - `prints responses: unavailable`.
-  - `never prints zero for missing sRPE`: the output contains `sRPE: not recorded` and does not contain `sRPE 0`.
-  - `contains no user id`: a view with `garmin.userId`/`activityId` set does not contain those strings, except the occurrence id on the `ref:` line.
-- [ ] **Step 3: Run them and confirm they fail.**
-- [ ] **Step 4: Implement** `completedWorkoutMarkdown.ts`.
-- [ ] **Step 5: Run with `-u` once to write the golden, review the golden by eye against the format above, then rerun without `-u`.** Expect all to pass.
-- [ ] **Step 6: Commit** with `feat(history): add Markdown session report for AI`.
+`app/tests/e2e/history-copy-for-ai.pw.ts` covers Home and History (390 px and 1440 px) and checks the clipboard contents and the status announcement (Chromium only). `docs/architecture/user-flows.md`, the spec's Phase 1 status line and `docs/plans/README.md` were updated.
 
-### Task 4: Copy for AI on the History card
+## Remaining / follow-ups
 
-**Files:**
-- Modify: `app/src/components/CompletedWorkoutList.tsx` (the copy handler near `handleCopy` and the button group with `btn-copy-activity-json`).
-- Test: the existing `CompletedWorkoutList` test file, if there is one; otherwise pure-function tests of a new helper `app/src/components/completedWorkoutCopy.ts`. There is no DOM harness for every component, so follow the existing pattern.
-
-**Interfaces:**
-- Consumes: `formatCompletedWorkoutMarkdown` (Task 3) and `sessionResponseService.getResponsesForSource(userId, { kind: 'execution', id: executionId })`.
-- Produces: `buildWorkoutAiCopy(view: CompletedWorkoutView, exportedAt: string, loadResponses: (executionId: string) => Promise<SessionResponse[]>): Promise<string>`, in `completedWorkoutCopy.ts`. A rejected load maps to `'unavailable'`; a view with no execution passes `undefined`.
-- **UI:**
-  - A **Copy for AI** button beside **Copy JSON**, with the same visibility condition and the same copied-state pattern (`✓ Copied for AI`).
-  - The **Copy JSON** button also passes the responses, so both outputs carry them.
-  - Errors use the list's existing copy-error handling.
-
-- [ ] **Step 1: Write failing tests** for `buildWorkoutAiCopy`:
-  - `passes responses to the markdown`.
-  - `maps a rejected response read to responses: unavailable`.
-  - `skips the response read when the view has no execution`.
-- [ ] **Step 2: Run them and confirm they fail.**
-- [ ] **Step 3: Implement the helper and the button.** The component receives `userId` the way it already receives it for other actions; if it does not, thread `loadResponses` in as a prop from the parent that owns `userId`.
-- [ ] **Step 4: Run the tests, then `npx tsc -b` and `npx eslint` on the changed files.** Expect them clean.
-- [ ] **Step 5: Commit** with `feat(history): copy a session report for AI from the History card`.
-
-### Task 5: Copy for AI after finishing a session
-
-> **Entry-point ruling (as built):** the post-session action is not in `SessionRunner`, which closes right after completion unless companions exist. It is a **Copy session for AI** button (`LedgerSessionAiCopyButton`) on completed session rows of Home's `LedgerTodayCard`; the History card keeps **Copy for AI**. The runner-based text below is superseded.
-
-**Files:**
-- Modify: `app/src/components/session/SessionRunner.tsx`, in the post-completion state where `companionPrompt` is handled and the no-active-session view renders.
-- Test: a pure helper `app/src/components/session/postCompletionAiCopy.ts` with `.test.ts`.
-
-**Interfaces:**
-- Consumes: `getCompletedWorkoutsInRange` and `buildWorkoutAiCopy` (Task 4).
-- Produces: `findCompletedWorkoutForExecution(views: readonly CompletedWorkoutView[], executionId: string): CompletedWorkoutView | undefined`. It matches `view.structured?.execution?.executionId`.
-- **UI:**
-  - After the runner completes an execution (state `completed`; not abandoned), the post-completion view shows **Copy session for AI**.
-  - On click, it reads `getCompletedWorkoutsInRange(userId, date, nextDate)` for the execution's local date, finds the view and copies.
-  - If no view is found yet, it shows: `Not ready yet — it will be available in History once the session is saved.`
-  - The button must not block or replace the companion prompt; it renders alongside it.
-
-- [ ] **Step 1: Write failing tests** for `findCompletedWorkoutForExecution`: `finds the view by executionId` and `returns undefined when absent`.
-- [ ] **Step 2: Run them and confirm they fail.**
-- [ ] **Step 3: Implement the helper and the button.** Compute the next date with `addDaysToLocalDateString`.
-- [ ] **Step 4: Run the tests, `npx tsc -b` and eslint.** Expect them clean.
-- [ ] **Step 5: Commit** with `feat(session): offer the AI session report right after finishing`.
-
-### Task 6: Browser E2E and docs
-
-**Files:**
-- Modify or create: an E2E spec under `app/tests/e2e/`. Extend the spec that already covers History completed-workout cards (search for `btn-copy-activity-json` or `Copy JSON`); otherwise add `history-copy-for-ai.pw.ts` following the existing emulator-seeded pattern.
-- Modify:
-  - `docs/architecture/user-flows.md` §9 (Data and AI export): add **Copy for AI** and the post-completion action.
-  - `docs/plans/2026-11-14-ledger-export-ai-content.md`: Phase 1 status line.
-  - `docs/plans/README.md`: add a row for the export-content plan.
-
-- [ ] **Step 1: Write the E2E.** Seed one completed structured workout, open History, and click **Copy for AI**. Read the clipboard with the pattern existing specs use (grant `clipboard-read`) and assert it contains `# Session:`, a `## ` exercise heading and `ref:`. Run it at the mobile and desktop projects the suite already defines.
-- [ ] **Step 2: Run it.** Use `cd app && npx playwright test <spec>`; expect a pass. If the local Windows E2E flakes on login/network (known), rerun once and report.
-- [ ] **Step 3: Update the docs** listed above.
-- [ ] **Step 4: Run `make verify`** from the repo root, in the background (about 7 minutes). Expect exit 0. Report any skipped suite.
-- [ ] **Step 5: Commit** with `test(e2e): cover Copy for AI on History; docs`.
+- Manual check of the copy on a real iPhone (Safari), from History and from Home. E2E runs Chromium only.
+- The History "Copied" and "Copy failed" labels have no live region (the existing pattern has the same gap).
+- No test yet for choice order at one step, or for a tombstoned correction reverting to the earlier choice.
+- `CompletedWorkoutList.tsx` is over the 400-line guideline and should be split.

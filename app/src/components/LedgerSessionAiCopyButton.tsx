@@ -3,11 +3,13 @@ import { sessionResponseService } from '../services/sessionResponseService';
 import type { SessionExecution } from '../sessions/models';
 import { getCompletedWorkoutsInRange } from '../training-occurrence/activitiesReadModelService';
 import { addDaysToLocalDateString } from '../utils/localDate';
-import { copyDeferredText } from '../utils/copyDeferredText';
+import { copyDeferredText, StaleCopyError } from '../utils/copyDeferredText';
 import { loadLedgerSessionAiCopyText, WorkoutNotReadyError } from './ledgerSessionAiCopyText';
 
 type CopyState = 'idle' | 'busy' | 'copied' | 'not_ready' | 'error';
 
+const COPIED = 'Copied for AI';
+const FAILED = 'Could not copy the session report. Try again.';
 const NOT_READY = 'Not ready yet — it will be available in History once the session is saved.';
 
 interface Props {
@@ -36,9 +38,14 @@ export function LedgerSessionAiCopyButton({ userId, execution, title }: Props) {
       setState('copied');
       setTimeout(() => setState(curr => (curr === 'copied' ? 'idle' : curr)), 2000);
     } catch (err) {
+      if (err instanceof StaleCopyError) return; // a newer copy superseded this one
       setState(err instanceof WorkoutNotReadyError ? 'not_ready' : 'error');
     }
   };
+
+  const status = state === 'copied' ? COPIED : state === 'not_ready' ? NOT_READY : state === 'error' ? FAILED : '';
+  // One always-mounted live region: a region inserted together with its text is often not announced.
+  const statusClass = state === 'not_ready' ? 'ledger-today-meta' : state === 'error' ? 'ledger-today-error' : 'ledger-today-sr-only';
 
   return (
     <>
@@ -47,13 +54,12 @@ export function LedgerSessionAiCopyButton({ userId, execution, title }: Props) {
         className="ledger-today-start-btn is-redo"
         disabled={state === 'busy'}
         onClick={() => { void copy(); }}
-        aria-label={`Copy ${title} for AI`}
+        aria-label={`Copy session for AI: ${title}`}
         title="Copy a Markdown session report to paste into an AI assistant"
       >
         {state === 'copied' ? '✓ Copied for AI' : 'Copy session for AI'}
       </button>
-      {state === 'not_ready' && <span role="status" className="ledger-today-meta">{NOT_READY}</span>}
-      {state === 'error' && <span role="status" className="ledger-today-error">Could not copy the session report. Try again.</span>}
+      <span role="status" className={statusClass}>{status}</span>
     </>
   );
 }

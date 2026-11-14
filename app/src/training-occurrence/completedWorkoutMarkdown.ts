@@ -105,6 +105,7 @@ function workSetLine(set: ExportedPerformedSet): string {
 
 function exerciseHeading(exercise: ExportedExercise): string {
     const planned = prescriptionText(exercise.prescribed);
+    if (exercise.choiceOnly) return `## Choice: ${oneLine(exercise.name)}`;
     if (exercise.unplanned) return `## Added: ${oneLine(exercise.name)} (unplanned)`;
     if (exercise.performed.workSets === 0) {
         const optional = exercise.optional ? ' (optional)' : '';
@@ -116,15 +117,36 @@ function exerciseHeading(exercise: ExportedExercise): string {
     return `## ${oneLine(exercise.name)} — planned ${planned}`;
 }
 
+function choiceLines(exercise: ExportedExercise): string[] {
+    return (exercise.choices ?? []).map(choice => {
+        const reason = choice.reason ? ` (reason: ${oneLine(choice.reason)})` : '';
+        return `choice: ${oneLine(choice.optionLabel ?? choice.optionId)}${reason}`;
+    });
+}
+
+function structuredLogLine(view: CompletedWorkoutView, report: CompletedWorkoutExport): string {
+    const read = view.sourceReads.structured;
+    switch (read.status) {
+        case 'available':
+            return 'structured log: no exercise steps recorded';
+        case 'not_linked':
+            return report.providerActivity || report.sources.providers.length > 0
+                ? 'structured log: none (provider recording only)'
+                : 'structured log: none';
+        case 'definition_unresolved':
+            return `structured log: unavailable (${read.status}: ${read.definition})`;
+        default:
+            return `structured log: unavailable (${read.status})`;
+    }
+}
+
 function exerciseLines(exercise: ExportedExercise): string[] {
     const lines = [exerciseHeading(exercise)];
+    if (exercise.choiceOnly) return [...lines, ...choiceLines(exercise)];
     const swappedWithSets = Boolean(exercise.plannedName) && !exercise.unplanned && exercise.performed.workSets > 0;
     if (swappedWithSets) lines.push(`planned: ${prescriptionText(exercise.prescribed)}`);
     if (exercise.prescribed.notes) lines.push(`notes: ${oneLine(exercise.prescribed.notes)}`);
-    for (const choice of exercise.choices ?? []) {
-        const reason = choice.reason ? ` (reason: ${oneLine(choice.reason)})` : '';
-        lines.push(`choice: ${oneLine(choice.optionLabel ?? choice.optionId)}${reason}`);
-    }
+    lines.push(...choiceLines(exercise));
     const warmups = exercise.performed.sets.filter(set => set.isWarmup);
     if (warmups.length > 0) lines.push(`warm-up: ${warmups.map(setBody).join(', ')}`);
     for (const set of exercise.performed.sets.filter(item => !item.isWarmup)) lines.push(workSetLine(set));
@@ -202,7 +224,7 @@ export function formatCompletedWorkoutMarkdown(
     for (const exercise of report.exercises) lines.push('', ...exerciseLines(exercise));
     if (report.providerActivity || report.exercises.length === 0) lines.push('');
     if (report.providerActivity) lines.push(garminLine(report.providerActivity));
-    if (report.exercises.length === 0) lines.push('structured log: none (provider recording only)');
+    if (report.exercises.length === 0) lines.push(structuredLogLine(view, report));
     const responseBlock = responseLines(report.responses);
     if (responseBlock.length > 0) lines.push('', ...responseBlock);
     const missing = missingLine(report);

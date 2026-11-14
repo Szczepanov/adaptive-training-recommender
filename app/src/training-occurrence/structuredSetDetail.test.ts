@@ -99,6 +99,24 @@ describe('buildStructuredStepDetails', () => {
         expect(details[1]).toMatchObject({ isOptional: true, prescribed: { sets: 2, seconds: 45 }, sets: [] });
     });
 
+    it('marks a non-exercise step kept only for a recorded choice as choiceOnly with no prescription', () => {
+        const gateDefinition = {
+            ...definition,
+            blocks: [{ ...definition.blocks[0], steps: [{ id: 'gate', kind: 'transition', title: 'Gate' }] }],
+        } as SessionDefinition;
+        const choice: SessionEntry = {
+            id: 'choice-1', executionId: 'exec-1', stepId: 'gate',
+            completedAt: '2026-08-26T07:00:00.000Z', createdAt: '2026-08-26T07:00:00.000Z', updatedAt: '2026-08-26T07:00:00.000Z',
+            payload: { kind: 'choice', choiceId: 'c', optionId: 'o' },
+        };
+        const [gate] = buildStructuredStepDetails(gateDefinition, [choice], []);
+        expect(gate.choiceOnly).toBe(true);
+        expect(gate.prescribed.sets).toBe(0);
+        expect(gate.choices).toHaveLength(1);
+        const [exercise] = buildStructuredStepDetails(definition, [], []);
+        expect(exercise.choiceOnly).toBeUndefined();
+    });
+
     it('never counts a recorded athlete choice as a performed set', () => {
         const choice: SessionEntry = {
             id: 'choice-1',

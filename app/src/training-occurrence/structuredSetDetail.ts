@@ -77,6 +77,10 @@ export interface StructuredStepDetail {
     /** Work logged against a step the saved definition does not contain -- an exercise the
      * athlete added during the session. It has no prescription (`prescribed.sets` is 0). */
     unplanned?: true;
+    /** A non-exercise step (gate, transition, ...) kept only because the athlete recorded a
+     * choice against it. It has no prescription (`prescribed.sets` is 0), so it must never read
+     * as missed work. */
+    choiceOnly?: true;
     isOptional: boolean;
     prescribed: PrescribedStepTarget;
     sets: PerformedSetRow[];
@@ -142,13 +146,16 @@ export function buildStructuredStepDetails(
         for (const step of block.steps) {
             definedStepIds.add(step.id);
             const stepEntries = sortedByCompletion(entriesByStepId.get(step.id) ?? []);
-            if (step.kind !== 'exercise' && stepEntries.length === 0 && !choicesByStepId.has(step.id)) continue;
+            const hasChoice = choicesByStepId.has(step.id);
+            if (step.kind !== 'exercise' && stepEntries.length === 0 && !hasChoice) continue;
+            const choiceOnly = step.kind !== 'exercise' && stepEntries.length === 0;
             details.push({
                 stepId: step.id,
                 ...(step.exerciseRef ? { exerciseRef: step.exerciseRef } : {}),
                 ...performedIdentity(step, stepEntries),
                 isOptional: !!step.optional,
-                prescribed: prescribedTarget(step),
+                ...(choiceOnly ? { choiceOnly: true as const } : {}),
+                prescribed: choiceOnly ? { sets: 0 } : prescribedTarget(step),
                 sets: toSetRows(stepEntries, restByEntryId),
                 ...choicesField(choicesByStepId.get(step.id)),
             });
