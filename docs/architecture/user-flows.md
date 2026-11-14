@@ -510,12 +510,21 @@ the canonical Export-for-AI surface. From the Data screen, the Context brief tab
 Activities AI-export action deep-link to it (`App.tsx` `handleNavigate('brief')` via
 `DataView` `onNavigateToBrief`) instead of duplicating its export. On the canonical `brief`
 screen, the same Activities action returns to the local Context brief tab, so the legacy raw
-clipboard exporter is not reachable there either. Only the `brief` screen renders the daily
-(2-day) / full (14-day) / diagnostic (14-day) brief with char and token counts. The canonical
-surface supports clipboard copy plus direct Markdown (`.md`) and JSON (`.json`) downloads.
-Markdown contains the exact rendered brief. JSON is a versioned transport envelope around that
-same Markdown content with preset, purpose, date-range, and unavailable-source metadata; it is
-not a second context schema and does not trigger additional athlete-data reads. The Data and
+clipboard exporter is not reachable there either. Only the `brief` screen renders the daily (2-day) / full (14-day) / diagnostic (14-day) brief
+with char and token counts. The canonical surface supports clipboard copy plus direct Markdown
+(`.md`) and JSON (`.json`) downloads, and **Export ledger (JSON)**.
+
+In ledger mode (the default) the copied and downloaded Markdown is the compact ledger update
+(`renderLedgerExportCompact`): `Today`, `Yesterday` and, when later sessions are planned,
+`Upcoming` (the next 7 days for the daily preset, 14 for block planning), followed by the
+non-measured sources, flags, facts, derived metrics, user context and coaching history. After a
+successful Markdown copy or download the screen remembers the exported user-context items on this
+device, per purpose; the next Markdown export collapses unchanged items into one
+`unchanged since <date>` line. The **Include full context** checkbox beside the preset toggle
+prints them in full again. JSON downloads stay the full envelope and are never abbreviated.
+In engine mode (the default-off rollback) Markdown is the legacy brief, and the JSON envelope
+wraps that Markdown with preset, purpose, date-range and unavailable-source metadata; it is not a
+second context schema and does not trigger additional athlete-data reads. The Data and
 brief navigation entries refresh decision input before navigating. If `decisionInput` is null,
 DataView shows `No data available` with Retry (recomposes via `App` `loadDecisionInput`) and
 Back to Home, so the empty state is never a dead end even though the global navigation chrome
@@ -785,5 +794,6 @@ The canonical Context Brief screen offers **Export ledger (JSON)** beside its ex
 clipboard/Markdown/JSON actions. It reads existing account-scoped records only after a click,
 uses the selected date and purpose, disables the action while assembling, and offers retry
 feedback on a failed download. Changing account/date/preset discards an in-flight result.
-The existing brief remains available during this transition (OD5). See the
+In ledger mode the Markdown copy and download are the compact ledger update; the full JSON stays
+this action. See the
 [ledger export contract](./ledger-export-contract.md) for source completeness and bounds.

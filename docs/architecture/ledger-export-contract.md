@@ -4,7 +4,7 @@ The canonical structured ledger export is `ledger-export-v1`, defined by
 `app/src/ledger/export/schema.ts` and `ledgerExport.schema.json`. Its approved design and
 owner decisions are in [the #1145 plan](../plans/2026-10-25-issue-1145-ledger-export-v1.md);
 [D-EVAL criteria](../analysis/2026-10-25-adr-0052-d-eval-criteria.md) merged alongside that
-design. This reference describes the shipped exporter, rather than Phase 2 behavior.
+design. This reference describes the shipped exporter, including the Phase 2 compact Markdown renderer.
 
 ## Entry points and authority
 
@@ -22,12 +22,69 @@ renders all five layers, provenance, units, missingness, semantic dates, context
 gaps, and omission counts. It escapes embedded text so values cannot inject Markdown rows
 or headings. The ledger module boundary test forbids direct or transitive engine imports.
 
-During this transition, the existing Copy, Download Markdown and Download JSON actions
-retain the [Context Brief contract](./context-brief-contract.md). They still include the
-legacy brief's engine opinions. **OD5 explicitly reserves switching that Markdown path to
-the ledger renderer for Phase 2.** The additive ledger JSON has a separate schema version;
-it is not `context_brief_export_v2` and does not embed the legacy Markdown. No brief-contract
-or policy-version bump is required for this additive path.
+In ledger mode (the default since #1254) the same screen's Copy, Download Markdown and
+Download JSON actions use the ledger as well: `ContextBriefService.build` renders
+`renderLedgerExportCompact` (below) instead of the legacy brief text, and the Markdown copy and
+download carry that compact text. **Download JSON** and **Export ledger (JSON)** stay the full,
+canonical `ledger-export-v1` document. Engine mode (the default-off `engineRecommendationsEnabled`
+rollback) still produces the legacy brief under the [Context Brief contract](./context-brief-contract.md),
+including its engine opinions. The additive ledger JSON has a separate schema version; it is not
+`context_brief_export_v2` and does not embed the Markdown. No brief-contract or policy-version
+bump is required.
+
+## Compact Markdown renderer
+
+`ledger/export/compact/renderLedgerExportCompact.ts` is a pure Markdown view of the same
+`LedgerExport`, sized for pasting into one long-lived AI chat. It drops no recorded data: every
+leaf that is missing, stale or unavailable stays visible, grouped into one `missing:` line per item
+rather than printed as zero or false. `renderLedgerExport` remains the verbose diagnostic view.
+Output starts with `# Ledger update — <asOfDate> (<purpose>)`, then:
+
+1. `## Today (<date>)` (`todaySections.ts` `renderTodaySections`): today's check-in and recovery
+   values with their 28-day baselines and deltas (a missing baseline prints its state, never a
+   delta), today's evaluated flags, and today's placements in full.
+2. `## Yesterday (<date>)` (`yesterdaySection.ts`): one line per performed occurrence, with
+   session RPE joined from `sessionResponses`, the executed definition, and the planned session
+   title joined through `plannedToPerformed`.
+3. `## Upcoming (<from>…<to>)`: placements after the as-of date in date order, each with title,
+   priority, status, summary, step notes and fallback. The section is omitted when the purpose
+   has no forward window (diagnostic).
+4. `## Sources` (non-measured only), `## Flags`, `## Facts`, `## Derived`, `## User context`
+   and `## Coaching history`. Records already shown under Today, Yesterday or Upcoming are
+   skipped by id so nothing prints twice.
+
+### Upcoming placements and the forward bound
+
+Each placement in `coachingHistory.placements` carries the authored session content joined from
+the verified plan revision by plan id, revision and session id: `title`, `priority`, `summary`,
+`stepNotes` and `fallback`. A revision that is not exported makes those leaves `invalid` when the
+`external_plan_revisions` source is invalid and `unavailable` otherwise; a session absent from a
+readable revision, or a blank field, is `not_recorded`.
+
+Placement rows are bounded by `window.startDate` through `window.endDate` plus
+`PLACEMENT_FORWARD_DAYS` (`window.ts`): `morning` 7 days, `planning` 14, `diagnostic` 0. Past-facts
+windows and the `overrides` bounds are unchanged. Dated placements outside that range are counted in
+the additive `droppedOutOfWindow` field of the placements `LedgerCollection`, in the
+same way `droppedUndated` counts undated rows; the compact renderer prints it as
+`placements outside window: <n>`.
+
+### Abbreviating unchanged user context
+
+`compact/previousContext.ts` `userContextItemHashes` hashes each user-context item (key
+`<collection>/<id>`, `<name>` for single records, `trainingDislikes`) with a stable 32-bit FNV-1a over
+its sorted-key JSON, excluding `readAt` and `exportedAt`. Given a `PreviousContext`
+(`exportedOn` plus those hashes), the renderer collapses items whose key and hash both match into
+`unchanged since <exportedOn>: <n> items (<keys>)`. Changed and new items print in full, and keys
+that disappeared print `removed: <key>`. The renderer takes the previous context as an explicit
+input and reads no store or clock.
+
+The brief screen (`DataView`) keeps what the reader holds per purpose in `localStorage` under
+`adaptive-training:context-brief:previous-context:<purpose>`
+(`components/briefPreviousContext.ts`). It writes the entry only after a successful Markdown copy
+or Markdown download, never for JSON, and an unreadable or malformed store simply yields a full
+export. The **Include full context** checkbox next to the preset toggle ignores the stored context
+for that view. The abbreviation is a convenience for the same chat: a reader that has lost the earlier
+export should tick it.
 
 ## Five layers
 
