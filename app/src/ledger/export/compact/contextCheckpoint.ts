@@ -130,6 +130,7 @@ const RECORD_SOURCES: Readonly<Partial<Record<ContextName, string>>> = {
 
 function isComplete(ledger: LedgerExport, name: ContextName, context: ContextEntry): boolean {
     if (isCollection(context)) {
+        // No user-context collection carries `truncated` today; this guards future ones.
         const truncated = (context as { truncated?: boolean }).truncated === true;
         return context.state === 'measured' && context.droppedUndated === 0 && !truncated;
     }

@@ -11,30 +11,33 @@ describe('BriefChatCheckpoint', () => {
   });
 
   it('disables Added to this chat and hints to name the chat when there is none', () => {
-    const html = renderToStaticMarkup(<BriefConfirmChat chat="" canConfirm={false} status={null} onConfirm={() => {}} />);
+    const html = renderToStaticMarkup(<BriefConfirmChat canConfirm={false} blocked="no-chat" status={null} onConfirm={() => {}} />);
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Added to this chat<\/button>/);
     expect(html).toContain('Name the chat to save a checkpoint.');
   });
 
-  it('explains the disabled button when nothing was exported for this chat', () => {
-    const html = renderToStaticMarkup(<BriefConfirmChat chat="Coach" canConfirm={false} status={null} onConfirm={() => {}} />);
+  it('explains the disabled button with the reason it is given', () => {
+    const switched = renderToStaticMarkup(<BriefConfirmChat canConfirm={false} blocked="switched" status={null} onConfirm={() => {}} />);
+    expect(switched).toContain('Copy again for this chat.');
+    expect(switched).not.toContain('Copy or download');
+    const html = renderToStaticMarkup(<BriefConfirmChat canConfirm={false} blocked="not-exported" status={null} onConfirm={() => {}} />);
     expect(html).toMatch(/<button[^>]*disabled=""/);
     expect(html).toContain('Copy or download the Markdown first.');
   });
 
   it('enables the button for an exported snapshot and announces the saved checkpoint', () => {
-    const ready = renderToStaticMarkup(<BriefConfirmChat chat="Coach" canConfirm status={null} onConfirm={() => {}} />);
+    const ready = renderToStaticMarkup(<BriefConfirmChat canConfirm blocked={null} status={null} onConfirm={() => {}} />);
     expect(ready).not.toContain('disabled');
     expect(ready).not.toContain('Copy or download');
-    const saved = renderToStaticMarkup(<BriefConfirmChat chat="Coach" canConfirm={false} status={{ kind: 'saved', chat: 'Coach' }} onConfirm={() => {}} />);
+    const saved = renderToStaticMarkup(<BriefConfirmChat canConfirm={false} blocked={null} status={{ kind: 'saved', chat: 'Coach' }} onConfirm={() => {}} />);
     expect(saved).toContain('role="status"');
     expect(saved).toContain('Checkpoint saved for &quot;Coach&quot;');
   });
 
   it('announces a refused older export and a failed save', () => {
-    const newer = renderToStaticMarkup(<BriefConfirmChat chat="Coach" canConfirm={false} status={{ kind: 'newer-saved' }} onConfirm={() => {}} />);
+    const newer = renderToStaticMarkup(<BriefConfirmChat canConfirm={false} blocked={null} status={{ kind: 'newer-saved' }} onConfirm={() => {}} />);
     expect(newer).toMatch(/role="status"[^>]*>A newer checkpoint is already saved for this chat\./);
-    const failed = renderToStaticMarkup(<BriefConfirmChat chat="Coach" canConfirm={false} status={{ kind: 'not-saved' }} onConfirm={() => {}} />);
+    const failed = renderToStaticMarkup(<BriefConfirmChat canConfirm={false} blocked={null} status={{ kind: 'not-saved' }} onConfirm={() => {}} />);
     expect(failed).toContain('Could not save the checkpoint on this device.');
   });
 });

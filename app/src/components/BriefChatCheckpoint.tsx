@@ -1,3 +1,4 @@
+import { confirmHint, type ConfirmBlock } from './briefCheckpointHint';
 import { CHAT_LABEL_MAX_LENGTH } from './briefPreviousContext';
 
 interface BriefChatInputProps {
@@ -32,8 +33,9 @@ export type ConfirmStatus =
   | { kind: 'not-saved' };
 
 interface BriefConfirmChatProps {
-  chat: string;
   canConfirm: boolean;
+  /** Why the button is disabled, for an accurate hint; null when it is not blocked. */
+  blocked: ConfirmBlock | null;
   status: ConfirmStatus | null;
   onConfirm: () => void;
 }
@@ -46,10 +48,8 @@ function statusText(status: ConfirmStatus | null): string {
 }
 
 /** Confirms that the exported Markdown was pasted into the named chat, which advances the checkpoint. */
-export function BriefConfirmChat({ chat, canConfirm, status, onConfirm }: BriefConfirmChatProps) {
-  const hint = !chat
-    ? 'Name the chat to save a checkpoint.'
-    : !canConfirm && !status ? 'Copy or download the Markdown first.' : '';
+export function BriefConfirmChat({ canConfirm, blocked, status, onConfirm }: BriefConfirmChatProps) {
+  const hint = status ? '' : confirmHint(blocked);
   return (
     <>
       <button type="button" className="brief-copy" disabled={!canConfirm} onClick={onConfirm}>

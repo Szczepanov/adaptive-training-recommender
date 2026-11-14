@@ -986,8 +986,8 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery', onNav
                 />}
               </ContextBriefExportActions>
               <BriefConfirmChat
-                chat={checkpoint.chat}
                 canConfirm={!briefStale && checkpoint.canConfirm(brief)}
+                blocked={checkpoint.confirmBlock(brief, briefStale)}
                 status={checkpoint.confirmStatus(brief)}
                 onConfirm={checkpoint.confirm}
               />

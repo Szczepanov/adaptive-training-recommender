@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { BriefPurpose } from '../engine/contextBrief';
 import type { ConfirmStatus } from './BriefChatCheckpoint';
+import { confirmBlock, type ConfirmBlock } from './briefCheckpointHint';
 import {
   confirmSnapshot,
   normalizeChat,
@@ -32,6 +33,7 @@ export function useBriefCheckpoint(userId: string, purpose: BriefPurpose, fullCo
   const [version, setVersion] = useState(0);
   const [held, setHeld] = useState<HeldSnapshot | null>(null);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
+  const [invalidated, setInvalidated] = useState(false);
 
   useEffect(() => { removeLegacyPreviousContext(); }, []);
 
@@ -42,6 +44,7 @@ export function useBriefCheckpoint(userId: string, purpose: BriefPurpose, fullCo
     if (held && !live) {
       setHeld(null);
       setOutcome(null);
+      setInvalidated(true);
     }
   }, [held, live]);
 
@@ -70,6 +73,7 @@ export function useBriefCheckpoint(userId: string, purpose: BriefPurpose, fullCo
     const snapshot = snapshotFromBrief(brief, userId, chat);
     setHeld(snapshot ? { snapshot, source: brief } : null);
     setOutcome(null);
+    setInvalidated(false);
   };
 
   const confirm = () => {
@@ -94,6 +98,13 @@ export function useBriefCheckpoint(userId: string, purpose: BriefPurpose, fullCo
     // A failed write may be retried; a saved or refused confirmation is final for that export.
     canConfirm: (brief: ExportedBrief | null) => heldFor(brief) !== null
       && (outcome?.snapshot !== live?.snapshot || outcome?.status.kind === 'not-saved'),
+    confirmBlock: (brief: ExportedBrief | null, stale: boolean): ConfirmBlock | null => confirmBlock({
+      chat,
+      ledgerMode: Boolean(brief?.contextCheckpoint && brief.exportedAt),
+      stale,
+      held: heldFor(brief) !== null,
+      invalidated: invalidated || (held !== null && live === null),
+    }),
     confirmStatus: (brief: ExportedBrief | null): ConfirmStatus | null => {
       const current = heldFor(brief);
       return current && outcome?.snapshot === current.snapshot ? outcome.status : null;
