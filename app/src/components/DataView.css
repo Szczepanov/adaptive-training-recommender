@@ -293,3 +293,19 @@
   align-items: center;
   flex-wrap: wrap;
 }
+
+.brief-full-context-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: var(--touch-target-min, 44px);
+  margin: 0 0 1rem 1rem;
+  font-size: 0.875rem;
+  color: var(--text-color);
+  cursor: pointer;
+}
+
+.brief-full-context-toggle input[type="checkbox"] {
+  width: 1.25rem;
+  height: 1.25rem;
+}

@@ -1,6 +1,7 @@
 import { briefWindowDaysFor, type BriefWindowPreset } from '../engine/contextBrief';
 import { contextBriefService, type ContextBriefResult } from '../services/contextBriefService';
 import type { CapabilityMaintenanceResult } from '../engine/capabilityMaintenance';
+import type { PreviousContext } from '../ledger/export/compact/previousContext';
 
 export const BRIEF_PRESET_STORAGE_KEY = 'adaptive-training:context-brief:preset';
 
@@ -37,7 +38,9 @@ export function buildBriefForPreset(
   preset: BriefWindowPreset,
   service: BriefBuilder = contextBriefService,
   capabilityMaintenance?: CapabilityMaintenanceResult | null,
+  options?: { previousContext?: PreviousContext; fullContext?: boolean },
 ): Promise<ContextBriefResult> {
+  if (options) return service.build(userId, asOfDate, briefWindowDaysFor(preset), preset, capabilityMaintenance, options);
   return capabilityMaintenance === undefined
     ? service.build(userId, asOfDate, briefWindowDaysFor(preset), preset)
     : service.build(userId, asOfDate, briefWindowDaysFor(preset), preset, capabilityMaintenance);

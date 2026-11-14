@@ -84,7 +84,8 @@ import {
 } from '../observations/contextBriefAssessments';
 import { compareCodeUnits } from '../utils/canonicalJson';
 import { resolvePlanningAuthorityMode } from '../ledger/planningAuthorityMode';
-import { renderLedgerExport } from '../ledger/export/renderLedgerExport';
+import { renderLedgerExportCompact } from '../ledger/export/compact/renderLedgerExportCompact';
+import { userContextItemHashes, type PreviousContext } from '../ledger/export/compact/previousContext';
 import type { LegacyEngineLayer } from '../ledger/export/schema';
 import { ledgerExportService, type LedgerExportService } from './ledgerExportService';
 
@@ -107,6 +108,9 @@ export interface ContextBriefResult {
     unavailableSources: string[];
     /** Structured physical capital benchmarks derived from completed and explicitly bound assessments. */
     measuredBenchmarks?: readonly MeasuredBenchmarkExport[];
+    /** Ledger mode only: hashes of the user-context items rendered into `text`, stored by the UI
+     * after a successful Markdown export so the next export can abbreviate unchanged items. */
+    contextItemHashes?: Record<string, string>;
 }
 
 function lastNCalendarDates(endDateInclusive: string, days: number): string[] {
@@ -245,7 +249,12 @@ export class ContextBriefService {
         windowDays: number = defaultBriefWindowDays(),
         preset: BriefWindowPreset = windowDays <= briefWindowDaysFor('daily') ? 'daily' : 'full',
         capabilityMaintenance?: CapabilityMaintenanceResult | null,
-        options?: { legacyEngine?: LegacyEngineLayer | null; exportedAt?: string },
+        options?: {
+            legacyEngine?: LegacyEngineLayer | null;
+            exportedAt?: string;
+            previousContext?: PreviousContext;
+            fullContext?: boolean;
+        },
     ): Promise<ContextBriefResult> {
         const targetDate = asOfDate ?? getLocalDateString();
         // Purpose selects the output contract. Planning alone reads compact assessment
@@ -279,7 +288,9 @@ export class ContextBriefService {
                 .filter(source => source.state === 'unavailable')
                 .map(source => source.source);
             return {
-                text: renderLedgerExport(ledger),
+                text: renderLedgerExportCompact(ledger, {
+                    previousContext: options?.fullContext ? undefined : options?.previousContext,
+                }),
                 startDate: ledger.window.startDate,
                 asOfDate: ledger.asOfDate,
                 windowDays: ledger.window.days,
@@ -287,6 +298,7 @@ export class ContextBriefService {
                 purpose,
                 contractVersion: ledger.schemaVersion,
                 unavailableSources,
+                contextItemHashes: userContextItemHashes(ledger),
             };
         }
         // Strictly longer than the window, so there is always prior history to compare

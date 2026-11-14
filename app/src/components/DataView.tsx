@@ -5,8 +5,10 @@ import { activityService } from '../services/activityService';
 import { activityOverrideService } from '../services/activityOverrideService';
 import { recommendationService } from '../services/recommendationService';
 import { type ContextBriefResult } from '../services/contextBriefService';
-import { briefWindowDaysFor, type BriefWindowPreset } from '../engine/contextBrief';
+import { briefPurposeFor, briefWindowDaysFor, type BriefWindowPreset } from '../engine/contextBrief';
 import { BriefPresetToggle } from './BriefPresetToggle';
+import { BriefFullContextToggle } from './BriefFullContextToggle';
+import { readPreviousContext, writePreviousContext } from './briefPreviousContext';
 import { buildBriefForPreset, loadStoredBriefPreset, persistBriefPreset } from './briefPreset';
 import { addDaysToLocalDateString, getLocalDateString } from '../utils/localDate';
 import {
@@ -98,6 +100,9 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery', onNav
   const [briefError, setBriefError] = useState<{ date: string; message: string } | null>(null);
   const [briefCopied, setBriefCopied] = useState(false);
   const [briefPreset, setBriefPreset] = useState<BriefWindowPreset>(loadStoredBriefPreset);
+  // Per-view, never persisted: forces the ledger Markdown export to render unchanged context in full.
+  const [briefFullContext, setBriefFullContext] = useState(false);
+  const [builtFullContext, setBuiltFullContext] = useState(false);
   // null doubles as "not loaded yet" -- once getAdherenceStats resolves it's always a
   // real (possibly all-zero) stats object, so this alone distinguishes loading from an
   // answer of "nothing recorded yet" without a separate loading flag.
@@ -203,7 +208,8 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery', onNav
     // the brief here -- the `brief` screen builds it.
     if (onNavigateToBrief || activeTab !== 'brief' || !briefDate
       || (brief?.asOfDate === briefDate && brief.preset === briefPreset
-        && briefCapabilityMaintenanceKey === capabilityMaintenanceKey)) return;
+        && briefCapabilityMaintenanceKey === capabilityMaintenanceKey
+        && builtFullContext === briefFullContext)) return;
     let cancelled = false;
     buildBriefForPreset(
       userId,
@@ -211,11 +217,13 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery', onNav
       briefPreset,
       undefined,
       decisionInput?.date === briefDate ? capabilityMaintenance : undefined,
+      { previousContext: readPreviousContext(briefPurposeFor(briefPreset)), fullContext: briefFullContext },
     )
       .then(result => {
         if (!cancelled) {
           setBrief(result);
           setBriefCapabilityMaintenanceKey(capabilityMaintenanceKey);
+          setBuiltFullContext(briefFullContext);
           setBriefError(null);
         }
       })
@@ -229,17 +237,25 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery', onNav
         setBriefError({ date: briefDate, message: 'Could not assemble the brief. Retry the dashboard refresh.' });
       });
     return () => { cancelled = true; };
-  }, [onNavigateToBrief, activeTab, userId, brief?.asOfDate, brief?.preset, briefDate, briefPreset, briefCapabilityMaintenanceKey, capabilityMaintenanceKey, capabilityMaintenance, decisionInput?.date]);
+  }, [onNavigateToBrief, activeTab, userId, brief?.asOfDate, brief?.preset, briefDate, briefPreset, briefFullContext, builtFullContext, briefCapabilityMaintenanceKey, capabilityMaintenanceKey, capabilityMaintenance, decisionInput?.date]);
 
   const selectBriefPreset = (preset: BriefWindowPreset) => {
     setBriefPreset(preset);
     persistBriefPreset(preset);
   };
 
+  // Records what the reader now holds, so the next Markdown export can abbreviate unchanged items.
+  const rememberExportedContext = (exported: ContextBriefResult) => {
+    if (exported.contextItemHashes) {
+      writePreviousContext(exported.purpose, { exportedOn: exported.asOfDate, itemHashes: exported.contextItemHashes });
+    }
+  };
+
   const copyBrief = async () => {
     if (!brief) return;
     try {
       await navigator.clipboard.writeText(brief.text);
+      rememberExportedContext(brief);
       setBriefError(null);
       setBriefCopied(true);
       window.setTimeout(() => setBriefCopied(false), 2000);
@@ -254,6 +270,7 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery', onNav
     if (!brief) return;
     try {
       downloadContextBriefFile(brief, format);
+      if (format === 'markdown') rememberExportedContext(brief);
       setBriefError(null);
     } catch {
       setBriefError({
@@ -942,6 +959,7 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery', onNav
           {' '}Read-only: generating it changes nothing.
         </p>
         <BriefPresetToggle preset={briefPreset} onSelect={selectBriefPreset} />
+        <BriefFullContextToggle checked={briefFullContext} onChange={setBriefFullContext} />
         {visibleBriefError && <p className="data-state-notice">{visibleBriefError}</p>}
         {!brief && !visibleBriefError && <p>Assembling...</p>}
         {brief && (
