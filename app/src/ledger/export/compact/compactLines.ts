@@ -13,7 +13,9 @@ export function fieldLine(name: string, value: LedgerValue<unknown>): string {
     const provenance = value.state === 'measured'
         ? ''
         : ` (${text(value.source)}, ${text(value.state)}${value.state === 'stale' && value.observedOn ? `, ${text(value.observedOn)}` : ''})`;
-    return `${text(name)}: ${text(value.value)}${unit}${provenance}`;
+    // I3 (ADR-0003): a snapshot's totalSteps is the previous completed day, not the record's date.
+    const semantic = name === 'totalSteps' && !isMissing(value) ? ' (D-1)' : '';
+    return `${text(name)}: ${text(value.value)}${unit}${semantic}${provenance}`;
 }
 
 export function missingLine(entries: readonly FieldEntry[]): string | null {

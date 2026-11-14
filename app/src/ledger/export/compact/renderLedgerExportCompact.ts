@@ -37,10 +37,9 @@ export function collectionLines(name: string, rows: LedgerCollection<LedgerRecor
     const items = rows.items.filter(row => !skipIds.has(row.id));
     const dropped = [
         rows.droppedUndated > 0 ? `droppedUndated: ${rows.droppedUndated}` : '',
-        (rows.droppedOutOfWindow ?? 0) > 0 ? `droppedOutOfWindow: ${rows.droppedOutOfWindow}` : '',
+        (rows.droppedOutOfWindow ?? 0) > 0 ? `${text(name)} outside window: ${rows.droppedOutOfWindow}` : '',
     ].filter(Boolean);
     if (!rows.items.length) return [[`${text(name)}: ${text(rows.state)}, no rows`, ...dropped].join(', '), ''];
-    if (!items.length) return [];
     const meta = [
         rows.state === 'measured' ? '' : `state: ${text(rows.state)}; source: ${text(rows.source)}`,
         ...dropped,
@@ -49,6 +48,7 @@ export function collectionLines(name: string, rows: LedgerCollection<LedgerRecor
         const activities = rows as ActivityCollection<LedgerRecord>;
         meta.push(`truncated: ${activities.truncated}; totalInWindow: ${activities.totalInWindow}; exported: ${rows.items.length}`);
     }
+    if (!items.length) return meta.length ? [`### ${text(name)}`, ...meta, ''] : [];
     return [`### ${text(name)}`, ...meta, ...items.flatMap(recordLines), ''];
 }
 
@@ -114,8 +114,11 @@ function inactiveFlagLines(flags: LedgerFlag[]): string[] {
 
 export function flagsSection(ledger: LedgerExport): string[] {
     if (!ledger.flags.length) return ['## Flags', 'flags: none evaluated', ''];
-    const active = ledger.flags.filter(flag => flag.active === true);
-    return ['## Flags', ...active.flatMap(activeFlagLines), ...inactiveFlagLines(ledger.flags), ''];
+    // Today's non-active evaluations are summarised under Today; active detail stays here.
+    const shown = ledger.flags.filter(flag => flag.observedOn !== ledger.asOfDate || flag.active === true);
+    if (!shown.length) return ['## Flags', `flags: only ${text(ledger.asOfDate)} evaluated (see Today)`, ''];
+    const active = shown.filter(flag => flag.active === true);
+    return ['## Flags', ...active.flatMap(activeFlagLines), ...inactiveFlagLines(shown), ''];
 }
 
 export function factsSection(ledger: LedgerExport, skipIds: SkipIds = NO_SKIP): string[] {

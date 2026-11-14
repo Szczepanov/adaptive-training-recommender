@@ -51,7 +51,7 @@ describe('renderLedgerExportCompact', () => {
                 inputs: [{ name: 'fever', value: { value: 38, unit: 'C', source: 'athlete', state: 'measured' } }] }),
         ];
         const out = renderLedgerExportCompact(ledger);
-        expect(out).toContain('illness_anomaly: inactive 2026-11-18…2026-11-20');
+        expect(out).toContain('illness_anomaly: inactive 2026-11-18…2026-11-19');
         expect(out).toContain('recovery_beyond_baseline: unknown (unavailable) 2026-11-19');
         expect(out).toContain('#### illness_risk_symptom (2026-11-20)');
         expect(out).toContain('sessionRef: s-1');
@@ -69,11 +69,27 @@ describe('renderLedgerExportCompact', () => {
         ];
         const out = renderLedgerExportCompact(ledger);
         expect(out).toContain('illness_anomaly: inactive 2026-11-18\n');
-        expect(out).toContain('illness_anomaly: inactive 2026-11-20\n');
         expect(out).not.toContain('2026-11-18…2026-11-20');
         expect(out).toContain('recovery_beyond_baseline: inactive 2026-11-18\n');
-        expect(out).toContain('recovery_beyond_baseline: inactive 2026-11-20\n');
         expect(out).toContain('#### recovery_beyond_baseline (2026-11-19)');
+    });
+
+    it("summarises today's flags only under Today and keeps active detail", () => {
+        const ledger = buildLedgerExport(fullInput());
+        ledger.flags = [flag('illness_anomaly', '2026-11-19'), flag('illness_anomaly', '2026-11-20'),
+            flag('recovery_beyond_baseline', '2026-11-20', { active: true, threshold: 't' })];
+        const out = renderLedgerExportCompact(ledger);
+        expect(out).toContain('flags: recovery_beyond_baseline active');
+        expect(out).not.toContain('illness_anomaly: inactive 2026-11-20');
+        expect(out).toContain('#### recovery_beyond_baseline (2026-11-20)');
+        ledger.flags = [flag('illness_anomaly', '2026-11-20')];
+        expect(renderLedgerExportCompact(ledger)).toContain('flags: only 2026-11-20 evaluated (see Today)');
+    });
+
+    it('labels totalSteps as D-1', () => {
+        const out = renderLedgerExportCompact(buildLedgerExport(fullInput()));
+        expect(out).toContain('totalSteps: 0 steps (D-1)');
+        expect(out).not.toMatch(/totalSteps: 0 steps$/m);
     });
 
     it('keeps flag state visible instead of folding it into inactive or measured', () => {
@@ -119,7 +135,7 @@ describe('renderLedgerExportCompact', () => {
         ledger.coachingHistory.placements.droppedUndated = 2;
         const out = renderLedgerExportCompact(ledger);
         expect(out).toContain('recovery: unavailable, no rows');
-        expect(out).toMatch(/placements: \w+, no rows, droppedUndated: 2, droppedOutOfWindow: 3/);
+        expect(out).toMatch(/placements: \w+, no rows, droppedUndated: 2, placements outside window: 3/);
     });
 
     it('escapes markdown in values', () => {

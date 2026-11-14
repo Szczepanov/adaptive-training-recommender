@@ -30,11 +30,11 @@ function occurrenceLine(ledger: LedgerExport, row: LedgerExport['facts']['perfor
         .find(item => item.fields.occurrenceId.value === row.id && present(item.fields.sessionRpe))?.fields.sessionRpe;
     const counts = structuredEntries.value as { exerciseCount?: number; setCount?: number } | null;
     const parts = [
-        present(modality) ? text(modality.value) : 'modality: not recorded',
-        present(durationMin) ? `${text(durationMin.value)} min` : 'durationMin: not recorded',
-        counts ? `${text(counts.exerciseCount)} exercises / ${text(counts.setCount)} sets` : 'structuredEntries: not recorded',
+        present(modality) ? text(modality.value) : `modality: ${text(modality.state)}`,
+        present(durationMin) ? `${text(durationMin.value)} min` : `durationMin: ${text(durationMin.state)}`,
+        counts ? `${text(counts.exerciseCount)} exercises / ${text(counts.setCount)} sets` : `structuredEntries: ${text(structuredEntries.state)}`,
         rpe ? `sRPE ${text(rpe.value)}` : 'sRPE: not recorded',
-        definitions(executedDefinitions) ?? 'executedDefinition: not recorded',
+        definitions(executedDefinitions) ?? `executedDefinition: ${text(executedDefinitions.state)}`,
         plannedTitle(ledger, row.id, consumed),
     ];
     return [parts.join(' · '), ...(counts ? ['detail: copy the session report from History'] : [])];

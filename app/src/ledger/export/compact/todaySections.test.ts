@@ -65,7 +65,7 @@ describe('renderTodaySections', () => {
 
     it('prints absent yesterday parts as not recorded', () => {
         const { lines } = renderTodaySections(build());
-        expect(lines).toContain('Cycling · 60 min · structuredEntries: not recorded · sRPE 6 · executedDefinition: not recorded · planned: Endurance ride');
+        expect(lines).toContain('Cycling · 60 min · structuredEntries: not_yet_supported · sRPE 6 · executedDefinition: unavailable · planned: Endurance ride');
         expect(lines).not.toContain('detail: copy the session report from History');
     });
 
@@ -117,10 +117,32 @@ describe('renderTodaySections', () => {
         expect(out).toContain('#### plan-1@2:s1 (2026-11-19)');
     });
 
-    it('keeps the dropped-out-of-window count when every upcoming row is shown', () => {
+    it('prints the outside-window count once, in Facts, even when every placement is consumed', () => {
         const ledger = build();
+        ledger.coachingHistory.placements.items = ledger.coachingHistory.placements.items.filter(row => row.observedOn! >= '2026-11-20');
         ledger.coachingHistory.placements.droppedOutOfWindow = 4;
-        expect(renderTodaySections(ledger).lines).toContain('droppedOutOfWindow: 4');
+        const out = renderLedgerExportCompact(ledger);
+        expect(out.match(/outside window: 4/g)).toHaveLength(1);
+        expect(out.indexOf('outside window: 4')).toBeGreaterThan(out.indexOf('## Coaching history'));
+        expect(renderTodaySections(ledger).lines.join(' ')).not.toContain('outside window');
+    });
+
+    it('keeps statusHistory for consumed placements, measured or missing, on both paths', () => {
+        const ledger = build();
+        const [today, upcoming] = ['s4', 's3'].map(id => ledger.coachingHistory.placements.items.find(row => row.id.endsWith(`:${id}`))!);
+        today.fields.statusHistory = { value: [{ changedOn: '2026-11-18' }, { changedOn: '2026-11-19' }], source: 'x', state: 'measured' };
+        for (const key of ['title', 'priority', 'summary', 'stepNotes', 'fallback'] as const) {
+            upcoming.fields[key] = { value: null, source: 'x', state: 'unavailable' };
+        }
+        const lines = renderTodaySections(ledger).lines;
+        expect(lines).toContain('history: 2 recorded changes, latest 2026-11-19');
+        const afterContent = lines.slice(lines.indexOf('content: unavailable'));
+        expect(afterContent[1]).toBe('missing: statusHistory (not_yet_supported)');
+    });
+
+    it('prints the real state for absent yesterday parts', () => {
+        const { lines } = renderTodaySections(build());
+        expect(lines.some(line => line.includes('structuredEntries: not_yet_supported') && line.includes('executedDefinition: unavailable'))).toBe(true);
     });
 
     it('is pure and does not mutate the ledger', () => {

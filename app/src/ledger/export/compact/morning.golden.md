@@ -26,33 +26,33 @@ respirationAvg: 14 breaths/min (28d baseline: missing)
 sleepDurationSec: 27000 s
 hrvStatus: BALANCED
 bodyBatteryWake: 70 score
-totalSteps: 0 steps
+totalSteps: 0 steps (D-1)
 stressAvg: 25 score
 missing: weightKg (missing), bodyFatPct (missing)
 flags: illness_anomaly unknown (unavailable); illness_risk_symptom unknown (unavailable); injury_constraint_touches_session unknown (unavailable); recovery_beyond_baseline unknown (unavailable)
 2026-11-20 Openers [support] (planned)
 summary: Short activation ride
-missing: stepNotes (not_recorded), fallback (not_recorded)
+missing: stepNotes (not_recorded), fallback (not_recorded), statusHistory (not_yet_supported)
 
 ## Yesterday (2026-11-19)
-Cycling · 60 min · structuredEntries: not recorded · sRPE 6 · executedDefinition: not recorded · planned: Endurance ride
+Cycling · 60 min · structuredEntries: not_yet_supported · sRPE 6 · executedDefinition: unavailable · planned: Endurance ride
 
 ## Upcoming (2026-11-21…2026-11-27)
-droppedOutOfWindow: 1
 2026-11-22 Tempo intervals [key] (planned)
 summary: 3x10 min at tempo
 note: Stay seated
 note: Cadence 90
 fallback: Easy 45 min spin
+missing: statusHistory (not_yet_supported)
 
 ## Sources
 flag_evaluations: unavailable
 
 ## Flags
-illness_anomaly: unknown (unavailable) 2026-11-19…2026-11-20
-illness_risk_symptom: unknown (unavailable) 2026-11-19…2026-11-20
-injury_constraint_touches_session: unknown (unavailable) 2026-11-19…2026-11-20
-recovery_beyond_baseline: unknown (unavailable) 2026-11-19…2026-11-20
+illness_anomaly: unknown (unavailable) 2026-11-19
+illness_risk_symptom: unknown (unavailable) 2026-11-19
+injury_constraint_touches_session: unknown (unavailable) 2026-11-19
+recovery_beyond_baseline: unknown (unavailable) 2026-11-19
 
 ## Facts
 ### recovery
@@ -64,7 +64,7 @@ hrvOvernightAvg: 62 ms
 hrvStatus: BALANCED
 respirationAvg: 14 breaths/min
 bodyBatteryWake: 70 score
-totalSteps: 0 steps
+totalSteps: 0 steps (D-1)
 stressAvg: 25 score
 missing: weightKg (missing), bodyFatPct (missing)
 
@@ -264,7 +264,7 @@ schema: adaptive-training-recommender/external-plan@6
 authorRationale: Build aerobic base first.
 
 ### placements
-droppedOutOfWindow: 1
+placements outside window: 1
 #### plan-1@2:s1 (2026-11-19)
 planId: plan-1
 revision: 2

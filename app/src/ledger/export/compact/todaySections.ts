@@ -42,9 +42,8 @@ function upcomingSection(ledger: LedgerExport, consumed: Set<string>): string[] 
     const rows = placements.items.filter(row => row.observedOn !== null && row.observedOn > ledger.asOfDate)
         .sort((a, b) => (a.observedOn ?? '').localeCompare(b.observedOn ?? '') || a.id.localeCompare(b.id));
     rows.forEach(row => consumed.add(row.id));
-    const dropped = (placements.droppedOutOfWindow ?? 0) > 0 ? [`droppedOutOfWindow: ${placements.droppedOutOfWindow}`] : [];
     const empty = rows.length ? [] : [`placements: ${text(placements.state)}, none after ${text(ledger.asOfDate)}`];
-    return [`## Upcoming (${text(start)}…${text(end)})`, ...empty, ...dropped, ...rows.flatMap(placementBlock), ''];
+    return [`## Upcoming (${text(start)}…${text(end)})`, ...empty, ...rows.flatMap(placementBlock), ''];
 }
 
 /** Today, Yesterday and Upcoming: what the athlete needs first; sets the ids they consumed. */

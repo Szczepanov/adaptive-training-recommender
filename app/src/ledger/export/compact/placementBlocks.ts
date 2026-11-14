@@ -31,10 +31,11 @@ function historyLine(history: LedgerValue<unknown>): string[] {
 export function placementBlock(row: Placement): string[] {
     const { title, summary, stepNotes, fallback, statusHistory, priority } = row.fields;
     if (isMissing(title) && (title.state === 'unavailable' || title.state === 'invalid')) {
-        return [header(row), `content: ${text(title.state)}`, ...historyLine(statusHistory)];
+        const history = missingLine([['statusHistory', statusHistory]]);
+        return [header(row), `content: ${text(title.state)}`, ...historyLine(statusHistory), ...(history ? [history] : [])];
     }
     const notes = Array.isArray(stepNotes.value) ? stepNotes.value : [];
-    const leaves: FieldEntry[] = [['title', title], ['priority', priority], ['summary', summary], ['stepNotes', stepNotes], ['fallback', fallback]];
+    const leaves: FieldEntry[] = [['title', title], ['priority', priority], ['summary', summary], ['stepNotes', stepNotes], ['fallback', fallback], ['statusHistory', statusHistory]];
     const absent = leaves.filter(([, value]) => isMissing(value));
     const missing = missingLine(absent);
     return [
