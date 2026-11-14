@@ -2,10 +2,10 @@
 
 | | |
 |---|---|
-| **Status** | **In progress** — WP0–WP7 implemented; acceptance closure pending operational evidence |
+| **Status** | **Implemented** — WP0–WP7 implemented; #895 closed 2026-11-14 after the owner's real-device, Garmin re-sync and cold-offline checks (2026-11-13) and a closure audit |
 | **Source** | [Issue #895](https://github.com/Szczepanov/adaptive-training-recommender/issues/895) |
 | **Baseline** | `origin/main` at `e63517a7` (fetch 2026-09-29; includes #901, #910, #911, #912, #913, #914). The local checkout at plan-writing time was behind by 4 commits; all findings below were verified against the fetched tip (`git show FETCH_HEAD:<path>`), not the stale worktree. |
-| **Blocked by** | Nothing outstanding; WP0-WP7 are implemented and only the closure evidence listed under WP7 remains. |
+| **Blocked by** | None. Residual parked under ADR-0052: moving legacy history, fatigue and microcycle (`completedTraining.ts`, `fatigue.ts`) to canonical occurrences (#872, closed as not planned); only the default-off engine reads them. |
 | **Unlocks** | Closure of #895; a lossless diary substrate that later history/fatigue cutovers (owned by TO, not this plan) can consume without re-litigating write authority. |
 | **Policy effect** | None. All work is persistence/reconciliation/observability plumbing. `POLICY_VERSION` must not change unless scope is explicitly widened in a separately reviewed policy change. |
 
