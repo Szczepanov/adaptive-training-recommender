@@ -521,6 +521,13 @@ DataView shows `No data available` with Retry (recomposes via `App` `loadDecisio
 Back to Home, so the empty state is never a dead end even though the global navigation chrome
 also remains available.
 
+Each completed-workout card in Activities also has **Copy for AI** beside **Copy JSON**. It copies a compact
+Markdown session report (`formatCompletedWorkoutMarkdown`: `# Session:` header, one `## <exercise>` section per step with
+prescribed vs performed sets, choices, tempo and notes, and a final `ref:` line carrying the performed-occurrence id) built from the
+same `completed_workout_v1` export. Right after a session is finished, Home's `LedgerTodayCard` offers **Copy session for AI** on
+that completed session row (`LedgerSessionAiCopyButton`); it copies the same report, or says it is not ready yet if the workout
+has not been saved to History.
+
 ### 10. Protocol testing
 
 `TestingWorkflow` owns the assessment lifecycle and longitudinal history across two top-level tabs:
