@@ -1,5 +1,7 @@
 # Session report for AI (Phase 1) Implementation Plan
 
+**Status:** Phase 1 implemented on branch `feat/ledger-export-session-report` (PR pending). Phases 2–4 are planned separately.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** After a session, one tap copies a compact, planned-vs-performed Markdown session report for the external AI chat.
@@ -143,6 +145,8 @@
 - [ ] **Step 5: Commit** with `feat(history): copy a session report for AI from the History card`.
 
 ### Task 5: Copy for AI after finishing a session
+
+> **Entry-point ruling (as built):** the post-session action is not in `SessionRunner`, which closes right after completion unless companions exist. It is a **Copy session for AI** button (`LedgerSessionAiCopyButton`) on completed session rows of Home's `LedgerTodayCard`; the History card keeps **Copy for AI**. The runner-based text below is superseded.
 
 **Files:**
 - Modify: `app/src/components/session/SessionRunner.tsx`, in the post-completion state where `companionPrompt` is handled and the no-active-session view renders.
