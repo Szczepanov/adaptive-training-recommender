@@ -119,6 +119,18 @@ export interface PlanRevisionInput {
     schema: string;
     /** Plan-level `notes` of the imported plan. */
     notes?: string;
+    /** Authored session content of the verified revision; absent when it was not read. */
+    sessions?: readonly PlanSessionContentInput[];
+}
+
+/** Structural subset of `ExternalPlanSession` the export carries for upcoming placements. */
+export interface PlanSessionContentInput {
+    id: string;
+    title: string;
+    priority?: string;
+    summary?: string;
+    stepNotes?: readonly string[];
+    fallback?: string;
 }
 
 /** Structural `ExternalPlanPlacement` (`engine/models.ts`): the mutable overlay, current state only. */

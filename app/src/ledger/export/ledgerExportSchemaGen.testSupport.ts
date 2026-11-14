@@ -41,7 +41,8 @@ function itemDefinition(path: string): Json {
 }
 
 function collectionDefinition(path: string): Json {
-    const extra = path === 'facts.activities' ? ['truncated', 'totalInWindow'] : [];
+    const extra = path === 'facts.activities' ? ['truncated', 'totalInWindow']
+        : path === 'coachingHistory.placements' ? ['droppedOutOfWindow'] : [];
     return {
         type: 'object',
         additionalProperties: false,
@@ -51,7 +52,8 @@ function collectionDefinition(path: string): Json {
             source: { type: 'string' },
             items: { type: 'array', items: itemDefinition(path) },
             droppedUndated: { type: 'integer', minimum: 0 },
-            ...(extra.length > 0 ? { truncated: { type: 'boolean' }, totalInWindow: { type: 'integer', minimum: 0 } } : {}),
+            ...(path === 'facts.activities' ? { truncated: { type: 'boolean' }, totalInWindow: { type: 'integer', minimum: 0 } } : {}),
+            ...(path === 'coachingHistory.placements' ? { droppedOutOfWindow: { type: 'integer', minimum: 0 } } : {}),
         },
     };
 }

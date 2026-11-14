@@ -26,6 +26,9 @@ export const PURPOSE_BOUNDS: Readonly<Record<LedgerPurpose, PurposeBounds>> = {
     diagnostic: { days: 14, activityCap: 30, segmentCap: 100, segmentDetailOnlyDMinus1: false },
 };
 
+/** Days past `asOfDate` for which planned placements are exported (upcoming sessions). */
+export const PLACEMENT_FORWARD_DAYS: Readonly<Record<LedgerPurpose, number>> = { morning: 7, planning: 14, diagnostic: 0 };
+
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 /** A real calendar date: well-formed and unchanged by a round trip (rejects 2026-02-30). */

@@ -1,11 +1,14 @@
 import { buildLedgerExport } from '../ledger/export/buildLedgerExport';
-import type { BuildLedgerExportInput, LedgerExportRecords, SourceKey, SourceReadInput } from '../ledger/export/inputs';
+import type { BuildLedgerExportInput, LedgerExportRecords, PlanSessionContentInput, SourceKey, SourceReadInput } from '../ledger/export/inputs';
 import type { LedgerExport, LedgerState } from '../ledger/export/schema';
 import { LEDGER_PURPOSES } from '../ledger/export/schema';
 import { resolveWindow } from '../ledger/export/window';
 import { worstState } from '../ledger/export/ledgerValue';
 import { addDaysToLocalDateString } from '../utils/localDate';
 import type { DataState } from '../engine/dataState';
+import type { ExternalPlanSession } from '../engine/models';
+import type { ExternalPlanSessionV2 } from '../sessions/externalPlanV2';
+import type { ExternalPlanSessionV4 } from '../sessions/externalPlanV4';
 import { flagEvaluationRepository } from './flagEvaluationPersistence';
 import { recoverySnapshotService } from './recoverySnapshotService';
 import { checkinService } from './checkinService';
@@ -39,6 +42,25 @@ const measured = <T,>(data: T): Read<T> => ({ data, state: 'measured' });
 export type LedgerExportRequest = Pick<BuildLedgerExportInput, 'asOfDate' | 'purpose' | 'window' | 'legacyEngine'> & { exportedAt?: string };
 
 /** User-initiated, read-only assembly. No default migration, reconciliation, or engine evaluation. */
+/** Maps the authored session fields the export carries; absent optional text stays absent. */
+type StoredPlanSession = ExternalPlanSession | ExternalPlanSessionV2 | ExternalPlanSessionV4;
+
+function toSessionContent(session: StoredPlanSession): PlanSessionContentInput {
+    // v1 authors a `prescription`; v2+ author an executable `definition` with blocks of steps.
+    const steps = 'prescription' in session ? session.prescription?.steps ?? []
+        : (session.definition?.blocks ?? []).flatMap(block => block.steps);
+    const notes = steps.map(step => step.notes).filter((note): note is string => !!note?.trim());
+    const summary = 'prescription' in session ? session.prescription?.summary : session.definition?.summary;
+    return {
+        id: session.id,
+        title: session.title,
+        priority: session.priority,
+        summary,
+        ...(notes.length > 0 ? { stepNotes: notes } : {}),
+        fallback: session.scaling?.fallback,
+    };
+}
+
 export class LedgerExportService {
     async build(userId: string, request: LedgerExportRequest): Promise<LedgerExport> {
         if (!userId.trim() || userId.includes('/')) throw new Error('A user-scoped ledger export requires a user id');
@@ -208,7 +230,7 @@ export class LedgerExportService {
                     const importedAt = revision === header.data.revision ? header.data.importedAt : activation?.activatedAt;
                     if (!hash || !importedAt || await computeContentHash(plan.data) !== hash) { revisionState = worstState([revisionState, 'invalid']); continue; }
                     verified.set(`${planId}@${revision}`, { contentHash: hash, sessionIds: new Set(plan.data.sessions.map(session => session.id)) });
-                    records.planRevisions = [...records.planRevisions, { planId, revision, contentHash: hash, importedAt, schema: plan.data.schema, notes: plan.data.notes }];
+                    records.planRevisions = [...records.planRevisions, { planId, revision, contentHash: hash, importedAt, schema: plan.data.schema, notes: plan.data.notes, sessions: (plan.data.sessions as readonly StoredPlanSession[]).map(toSessionContent) }];
                 }
             }
         } catch { revisionState = 'unavailable'; placementState = 'unavailable'; }

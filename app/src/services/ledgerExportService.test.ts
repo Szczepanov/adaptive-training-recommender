@@ -174,6 +174,24 @@ describe('LedgerExportService', () => {
         expect(corrupt.coachingHistory.planRevisions.state).toBe('invalid');
         expect(corrupt.coachingHistory.planRevisions.items).toEqual([]);
     });
+    it.each([
+        ['v1 prescription', { prescription: { summary: 'Sum', steps: [{ name: 'a', notes: 'n1' }, { name: 'b' }, { name: 'c', notes: ' ' }] } }],
+        ['v2+ definition', { definition: { summary: 'Sum', blocks: [{ steps: [{ notes: 'n1' }, {}] }, { steps: [{ notes: ' ' }] }] } }],
+    ])('maps authored %s content onto placements', async (_label, content) => {
+        const plan = { schema: 'external-plan@6', sessions: [{ id: 'session-1', title: 'Ride', priority: 'key', scaling: { fallback: 'Spin' }, ...content }] };
+        const contentHash = await computeContentHash(plan);
+        reads.plans.mockResolvedValue(available(['plan-1']));
+        reads.header.mockResolvedValue(available({ revision: 2, contentHash, importedAt: '2026-11-10T08:00:00Z' }));
+        reads.activations.mockResolvedValue(available([]));
+        reads.revision.mockResolvedValue(available(plan));
+        reads.placement.mockResolvedValue(available({ planId: 'plan-1', revision: 2, assignments: [{ sessionId: 'session-1', date: '2026-11-25', status: 'planned' }] }));
+        const fields = (await new LedgerExportService().build('owner', request)).coachingHistory.placements.items[0].fields;
+        expect(fields.title.value).toBe('Ride');
+        expect(fields.priority.value).toBe('key');
+        expect(fields.summary.value).toBe('Sum');
+        expect(fields.stepNotes.value).toEqual(['n1']);
+        expect(fields.fallback.value).toBe('Spin');
+    });
     it('reports incomplete bounded evidence rather than claiming a complete empty source', async () => {
         reads.outcomes.mockResolvedValue({ outcomes: [], unreadableCount: 0, truncated: true });
         reads.intent.mockResolvedValue({ blocks: [], unreadableCount: 1, truncated: false });

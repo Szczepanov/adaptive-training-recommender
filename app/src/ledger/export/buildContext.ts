@@ -1,11 +1,12 @@
 import type { SourceKey, SourceReadInput } from './inputs.ts';
 import { collection } from './ledgerValue.ts';
-import type { LedgerCollection, LedgerState, LedgerWindow } from './schema.ts';
+import type { LedgerCollection, LedgerPurpose, LedgerState, LedgerWindow } from './schema.ts';
 import { windowBounds, windowRows, type DateBounds, type PurposeBounds } from './window.ts';
 
 /** Shared, read-only context for the layer builders. */
 export interface BuildContext {
     asOfDate: string;
+    purpose: LedgerPurpose;
     window: LedgerWindow;
     bounds: PurposeBounds;
     sources: Partial<Record<SourceKey, SourceReadInput>>;

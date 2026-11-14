@@ -2233,7 +2233,12 @@
         "sessionId",
         "status",
         "date",
-        "statusHistory"
+        "statusHistory",
+        "title",
+        "priority",
+        "summary",
+        "stepNotes",
+        "fallback"
       ],
       "properties": {
         "planId": {
@@ -2253,6 +2258,21 @@
         },
         "statusHistory": {
           "$ref": "#/$defs/ledgerValue"
+        },
+        "title": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "priority": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "summary": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "stepNotes": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "fallback": {
+          "$ref": "#/$defs/ledgerValue"
         }
       }
     },
@@ -2263,7 +2283,8 @@
         "state",
         "source",
         "items",
-        "droppedUndated"
+        "droppedUndated",
+        "droppedOutOfWindow"
       ],
       "properties": {
         "state": {
@@ -2299,6 +2320,10 @@
           }
         },
         "droppedUndated": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "droppedOutOfWindow": {
           "type": "integer",
           "minimum": 0
         }

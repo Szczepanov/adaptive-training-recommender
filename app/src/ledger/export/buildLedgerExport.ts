@@ -214,6 +214,7 @@ export function buildLedgerExport(input: BuildLedgerExportInput): LedgerExport {
     const window = resolveWindow(input.purpose, input.asOfDate, input.window);
     const context: BuildContext = {
         asOfDate: input.asOfDate,
+        purpose: input.purpose,
         window,
         bounds: PURPOSE_BOUNDS[input.purpose],
         sources: input.sources ?? {},
