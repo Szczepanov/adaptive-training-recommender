@@ -58,7 +58,8 @@ found that the export serves this badly.
 - An app-generated "coach pack" replacing the chat's project files (possible later work).
 - Any engine change. The engine is frozen (ADR-0052); nothing here may touch `engine/`
   decision paths or `POLICY_VERSION`.
-- New data capture beyond an optional override reason (G3).
+- New training-data capture beyond an optional override reason (G3). Device-local chat
+  selection and delivery confirmation are export preferences, covered by Phase 2c.
 
 ## Anti-goals
 
@@ -67,7 +68,7 @@ found that the export serves this badly.
   as zero/false.
 - **Engine opinions leaking into facts.** The existing forbidden-opinion-key tests still
   hold.
-- **Non-determinism in the pure builder/renderer.** "Since last export" comes from an
+- **Non-determinism in the pure builder/renderer.** "Since confirmed delivery" comes from an
   explicit input, never from a clock or a store read inside the builder.
 - **A second export pipeline.** Phases 2–4 render every new output from `LedgerExport`
   (D-EXPORT: one canonical ledger schema, Markdown rendered from it). Phase 1 is the
@@ -77,13 +78,18 @@ found that the export serves this badly.
 
 ## Constraints
 
-- The JSON stays the canonical, full-fidelity artifact. New fields are **additive**, inside
+- For Phases 2–4, JSON stays the canonical, full-fidelity artifact. New fields are **additive**, inside
   `ledger-export-v1`, with JSON Schema (`ledger/export/ledgerExport.schema.json`) and contract
   tests updated in the same PR. A field rename or removal would need `ledger-export-v2`;
   this design needs none.
-- Every leaf keeps `value`/`source`/`state` (+ `unit` for numbers), as today.
-- No identity in output: the existing redaction and identity tests apply to new fields,
-  including free-text notes.
+- Ledger leaves keep `value`/`source`/`state` (+ `unit` for numbers), as today. Phase 1
+  retains the existing `completed_workout_v1` shape; it does not wrap existing fields in
+  ledger leaves. New availability metadata must distinguish missing from failed reads.
+- Ledger JSON and both AI-facing Markdown views exclude account identity; reuse the
+  existing redaction helpers and test free-text notes, titles and provider fields. Phase 1's
+  existing raw-provider JSON remains a separate local diagnostic artifact, not a promise
+  of identity-free AI output. Opaque occurrence references used for correlation are allowed;
+  user ids, email addresses and provider account ids are not.
 - The ledger module boundary test forbids engine imports (Phases 2–4).
 - Warsaw dates (I2): every date uses `getLocalDateString`/`addDaysToLocalDateString`.
 - **D-EVAL timing:** export content is an input to the planning AI. Changing it during the
@@ -123,9 +129,10 @@ Phases 2–4 still change the ledger export itself, as designed.
 
 ### Phase 1 — Session report (G1)
 
-**Scope.** One completed workout (a `CompletedWorkoutView`). Abandoned executions and
-completions whose reconciliation failed have no performed occurrence, so they are out of
-scope for Phase 1; the morning export still reports them. This limitation is named in the UI
+**Scope.** One completed workout (a `CompletedWorkoutView`). Executions without a reconciled
+performed occurrence, including abandoned or failed-reconciliation cases, are out of scope
+for Phase 1. The current morning export does not expose standalone executions;
+Phase 3 adds bounded evidence for their placement outcomes. This limitation is named in the UI
 copy only if an export is attempted without a view.
 
 **Additive fields in `completed_workout_v1`.** No field is renamed or removed, so the schema
@@ -134,15 +141,24 @@ id stays.
 - `exercises[].prescribed.tempo` and `exercises[].prescribed.notes`, from the authored
   `SessionStep`.
 - `exercises[].choices[]`: the athlete's `ChoiceEntryPayload`s for that step, each with
-  `choiceId`, `optionId`, the option's label when resolvable, and `reason`.
+  `choiceId`, `optionId`, the option's label when resolvable, and `reason`. Preserve choice
+  entry ids, supersession and governing-choice references so a later correction cannot
+  relabel earlier performed work. Include session-level choices without inventing a step.
+- Per-set `side`, when recorded, so left/right sets remain distinguishable. Reuse the
+  existing corrected-entry/tombstone handling; deleted sets are not performed work.
 - `session.techniqueNote`, and `responses[]`: every `SessionResponse` linked to this
-  occurrence (`window`, `sessionRpe`, `completedFraction`, `unexpectedFatigue`,
-  `techniqueNote`, `note`). This covers the later-day and next-morning windows.
-- `providerActivity` stays as is. The Markdown view selects fields, so raw ids never appear
-  in the Markdown.
+  occurrence (`window`, recorded `date`, `sessionRpe`, `completedFraction`,
+  `unexpectedFatigue`, `techniqueNote`, `note`). Join via the occurrence's structured source
+  refs and each response's `sourceSession`; `SessionResponse.occurrenceId` is a planning
+  identity and must not be equated with `performedOccurrenceId`. Read later windows when
+  exporting a historical workout, preserving source-session and response dates separately.
+- `providerActivity` stays as is in JSON. Markdown uses an allow-list and redaction, with
+  only the opaque trailing occurrence reference retained.
 
-**Markdown view** (`formatCompletedWorkoutMarkdown(view, exportedAt)`, pure). It is a
-session sheet, not field tables:
+**Markdown view** (`formatCompletedWorkoutMarkdown(view, exportedAt)`, pure). Reuse
+`exportCompletedWorkoutToJson` for the projection, then render that payload; do not build
+a second prescription/set join. Hydrate choices, responses and their read states outside
+the renderer through the existing completed-workout read path. It is a session sheet:
 
 ```
 # Session: Heavy Squat Day — 2026-11-14 (authored, completed)
@@ -168,7 +184,11 @@ missing: performed rest (not_recorded)
 Rules:
 
 - Missing values are named, never shown as zero.
-- A prescribed step with no performed sets renders as **Not performed**.
+- A prescribed step with no performed sets renders as **Not performed** only when the
+  structured entries were read completely. Failed or partial reads render **Unknown**;
+  a completed checkoff or timed/distance entry is performed evidence even without reps.
+- Escape Markdown metacharacters and embedded newlines in authored/provider text. Preserve
+  read failures and missing response windows explicitly, rather than empty success lists.
 - Units are always shown.
 - The header carries no ids. One trailing `ref:` line holds the occurrence id, so the AI can
   correlate it with the morning export.
@@ -189,12 +209,17 @@ Rules:
 **2a. Compact Markdown rendering** for every purpose; the JSON is unchanged.
 
 - One line per field: `key: value unit`.
-- Source and state are shown only when they are not `measured`.
+- Omit the `measured` state label only where the compact format declares it the default.
+  Source is provenance, not a state: retain it once per group and on field-level exceptions.
+  Keep semantic dates, units and stale observation dates visible.
 - Each item ends with one `missing:` line listing absent fields and their states.
 - Collections that are entirely missing render as one line.
-- The `Sources` section lists only sources that are not `measured`.
+- The `Sources` section may abbreviate successful sources already identified in groups;
+  retain every failed/partial source state, omission count and truncation warning.
 - **Flags:** active flags in full. Inactive and unavailable flags become one summary line
-  per flag id (for example `illness_risk_symptom: inactive 2026-11-19…20`).
+  per flag id and exact state (for example `illness_risk_symptom: inactive 2026-11-19…20`).
+  Collapse only contiguous dates with the same state and compatible session scope/version;
+  preserve within-day transitions. Never merge unavailable or uncaptured dates into inactive.
 - The existing golden test gets a compact counterpart.
 - **Size target:** at most 25% of today's 32,581 characters (at least a 75% reduction). It is
   measured on the existing fixture rendered as `morning`, with 2b content included and
@@ -206,20 +231,31 @@ It is not exposed in the UI by default.
 
 **2b. Today-first morning content.**
 
-- Check-in and recovery values are shown with their 28-day baseline and the delta. Both
-  already exist in `derived`; the renderer joins them.
+- Check-in and recovery values are shown with an available matching 28-day baseline and
+  an arithmetic delta (`value - baseline`) in the same unit. Baselines exist in `derived`;
+  deltas are a new projection, not an existing field. Do not invent baselines for unsupported
+  metrics. Preserve readiness/missingness, and compare only matching metric/source/semantic
+  dates (including D−1 steps). Add state-bearing deltas to ledger JSON before rendering them.
 - Yesterday's sessions get one summary line each: title, done vs planned sets, sRPE. A
-  pointer says the session report has the detail.
+  pointer says the session report has the detail. Extend the service's current
+  `{ exerciseCount, setCount }` projection with validated planned/work/warm-up counts and
+  the linked session response; it cannot supply planned sets or sRPE today. Separate warm-ups
+  and missing denominators, and do not sum alternatives or double-count linked provider work.
 - **Upcoming sessions.** Placements get a forward bound: `asOfDate + 7` for `morning` and
-  `asOfDate + 14` for `planning`. The bounds change is in `buildPlacements` only; past-facts
-  windows are unchanged. Each upcoming placement carries, from the stored plan revision's
+  `asOfDate + 14` for `planning`, inclusive (today plus 7/14 future dates). Keep historical
+  fact windows and the as-of cutoff for placement events unchanged. Extend placement bounds,
+  referenced-revision retention and service hydration together; changing `buildPlacements`
+  alone can drop an older revision referenced only by a future placement. Each upcoming
+  placement carries, from the hash-verified stored plan revision's
   `ExternalPlanSession`:
   - `title` and `priority`;
   - `prescription.summary`;
   - per-step `notes`;
   - `scaling.fallback`.
 
-  These are existing authored fields; no plan-schema change is needed. Out-of-window drops
+  These are existing authored fields; no plan-schema change is needed. Add their projection
+  to export inputs/schema; the current revision summary does not retain full sessions.
+  Failed revision reads keep these fields unavailable. Out-of-window drops
   are counted, as undated drops already are.
 
   _Agent's call (builder check): there is no session-level `notes` field, so "session-level
@@ -232,12 +268,19 @@ It is not exposed in the UI by default.
 - Almost no user-context item has a recorded change date (`revisions` is
   `not_yet_supported`, and `updatedAt` is deliberately not trusted), so date-based change
   detection would save nothing.
-- The renderer takes an optional `previousContext: { exportedOn: LocalDate; itemHashes:
-  Record<string, string> }`. Item keys are collection + item id.
-- It computes a stable hash of each user-context item's exported content.
+- The renderer takes optional `previousContext` with `exportedOn: LocalDate`,
+  `itemHashes: Record<string, string>`, a format version and per-collection selection scope
+  and completeness metadata. Item keys are collection + item id. Store only hashes and
+  comparison metadata, not raw context text.
+- It computes a stable hash of each item's redacted semantic content, including state,
+  source and meaningful dates; exclude export/read timestamps. Version the checkpoint
+  format so a renderer/hash-contract change falls back to full context.
 - Items whose hash matches print as one line: `userContext: <n> items unchanged since
   <exportedOn>`, followed by their ids.
-- New, changed and removed items print in full; a removed item gets a `removed:` line.
+- New and changed items print in full. An absent item gets a `removed:` line only when a
+  complete read and the same selection scope prove removal. A failed/truncated read or
+  moving date window means unknown/out of scope, not deletion; preserve prior hashes for
+  that collection and render its missingness. Do not abbreviate unreadable items as unchanged.
 - Without `previousContext`, everything prints in full.
 - The JSON always carries the full user context. Only the Markdown is abbreviated.
 - Copying or downloading alone never advances the checkpoint. After pasting into the
@@ -251,6 +294,8 @@ It is not exposed in the UI by default.
     never read. A visible "include full context" toggle ignores prior checkpoints.
   - Losing that store only means the next export is full. Nothing is written to Firestore,
     so there is no rules impact.
+  - Bind confirmation to the captured user/chat/purpose and snapshot. Account/chat changes
+    invalidate pending confirmation; an older export must not overwrite a newer checkpoint.
   - The builder and renderer stay pure: the hashes are an explicit input.
 
 _Agent's call (builder check): a content hash works with the data that exists today; dates
@@ -261,28 +306,37 @@ would need new change tracking in Firestore._
 - **Outcome of past placements.** Each placement dated before `asOfDate` gets a derived
   `outcome` in the export only; nothing is written back. Today is never classified. Rules,
   first match wins:
-  1. Placement status `dropped`, `moved` or `superseded` → that status.
-  2. A planned→performed link exists → `performed`.
-  3. Placements, executions or links are not `measured`, or a link was discarded for a hash
-     mismatch → `unknown`.
-  4. An execution of that plan session exists that is abandoned or has no performed
-     occurrence → `started_not_completed`.
-  5. Placement status `completed` with no link → `done_unlinked`.
+  1. A valid, hash-verified planned→performed link exists → `performed`.
+  2. Placements, executions or links are not complete and readable, a placement was removed,
+     or a relevant link was discarded for a hash mismatch → `unknown`.
+  3. Placement status `completed` or a completed execution with no link → `done_unlinked`.
+  4. An execution of that plan session exists that is started or abandoned →
+     `started_not_completed`.
+  5. Placement status `dropped` or `superseded` → that status.
   6. Otherwise → `missed`.
 
   `missed` is only asserted when every source was read and nothing points to the session
-  having been done.
+  having been done. Preserve placement status separately from outcome: a moved session is
+  evaluated on its as-of assigned date, and a later drop must not hide performed evidence.
+  Match executions by plan id, revision, session id and verified content hash, not title.
+  Add bounded execution evidence and read-completeness state to the pure builder inputs;
+  the service currently reads executions but exports only occurrence-linked summaries.
+  If the read window cannot establish absence for a placement, its outcome is `unknown`.
 
   _Agent's call (builder check): a wrong `missed` would be a fabricated fact, so every
   uncertain case resolves to a weaker state._
 - **Swaps and omissions** from Phase 1 choice data also appear in `coachingHistory.overrides`
   as `swapped` / `omitted`, with the step, the replacement and the existing
-  `ChoiceEntryPayload.reason`. That reason is already captured by the session runner.
+  `ChoiceEntryPayload.reason`. Resolve the choice against its pinned definition before
+  classifying it; not every option selection is a swap or omission. Unresolved options keep
+  explicit missingness. Use stable entry identities so corrections are not duplicate overrides.
 - **Override reason capture** is new only for **dropping or moving a placement**: an optional
-  reason on the placement overlay.
-  - It touches the external-plans rules (`03-external-plans`) and validator. Check it
-    against the compiled-rules budget (ADR-0053; headroom 21%).
-  - Until it is recorded, the reason stays `not_yet_supported`, as today.
+  reason on the placement overlay and its immutable placement event, saved atomically.
+  Historical exports read the reason as of the event, never a later overlay value.
+  - It touches the external-plans rules (`03-external-plans`), write validators, event
+    readers and export projection. Check the current compiled-rules budget (ADR-0053).
+  - Legacy records stay `not_yet_supported`; a supported optional reason left blank is
+    `not_recorded`. Preserve this distinction in the JSON and Markdown.
 - Session-level plan text is covered by 2b.
 
 ### Phase 4 — Refresh export (G4)
@@ -302,6 +356,12 @@ would need new change tracking in Firestore._
 - **Checkpoint:** copy/download without confirmation leaves dates and hashes unchanged;
   confirmation records the exported snapshot for only the selected user/chat/purpose;
   missing checkpoints, a new user/chat and "include full context" render full context.
+  Cover failed/truncated collection reads, moving windows, hash-version changes, account
+  switches and out-of-order confirmations; none may fabricate removal or advance stale state.
+- **Evidence boundaries:** unreadable sets versus unperformed steps; response linkage via
+  source refs; same-day corrected choices and left/right sets; moved-then-performed and
+  completed-but-unreconciled placements; future placements referencing older revisions;
+  incomplete execution windows; semantic-date baseline joins and flag state transitions.
 - **Goldens:**
   - existing verbose goldens, which stay byte-identical where the content did not change;
   - new compact goldens for morning, planning and session;
@@ -313,8 +373,9 @@ would need new change tracking in Firestore._
 
 ## Documentation
 
-Update `docs/architecture/ledger-export-contract.md` for the new purpose, fields, forward
-placement bound and compact rendering. Its "Entry points" paragraph is already stale: it
+Update `docs/architecture/ledger-export-contract.md` for the new fields, forward placement
+bound and compact rendering; no new ledger purpose is introduced. Document the separate
+Phase 1 session format and its privacy boundary. Its "Entry points" paragraph is already stale: it
 still says Copy/Download use the legacy brief, but since #1249 and #1254 ledger mode renders
 `renderLedgerExport`. Fix that in Phase 2. Also update `docs/architecture/user-flows.md` §9
 and `docs/plans/README.md`.
