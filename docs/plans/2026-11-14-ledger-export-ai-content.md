@@ -173,9 +173,13 @@ Rules:
 **Entry points:**
 
 - **Copy for AI** (Markdown) beside the existing **Copy JSON** on the History card.
-- After a session is completed, the runner's post-completion state offers the same action
-  for the just-finished workout, once its view is readable. While the occurrence is not yet
-  readable, it says "available in History".
+- **Copy session for AI** on each completed session row of Home's `LedgerTodayCard`
+  (`LedgerSessionAiCopyButton`). While the workout is not yet readable, it says it will be
+  available in History.
+
+  _Ruling during implementation: the action is not in `SessionRunner`, because the runner
+  closes right after completion unless the session has companion sessions. Home is where the
+  athlete lands._
 
 ### Phase 2 — Morning update (G2)
 
