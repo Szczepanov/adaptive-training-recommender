@@ -20,6 +20,7 @@ import type {
     SessionRestEvent,
     SessionStep,
 } from '../sessions/models';
+import { resolveEffectiveChoiceEntries } from '../sessions/choiceResolution';
 import { exerciseRefKey, exerciseRefName, stepName } from '../sessions/stepDisplay';
 
 export interface PrescribedStepTarget {
@@ -30,6 +31,17 @@ export interface PrescribedStepTarget {
     load?: SessionLoad;
     effort?: SessionEffort;
     restSeconds?: RangeOrNumber;
+    tempo?: string;
+    notes?: string;
+}
+
+/** An athlete's recorded choice (e.g. an exercise substitution) attached to the step it applies to. */
+export interface StepChoiceDetail {
+    choiceId: string;
+    optionId: string;
+    optionLabel?: string;
+    reason?: string;
+    completedAt: string;
 }
 
 export interface PerformedRestDetail {
@@ -68,6 +80,7 @@ export interface StructuredStepDetail {
     isOptional: boolean;
     prescribed: PrescribedStepTarget;
     sets: PerformedSetRow[];
+    choices?: StepChoiceDetail[];
 }
 
 function prescribedTarget(step: SessionStep): PrescribedStepTarget {
@@ -88,6 +101,8 @@ function prescribedTarget(step: SessionStep): PrescribedStepTarget {
     if (step.load) target.load = step.load;
     if (step.effort) target.effort = step.effort;
     if (step.rest !== undefined) target.restSeconds = step.rest;
+    if (step.tempo) target.tempo = step.tempo;
+    if (step.notes) target.notes = step.notes;
     return { sets, ...target };
 }
 
@@ -95,7 +110,7 @@ function isWarmupPayload(payload: SessionEntryPayload): boolean {
     return payload.kind === 'repetition' && payload.isWarmup === true;
 }
 
-/** Steps with neither a prescription nor logged work (e.g. a pure `transition`/`rest`
+/** Steps with neither a prescription, logged work nor a recorded choice (e.g. a pure `transition`/`rest`
  * step nobody logged against) are omitted -- they carry nothing to compare. */
 export function buildStructuredStepDetails(
     definition: SessionDefinition,
@@ -111,10 +126,11 @@ export function buildStructuredStepDetails(
         });
     }
 
+    const choicesByStepId = collectChoices(definition, entries);
     const entriesByStepId = new Map<string, SessionEntry[]>();
     for (const entry of entries) {
         // A recorded athlete choice is not performed work (mirrors comparePlannedVsPerformed).
-        if (!entry.stepId || entry.payload.kind === 'choice') continue;
+        if (entry.deletedAt || !entry.stepId || entry.payload.kind === 'choice') continue;
         const list = entriesByStepId.get(entry.stepId) ?? [];
         list.push(entry);
         entriesByStepId.set(entry.stepId, list);
@@ -126,7 +142,7 @@ export function buildStructuredStepDetails(
         for (const step of block.steps) {
             definedStepIds.add(step.id);
             const stepEntries = sortedByCompletion(entriesByStepId.get(step.id) ?? []);
-            if (step.kind !== 'exercise' && stepEntries.length === 0) continue;
+            if (step.kind !== 'exercise' && stepEntries.length === 0 && !choicesByStepId.has(step.id)) continue;
             details.push({
                 stepId: step.id,
                 ...(step.exerciseRef ? { exerciseRef: step.exerciseRef } : {}),
@@ -134,6 +150,7 @@ export function buildStructuredStepDetails(
                 isOptional: !!step.optional,
                 prescribed: prescribedTarget(step),
                 sets: toSetRows(stepEntries, restByEntryId),
+                ...choicesField(choicesByStepId.get(step.id)),
             });
         }
     }
@@ -142,6 +159,38 @@ export function buildStructuredStepDetails(
         details.push(unplannedStepDetail(stepId, sortedByCompletion(stepEntries), restByEntryId));
     }
     return details;
+}
+
+function choicesField(choices: readonly StepChoiceDetail[] | undefined): { choices?: StepChoiceDetail[] } {
+    return choices && choices.length > 0 ? { choices: [...choices] } : {};
+}
+
+/** Choice entries keyed by the step they apply to: the entry's own step, else the step the
+ * matching option set is anchored at. Choices that resolve to no step are dropped. */
+function collectChoices(
+    definition: SessionDefinition,
+    entries: readonly SessionEntry[],
+): Map<string, StepChoiceDetail[]> {
+    const optionSets = definition.blocks.flatMap(block => block.optionSets ?? []);
+    const byStepId = new Map<string, StepChoiceDetail[]>();
+    // Only the effective entry of each correction chain governed the session.
+    const live = entries.filter(entry => !entry.deletedAt);
+    for (const entry of resolveEffectiveChoiceEntries(live)) {
+        const payload = entry.payload;
+        const optionSet = optionSets.find(set => set.id === payload.choiceId);
+        const stepId = entry.stepId ?? optionSet?.appliesAtStepId;
+        if (!stepId) continue;
+        const optionLabel = optionSet?.options.find(option => option.id === payload.optionId)?.label;
+        const detail: StepChoiceDetail = {
+            choiceId: payload.choiceId,
+            optionId: payload.optionId,
+            ...(optionLabel !== undefined ? { optionLabel } : {}),
+            ...(payload.reason !== undefined ? { reason: payload.reason } : {}),
+            completedAt: entry.completedAt,
+        };
+        byStepId.set(stepId, [...(byStepId.get(stepId) ?? []), detail]);
+    }
+    return byStepId;
 }
 
 function sortedByCompletion(entries: readonly SessionEntry[]): SessionEntry[] {

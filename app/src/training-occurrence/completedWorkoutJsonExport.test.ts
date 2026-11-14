@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { CompletedWorkoutView } from './completedWorkoutView';
 import { completeReads } from './workoutSourceDiagnostics.fixtures';
-import { exportCompletedWorkoutToJson, resolveCompletedWorkoutDuration } from './completedWorkoutJsonExport';
+import type { SessionResponse } from '../responses/models';
+import { exportCompletedWorkoutToJson, formatCompletedWorkoutJson, resolveCompletedWorkoutDuration } from './completedWorkoutJsonExport';
 
 const EXPORTED_AT = '2026-08-26T10:00:00.000Z';
 
@@ -206,5 +207,62 @@ describe('exportCompletedWorkoutToJson', () => {
         expect(carry.performed.sets[0]).toEqual(expect.objectContaining({ distanceMeters: 40, weightKg: 48 }));
         expect(added.unplanned).toBe(true);
         expect(added.name).toBe('Back Extension');
+    });
+
+    const withFirstStep = (patch: Record<string, unknown>): CompletedWorkoutView => ({
+        ...structuredView,
+        structured: {
+            ...structuredView.structured!,
+            steps: [{ ...structuredView.structured!.steps[0], ...patch }, ...structuredView.structured!.steps.slice(1)],
+        },
+    });
+
+    const response = (over: Partial<SessionResponse>): SessionResponse => ({
+        userId: 'u1',
+        responseId: 'r',
+        sourceSession: { kind: 'execution', id: 'exec-1', date: '2026-08-26' },
+        window: 'immediate',
+        date: '2026-08-26',
+        checkinRef: { date: '2026-08-26' },
+        createdAt: '2026-08-26T08:00:00.000Z',
+        updatedAt: '2026-08-26T08:00:00.000Z',
+        ...over,
+    });
+
+    it('exports prescribed tempo and notes', () => {
+        const view = withFirstStep({ prescribed: { sets: 3, tempo: '3-1-1-0', notes: 'Pause at bottom' } });
+        const [first, second] = exportCompletedWorkoutToJson(view, EXPORTED_AT).exercises;
+        expect(first.prescribed).toEqual(expect.objectContaining({ tempo: '3-1-1-0', notes: 'Pause at bottom' }));
+        expect('tempo' in second.prescribed).toBe(false);
+        expect('notes' in second.prescribed).toBe(false);
+    });
+
+    it('exports step choices', () => {
+        const choices = [{ choiceId: 'c1', optionId: 'o1', optionLabel: 'Heavy', reason: 'Felt strong', completedAt: '2026-08-26T07:00:00.000Z' }];
+        const [first, second] = exportCompletedWorkoutToJson(withFirstStep({ choices }), EXPORTED_AT).exercises;
+        expect(first.choices).toEqual(choices);
+        expect('choices' in second).toBe(false);
+    });
+
+    it('includes responses in window order and omits the key when not supplied', () => {
+        expect('responses' in exportCompletedWorkoutToJson(structuredView, EXPORTED_AT)).toBe(false);
+        const result = exportCompletedWorkoutToJson(structuredView, EXPORTED_AT, [
+            response({ responseId: 'a', window: 'next_morning', sessionRpe: 5 }),
+            response({ responseId: 'b', window: 'later_day', createdAt: '2026-08-26T12:00:00.000Z', note: 'later' }),
+            response({ responseId: 'c', window: 'immediate', sessionRpe: 7, completedFraction: 0.8, unexpectedFatigue: true, techniqueNote: 'knees' }),
+            response({ responseId: 'd', window: 'later_day', createdAt: '2026-08-26T10:00:00.000Z', note: 'earlier' }),
+        ]);
+        expect(result.responses).toEqual([
+            { window: 'immediate', sessionRpe: 7, completedFraction: 0.8, unexpectedFatigue: true, techniqueNote: 'knees' },
+            { window: 'later_day', note: 'earlier' },
+            { window: 'later_day', note: 'later' },
+            { window: 'next_morning', sessionRpe: 5 },
+        ]);
+        expect(JSON.stringify(result.responses)).not.toContain('responseId');
+    });
+
+    it('marks responses unavailable', () => {
+        expect(exportCompletedWorkoutToJson(structuredView, EXPORTED_AT, 'unavailable').responses).toBe('unavailable');
+        expect(JSON.parse(formatCompletedWorkoutJson(structuredView, EXPORTED_AT, 'unavailable')).responses).toBe('unavailable');
     });
 });

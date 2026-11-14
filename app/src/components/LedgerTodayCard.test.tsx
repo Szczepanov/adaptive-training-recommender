@@ -6,6 +6,7 @@ import type { DailySubjectiveCheckin } from '../ledger/models';
 import type { ActiveExternalPlan } from '../services/activeExternalPlanService';
 import type { SessionExecution } from '../sessions/models';
 import { hasRecordedRedFlag } from '../ledger/redFlagPause';
+import { LedgerSessionAiCopyButton } from './LedgerSessionAiCopyButton';
 import { LedgerTodayCard, type LedgerTodayCardProps } from './LedgerTodayCard';
 
 const mocks = vi.hoisted(() => ({
@@ -344,6 +345,15 @@ describe('LedgerTodayCard', () => {
     redoBtn!.props.onClick!();
     await vi.waitFor(() => expect(baseProps.onStartSession).toHaveBeenCalledTimes(2));
     expect(baseProps.onStartSession).toHaveBeenLastCalledWith(authoredBinding, { allowDuplicateCompleted: true });
+  });
+
+  it('offers Copy session for AI only on completed session rows', () => {
+    mocks.slots[0] = { 'strength-today': { ...authoredBinding, state: 'in_progress' } as SessionExecution };
+    expect(renderTree().find(el => el.type === LedgerSessionAiCopyButton)).toBeUndefined();
+
+    mocks.slots[0] = { 'strength-today': { ...authoredBinding, state: 'completed' } as SessionExecution };
+    const button = renderTree().find(el => el.type === LedgerSessionAiCopyButton);
+    expect(button).toBeDefined();
   });
 
   it('surfaces active D-FLAGS including injury_constraint_touches_session without blocking Start', async () => {

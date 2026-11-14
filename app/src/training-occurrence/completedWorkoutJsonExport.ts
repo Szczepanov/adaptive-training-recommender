@@ -12,7 +12,8 @@
 import type { IntensityGauge, NormalizedGarminActivity } from '../engine/models';
 import type { ExerciseRef, RangeOrNumber, RestEndReason, SessionEntryPayload, SessionLoad } from '../sessions/models';
 import type { CompletedWorkoutView, PerformedRestAvailability, StructuredExecutionSummary } from './completedWorkoutView';
-import type { PerformedSetRow, PrescribedStepTarget, StructuredStepDetail } from './structuredSetDetail';
+import type { SessionResponse } from '../responses/models';
+import type { PerformedSetRow, PrescribedStepTarget, StepChoiceDetail, StructuredStepDetail } from './structuredSetDetail';
 
 export const COMPLETED_WORKOUT_EXPORT_SCHEMA = 'completed_workout_v1' as const;
 
@@ -64,6 +65,8 @@ export interface ExportedPrescription {
     targetRpe?: RangeOrNumber;
     targetRir?: RangeOrNumber;
     restSeconds?: RangeOrNumber;
+    tempo?: string;
+    notes?: string;
 }
 
 export interface ExportedExercise {
@@ -80,6 +83,8 @@ export interface ExportedExercise {
     unplanned?: true;
     optional: boolean;
     prescribed: ExportedPrescription;
+    /** Authored choices the athlete resolved during the step. */
+    choices?: StepChoiceDetail[];
     performed: {
         workSets: number;
         warmupSets: number;
@@ -91,6 +96,16 @@ export interface ExportedExercise {
         totalDistanceMeters?: number;
         sets: ExportedPerformedSet[];
     };
+}
+
+/** A post-session response, projected to the facts an AI reader needs (no ids or check-in linkage). */
+export interface ExportedSessionResponse {
+    window: SessionResponse['window'];
+    sessionRpe?: number;
+    completedFraction?: number;
+    unexpectedFatigue?: boolean;
+    techniqueNote?: string;
+    note?: string;
 }
 
 export interface CompletedWorkoutExport {
@@ -126,6 +141,8 @@ export interface CompletedWorkoutExport {
     /** `not_recorded` means no rest events exist, not zero rest; `unavailable` means unknown. */
     performedRest?: PerformedRestAvailability;
     exercises: ExportedExercise[];
+    /** Omitted when responses were not requested; `unavailable` when they could not be read. */
+    responses?: ExportedSessionResponse[] | 'unavailable';
     /** Raw provider telemetry, enrichment only. */
     providerActivity?: NormalizedGarminActivity;
 }
@@ -239,6 +256,8 @@ function exportPrescription(target: PrescribedStepTarget): ExportedPrescription 
         ...(target.effort?.rpe !== undefined ? { targetRpe: target.effort.rpe } : {}),
         ...(target.effort?.rir !== undefined ? { targetRir: target.effort.rir } : {}),
         ...(target.restSeconds !== undefined ? { restSeconds: target.restSeconds } : {}),
+        ...(target.tempo ? { tempo: target.tempo } : {}),
+        ...(target.notes ? { notes: target.notes } : {}),
     };
 }
 
@@ -259,6 +278,7 @@ function exportExercise(step: StructuredStepDetail): ExportedExercise {
         ...(step.unplanned ? { unplanned: true as const } : {}),
         optional: step.isOptional,
         prescribed: exportPrescription(step.prescribed),
+        ...(step.choices && step.choices.length > 0 ? { choices: step.choices.map(choice => ({ ...choice })) } : {}),
         performed: {
             workSets: work.length,
             warmupSets: warmup.length,
@@ -284,12 +304,31 @@ function exportSession(execution: StructuredExecutionSummary): NonNullable<Compl
     };
 }
 
+const WINDOW_ORDER: Record<SessionResponse['window'], number> = { immediate: 0, later_day: 1, next_morning: 2 };
+
+function exportResponses(responses: readonly SessionResponse[]): ExportedSessionResponse[] {
+    return [...responses]
+        .sort((a, b) => WINDOW_ORDER[a.window] - WINDOW_ORDER[b.window] || a.createdAt.localeCompare(b.createdAt))
+        .map(response => ({
+            window: response.window,
+            ...(response.sessionRpe !== undefined ? { sessionRpe: response.sessionRpe } : {}),
+            ...(response.completedFraction !== undefined ? { completedFraction: response.completedFraction } : {}),
+            ...(response.unexpectedFatigue !== undefined ? { unexpectedFatigue: response.unexpectedFatigue } : {}),
+            ...(response.techniqueNote ? { techniqueNote: response.techniqueNote } : {}),
+            ...(response.note ? { note: response.note } : {}),
+        }));
+}
+
 function workoutTitle(view: CompletedWorkoutView): string {
     return view.structured?.title ?? view.garmin?.type.replaceAll('_', ' ') ?? 'Workout';
 }
 
 /** Builds a portable JSON export record for a completed workout occurrence. */
-export function exportCompletedWorkoutToJson(view: CompletedWorkoutView, exportedAt: string): CompletedWorkoutExport {
+export function exportCompletedWorkoutToJson(
+    view: CompletedWorkoutView,
+    exportedAt: string,
+    responses?: readonly SessionResponse[] | 'unavailable',
+): CompletedWorkoutExport {
     const exercises = view.structured ? view.structured.steps.map(exportExercise) : [];
     const duration = resolveCompletedWorkoutDuration(view);
     const execution = view.structured?.execution;
@@ -328,10 +367,15 @@ export function exportCompletedWorkoutToJson(view: CompletedWorkoutView, exporte
             })()
             : {}),
         exercises,
+        ...(responses !== undefined ? { responses: responses === 'unavailable' ? responses : exportResponses(responses) } : {}),
         ...(view.garmin ? { providerActivity: view.garmin } : {}),
     };
 }
 
-export function formatCompletedWorkoutJson(view: CompletedWorkoutView, exportedAt: string): string {
-    return JSON.stringify(exportCompletedWorkoutToJson(view, exportedAt), null, 2);
+export function formatCompletedWorkoutJson(
+    view: CompletedWorkoutView,
+    exportedAt: string,
+    responses?: readonly SessionResponse[] | 'unavailable',
+): string {
+    return JSON.stringify(exportCompletedWorkoutToJson(view, exportedAt, responses), null, 2);
 }
