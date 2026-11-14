@@ -368,6 +368,12 @@ export function fullRecords(): LedgerExportRecords {
                 importedAt: '2026-11-10T08:00:00Z',
                 schema: 'adaptive-training-recommender/external-plan@6',
                 notes: 'Build aerobic base first.',
+                sessions: [
+                    { id: 's1', title: 'Endurance ride', priority: 'key', summary: 'Steady Z2 for 60 min' },
+                    { id: 's3', title: 'Tempo intervals', priority: 'key', summary: '3x10 min at tempo',
+                        stepNotes: ['Stay seated', 'Cadence 90'], fallback: 'Easy 45 min spin' },
+                    { id: 's4', title: 'Openers', priority: 'support', summary: 'Short activation ride' },
+                ],
             },
         ],
         placements: [{
@@ -376,6 +382,8 @@ export function fullRecords(): LedgerExportRecords {
             assignments: [
                 { sessionId: 's1', date: '2026-11-19', status: 'completed' },
                 { sessionId: 's2', date: '2026-11-18', status: 'dropped' },
+                { sessionId: 's4', date: '2026-11-20', status: 'planned' },
+                { sessionId: 's3', date: '2026-11-22', status: 'planned' },
             ],
         }],
         plannedToPerformed: [{ planId: 'plan-1', revision: 2, sessionId: 's1', date: '2026-11-19', performedOccurrenceId: 'occ-1' }],

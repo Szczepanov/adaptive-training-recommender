@@ -1,0 +1,48 @@
+import { text } from '../markdownText.ts';
+import type { LedgerExport, LedgerValue } from '../schema.ts';
+import { missingLine, type FieldEntry } from './compactLines.ts';
+
+type Placement = LedgerExport['coachingHistory']['placements']['items'][number];
+
+const isMissing = (value: LedgerValue<unknown>) => value.value === null || value.value === undefined;
+
+function header(row: Placement): string {
+    const { title, priority, status } = row.fields;
+    const parts = [
+        text(row.observedOn),
+        isMissing(title) ? '' : text(title.value),
+        isMissing(priority) ? '' : `[${text(priority.value)}]`,
+        isMissing(status) ? `(status: ${text(status.state)})` : `(${text(status.value)})`,
+    ];
+    return parts.filter(Boolean).join(' ');
+}
+
+function historyLine(history: LedgerValue<unknown>): string[] {
+    if (!Array.isArray(history.value)) return [];
+    const last = history.value[history.value.length - 1] as { changedOn?: string } | undefined;
+    return [`history: ${history.value.length} recorded change${history.value.length === 1 ? '' : 's'}${last?.changedOn ? `, latest ${text(last.changedOn)}` : ''}`];
+}
+
+/**
+ * One placement: `<date> <title> [<priority>] (<status>)`, then summary, one note per step note and
+ * fallback when present. Unreadable authored content is one `content: <state>` line; other absent
+ * leaves stay visible in a `missing:` line, never as an empty value.
+ */
+export function placementBlock(row: Placement): string[] {
+    const { title, summary, stepNotes, fallback, statusHistory, priority } = row.fields;
+    if (isMissing(title) && (title.state === 'unavailable' || title.state === 'invalid')) {
+        return [header(row), `content: ${text(title.state)}`, ...historyLine(statusHistory)];
+    }
+    const notes = Array.isArray(stepNotes.value) ? stepNotes.value : [];
+    const leaves: FieldEntry[] = [['title', title], ['priority', priority], ['summary', summary], ['stepNotes', stepNotes], ['fallback', fallback]];
+    const absent = leaves.filter(([, value]) => isMissing(value));
+    const missing = missingLine(absent);
+    return [
+        header(row),
+        ...(isMissing(summary) ? [] : [`summary: ${text(summary.value)}`]),
+        ...notes.map(note => `note: ${text(note)}`),
+        ...(isMissing(fallback) ? [] : [`fallback: ${text(fallback.value)}`]),
+        ...historyLine(statusHistory),
+        ...(missing ? [missing] : []),
+    ];
+}

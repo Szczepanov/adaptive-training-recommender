@@ -1372,11 +1372,11 @@ observedOn: 2026-11-18
 | status | dropped | Not specified | adaptive | measured | 2026-11-18 |
 | date | 2026-11-18 | Not specified | adaptive | measured | 2026-11-18 |
 | statusHistory | Not recorded | Not specified | adaptive | not_yet_supported | Not recorded |
-| title | Not recorded | Not specified | adaptive | unavailable | 2026-11-18 |
-| priority | Not recorded | Not specified | adaptive | unavailable | 2026-11-18 |
-| summary | Not recorded | Not specified | adaptive | unavailable | 2026-11-18 |
-| stepNotes | Not recorded | Not specified | adaptive | unavailable | 2026-11-18 |
-| fallback | Not recorded | Not specified | adaptive | unavailable | 2026-11-18 |
+| title | Not recorded | Not specified | adaptive | not_recorded | 2026-11-18 |
+| priority | Not recorded | Not specified | adaptive | not_recorded | 2026-11-18 |
+| summary | Not recorded | Not specified | adaptive | not_recorded | 2026-11-18 |
+| stepNotes | Not recorded | Not specified | adaptive | not_recorded | 2026-11-18 |
+| fallback | Not recorded | Not specified | adaptive | not_recorded | 2026-11-18 |
 
 #### plan-1@2:s1
 
@@ -1390,11 +1390,47 @@ observedOn: 2026-11-19
 | status | completed | Not specified | adaptive | measured | 2026-11-19 |
 | date | 2026-11-19 | Not specified | adaptive | measured | 2026-11-19 |
 | statusHistory | Not recorded | Not specified | adaptive | not_yet_supported | Not recorded |
-| title | Not recorded | Not specified | adaptive | unavailable | 2026-11-19 |
-| priority | Not recorded | Not specified | adaptive | unavailable | 2026-11-19 |
-| summary | Not recorded | Not specified | adaptive | unavailable | 2026-11-19 |
-| stepNotes | Not recorded | Not specified | adaptive | unavailable | 2026-11-19 |
-| fallback | Not recorded | Not specified | adaptive | unavailable | 2026-11-19 |
+| title | Endurance ride | Not specified | adaptive | measured | 2026-11-19 |
+| priority | key | Not specified | adaptive | measured | 2026-11-19 |
+| summary | Steady Z2 for 60 min | Not specified | adaptive | measured | 2026-11-19 |
+| stepNotes | Not recorded | Not specified | adaptive | not_recorded | 2026-11-19 |
+| fallback | Not recorded | Not specified | adaptive | not_recorded | 2026-11-19 |
+
+#### plan-1@2:s4
+
+observedOn: 2026-11-20
+
+| Field | Value | Unit | Source | State | Observed on |
+| --- | --- | --- | --- | --- | --- |
+| planId | plan-1 | Not specified | adaptive | measured | 2026-11-20 |
+| revision | 2 | Not specified | adaptive | measured | 2026-11-20 |
+| sessionId | s4 | Not specified | adaptive | measured | 2026-11-20 |
+| status | planned | Not specified | adaptive | measured | 2026-11-20 |
+| date | 2026-11-20 | Not specified | adaptive | measured | 2026-11-20 |
+| statusHistory | Not recorded | Not specified | adaptive | not_yet_supported | Not recorded |
+| title | Openers | Not specified | adaptive | measured | 2026-11-20 |
+| priority | support | Not specified | adaptive | measured | 2026-11-20 |
+| summary | Short activation ride | Not specified | adaptive | measured | 2026-11-20 |
+| stepNotes | Not recorded | Not specified | adaptive | not_recorded | 2026-11-20 |
+| fallback | Not recorded | Not specified | adaptive | not_recorded | 2026-11-20 |
+
+#### plan-1@2:s3
+
+observedOn: 2026-11-22
+
+| Field | Value | Unit | Source | State | Observed on |
+| --- | --- | --- | --- | --- | --- |
+| planId | plan-1 | Not specified | adaptive | measured | 2026-11-22 |
+| revision | 2 | Not specified | adaptive | measured | 2026-11-22 |
+| sessionId | s3 | Not specified | adaptive | measured | 2026-11-22 |
+| status | planned | Not specified | adaptive | measured | 2026-11-22 |
+| date | 2026-11-22 | Not specified | adaptive | measured | 2026-11-22 |
+| statusHistory | Not recorded | Not specified | adaptive | not_yet_supported | Not recorded |
+| title | Tempo intervals | Not specified | adaptive | measured | 2026-11-22 |
+| priority | key | Not specified | adaptive | measured | 2026-11-22 |
+| summary | 3x10 min at tempo | Not specified | adaptive | measured | 2026-11-22 |
+| stepNotes | &#91;"Stay seated","Cadence 90"&#93; | Not specified | adaptive | measured | 2026-11-22 |
+| fallback | Easy 45 min spin | Not specified | adaptive | measured | 2026-11-22 |
 
 ### overrides
 

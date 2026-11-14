@@ -6,6 +6,7 @@ import type {
 } from '../schema.ts';
 import { collapsedLine, entryLines, type FieldEntry } from './compactLines.ts';
 import type { PreviousContext } from './previousContext.ts';
+import { renderTodaySections } from './todaySections.ts';
 
 export interface CompactRenderOptions {
     previousContext?: PreviousContext;
@@ -167,9 +168,11 @@ function header(ledger: LedgerExport): string[] {
 /** Pure presentation of recorded ledger data, compact for pasting into a long-lived chat. */
 export function renderLedgerExportCompact(ledger: LedgerExport, options?: CompactRenderOptions): string {
     void options; // Task 4 consumes previousContext.
-    const consumed: SkipIds = NO_SKIP; // Task 3 fills this from Today/Yesterday/Upcoming.
+    const today = renderTodaySections(ledger);
+    const consumed = today.consumedIds;
     const lines = [
         ...header(ledger),
+        ...today.lines,
         ...sourceSection(ledger.sources),
         ...flagsSection(ledger),
         ...factsSection(ledger, consumed),

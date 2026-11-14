@@ -2,6 +2,48 @@
 schema: ledger-export-v1 · exportedAt 2026-11-20T06:12:03Z
 window: 2026-11-07…2026-11-20
 
+## Today (2026-11-20)
+check-in:
+readiness: 7 (28d baseline: missing)
+sleepQuality: 6 (28d baseline: missing)
+fatigue: 3 (28d baseline: missing)
+soreness: not_recorded
+mentalStress: 3 (28d baseline: missing)
+motivation: 8 (28d baseline: missing)
+painOrInjury: false
+illnessSymptoms: false
+unusuallyLimitedTime: false
+alreadyTrainedToday: false
+notes: Contact me at &#91;redacted&#93;
+timeAvailableMin: 60 min
+indoorOnly: false
+missing: tissueResponses (not_recorded), redFlags (not_recorded), preferredModalityToday (not_recorded), soreness (not_recorded)
+recovery:
+sleepScore: 81 (28d baseline: missing)
+restingHr: 48 bpm (28d baseline: missing)
+hrvOvernightAvg: 62 ms (28d baseline: missing)
+respirationAvg: 14 breaths/min (28d baseline: missing)
+sleepDurationSec: 27000 s
+hrvStatus: BALANCED
+bodyBatteryWake: 70 score
+totalSteps: 0 steps
+stressAvg: 25 score
+missing: weightKg (missing), bodyFatPct (missing)
+flags: illness_anomaly unknown (unavailable); illness_risk_symptom unknown (unavailable); injury_constraint_touches_session unknown (unavailable); recovery_beyond_baseline unknown (unavailable)
+2026-11-20 Openers [support] (planned)
+summary: Short activation ride
+missing: stepNotes (not_recorded), fallback (not_recorded)
+
+## Yesterday (2026-11-19)
+Cycling · 60 min · structuredEntries: not recorded · sRPE 6 · executedDefinition: not recorded · planned: Endurance ride
+
+## Upcoming (2026-11-21…2026-12-04)
+2026-11-22 Tempo intervals [key] (planned)
+summary: 3x10 min at tempo
+note: Stay seated
+note: Cadence 90
+fallback: Easy 45 min spin
+
 ## Sources
 flag_evaluations: unavailable
 
@@ -24,34 +66,9 @@ bodyBatteryWake: 70 score
 totalSteps: 0 steps
 stressAvg: 25 score
 missing: weightKg (missing), bodyFatPct (missing)
-#### recovery-2026-11-20 (2026-11-20)
-sleepScore: 81 score
-sleepDurationSec: 27000 s
-restingHr: 48 bpm
-hrvOvernightAvg: 62 ms
-hrvStatus: BALANCED
-respirationAvg: 14 breaths/min
-bodyBatteryWake: 70 score
-totalSteps: 0 steps
-stressAvg: 25 score
-missing: weightKg (missing), bodyFatPct (missing)
 
 ### checkins
 #### checkin-2026-11-19 (2026-11-19)
-readiness: 7 score_1_10
-sleepQuality: 6 score_1_10
-fatigue: 3 score_1_10
-mentalStress: 3 score_1_10
-motivation: 8 score_1_10
-painOrInjury: false
-illnessSymptoms: false
-unusuallyLimitedTime: false
-alreadyTrainedToday: false
-notes: Contact me at &#91;redacted&#93;
-timeAvailableMin: 60 min
-indoorOnly: false
-missing: soreness (not_recorded), tissueResponses (not_recorded), redFlags (not_recorded), preferredModalityToday (not_recorded)
-#### checkin-2026-11-20 (2026-11-20)
 readiness: 7 score_1_10
 sleepQuality: 6 score_1_10
 fatigue: 3 score_1_10
@@ -282,14 +299,17 @@ revision: 2
 sessionId: s2
 status: dropped
 date: 2026-11-18
-missing: statusHistory (not_yet_supported), title (unavailable), priority (unavailable), summary (unavailable), stepNotes (unavailable), fallback (unavailable)
+missing: statusHistory (not_yet_supported), title (not_recorded), priority (not_recorded), summary (not_recorded), stepNotes (not_recorded), fallback (not_recorded)
 #### plan-1@2:s1 (2026-11-19)
 planId: plan-1
 revision: 2
 sessionId: s1
 status: completed
 date: 2026-11-19
-missing: statusHistory (not_yet_supported), title (unavailable), priority (unavailable), summary (unavailable), stepNotes (unavailable), fallback (unavailable)
+title: Endurance ride
+priority: key
+summary: Steady Z2 for 60 min
+missing: statusHistory (not_yet_supported), stepNotes (not_recorded), fallback (not_recorded)
 
 ### overrides
 #### plan-1@2:s2 (2026-11-18)
@@ -298,11 +318,3 @@ sessionId: s2
 kind: dropped
 date: 2026-11-18
 missing: reason (not_yet_supported)
-
-### plannedToPerformed
-#### plan-1@2:s1:occ-1 (2026-11-19)
-planId: plan-1
-revision: 2
-sessionId: s1
-date: 2026-11-19
-performedOccurrenceRef: occ-1
