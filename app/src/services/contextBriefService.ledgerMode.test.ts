@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildLedgerExport } from '../ledger/export/buildLedgerExport';
 import { fullInput } from '../ledger/export/ledgerExportFixtures.testSupport';
 import { renderLedgerExportCompact } from '../ledger/export/compact/renderLedgerExportCompact';
-import { userContextItemHashes } from '../ledger/export/compact/previousContext';
+import { mergeCheckpoint, userContextCheckpoint } from '../ledger/export/compact/previousContext';
 import { ENGINE_OPINION_KEYS, LEDGER_EXPORT_SCHEMA_VERSION } from '../ledger/export/schema';
 
 const mocks = vi.hoisted(() => ({
@@ -132,23 +132,24 @@ describe('ContextBriefService ledger mode compact export (Phase 2 Task 5)', () =
         return new ContextBriefService(ledgerExporter).build('u1', '2026-11-20', 14, 'full', undefined, { exportedAt: '2026-11-20T06:12:03Z', ...options });
     }
 
-    it('ledger mode returns compact text and item hashes', async () => {
+    it('ledger mode returns compact text, the context checkpoint and exportedAt', async () => {
         const result = await buildWith({});
         const ledger = buildLedgerExport(fullInput({ asOfDate: '2026-11-20', purpose: 'planning', exportedAt: '2026-11-20T06:12:03Z' }));
         expect(result.text).toBe(renderLedgerExportCompact(ledger));
-        expect(result.contextItemHashes).toEqual(userContextItemHashes(ledger));
-        expect(Object.keys(result.contextItemHashes ?? {}).length).toBeGreaterThan(0);
+        expect(result.contextCheckpoint).toEqual(userContextCheckpoint(ledger));
+        expect(Object.keys(result.contextCheckpoint?.itemHashes ?? {}).length).toBeGreaterThan(0);
+        expect(result.exportedAt).toBe('2026-11-20T06:12:03Z');
     });
 
     it('abbreviates against previousContext, and fullContext ignores previousContext', async () => {
         const ledger = buildLedgerExport(fullInput({ asOfDate: '2026-11-20', purpose: 'planning', exportedAt: '2026-11-20T06:12:03Z' }));
-        const previousContext = { exportedOn: '2026-11-19', itemHashes: userContextItemHashes(ledger) };
+        const previousContext = mergeCheckpoint(undefined, userContextCheckpoint(ledger), '2026-11-19');
         const abbreviated = await buildWith({ previousContext });
         const full = await buildWith({ previousContext, fullContext: true });
         const plain = await buildWith({});
         expect(abbreviated.text).toBe(renderLedgerExportCompact(ledger, { previousContext }));
         expect(abbreviated.text).not.toBe(plain.text);
         expect(full.text).toBe(plain.text);
-        expect(full.contextItemHashes).toEqual(plain.contextItemHashes);
+        expect(full.contextCheckpoint).toEqual(plain.contextCheckpoint);
     });
 });

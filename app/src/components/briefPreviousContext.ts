@@ -1,5 +1,11 @@
 import type { BriefPurpose } from '../engine/contextBrief';
-import type { PreviousContext } from '../ledger/export/compact/previousContext';
+import {
+  CHECKPOINT_FORMAT_VERSION,
+  mergeCheckpoint,
+  type CollectionCheckpoint,
+  type PreviousContext,
+  type UserContextCheckpoint,
+} from '../ledger/export/compact/previousContext';
 
 const KEY_PREFIX = 'adaptive-training:context-brief:previous-context:';
 const CHAT_KEY_PREFIX = 'adaptive-training:context-brief:chat:';
@@ -7,15 +13,32 @@ const PURPOSES: readonly BriefPurpose[] = ['morning', 'planning', 'diagnostic'];
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 export const CHAT_LABEL_MAX_LENGTH = 40;
 
-/** What was exported and copied or downloaded, kept in memory until the reader confirms it. */
+/** A confirmed checkpoint as stored on this device: hashes and comparison metadata only. */
+export interface StoredCheckpoint extends PreviousContext {
+  /** The confirmed export's instant; an older export never overwrites it. */
+  exportedAt: string;
+}
+
+/** What was exported and copied or downloaded, bound to the account and chat it was exported
+ * for, kept in memory until the reader confirms it. */
 export interface ExportedSnapshot {
+  userId: string;
   purpose: BriefPurpose;
   chat: string;
   asOfDate: string;
-  itemHashes: Readonly<Record<string, string>>;
+  exportedAt: string;
+  checkpoint: UserContextCheckpoint;
 }
 
-type ExportedBrief = { purpose: BriefPurpose; asOfDate: string; contextItemHashes?: Readonly<Record<string, string>> };
+/** `newer-saved`: a later export is already confirmed for this chat, so nothing was written. */
+export type ConfirmResult = 'saved' | 'newer-saved' | 'not-saved';
+
+type ExportedBrief = {
+  purpose: BriefPurpose;
+  asOfDate: string;
+  exportedAt?: string;
+  contextCheckpoint?: UserContextCheckpoint;
+};
 
 /** The chat is a local label only: trimmed and capped, never part of an export. */
 export function normalizeChat(raw: string): string {
@@ -30,14 +53,38 @@ export function chatStorageKey(userId: string): string {
   return `${CHAT_KEY_PREFIX}${userId}`;
 }
 
-function parsePreviousContext(raw: unknown): PreviousContext | undefined {
-  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return undefined;
-  const { exportedOn, itemHashes } = raw as Record<string, unknown>;
-  if (typeof exportedOn !== 'string' || !DATE_PATTERN.test(exportedOn)) return undefined;
-  if (typeof itemHashes !== 'object' || itemHashes === null || Array.isArray(itemHashes)) return undefined;
-  const entries = Object.entries(itemHashes);
-  if (!entries.every(([, hash]) => typeof hash === 'string')) return undefined;
-  return { exportedOn, itemHashes: Object.fromEntries(entries) as Record<string, string> };
+const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const isInstant = (value: unknown): value is string => typeof value === 'string' && !Number.isNaN(Date.parse(value));
+
+function parseCollections(raw: unknown): Record<string, CollectionCheckpoint> | undefined {
+  if (!isPlainObject(raw)) return undefined;
+  const entries = Object.entries(raw);
+  const valid = entries.every(([, meta]) => isPlainObject(meta)
+    && typeof meta.scope === 'string' && typeof meta.complete === 'boolean');
+  if (!valid) return undefined;
+  return Object.fromEntries(entries.map(([name, meta]) => {
+    const { scope, complete } = meta as unknown as CollectionCheckpoint;
+    return [name, { scope, complete }];
+  }));
+}
+
+function parseHashes(raw: unknown): Record<string, string> | undefined {
+  if (!isPlainObject(raw)) return undefined;
+  const entries = Object.entries(raw);
+  return entries.every(([, hash]) => typeof hash === 'string') ? Object.fromEntries(entries) as Record<string, string> : undefined;
+}
+
+/** A stored value of another or no format version (legacy) is not a checkpoint: full context. */
+function parseStoredCheckpoint(raw: unknown): StoredCheckpoint | undefined {
+  if (!isPlainObject(raw) || raw.formatVersion !== CHECKPOINT_FORMAT_VERSION) return undefined;
+  const { exportedOn, exportedAt } = raw;
+  if (typeof exportedOn !== 'string' || !DATE_PATTERN.test(exportedOn) || !isInstant(exportedAt)) return undefined;
+  const itemHashes = parseHashes(raw.itemHashes);
+  const collections = parseCollections(raw.collections);
+  if (!itemHashes || !collections) return undefined;
+  return { formatVersion: CHECKPOINT_FORMAT_VERSION, exportedOn, exportedAt, itemHashes, collections };
 }
 
 function readItem(key: string): string | null {
@@ -49,47 +96,76 @@ function readItem(key: string): string | null {
   }
 }
 
-function writeItem(key: string, value: string): void {
-  if (typeof window === 'undefined') return;
+function writeItem(key: string, value: string): boolean {
+  if (typeof window === 'undefined') return false;
   try {
     window.localStorage.setItem(key, value);
+    return true;
   } catch {
     // Without storage the next export is simply full; nothing is lost.
+    return false;
   }
 }
 
-/** What the reader confirmed holding in this chat for this purpose. No chat, no confirmed
- * checkpoint, another user's key, storage errors and garbage all mean "full context". */
-export function readPreviousContext(userId: string, chat: string, purpose: BriefPurpose): PreviousContext | undefined {
-  if (!chat) return undefined;
-  const stored = readItem(previousContextStorageKey(userId, chat, purpose));
+function readStored(key: string): StoredCheckpoint | undefined {
+  const stored = readItem(key);
   if (stored === null) return undefined;
   try {
-    return parsePreviousContext(JSON.parse(stored));
+    return parseStoredCheckpoint(JSON.parse(stored));
   } catch {
     return undefined;
   }
 }
 
+/** What the reader confirmed holding in this chat for this purpose. No chat, no confirmed
+ * checkpoint, another user's key, storage errors, legacy values and garbage all mean "full context". */
+export function readPreviousContext(userId: string, chat: string, purpose: BriefPurpose): StoredCheckpoint | undefined {
+  if (!chat) return undefined;
+  return readStored(previousContextStorageKey(userId, chat, purpose));
+}
+
 /** The checkpoint to render against; the full-context toggle ignores any stored checkpoint. */
 export function previousContextForBrief(
   userId: string, chat: string, purpose: BriefPurpose, fullContext: boolean,
-): PreviousContext | undefined {
+): StoredCheckpoint | undefined {
   return fullContext ? undefined : readPreviousContext(userId, chat, purpose);
 }
 
-/** The exported brief's own date and hashes, or null when there is nothing to confirm. */
-export function snapshotFromBrief(brief: ExportedBrief, chat: string): ExportedSnapshot | null {
+/** The exported brief's own date, instant and checkpoint for this account and chat, or null
+ * when there is nothing to confirm. */
+export function snapshotFromBrief(brief: ExportedBrief, userId: string, chat: string): ExportedSnapshot | null {
   const name = normalizeChat(chat);
-  if (!name || !brief.contextItemHashes) return null;
-  return { purpose: brief.purpose, chat: name, asOfDate: brief.asOfDate, itemHashes: brief.contextItemHashes };
+  if (!name || !userId || !brief.contextCheckpoint || !isInstant(brief.exportedAt)) return null;
+  return {
+    userId,
+    purpose: brief.purpose,
+    chat: name,
+    asOfDate: brief.asOfDate,
+    exportedAt: brief.exportedAt,
+    checkpoint: brief.contextCheckpoint,
+  };
 }
 
-/** Persists the exported snapshot, never content recomputed since. Called only on explicit confirmation. */
-export function confirmSnapshot(userId: string, snapshot: ExportedSnapshot): void {
-  if (!snapshot.chat) return;
-  const value: PreviousContext = { exportedOn: snapshot.asOfDate, itemHashes: snapshot.itemHashes };
-  writeItem(previousContextStorageKey(userId, snapshot.chat, snapshot.purpose), JSON.stringify(value));
+/** The pending confirmation, or null once the account or the chat changed since the export. */
+export function pendingSnapshot(held: ExportedSnapshot | null, userId: string, chat: string): ExportedSnapshot | null {
+  return held && held.userId === userId && held.chat === chat ? held : null;
+}
+
+/**
+ * Persists the exported snapshot, never content recomputed since, for its captured account,
+ * chat and purpose only. Called only on explicit confirmation. Storage is re-read right before
+ * the write, so an older export (another tab, a late click) never overwrites a newer checkpoint.
+ */
+export function confirmSnapshot(snapshot: ExportedSnapshot): ConfirmResult {
+  if (!snapshot.chat || !snapshot.userId) return 'not-saved';
+  const key = previousContextStorageKey(snapshot.userId, snapshot.chat, snapshot.purpose);
+  const stored = readStored(key);
+  if (stored && Date.parse(stored.exportedAt) > Date.parse(snapshot.exportedAt)) return 'newer-saved';
+  const value: StoredCheckpoint = {
+    ...mergeCheckpoint(stored, snapshot.checkpoint, snapshot.asOfDate),
+    exportedAt: snapshot.exportedAt,
+  };
+  return writeItem(key, JSON.stringify(value)) ? 'saved' : 'not-saved';
 }
 
 export function readChatLabel(userId: string): string {

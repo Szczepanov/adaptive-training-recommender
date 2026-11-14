@@ -85,7 +85,7 @@ import {
 import { compareCodeUnits } from '../utils/canonicalJson';
 import { resolvePlanningAuthorityMode } from '../ledger/planningAuthorityMode';
 import { renderLedgerExportCompact } from '../ledger/export/compact/renderLedgerExportCompact';
-import { userContextItemHashes, type PreviousContext } from '../ledger/export/compact/previousContext';
+import { userContextCheckpoint, type PreviousContext, type UserContextCheckpoint } from '../ledger/export/compact/previousContext';
 import type { LegacyEngineLayer } from '../ledger/export/schema';
 import { ledgerExportService, type LedgerExportService } from './ledgerExportService';
 
@@ -108,9 +108,12 @@ export interface ContextBriefResult {
     unavailableSources: string[];
     /** Structured physical capital benchmarks derived from completed and explicitly bound assessments. */
     measuredBenchmarks?: readonly MeasuredBenchmarkExport[];
-    /** Ledger mode only: hashes of the user-context items rendered into `text`, stored by the UI
-     * after a successful Markdown export so the next export can abbreviate unchanged items. */
-    contextItemHashes?: Record<string, string>;
+    /** Ledger mode only: the user-context checkpoint of this export (item hashes, format version,
+     * per-collection scope and completeness). The UI stores it only when the reader confirms the
+     * export was added to a chat, so the next export can abbreviate unchanged items. */
+    contextCheckpoint?: UserContextCheckpoint;
+    /** Ledger mode only: this export's instant; an older export never overwrites a newer checkpoint. */
+    exportedAt?: string;
 }
 
 function lastNCalendarDates(endDateInclusive: string, days: number): string[] {
@@ -298,7 +301,8 @@ export class ContextBriefService {
                 purpose,
                 contractVersion: ledger.schemaVersion,
                 unavailableSources,
-                contextItemHashes: userContextItemHashes(ledger),
+                contextCheckpoint: userContextCheckpoint(ledger),
+                exportedAt: ledger.exportedAt,
             };
         }
         // Strictly longer than the window, so there is always prior history to compare

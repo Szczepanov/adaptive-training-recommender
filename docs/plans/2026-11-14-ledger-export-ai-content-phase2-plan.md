@@ -5,7 +5,7 @@
 **Architecture:**
 - Additive `ledger-export-v1` schema fields add the upcoming-session content and a forward placement bound.
 - A new pure compact Markdown renderer produces the morning text, with a stable per-item hash for user-context change detection.
-- `ContextBriefService` uses the compact renderer in ledger mode. The brief screen keeps a confirmed checkpoint (the exported item hashes) per user, chat and purpose on the device.
+- `ContextBriefService` uses the compact renderer in ledger mode. The brief screen keeps a confirmed checkpoint (item hashes plus a format version and per-collection scope and completeness) per user, chat and purpose on the device.
 - The verbose renderer stays as a diagnostic view.
 
 **Tech Stack:** React + TypeScript, Vitest (golden files via `toMatchFileSnapshot`), Playwright with Firebase emulators.
@@ -96,6 +96,19 @@ with **Include full context**; the full-context part runs after an in-test switc
 390 px viewport. The contract and user-flows docs now describe the compact renderer, and the stale
 "Entry points" paragraph (legacy Copy/Download, OD5 reservation) was corrected. The README row is left
 to #1258.
+
+### Task 9: Versioned, scope-aware checkpoint (spec 2c alignment)
+
+Shipped. `compact/contextCheckpoint.ts` adds `CHECKPOINT_FORMAT_VERSION` (1), per-collection
+`{ scope, complete }`, `userContextCheckpoint` and `mergeCheckpoint`; the item hash now includes the
+record's `observedOn`. `removed:` needs a complete read in the checkpoint's own scope; otherwise the
+renderer prints `not readable now:` or `out of scope now:`. A failed or truncated read keeps the prior
+hashes on confirmation. `ContextBriefService` returns `contextCheckpoint` and `exportedAt` (replacing
+`contextItemHashes`). The pending confirmation is bound to the captured user, chat and purpose, and
+`confirmSnapshot` re-reads storage and refuses an older export. Legacy stored values (no
+`formatVersion`) give full context. Ruling: a complete read in a moved window advances the stored
+scope rather than carrying out-of-scope hashes, which would grow daily. Fixture morning size with a
+matching checkpoint: 8,145 characters (at the target); without: 11,407.
 
 ## Remaining / follow-ups
 

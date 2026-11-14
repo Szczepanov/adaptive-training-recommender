@@ -25,24 +25,38 @@ export function BriefChatInput({ value, onChange, onCommit }: BriefChatInputProp
   );
 }
 
+/** The outcome of the last "Added to this chat" for the export on screen. */
+export type ConfirmStatus =
+  | { kind: 'saved'; chat: string }
+  | { kind: 'newer-saved' }
+  | { kind: 'not-saved' };
+
 interface BriefConfirmChatProps {
   chat: string;
   canConfirm: boolean;
-  confirmedChat: string | null;
+  status: ConfirmStatus | null;
   onConfirm: () => void;
 }
 
+function statusText(status: ConfirmStatus | null): string {
+  if (!status) return '';
+  if (status.kind === 'saved') return `Checkpoint saved for "${status.chat}"`;
+  if (status.kind === 'newer-saved') return 'A newer checkpoint is already saved for this chat.';
+  return 'Could not save the checkpoint on this device.';
+}
+
 /** Confirms that the exported Markdown was pasted into the named chat, which advances the checkpoint. */
-export function BriefConfirmChat({ chat, canConfirm, confirmedChat, onConfirm }: BriefConfirmChatProps) {
+export function BriefConfirmChat({ chat, canConfirm, status, onConfirm }: BriefConfirmChatProps) {
+  const hint = !chat
+    ? 'Name the chat to save a checkpoint.'
+    : !canConfirm && !status ? 'Copy or download the Markdown first.' : '';
   return (
     <>
       <button type="button" className="brief-copy" disabled={!canConfirm} onClick={onConfirm}>
         Added to this chat
       </button>
-      {!chat && <span className="brief-range">Name the chat to save a checkpoint.</span>}
-      <span role="status" className="brief-range">
-        {confirmedChat ? `Checkpoint saved for "${confirmedChat}"` : ''}
-      </span>
+      {hint && <span className="brief-range">{hint}</span>}
+      <span role="status" className="brief-range">{statusText(status)}</span>
     </>
   );
 }

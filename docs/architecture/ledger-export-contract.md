@@ -114,26 +114,73 @@ source.
 
 ### Abbreviating unchanged user context
 
-`compact/previousContext.ts` `userContextItemHashes` hashes each user-context item (key
-`<collection>/<id>`, `<name>` for single records, `trainingDislikes`) with a stable 32-bit FNV-1a over
-its sorted-key JSON, excluding `readAt` and `exportedAt`. Given a `PreviousContext`
-(`exportedOn` plus those hashes), the renderer collapses items whose key and hash both match into
-`unchanged since <exportedOn>: <n> items (<keys>)`. Changed and new items print in full, and keys
-that disappeared print `removed: <key>` only when their collection (or single record) is `measured`
-now; a key whose source cannot be read prints `not readable now: <key> (<state>)`, never `removed:`. The renderer takes the previous context as an explicit
-input and reads no store or clock.
+`compact/contextCheckpoint.ts` `userContextCheckpoint` describes one export's user context as a
+checkpoint: `formatVersion` (`CHECKPOINT_FORMAT_VERSION`), `itemHashes` and, per user-context name,
+`collections[name] = { scope, complete }`. It stores only hashes and comparison metadata, never
+context text.
+
+- **Hashes.** `userContextItemHashes` hashes each item (key `<collection>/<id>`, `<name>` for single
+  records and `trainingDislikes`) with a stable 32-bit FNV-1a over its sorted-key JSON: the leaves
+  with their state and source, `since`, `revisions` and the record's `observedOn`. `observedOn` is
+  the item's own semantic date (an availability or travel date, a goal's target date), not an export
+  artifact, so it is hashed. Only `readAt` and `exportedAt` are excluded, wherever they appear.
+- **Scope.** Mirrors `buildUserContext`: `from:<window start>` for `travel`, `venueRestrictions`,
+  `availability` and `events`; `active+resolved-from:<window start>` for `injuries`; `all-active`
+  for `goals` and `constraints`; `current` for the single records and `trainingDislikes`.
+- **Complete.** A collection is complete only when its state is `measured`, `droppedUndated` is 0 and
+  it is not truncated. A single record is complete when its settings source (`training_settings` or
+  `preferences`) was read `measured`. `trainingDislikes` has no source to read: `measured` or
+  `not_yet_supported` (a schema-fixed state) counts as complete.
+- **Version.** `CHECKPOINT_FORMAT_VERSION` is bumped whenever the hash contract or these rules change.
+  Version 1 added `observedOn` to the hash and the metadata. Both the renderer and the store reader
+  treat another or no `formatVersion` (a legacy stored value) as no checkpoint: full context.
+
+Given a `PreviousContext` (a checkpoint plus `exportedOn`), the renderer collapses items whose key and
+hash both match into `unchanged since <exportedOn>: <n> items (<keys>)`, except items of a collection
+whose read failed (`unavailable`), which are never abbreviated. Changed and new items print in full.
+A key that disappeared prints:
+
+- `removed: <key>` only when the current read of its collection is complete **and** the checkpoint's
+  entry for that collection is complete with the same scope;
+- `not readable now: <key> (<state>)` when the current read is incomplete (`incomplete` when the state
+  is `measured` but rows were omitted or truncated);
+- `out of scope now: <key>` when the read is complete but the scope differs, as with the morning
+  window moving forward a day.
+
+The renderer takes the checkpoint as an explicit input and reads no store or clock.
+
+`mergeCheckpoint` builds the checkpoint stored on confirmation. A complete read replaces its
+collection's hashes and metadata. An incomplete read keeps the prior checkpoint's hashes and metadata
+for that collection, or stores nothing for it when there is no prior, so an unreadable item is never
+later abbreviated as unchanged. A complete read in a new scope advances the checkpoint to that scope;
+out-of-scope keys are reported once and not carried (they would accumulate daily; an item that
+reappears prints in full).
 
 The brief screen (`DataView`, `components/useBriefCheckpoint.ts`) advances nothing on copy or
-download. After a successful Markdown copy or download it shows **Added to this chat**, which stores
-the *exported* brief's `asOfDate` and `contextItemHashes` (held in memory from the moment of export,
-never recomputed) in `localStorage` under
-`adaptive-training:context-brief:previous-context:<uid>:<encodeURIComponent(chat)>:<purpose>`
-(`components/briefPreviousContext.ts`). The button is disabled again whenever a new brief is built
-and until the next export, and while no chat is named. The **Chat** input is a local label (max 40
-characters, trimmed, remembered per user under `adaptive-training:context-brief:chat:<uid>`); it and
-the user id are never part of an export. An empty chat, another chat, another user, an unreadable or
-malformed store all yield a full export, and the old purpose-only keys are no longer read and are
-removed on load. The **Include full context** checkbox ignores the stored checkpoint for that view.
+download. In ledger mode `ContextBriefService.build` returns the export's `contextCheckpoint` and
+`exportedAt`. A successful Markdown copy or download captures a snapshot in memory: the user id, chat,
+purpose, `asOfDate`, `exportedAt` and the checkpoint, never recomputed. **Added to this chat** then
+stores it in `localStorage` under
+`adaptive-training:context-brief:previous-context:<uid>:<encodeURIComponent(chat)>:<purpose>` for the
+captured user, chat and purpose only (`components/briefPreviousContext.ts` `confirmSnapshot`).
+
+- **Binding.** If the account or the chat changes before confirmation, the pending snapshot is
+  dropped (`pendingSnapshot`) and the button is disabled; the screen then reads only the new
+  user's or chat's key.
+- **Ordering.** The stored value carries `exportedAt`. `confirmSnapshot` re-reads the key right before
+  writing and refuses a snapshot older than the stored one, so a late click or another tab never
+  overwrites a newer checkpoint. The `role="status"` line then reads "A newer checkpoint is already
+  saved for this chat." A failed write reads "Could not save the checkpoint on this device." and may
+  be retried.
+- **Disabled states.** The button is disabled again whenever a new brief is built and until the next
+  export, and while no chat is named. A hint says why: "Name the chat to save a checkpoint." or "Copy
+  or download the Markdown first."
+
+The **Chat** input is a local label (max 40 characters, trimmed, remembered per user under
+`adaptive-training:context-brief:chat:<uid>`); it and the user id are never part of an export. An
+empty chat, another chat, another user, an unreadable, malformed or legacy store all yield a full
+export, and the old purpose-only keys are no longer read and are removed on load. The **Include full
+context** checkbox ignores the stored checkpoint for that view.
 Copy and Download Markdown are disabled while the brief on screen is not the one the current chat and
 toggle describe, so a copy can never carry the wrong variant.
 

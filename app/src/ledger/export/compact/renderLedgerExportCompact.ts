@@ -5,7 +5,14 @@ import type {
 } from '../schema.ts';
 import { collapsedLine, dominantSource, entryLines, type FieldEntry, groupLabel } from './compactLines.ts';
 import { flagsSection } from './flagLines.ts';
-import { contextDelta, type PreviousContext, unchangedLines, userContextItemHashes, userContextStates } from './previousContext.ts';
+import {
+    contextDelta,
+    isCurrentFormat,
+    type PreviousContext,
+    unchangedLines,
+    userContextCheckpoint,
+    userContextStates,
+} from './previousContext.ts';
 import { renderTodaySections } from './todaySections.ts';
 
 export { flagsSection };
@@ -94,8 +101,10 @@ function singletonLines(name: string, row: ContextRecord): string[] {
     return collapsed ? [collapsed] : [`### ${text(name)} (${groupLabel(undefined, group)})`, ...entryLines(entries, group)];
 }
 
-export function userContextSection(ledger: LedgerExport, previous?: PreviousContext): string[] {
-    const delta = previous ? contextDelta(userContextItemHashes(ledger), previous, userContextStates(ledger)) : null;
+/** A checkpoint of another (or no) format version means full context. */
+export function userContextSection(ledger: LedgerExport, checkpoint?: PreviousContext): string[] {
+    const previous = isCurrentFormat(checkpoint) ? checkpoint : undefined;
+    const delta = previous ? contextDelta(userContextCheckpoint(ledger), previous, userContextStates(ledger)) : null;
     const isUnchanged = (key: string) => delta?.unchangedKeys.has(key) ?? false;
     const body = Object.entries(ledger.userContext).flatMap(([name, context]): string[] => {
         if ('items' in context) {

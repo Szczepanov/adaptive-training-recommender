@@ -988,7 +988,7 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery', onNav
               <BriefConfirmChat
                 chat={checkpoint.chat}
                 canConfirm={!briefStale && checkpoint.canConfirm(brief)}
-                confirmedChat={checkpoint.confirmedChat(brief)}
+                status={checkpoint.confirmStatus(brief)}
                 onConfirm={checkpoint.confirm}
               />
               <span className="brief-range">{brief.startDate} → {brief.asOfDate}</span>
