@@ -25,6 +25,7 @@ import { sessionOccurrenceService } from '../services/sessionOccurrenceService';
 import { isDefinitionBearingExternalSession } from '../sessions/externalPlanV2';
 import type { SessionExecution, SessionReferenceBinding } from '../sessions/models';
 import type { Screen } from '../types/navigation';
+import { LedgerSessionAiCopyButton } from './LedgerSessionAiCopyButton';
 import { WorkoutExportMenu } from './WorkoutExportMenu';
 import './LedgerTodayCard.css';
 
@@ -409,6 +410,9 @@ export function LedgerTodayCard({
                       externalSession={session}
                       garminSyncDisabled={false}
                     />
+                  )}
+                  {existingExec?.state === 'completed' && (
+                    <LedgerSessionAiCopyButton userId={userId} execution={existingExec} />
                   )}
                   {canLaunch && (
                     <>
