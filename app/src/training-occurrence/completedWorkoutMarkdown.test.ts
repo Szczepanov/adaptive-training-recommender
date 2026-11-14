@@ -63,7 +63,7 @@ const structuredView: CompletedWorkoutView = {
                 prescribed: { sets: 2, seconds: 45 }, sets: [],
             },
         ],
-        performedRest: 'not_recorded',
+        performedRest: 'recorded',
         execution: {
             executionId: 'exec-1', state: 'completed', executedDefinition: 'reduced',
             startedAt: '2026-11-14T06:50:00.000Z', completedAt: '2026-11-14T07:32:30.000Z',
@@ -109,6 +109,68 @@ describe('formatCompletedWorkoutMarkdown', () => {
         expect(md).not.toContain('avg HR');
         expect(md).not.toContain('load 0');
         expect(md).not.toContain('##');
+    });
+
+    const withSteps = (steps: NonNullable<CompletedWorkoutView['structured']>['steps']): CompletedWorkoutView => ({
+        ...structuredView,
+        structured: { ...structuredView.structured!, steps },
+    });
+    const stamp = '2026-11-14T07:00:00.000Z';
+
+    it('names missing set values instead of printing zero', () => {
+        const md = formatCompletedWorkoutMarkdown(withSteps([{
+            stepId: 'x', title: 'Mixed', isOptional: false, prescribed: { sets: 3 },
+            sets: [
+                { entryId: '1', setNumber: 1, isWarmup: false, completedAt: stamp, payload: { kind: 'repetition', setIndex: 1 } as never },
+                { entryId: '2', setNumber: 2, isWarmup: false, completedAt: stamp, payload: { kind: 'duration', seconds: undefined, loadKg: 10 } as never },
+                { entryId: '3', setNumber: 3, isWarmup: false, completedAt: stamp, payload: { kind: 'distance', meters: undefined } as never },
+            ],
+        }]), EXPORTED_AT);
+        expect(md).toContain('1: reps: not recorded');
+        expect(md).toContain('2: duration: not recorded @ 10 kg');
+        expect(md).toContain('3: distance: not recorded');
+        expect(md).not.toMatch(/: 0 (reps|s|m)/);
+    });
+
+    it('renders a duration set body', () => {
+        const md = formatCompletedWorkoutMarkdown(withSteps([{
+            stepId: 'x', title: 'Plank', isOptional: false, prescribed: { sets: 1, seconds: 45 },
+            sets: [{ entryId: '1', setNumber: 1, isWarmup: false, completedAt: stamp, payload: { kind: 'duration', seconds: 50, loadKg: 10 } }],
+        }]), EXPORTED_AT);
+        expect(md).toContain('1: 50 s @ 10 kg');
+    });
+
+    it('keeps notes and choices on a skipped step and marks it optional', () => {
+        const md = formatCompletedWorkoutMarkdown(withSteps([{
+            stepId: 'x', title: 'Curls', isOptional: true,
+            prescribed: { sets: 3, reps: 12, notes: 'Slow' },
+            choices: [{ choiceId: 'c', optionId: 'skip', optionLabel: 'Skip step', reason: 'Elbow pain', completedAt: stamp }],
+            sets: [],
+        }]), EXPORTED_AT);
+        expect(md).toContain('## Not performed: Curls (planned 3×12) (optional)');
+        expect(md).toContain('notes: Slow');
+        expect(md).toContain('choice: Skip step (reason: Elbow pain)');
+    });
+
+    it('treats a warm-up-only step as not performed and still lists the warm-up', () => {
+        const md = formatCompletedWorkoutMarkdown(withSteps([{
+            stepId: 'x', title: 'Deadlift', isOptional: false, prescribed: { sets: 3, reps: 5 },
+            sets: [{ entryId: '1', setNumber: 1, isWarmup: true, completedAt: stamp, payload: { kind: 'repetition', setIndex: 0, reps: 5, weightKg: 60, isWarmup: true } }],
+        }]), EXPORTED_AT);
+        expect(md).toContain('## Not performed: Deadlift (planned 3×5)');
+        expect(md).toContain('warm-up: 5 @ 60 kg');
+    });
+
+    it('prints responses: none recorded for an empty list', () => {
+        expect(formatCompletedWorkoutMarkdown(structuredView, EXPORTED_AT, [])).toContain('responses: none recorded');
+    });
+
+    it('names absent sections on the missing line', () => {
+        const view: CompletedWorkoutView = {
+            ...structuredView,
+            structured: { ...structuredView.structured!, performedRest: 'not_recorded' },
+        };
+        expect(formatCompletedWorkoutMarkdown(view, EXPORTED_AT)).toContain('missing: performed rest (not_recorded)');
     });
 
     it('prints responses: unavailable', () => {

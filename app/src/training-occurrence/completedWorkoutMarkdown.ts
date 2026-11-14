@@ -45,7 +45,7 @@ function loadText(load: SessionLoad): string {
 }
 
 function exerciseRefLabel(ref: ExerciseRef): string {
-    return ref.kind === 'catalog' ? ref.exerciseId : oneLine(ref.name);
+    return ref.kind === 'catalog' ? ref.exerciseId.replaceAll('_', ' ') : oneLine(ref.name);
 }
 
 /** `3×4–6 @ 120 kg, RPE 8, rest 180 s, tempo 3-1-1-0`; only parts present are printed. */
@@ -66,12 +66,13 @@ function setBody(set: ExportedPerformedSet): string {
     const kg = set.weightKg !== undefined ? ` @ ${set.weightKg} kg` : '';
     switch (set.kind) {
         case 'repetition':
-            return set.weightKg !== undefined ? `${set.reps ?? 0} @ ${set.weightKg} kg` : `${set.reps ?? 0} reps`;
+            if (set.reps === undefined) return `reps: ${NOT_RECORDED}${kg}`;
+            return set.weightKg !== undefined ? `${set.reps} @ ${set.weightKg} kg` : `${set.reps} reps`;
         case 'duration':
-            return `${set.durationSeconds ?? 0} s${kg}`;
+            return `${set.durationSeconds !== undefined ? `${set.durationSeconds} s` : `duration: ${NOT_RECORDED}`}${kg}`;
         case 'distance':
         case 'sprint':
-            return `${set.distanceMeters ?? 0} m${set.durationSeconds !== undefined ? ` in ${set.durationSeconds} s` : ''}${kg}`;
+            return `${set.distanceMeters !== undefined ? `${set.distanceMeters} m` : `distance: ${NOT_RECORDED}`}${set.durationSeconds !== undefined ? ` in ${set.durationSeconds} s` : ''}${kg}`;
         case 'jump_attempt': {
             const height = set.heightInches !== undefined ? `${set.heightInches} in` : undefined;
             const distance = set.distanceMeters !== undefined ? `${set.distanceMeters} m` : undefined;
@@ -105,8 +106,9 @@ function workSetLine(set: ExportedPerformedSet): string {
 function exerciseHeading(exercise: ExportedExercise): string {
     const planned = prescriptionText(exercise.prescribed);
     if (exercise.unplanned) return `## Added: ${oneLine(exercise.name)} (unplanned)`;
-    if (exercise.performed.sets.length === 0) {
-        return `## Not performed: ${oneLine(exercise.plannedName ?? exercise.name)} (planned ${planned})`;
+    if (exercise.performed.workSets === 0) {
+        const optional = exercise.optional ? ' (optional)' : '';
+        return `## Not performed: ${oneLine(exercise.plannedName ?? exercise.name)} (planned ${planned})${optional}`;
     }
     if (exercise.plannedName) {
         return `## ${oneLine(exercise.plannedName)} — swapped to ${oneLine(exercise.name)}`;
@@ -116,7 +118,7 @@ function exerciseHeading(exercise: ExportedExercise): string {
 
 function exerciseLines(exercise: ExportedExercise): string[] {
     const lines = [exerciseHeading(exercise)];
-    const swappedWithSets = Boolean(exercise.plannedName) && !exercise.unplanned && exercise.performed.sets.length > 0;
+    const swappedWithSets = Boolean(exercise.plannedName) && !exercise.unplanned && exercise.performed.workSets > 0;
     if (swappedWithSets) lines.push(`planned: ${prescriptionText(exercise.prescribed)}`);
     if (exercise.prescribed.notes) lines.push(`notes: ${oneLine(exercise.prescribed.notes)}`);
     for (const choice of exercise.choices ?? []) {

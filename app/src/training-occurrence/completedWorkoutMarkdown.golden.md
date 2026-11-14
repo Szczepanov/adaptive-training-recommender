@@ -24,6 +24,4 @@ responses:
 - immediate: sRPE 7, fatigue no, technique: Knees caved on rep 4
 - next_morning: sRPE 6, note: Slept well
 
-missing: performed rest (not_recorded)
-
 ref: pto-1
