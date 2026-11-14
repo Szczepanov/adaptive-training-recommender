@@ -4,12 +4,12 @@ window: 2026-11-19…2026-11-20
 
 ## Today (2026-11-20)
 check-in:
-readiness: 7 (28d baseline: missing)
-sleepQuality: 6 (28d baseline: missing)
-fatigue: 3 (28d baseline: missing)
+readiness: 7 score_1_10 (28d baseline: missing)
+sleepQuality: 6 score_1_10 (28d baseline: missing)
+fatigue: 3 score_1_10 (28d baseline: missing)
 soreness: not_recorded
-mentalStress: 3 (28d baseline: missing)
-motivation: 8 (28d baseline: missing)
+mentalStress: 3 score_1_10 (28d baseline: missing)
+motivation: 8 score_1_10 (28d baseline: missing)
 painOrInjury: false
 illnessSymptoms: false
 unusuallyLimitedTime: false
@@ -30,15 +30,15 @@ totalSteps: 0 steps (D-1)
 stressAvg: 25 score
 missing: weightKg (missing), bodyFatPct (missing)
 flags: illness_anomaly unknown (unavailable); illness_risk_symptom unknown (unavailable); injury_constraint_touches_session unknown (unavailable); recovery_beyond_baseline unknown (unavailable)
-2026-11-20 Openers [support] (planned)
+2026-11-20 Openers [support] (planned) plan-1@2:s4
 summary: Short activation ride
 missing: stepNotes (not_recorded), fallback (not_recorded), statusHistory (not_yet_supported)
 
 ## Yesterday (2026-11-19)
-Cycling · 60 min · structuredEntries: not_yet_supported · sRPE 6 · executedDefinition: unavailable · planned: Endurance ride
+Cycling · 60 min · structuredEntries: not_yet_supported · sRPE 6 · executedDefinition: unavailable · planned: Endurance ride (plan-1@2:s1 → occ-1)
 
 ## Upcoming (2026-11-21…2026-11-27)
-2026-11-22 Tempo intervals [key] (planned)
+2026-11-22 Tempo intervals [key] (planned) plan-1@2:s3
 summary: 3x10 min at tempo
 note: Stay seated
 note: Cadence 90
@@ -277,3 +277,5 @@ summary: Steady Z2 for 60 min
 missing: statusHistory (not_yet_supported), stepNotes (not_recorded), fallback (not_recorded)
 
 overrides: measured, no rows
+
+plannedToPerformed: 1 shown above

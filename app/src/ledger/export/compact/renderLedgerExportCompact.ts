@@ -5,7 +5,7 @@ import type {
     LedgerValue, SourceState,
 } from '../schema.ts';
 import { collapsedLine, entryLines, type FieldEntry } from './compactLines.ts';
-import { contextDelta, type PreviousContext, unchangedLines, userContextItemHashes } from './previousContext.ts';
+import { contextDelta, type PreviousContext, unchangedLines, userContextItemHashes, userContextStates } from './previousContext.ts';
 import { renderTodaySections } from './todaySections.ts';
 
 export interface CompactRenderOptions {
@@ -48,7 +48,7 @@ export function collectionLines(name: string, rows: LedgerCollection<LedgerRecor
         const activities = rows as ActivityCollection<LedgerRecord>;
         meta.push(`truncated: ${activities.truncated}; totalInWindow: ${activities.totalInWindow}; exported: ${rows.items.length}`);
     }
-    if (!items.length) return meta.length ? [`### ${text(name)}`, ...meta, ''] : [];
+    if (!items.length) return [[`${text(name)}: ${rows.items.length} shown above`, ...meta].join('; '), ''];
     return [`### ${text(name)}`, ...meta, ...items.flatMap(recordLines), ''];
 }
 
@@ -146,7 +146,7 @@ function singletonLines(name: string, row: ContextRecord): string[] {
 }
 
 export function userContextSection(ledger: LedgerExport, previous?: PreviousContext): string[] {
-    const delta = previous ? contextDelta(userContextItemHashes(ledger), previous) : null;
+    const delta = previous ? contextDelta(userContextItemHashes(ledger), previous, userContextStates(ledger)) : null;
     const isUnchanged = (key: string) => delta?.unchangedKeys.has(key) ?? false;
     const body = Object.entries(ledger.userContext).flatMap(([name, context]): string[] => {
         if ('items' in context) {

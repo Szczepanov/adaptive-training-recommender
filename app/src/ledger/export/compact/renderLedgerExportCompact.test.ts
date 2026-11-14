@@ -181,4 +181,9 @@ describe('renderLedgerExportCompact', () => {
         expect(renderLedgerExportCompact(ledger)).toBe(renderLedgerExportCompact(ledger));
         expect(JSON.stringify(ledger)).toBe(before);
     });
+
+    it('keeps the heading count when every row of a collection was printed above', () => {
+        const out = renderLedgerExportCompact(buildLedgerExport(fullInput({ purpose: 'morning' })));
+        expect(out).toContain('plannedToPerformed: 1 shown above');
+    });
 });

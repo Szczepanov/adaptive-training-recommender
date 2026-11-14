@@ -35,9 +35,14 @@ bump is required.
 ## Compact Markdown renderer
 
 `ledger/export/compact/renderLedgerExportCompact.ts` is a pure Markdown view of the same
-`LedgerExport`, sized for pasting into one long-lived AI chat. It drops no recorded data: every
+`LedgerExport`, sized for pasting into one long-lived AI chat. Every
 leaf that is missing, stale or unavailable stays visible, grouped into one `missing:` line per item
-rather than printed as zero or false. `renderLedgerExport` remains the verbose diagnostic view.
+rather than printed as zero or false. Some recorded detail is summarised, with the full record in the
+JSON: a placement's status history is a count and the latest change date, a performed occurrence's
+structured entries are an exercise/set count, a consumed placement or link row is printed once
+(under Today, Yesterday or Upcoming; its collection then prints `<name>: <n> shown above`), and an
+active flag's `evaluatedAt` and `definitionVersion` are omitted. Placement headers and the planned
+part of a yesterday line carry the record ids (`plan-1@2:s4`, `plan-1@2:s1 → occ-1`). `renderLedgerExport` remains the verbose diagnostic view.
 Output starts with `# Ledger update — <asOfDate> (<purpose>)`, then:
 
 1. `## Today (<date>)` (`todaySections.ts` `renderTodaySections`): today's check-in and recovery
@@ -75,16 +80,23 @@ same way `droppedUndated` counts undated rows; the compact renderer prints it as
 its sorted-key JSON, excluding `readAt` and `exportedAt`. Given a `PreviousContext`
 (`exportedOn` plus those hashes), the renderer collapses items whose key and hash both match into
 `unchanged since <exportedOn>: <n> items (<keys>)`. Changed and new items print in full, and keys
-that disappeared print `removed: <key>`. The renderer takes the previous context as an explicit
+that disappeared print `removed: <key>` only when their collection (or single record) is `measured`
+now; a key whose source cannot be read prints `not readable now: <key> (<state>)`, never `removed:`. The renderer takes the previous context as an explicit
 input and reads no store or clock.
 
-The brief screen (`DataView`) keeps what the reader holds per purpose in `localStorage` under
-`adaptive-training:context-brief:previous-context:<purpose>`
-(`components/briefPreviousContext.ts`). It writes the entry only after a successful Markdown copy
-or Markdown download, never for JSON, and an unreadable or malformed store simply yields a full
-export. The **Include full context** checkbox next to the preset toggle ignores the stored context
-for that view. The abbreviation is a convenience for the same chat: a reader that has lost the earlier
-export should tick it.
+The brief screen (`DataView`, `components/useBriefCheckpoint.ts`) advances nothing on copy or
+download. After a successful Markdown copy or download it shows **Added to this chat**, which stores
+the *exported* brief's `asOfDate` and `contextItemHashes` (held in memory from the moment of export,
+never recomputed) in `localStorage` under
+`adaptive-training:context-brief:previous-context:<uid>:<encodeURIComponent(chat)>:<purpose>`
+(`components/briefPreviousContext.ts`). The button is disabled again whenever a new brief is built
+and until the next export, and while no chat is named. The **Chat** input is a local label (max 40
+characters, trimmed, remembered per user under `adaptive-training:context-brief:chat:<uid>`); it and
+the user id are never part of an export. An empty chat, another chat, another user, an unreadable or
+malformed store all yield a full export, and the old purpose-only keys are no longer read and are
+removed on load. The **Include full context** checkbox ignores the stored checkpoint for that view.
+Copy and Download Markdown are disabled while the brief on screen is not the one the current chat and
+toggle describe, so a copy can never carry the wrong variant.
 
 ## Five layers
 

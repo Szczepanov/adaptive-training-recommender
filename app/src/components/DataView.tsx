@@ -8,7 +8,8 @@ import { type ContextBriefResult } from '../services/contextBriefService';
 import { briefPurposeFor, briefWindowDaysFor, type BriefWindowPreset } from '../engine/contextBrief';
 import { BriefPresetToggle } from './BriefPresetToggle';
 import { BriefFullContextToggle } from './BriefFullContextToggle';
-import { readPreviousContext, writePreviousContext } from './briefPreviousContext';
+import { BriefChatInput, BriefConfirmChat } from './BriefChatCheckpoint';
+import { useBriefCheckpoint } from './useBriefCheckpoint';
 import { buildBriefForPreset, loadStoredBriefPreset, persistBriefPreset } from './briefPreset';
 import { addDaysToLocalDateString, getLocalDateString } from '../utils/localDate';
 import {
@@ -102,7 +103,9 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery', onNav
   const [briefPreset, setBriefPreset] = useState<BriefWindowPreset>(loadStoredBriefPreset);
   // Per-view, never persisted: forces the ledger Markdown export to render unchanged context in full.
   const [briefFullContext, setBriefFullContext] = useState(false);
-  const [builtFullContext, setBuiltFullContext] = useState(false);
+  // What the brief on screen was built with; a mismatch means it is stale and must not be copied.
+  const [builtVariant, setBuiltVariant] = useState({ fullContext: false, chat: '' });
+  const checkpoint = useBriefCheckpoint(userId, briefPurposeFor(briefPreset), briefFullContext);
   // null doubles as "not loaded yet" -- once getAdherenceStats resolves it's always a
   // real (possibly all-zero) stats object, so this alone distinguishes loading from an
   // answer of "nothing recorded yet" without a separate loading flag.
@@ -209,7 +212,7 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery', onNav
     if (onNavigateToBrief || activeTab !== 'brief' || !briefDate
       || (brief?.asOfDate === briefDate && brief.preset === briefPreset
         && briefCapabilityMaintenanceKey === capabilityMaintenanceKey
-        && builtFullContext === briefFullContext)) return;
+        && builtVariant.fullContext === briefFullContext && builtVariant.chat === checkpoint.chat)) return;
     let cancelled = false;
     buildBriefForPreset(
       userId,
@@ -217,13 +220,13 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery', onNav
       briefPreset,
       undefined,
       decisionInput?.date === briefDate ? capabilityMaintenance : undefined,
-      { previousContext: readPreviousContext(briefPurposeFor(briefPreset)), fullContext: briefFullContext },
+      { previousContext: checkpoint.previousContext, fullContext: briefFullContext },
     )
       .then(result => {
         if (!cancelled) {
           setBrief(result);
           setBriefCapabilityMaintenanceKey(capabilityMaintenanceKey);
-          setBuiltFullContext(briefFullContext);
+          setBuiltVariant({ fullContext: briefFullContext, chat: checkpoint.chat });
           setBriefError(null);
         }
       })
@@ -237,25 +240,21 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery', onNav
         setBriefError({ date: briefDate, message: 'Could not assemble the brief. Retry the dashboard refresh.' });
       });
     return () => { cancelled = true; };
-  }, [onNavigateToBrief, activeTab, userId, brief?.asOfDate, brief?.preset, briefDate, briefPreset, briefFullContext, builtFullContext, briefCapabilityMaintenanceKey, capabilityMaintenanceKey, capabilityMaintenance, decisionInput?.date]);
+  }, [onNavigateToBrief, activeTab, userId, brief?.asOfDate, brief?.preset, briefDate, briefPreset, briefFullContext, builtVariant, checkpoint.chat, checkpoint.previousContext, briefCapabilityMaintenanceKey, capabilityMaintenanceKey, capabilityMaintenance, decisionInput?.date]);
 
   const selectBriefPreset = (preset: BriefWindowPreset) => {
     setBriefPreset(preset);
     persistBriefPreset(preset);
   };
 
-  // Records what the reader now holds, so the next Markdown export can abbreviate unchanged items.
-  const rememberExportedContext = (exported: ContextBriefResult) => {
-    if (exported.contextItemHashes) {
-      writePreviousContext(exported.purpose, { exportedOn: exported.asOfDate, itemHashes: exported.contextItemHashes });
-    }
-  };
+  const briefStale = brief !== null && (builtVariant.fullContext !== briefFullContext
+    || builtVariant.chat !== checkpoint.chat || checkpoint.pending || brief.preset !== briefPreset);
 
   const copyBrief = async () => {
-    if (!brief) return;
+    if (!brief || briefStale) return;
     try {
       await navigator.clipboard.writeText(brief.text);
-      rememberExportedContext(brief);
+      checkpoint.recordExport(brief);
       setBriefError(null);
       setBriefCopied(true);
       window.setTimeout(() => setBriefCopied(false), 2000);
@@ -267,10 +266,10 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery', onNav
   };
 
   const downloadBrief = (format: ContextBriefExportFormat) => {
-    if (!brief) return;
+    if (!brief || (briefStale && format === 'markdown')) return;
     try {
       downloadContextBriefFile(brief, format);
-      if (format === 'markdown') rememberExportedContext(brief);
+      if (format === 'markdown') checkpoint.recordExport(brief);
       setBriefError(null);
     } catch {
       setBriefError({
@@ -960,8 +959,9 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery', onNav
         </p>
         <BriefPresetToggle preset={briefPreset} onSelect={selectBriefPreset} />
         <BriefFullContextToggle checked={briefFullContext} onChange={setBriefFullContext} />
+        <BriefChatInput value={checkpoint.chatInput} onChange={checkpoint.setChatInput} onCommit={checkpoint.commitChat} />
         {visibleBriefError && <p className="data-state-notice">{visibleBriefError}</p>}
-        {!brief && !visibleBriefError && <p>Assembling...</p>}
+        {(!brief || briefStale) && !visibleBriefError && <p role="status">Assembling...</p>}
         {brief && (
           <>
             {brief.unavailableSources.length > 0 && (
@@ -972,6 +972,7 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery', onNav
             <div className="brief-actions">
               <ContextBriefExportActions
                 copied={briefCopied}
+                markdownDisabled={briefStale}
                 onCopy={copyBrief}
                 onDownloadMarkdown={() => downloadBrief('markdown')}
                 onDownloadJson={() => downloadBrief('json')}
@@ -984,6 +985,12 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery', onNav
                   window={{ startDate: brief.startDate, endDate: brief.asOfDate }}
                 />}
               </ContextBriefExportActions>
+              <BriefConfirmChat
+                chat={checkpoint.chat}
+                canConfirm={!briefStale && checkpoint.canConfirm(brief)}
+                confirmedChat={checkpoint.confirmedChat(brief)}
+                onConfirm={checkpoint.confirm}
+              />
               <span className="brief-range">{brief.startDate} → {brief.asOfDate}</span>
               <span className="brief-size">
                 {brief.text.length.toLocaleString()} chars · ~{approxTokens?.toLocaleString()} tokens

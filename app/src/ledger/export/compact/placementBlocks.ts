@@ -13,6 +13,7 @@ function header(row: Placement): string {
         isMissing(title) ? '' : text(title.value),
         isMissing(priority) ? '' : `[${text(priority.value)}]`,
         isMissing(status) ? `(status: ${text(status.state)})` : `(${text(status.value)})`,
+        text(row.id),
     ];
     return parts.filter(Boolean).join(' ');
 }

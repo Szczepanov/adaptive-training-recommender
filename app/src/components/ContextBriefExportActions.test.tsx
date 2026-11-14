@@ -33,4 +33,18 @@ describe('ContextBriefExportActions', () => {
     expect(html).toContain('Download Markdown');
     expect(html).toContain('Download JSON');
   });
+
+  it('disables Copy and Download Markdown, not JSON, while the brief is rebuilding', () => {
+    const html = renderToStaticMarkup(
+      <ContextBriefExportActions
+        copied={false}
+        markdownDisabled
+        onCopy={() => {}}
+        onDownloadMarkdown={() => {}}
+        onDownloadJson={() => {}}
+      />,
+    );
+    expect(html.match(/disabled=""/g)).toHaveLength(2);
+    expect(html).toMatch(/disabled="" class="brief-copy">|class="brief-copy" disabled=""/);
+  });
 });

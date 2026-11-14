@@ -5,7 +5,7 @@
 **Architecture:**
 - Additive `ledger-export-v1` schema fields add the upcoming-session content and a forward placement bound.
 - A new pure compact Markdown renderer produces the morning text, with a stable per-item hash for user-context change detection.
-- `ContextBriefService` uses the compact renderer in ledger mode. The brief screen keeps the last export's item hashes per purpose on the device.
+- `ContextBriefService` uses the compact renderer in ledger mode. The brief screen keeps a confirmed checkpoint (the exported item hashes) per user, chat and purpose on the device.
 - The verbose renderer stays as a diagnostic view.
 
 **Tech Stack:** React + TypeScript, Vitest (golden files via `toMatchFileSnapshot`), Playwright with Firebase emulators.
@@ -79,16 +79,20 @@ context is unchanged, so the goldens did not move.
 
 Shipped. In ledger mode `ContextBriefService.build` renders the compact text and returns
 `contextItemHashes`; engine mode is untouched. `components/briefPreviousContext.ts` validates on read
-and swallows storage errors; `DataView` writes the previous context only after a successful Markdown
-copy or download, and the **Include full context** checkbox (`BriefFullContextToggle`) ignores it for
-that view.
+and swallows storage errors; Following revised spec 2c, copying or downloading never advances the
+checkpoint: `components/useBriefCheckpoint.ts` holds the exported snapshot in memory and the explicit
+**Added to this chat** action (`BriefChatCheckpoint`) stores it under the user, chat and purpose key.
+The **Chat** label is local and never exported, and the **Include full context** checkbox
+(`BriefFullContextToggle`) ignores the checkpoint. Copy and Download Markdown are disabled while the
+brief on screen does not match the chat or toggle.
 
 ### Task 6: E2E and docs
 
 Shipped. `app/tests/e2e/brief-compact-morning.pw.ts` seeds a ledger-mode athlete (today's check-in, a
 performed occurrence yesterday, a placement at +3 days) and asserts `Today`, `Yesterday`, `Upcoming`
-and the upcoming session title on the first copy, `unchanged since` on the second (after a reload),
-and its absence with **Include full context**; the full-context part runs after an in-test switch to a
+and the upcoming session title on the first copy; no `unchanged since` after an unconfirmed copy and
+reload, `unchanged since` after **Added to this chat** and reload, and none for a different chat or
+with **Include full context**; the full-context part runs after an in-test switch to a
 390 px viewport. The contract and user-flows docs now describe the compact renderer, and the stale
 "Entry points" paragraph (legacy Copy/Download, OD5 reservation) was corrected. The README row is left
 to #1258.
@@ -98,8 +102,7 @@ to #1258.
 - Merge of PR #1257 (spec) and #1258 (README row) is outside this branch.
 - Deferred review minors: `contextDelta` does not guard a malformed `previous.itemHashes` by itself
   (the stored value is validated on read); `plannedToPerformed` ids are not consumed on the Yesterday
-  line; derived metrics are not collapsed and `activeFlagLines` omits `evaluatedAt`/`definitionVersion`;
-  the stale brief stays visible briefly after toggling full context; `DataView.tsx` is over the
-  file-size guideline.
-- The abbreviation memory is per device and per purpose; a reader that lost the earlier export must
-  tick **Include full context**.
+  line; derived metrics are not collapsed and `activeFlagLines` omits `evaluatedAt`/`definitionVersion`
+  (documented in the contract; the JSON carries them); `DataView.tsx` is over the file-size guideline.
+- The checkpoint is per device, user, chat and purpose; a reader that lost the earlier export must
+  tick **Include full context** or use a new chat name.

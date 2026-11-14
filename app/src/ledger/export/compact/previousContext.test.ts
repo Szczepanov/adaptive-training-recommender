@@ -64,6 +64,17 @@ describe('previousContext', () => {
         expect(userContext(renderLedgerExportCompact(ledger, { previousContext: previous }))).toContain('removed: injuries/gone-9');
     });
 
+    it('an unreadable collection reports not readable now, never removed', () => {
+        const ledger = build();
+        const previous = previousOf(ledger);
+        ledger.userContext.injuries.items = [];
+        ledger.userContext.injuries.state = 'unavailable';
+        const out = userContext(renderLedgerExportCompact(ledger, { previousContext: previous }));
+        expect(out).not.toContain('removed:');
+        expect(out).toContain('not readable now: injuries/injury-001 (unavailable)');
+        expect(out).toMatch(/unchanged since.*equipment/);
+    });
+
     it('without previousContext everything prints in full', () => {
         const out = userContext(renderLedgerExportCompact(build()));
         expect(out).not.toContain('unchanged since');

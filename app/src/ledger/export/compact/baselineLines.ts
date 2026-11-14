@@ -28,13 +28,14 @@ function baselineSuffix(value: LedgerValue<unknown>, baseline: LedgerValue<numbe
     if (baseline === null) return ' (28d baseline: unavailable)';
     if (baseline.value === null || baseline.value === undefined) return ` (28d baseline: ${text(baseline.state)})`;
     const delta = typeof value.value === 'number' ? `, ${signed(value.value - baseline.value)}` : '';
-    return ` (28d ${round1(baseline.value)}${delta})`;
+    const state = baseline.state === 'measured' ? '' : ` (${text(baseline.state)})`;
+    return ` (28d ${round1(baseline.value)}${state}${delta})`;
 }
 
 /** `readiness: 6 (28d 7.2, −1.2)`; a missing value prints its state and stays in the missing line. */
 function baselineLine(name: string, value: LedgerValue<unknown>, baseline: LedgerValue<number> | null): string {
     if (value.value === null || value.value === undefined) return `${text(name)}: ${text(value.state)}`;
-    const unit = value.unit && value.unit !== 'score' && !value.unit.startsWith('score_') ? ` ${text(value.unit)}` : '';
+    const unit = value.unit && value.unit !== 'score' ? ` ${text(value.unit)}` : '';
     const provenance = fieldLine(name, { ...value, unit: undefined }).slice(`${text(name)}: ${text(value.value)}`.length);
     return `${text(name)}: ${text(value.value)}${unit}${baselineSuffix(value, baseline)}${provenance}`;
 }

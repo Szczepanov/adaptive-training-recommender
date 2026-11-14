@@ -1,4 +1,4 @@
-import type { ContextRecord, LedgerCollection, LedgerExport, LedgerValue } from '../schema.ts';
+import type { ContextRecord, LedgerCollection, LedgerExport, LedgerState, LedgerValue } from '../schema.ts';
 
 /** What the reader already holds from an earlier export: the item hashes, keyed as `userContextItemHashes`. */
 export interface PreviousContext {
@@ -56,16 +56,42 @@ export function userContextItemHashes(ledger: LedgerExport): Record<string, stri
 export interface ContextDelta {
     /** Keys present now whose hash equals the previous one, sorted. */
     unchanged: string[];
-    /** Keys in the previous export that no longer exist, sorted. */
+    /** Keys in the previous export whose source is measured now and which no longer exist, sorted. */
     removed: string[];
+    /** Keys in the previous export whose source cannot be read now, with that state, sorted. */
+    unreadable: Array<{ key: string; state: LedgerState }>;
     /** Same keys as `unchanged`, for lookup. */
     unchangedKeys: ReadonlySet<string>;
 }
 
-export function contextDelta(current: Record<string, string>, previous: PreviousContext): ContextDelta {
+/** State per user-context name (a collection, a single record or `trainingDislikes`). */
+export function userContextStates(ledger: LedgerExport): Record<string, LedgerState> {
+    const states: Record<string, LedgerState> = {};
+    for (const [name, context] of Object.entries(ledger.userContext)) {
+        if ('items' in context) states[name] = (context as LedgerCollection<ContextRecord>).state;
+        else if ('fields' in context) {
+            const fields = Object.values((context as ContextRecord).fields);
+            states[name] = fields.some(field => field.state === 'measured') || !fields.length ? 'measured' : fields[0].state;
+        } else states[name] = (context as LedgerValue<string[]>).state;
+    }
+    return states;
+}
+
+export function contextDelta(
+    current: Record<string, string>, previous: PreviousContext, states: Readonly<Record<string, LedgerState>>,
+): ContextDelta {
     const unchanged = Object.keys(current).filter(key => previous.itemHashes[key] === current[key]).sort();
-    const removed = Object.keys(previous.itemHashes).filter(key => !(key in current)).sort();
-    return { unchanged, removed, unchangedKeys: new Set(unchanged) };
+    const gone = Object.keys(previous.itemHashes).filter(key => !(key in current)).sort();
+    const stateOf = (key: string): LedgerState | undefined => states[key.split('/')[0]];
+    const isReadable = (key: string) => stateOf(key) === 'measured';
+    const unreadable = gone.filter(key => stateOf(key) !== undefined && !isReadable(key))
+        .map(key => ({ key, state: stateOf(key) as LedgerState }));
+    return {
+        unchanged,
+        removed: gone.filter(key => stateOf(key) === undefined || isReadable(key)),
+        unreadable,
+        unchangedKeys: new Set(unchanged),
+    };
 }
 
 export function unchangedLines(delta: ContextDelta, previous: PreviousContext): string[] {
@@ -74,5 +100,6 @@ export function unchangedLines(delta: ContextDelta, previous: PreviousContext): 
             ? [`unchanged since ${previous.exportedOn}: ${delta.unchanged.length} items (${delta.unchanged.join(', ')})`]
             : []),
         ...delta.removed.map(key => `removed: ${key}`),
+        ...delta.unreadable.map(({ key, state }) => `not readable now: ${key} (${state})`),
     ];
 }

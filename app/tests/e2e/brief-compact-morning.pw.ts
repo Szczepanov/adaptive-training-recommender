@@ -58,6 +58,21 @@ test('compact morning brief: sections, unchanged-context abbreviation and full-c
     return page.evaluate(() => navigator.clipboard.readText());
   };
 
+  const chat = page.getByLabel('Chat', { exact: true });
+  const reopenBrief = async () => {
+    await page.reload();
+    await openMoreDestination(page, /^📤 Export Context for AI/);
+    await page.getByRole('button', { name: /Morning Coach/ }).click();
+    await expect.poll(() => brief.inputValue()).toContain('# Ledger update');
+  };
+  const nameChat = async (name: string) => {
+    await chat.fill(name);
+    await chat.press('Enter');
+  };
+
+  // No chat named: full context, and there is nothing to confirm.
+  await expect(page.getByRole('button', { name: 'Added to this chat', exact: true })).toBeDisabled();
+  await nameChat('Coach');
   const first = await copy();
   expect(first).toContain(`## Today (${today})`);
   expect(first).toContain(`## Yesterday (${yesterday})`);
@@ -66,15 +81,30 @@ test('compact morning brief: sections, unchanged-context abbreviation and full-c
   expect(first).toContain(UPCOMING_TITLE);
   expect(first).not.toContain('unchanged since');
 
-  // The first copy remembered what the reader holds; the next export abbreviates it.
-  await expect(page.getByRole('button', { name: 'Copy to clipboard', exact: true })).toBeVisible();
-  await page.reload();
-  await openMoreDestination(page, /^📤 Export Context for AI/);
-  await page.getByRole('button', { name: /Morning Coach/ }).click();
+  // Copying alone never advances the checkpoint: after a reload the export is still full.
+  await reopenBrief();
+  await expect(chat).toHaveValue('Coach');
+  expect(await copy()).not.toContain('unchanged since');
+
+  // Confirming the exported snapshot does; the next export abbreviates what the chat holds.
+  const confirm = page.getByRole('button', { name: 'Added to this chat', exact: true });
+  await expect(confirm).toBeEnabled();
+  await confirm.click();
+  await expect(page.getByRole('status').filter({ hasText: 'Checkpoint saved for "Coach"' })).toBeVisible();
+  await reopenBrief();
   await expect.poll(() => brief.inputValue()).toContain('unchanged since');
   const second = await copy();
   expect(second).toContain('unchanged since');
   expect(second).toContain(UPCOMING_TITLE);
+
+  // A different chat has no checkpoint.
+  await nameChat('New chat');
+  await expect.poll(() => brief.inputValue()).not.toContain('unchanged since');
+  const other = await copy();
+  expect(other).not.toContain('unchanged since');
+  expect(other).not.toContain('New chat');
+  await nameChat('Coach');
+  await expect.poll(() => brief.inputValue()).toContain('unchanged since');
 
   // Same checks at phone width: the toggle is the way back to the full context.
   await page.setViewportSize({ width: 390, height: 900 });

@@ -35,6 +35,8 @@ function todayRecords(
     return [`${label}:`, ...rows.flatMap(row => baselinedRecordLines(ledger, row, derivedId, baselines))];
 }
 
+const codeUnitCompare = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+
 function upcomingSection(ledger: LedgerExport, consumed: Set<string>): string[] {
     const forward = PLACEMENT_FORWARD_DAYS[ledger.purpose];
     if (forward === 0) return [];
@@ -42,7 +44,7 @@ function upcomingSection(ledger: LedgerExport, consumed: Set<string>): string[] 
     const end = addDaysToLocalDateString(ledger.window.endDate, forward);
     const placements = ledger.coachingHistory.placements;
     const rows = placements.items.filter(row => row.observedOn !== null && row.observedOn > ledger.asOfDate)
-        .sort((a, b) => (a.observedOn ?? '').localeCompare(b.observedOn ?? '') || a.id.localeCompare(b.id));
+        .sort((a, b) => codeUnitCompare(a.observedOn ?? '', b.observedOn ?? '') || codeUnitCompare(a.id, b.id));
     rows.forEach(row => consumed.add(row.id));
     const empty = rows.length ? [] : [`placements: ${text(placements.state)}, none after ${text(ledger.asOfDate)}`];
     return [`## Upcoming (${text(start)}…${text(end)})`, ...empty, ...rows.flatMap(placementBlock), ''];

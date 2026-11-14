@@ -14,8 +14,10 @@ function plannedTitle(ledger: LedgerExport, occurrenceId: string, consumed: Set<
         .find(row => row.fields.planId.value === planId.value && row.fields.revision.value === revision.value
             && row.fields.sessionId.value === sessionId.value);
     const title = placement?.fields.title;
-    if (title && present(title)) return `planned: ${text(title.value)}`;
-    return `planned: ${text(sessionId.value)} (title: ${text(title?.state ?? 'unavailable')})`;
+    const ref = placement?.id ?? `${text(planId.value)}@${text(revision.value)}:${text(sessionId.value)}`;
+    const ids = `${text(ref)} → ${text(occurrenceId)}`;
+    if (title && present(title)) return `planned: ${text(title.value)} (${ids})`;
+    return `planned: ${text(sessionId.value)} (title: ${text(title?.state ?? 'unavailable')}; ${ids})`;
 }
 
 /** The real state, or `not recorded` when a measured value is null or empty. */

@@ -25,15 +25,28 @@ describe('renderTodaySections', () => {
         ledger.facts.checkins.items.find(row => row.observedOn === '2026-11-20')!.fields.readiness.value = 6;
         const { lines } = renderTodaySections(ledger);
         expect(lines).toContain('## Today (2026-11-20)');
-        expect(lines).toContain('readiness: 6 (28d 7.2, −1.2)');
+        expect(lines).toContain('readiness: 6 score_1_10 (28d 7.2, −1.2)');
         expect(lines).toContain('sleepScore: 81 (28d 75, +6)');
         expect(lines).toContain('hrvOvernightAvg: 62 ms (28d 64, −2)');
     });
 
+    it('keeps the check-in scale unit', () => {
+        const { lines } = renderTodaySections(withBaselines(build()));
+        expect(lines.some(line => /^readiness: \d+ score_1_10 \(28d/.test(line))).toBe(true);
+    });
+
+    it('labels a non-measured baseline with its state and still prints the delta', () => {
+        const ledger = withBaselines(build());
+        const metrics = ledger.derived.find(metric => metric.id === 'subjective_baselines')!.metrics!;
+        metrics.readiness_longAvg = { value: 7.2, source: 'adaptive', state: 'stale' };
+        ledger.facts.checkins.items.find(row => row.observedOn === '2026-11-20')!.fields.readiness.value = 6;
+        expect(renderTodaySections(ledger).lines).toContain('readiness: 6 score_1_10 (28d 7.2 (stale), −1.2)');
+    });
+
     it('prints missing baseline state without a delta', () => {
         const { lines } = renderTodaySections(build());
-        expect(lines).toContain('readiness: 7 (28d baseline: missing)');
-        expect(lines.some(line => line.startsWith('readiness: 7') && line.includes('−'))).toBe(false);
+        expect(lines).toContain('readiness: 7 score_1_10 (28d baseline: missing)');
+        expect(lines.some(line => line.startsWith('readiness: 7 ') && line.includes('−'))).toBe(false);
     });
 
     it('prints a missing value as its state and keeps it in the missing line', () => {
@@ -59,13 +72,13 @@ describe('renderTodaySections', () => {
         occ.fields.executedDefinitions = { value: [{ executionId: 'e1', executedDefinition: 'reduced' }], source: 'adaptive', state: 'measured' };
         const { lines } = renderTodaySections(ledger);
         expect(lines).toContain('## Yesterday (2026-11-19)');
-        expect(lines).toContain('Cycling · 60 min · 5 exercises / 15 sets · sRPE 6 · reduced · planned: Endurance ride');
+        expect(lines).toContain('Cycling · 60 min · 5 exercises / 15 sets · sRPE 6 · reduced · planned: Endurance ride (plan-1@2:s1 → occ-1)');
         expect(lines).toContain('detail: copy the session report from History');
     });
 
     it('prints absent yesterday parts as not recorded', () => {
         const { lines } = renderTodaySections(build());
-        expect(lines).toContain('Cycling · 60 min · structuredEntries: not_yet_supported · sRPE 6 · executedDefinition: unavailable · planned: Endurance ride');
+        expect(lines).toContain('Cycling · 60 min · structuredEntries: not_yet_supported · sRPE 6 · executedDefinition: unavailable · planned: Endurance ride (plan-1@2:s1 → occ-1)');
         expect(lines).not.toContain('detail: copy the session report from History');
     });
 
@@ -77,8 +90,8 @@ describe('renderTodaySections', () => {
         placements.items = [...placements.items, copy].reverse();
         const { lines } = renderTodaySections(ledger);
         const upcoming = lines.slice(lines.indexOf('## Upcoming (2026-11-21…2026-11-27)'));
-        expect(upcoming.indexOf('2026-11-21 Earlier ride [key] (planned)')).toBeGreaterThan(0);
-        expect(upcoming.indexOf('2026-11-21 Earlier ride [key] (planned)')).toBeLessThan(upcoming.indexOf('2026-11-22 Tempo intervals [key] (planned)'));
+        expect(upcoming.indexOf('2026-11-21 Earlier ride [key] (planned) plan-1@2:s5')).toBeGreaterThan(0);
+        expect(upcoming.indexOf('2026-11-21 Earlier ride [key] (planned) plan-1@2:s5')).toBeLessThan(upcoming.indexOf('2026-11-22 Tempo intervals [key] (planned) plan-1@2:s3'));
         expect(upcoming).toContain('summary: 3x10 min at tempo');
         expect(upcoming).toContain('note: Stay seated');
         expect(upcoming).toContain('note: Cadence 90');
@@ -93,14 +106,14 @@ describe('renderTodaySections', () => {
             }
         }
         const { lines } = renderTodaySections(ledger);
-        expect(lines).toContain('2026-11-22 (planned)');
+        expect(lines).toContain('2026-11-22 (planned) plan-1@2:s3');
         expect(lines.filter(line => line === 'content: invalid').length).toBeGreaterThan(0);
     });
 
     it("shows today's placement under Today only", () => {
         const out = renderLedgerExportCompact(build());
         const todayBlock = out.slice(out.indexOf('## Today'), out.indexOf('## Yesterday'));
-        expect(todayBlock).toContain('2026-11-20 Openers [support] (planned)');
+        expect(todayBlock).toContain('2026-11-20 Openers [support] (planned) plan-1@2:s4');
         expect(out.split('Openers').length - 1).toBe(1);
     });
 

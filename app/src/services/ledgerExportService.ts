@@ -41,7 +41,6 @@ function fromState<T>(result: DataState<T>, empty: T): Read<T> {
 const measured = <T,>(data: T): Read<T> => ({ data, state: 'measured' });
 export type LedgerExportRequest = Pick<BuildLedgerExportInput, 'asOfDate' | 'purpose' | 'window' | 'legacyEngine'> & { exportedAt?: string };
 
-/** User-initiated, read-only assembly. No default migration, reconciliation, or engine evaluation. */
 /** Maps the authored session fields the export carries; absent optional text stays absent. */
 type StoredPlanSession = ExternalPlanSession | ExternalPlanSessionV2 | ExternalPlanSessionV4;
 
@@ -61,6 +60,7 @@ function toSessionContent(session: StoredPlanSession): PlanSessionContentInput {
     };
 }
 
+/** User-initiated, read-only assembly. No default migration, reconciliation, or engine evaluation. */
 export class LedgerExportService {
     async build(userId: string, request: LedgerExportRequest): Promise<LedgerExport> {
         if (!userId.trim() || userId.includes('/')) throw new Error('A user-scoped ledger export requires a user id');
