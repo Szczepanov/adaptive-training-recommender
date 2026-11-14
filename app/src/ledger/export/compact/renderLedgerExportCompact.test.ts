@@ -79,11 +79,32 @@ describe('renderLedgerExportCompact', () => {
         ledger.flags = [flag('illness_anomaly', '2026-11-19'), flag('illness_anomaly', '2026-11-20'),
             flag('recovery_beyond_baseline', '2026-11-20', { active: true, threshold: 't' })];
         const out = renderLedgerExportCompact(ledger);
-        expect(out).toContain('flags: recovery_beyond_baseline active');
+        expect(out).toContain('flags: illness_anomaly inactive; recovery_beyond_baseline active');
         expect(out).not.toContain('illness_anomaly: inactive 2026-11-20');
         expect(out).toContain('#### recovery_beyond_baseline (2026-11-20)');
         ledger.flags = [flag('illness_anomaly', '2026-11-20')];
         expect(renderLedgerExportCompact(ledger)).toContain('flags: only 2026-11-20 evaluated (see Today)');
+    });
+
+    it("lists every flag evaluated today in Today, inactive ones not repeated in Flags", () => {
+        const ledger = buildLedgerExport(fullInput());
+        ledger.flags = [flag('illness_anomaly', '2026-11-20'),
+            flag('recovery_beyond_baseline', '2026-11-20', { active: true, threshold: 't' }),
+            flag('illness_risk_symptom', '2026-11-20', { active: null, state: 'unavailable' })];
+        const out = renderLedgerExportCompact(ledger);
+        expect(out).toContain('flags: illness_anomaly inactive; recovery_beyond_baseline active; illness_risk_symptom unknown (unavailable)');
+        expect(out).not.toContain('illness_anomaly: inactive');
+    });
+
+    it('prints not recorded for a measured but empty yesterday value', () => {
+        const ledger = buildLedgerExport(fullInput());
+        const fields = ledger.facts.performedTraining.items[0].fields;
+        fields.structuredEntries = { value: null, source: 'adaptive', state: 'measured' };
+        fields.executedDefinitions = { value: [], source: 'adaptive', state: 'measured' };
+        const out = renderLedgerExportCompact(ledger);
+        expect(out).toContain('structuredEntries: not recorded');
+        expect(out).toContain('executedDefinition: not recorded');
+        expect(out).not.toContain('structuredEntries: measured');
     });
 
     it('labels totalSteps as D-1', () => {

@@ -15,10 +15,12 @@ export interface TodaySections {
 function flagsLine(flags: LedgerFlag[], date: string): string {
     const today = flags.filter(flag => flag.observedOn === date);
     if (!today.length) return `flags: none evaluated for ${text(date)}`;
-    const active = today.filter(flag => flag.active === true).map(flag => `${text(flag.id)} active${flag.state === 'measured' ? '' : ` (${text(flag.state)})`}`);
-    const unknown = today.filter(flag => flag.active !== true && (flag.active === null || flag.state !== 'measured'))
-        .map(flag => `${text(flag.id)} unknown (${text(flag.state)})`);
-    return `flags: ${[...active, ...unknown].join('; ') || 'none active'}`;
+    const label = (flag: LedgerFlag) => {
+        const note = flag.state === 'measured' ? '' : ` (${text(flag.state)})`;
+        if (flag.active === true) return `active${note}`;
+        return flag.active === false ? `inactive${note}` : `unknown (${text(flag.state)})`;
+    };
+    return `flags: ${today.map(flag => `${text(flag.id)} ${label(flag)}`).join('; ')}`;
 }
 
 const placementDate = (ledger: LedgerExport, date: string) => ledger.coachingHistory.placements.items.filter(row => row.observedOn === date);

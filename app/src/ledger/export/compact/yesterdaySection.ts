@@ -18,6 +18,9 @@ function plannedTitle(ledger: LedgerExport, occurrenceId: string, consumed: Set<
     return `planned: ${text(sessionId.value)} (title: ${text(title?.state ?? 'unavailable')})`;
 }
 
+/** The real state, or `not recorded` when a measured value is null or empty. */
+const absent = (value: LedgerValue<unknown>) => (value.state === 'measured' ? 'not recorded' : text(value.state));
+
 function definitions(value: LedgerValue<unknown>): string | null {
     if (!Array.isArray(value.value)) return null;
     const names = [...new Set(value.value.map(item => (item as { executedDefinition?: string }).executedDefinition).filter(Boolean))];
@@ -30,11 +33,11 @@ function occurrenceLine(ledger: LedgerExport, row: LedgerExport['facts']['perfor
         .find(item => item.fields.occurrenceId.value === row.id && present(item.fields.sessionRpe))?.fields.sessionRpe;
     const counts = structuredEntries.value as { exerciseCount?: number; setCount?: number } | null;
     const parts = [
-        present(modality) ? text(modality.value) : `modality: ${text(modality.state)}`,
-        present(durationMin) ? `${text(durationMin.value)} min` : `durationMin: ${text(durationMin.state)}`,
-        counts ? `${text(counts.exerciseCount)} exercises / ${text(counts.setCount)} sets` : `structuredEntries: ${text(structuredEntries.state)}`,
+        present(modality) ? text(modality.value) : `modality: ${absent(modality)}`,
+        present(durationMin) ? `${text(durationMin.value)} min` : `durationMin: ${absent(durationMin)}`,
+        counts ? `${text(counts.exerciseCount)} exercises / ${text(counts.setCount)} sets` : `structuredEntries: ${absent(structuredEntries)}`,
         rpe ? `sRPE ${text(rpe.value)}` : 'sRPE: not recorded',
-        definitions(executedDefinitions) ?? `executedDefinition: ${text(executedDefinitions.state)}`,
+        definitions(executedDefinitions) ?? `executedDefinition: ${absent(executedDefinitions)}`,
         plannedTitle(ledger, row.id, consumed),
     ];
     return [parts.join(' · '), ...(counts ? ['detail: copy the session report from History'] : [])];
