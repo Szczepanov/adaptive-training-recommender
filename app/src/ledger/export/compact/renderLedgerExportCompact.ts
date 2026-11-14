@@ -5,7 +5,7 @@ import type {
     LedgerValue, SourceState,
 } from '../schema.ts';
 import { collapsedLine, entryLines, type FieldEntry } from './compactLines.ts';
-import type { PreviousContext } from './previousContext.ts';
+import { contextDelta, type PreviousContext, unchangedLines, userContextItemHashes } from './previousContext.ts';
 import { renderTodaySections } from './todaySections.ts';
 
 export interface CompactRenderOptions {
@@ -145,13 +145,21 @@ function singletonLines(name: string, row: ContextRecord): string[] {
     return collapsed ? [collapsed] : [`### ${text(name)}`, ...entryLines(entries)];
 }
 
-export function userContextSection(ledger: LedgerExport): string[] {
+export function userContextSection(ledger: LedgerExport, previous?: PreviousContext): string[] {
+    const delta = previous ? contextDelta(userContextItemHashes(ledger), previous) : null;
+    const isUnchanged = (key: string) => delta?.unchangedKeys.has(key) ?? false;
     const body = Object.entries(ledger.userContext).flatMap(([name, context]): string[] => {
-        if ('items' in context) return collectionLines(name, context);
+        if ('items' in context) {
+            const rows = context as LedgerCollection<ContextRecord>;
+            const skip = new Set(rows.items.filter(row => isUnchanged(`${name}/${row.id}`)).map(row => row.id));
+            return collectionLines(name, rows, skip);
+        }
+        if (isUnchanged(name)) return [];
         if ('fields' in context) return singletonLines(name, context);
         return entryLines([[name, context as LedgerValue<unknown>]]);
     });
-    return ['## User context', ...body, ''];
+    const head = delta && previous ? unchangedLines(delta, previous) : [];
+    return ['## User context', ...head, ...body, ''];
 }
 
 export function coachingHistorySection(ledger: LedgerExport, skipIds: SkipIds = NO_SKIP): string[] {
@@ -170,7 +178,6 @@ function header(ledger: LedgerExport): string[] {
 
 /** Pure presentation of recorded ledger data, compact for pasting into a long-lived chat. */
 export function renderLedgerExportCompact(ledger: LedgerExport, options?: CompactRenderOptions): string {
-    void options; // Task 4 consumes previousContext.
     const today = renderTodaySections(ledger);
     const consumed = today.consumedIds;
     const lines = [
@@ -180,7 +187,7 @@ export function renderLedgerExportCompact(ledger: LedgerExport, options?: Compac
         ...flagsSection(ledger),
         ...factsSection(ledger, consumed),
         ...derivedSection(ledger),
-        ...userContextSection(ledger),
+        ...userContextSection(ledger, options?.previousContext),
         ...coachingHistorySection(ledger, consumed),
     ];
     if (ledger.legacyEngine !== null) lines.push('', '## Legacy engine (opt-in opinions)', text(ledger.legacyEngine));
