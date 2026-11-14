@@ -3,8 +3,8 @@ import { sessionResponseService } from '../services/sessionResponseService';
 import type { SessionExecution } from '../sessions/models';
 import { getCompletedWorkoutsInRange } from '../training-occurrence/activitiesReadModelService';
 import { addDaysToLocalDateString } from '../utils/localDate';
-import { copyDeferredText, StaleCopyError } from '../utils/copyDeferredText';
-import { loadLedgerSessionAiCopyText, WorkoutNotReadyError } from './ledgerSessionAiCopyText';
+import { copyDeferredText } from '../utils/copyDeferredText';
+import { copyFailureState, loadLedgerSessionAiCopyText } from './ledgerSessionAiCopyText';
 
 type CopyState = 'idle' | 'busy' | 'copied' | 'not_ready' | 'error';
 
@@ -38,8 +38,7 @@ export function LedgerSessionAiCopyButton({ userId, execution, title }: Props) {
       setState('copied');
       setTimeout(() => setState(curr => (curr === 'copied' ? 'idle' : curr)), 2000);
     } catch (err) {
-      if (err instanceof StaleCopyError) return; // a newer copy superseded this one
-      setState(err instanceof WorkoutNotReadyError ? 'not_ready' : 'error');
+      setState(copyFailureState(err));
     }
   };
 
