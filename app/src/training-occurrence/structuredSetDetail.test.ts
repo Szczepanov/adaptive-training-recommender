@@ -167,4 +167,64 @@ describe('buildStructuredStepDetails', () => {
         expect(extra?.sets.map(set => [set.entryId, set.setNumber])).toEqual([['x1', 1], ['x2', 2]]);
         expect(details.at(-1)?.stepId).toBe('added-abc');
     });
+
+    it('copies tempo and notes into the prescribed target', () => {
+        const def = {
+            ...definition,
+            blocks: [{ ...definition.blocks[0], steps: [
+                { id: 'squat', kind: 'exercise', title: 'Back Squat', dose: { kind: 'repetition', sets: 3, reps: 5 }, tempo: '31X0', notes: 'brace' },
+            ] }],
+        } as SessionDefinition;
+        const [squat] = buildStructuredStepDetails(def, [], []);
+        expect(squat.prescribed.tempo).toBe('31X0');
+        expect(squat.prescribed.notes).toBe('brace');
+    });
+
+    it('attaches a choice entry to its step with label and reason', () => {
+        const def = {
+            ...definition,
+            blocks: [{ ...definition.blocks[0], optionSets: [{
+                id: 'c1',
+                appliesAtStepId: 'squat',
+                trigger: { kind: 'athlete_observed', description: 'knee pain' },
+                options: [{ id: 'o2', label: 'Goblet squat', actions: [] }],
+            }] }],
+        } as SessionDefinition;
+        const completedAt = '2026-08-26T07:01:00.000Z';
+        const choice = {
+            id: 'ch-1',
+            executionId: 'exec-1',
+            completedAt,
+            createdAt: completedAt,
+            updatedAt: completedAt,
+            payload: { kind: 'choice', choiceId: 'c1', optionId: 'o2', reason: 'knee' },
+        } as SessionEntry;
+        const squat = buildStructuredStepDetails(def, [choice], []).find(step => step.stepId === 'squat');
+        expect(squat?.choices).toEqual([{ choiceId: 'c1', optionId: 'o2', optionLabel: 'Goblet squat', reason: 'knee', completedAt }]);
+        expect(squat?.sets).toEqual([]);
+    });
+
+    it('excludes tombstoned entries from sets and choices', () => {
+        const def = {
+            ...definition,
+            blocks: [{ ...definition.blocks[0], optionSets: [{
+                id: 'c1',
+                appliesAtStepId: 'squat',
+                trigger: { kind: 'athlete_observed', description: 'x' },
+                options: [{ id: 'o2', label: 'Goblet squat', actions: [] }],
+            }] }],
+        } as SessionDefinition;
+        const deletedAt = '2026-11-14T10:00:00Z';
+        const choice = {
+            id: 'ch-1', executionId: 'exec-1', completedAt: '2026-08-26T07:01:00.000Z',
+            createdAt: '2026-08-26T07:01:00.000Z', updatedAt: deletedAt, deletedAt,
+            payload: { kind: 'choice', choiceId: 'c1', optionId: 'o2' },
+        } as SessionEntry;
+        const [squat] = buildStructuredStepDetails(def, [
+            { ...repEntry('gone', '2026-08-26T07:05:00.000Z', 5, 100), deletedAt },
+            choice,
+        ], []);
+        expect(squat.sets).toEqual([]);
+        expect(squat.choices).toBeUndefined();
+    });
 });

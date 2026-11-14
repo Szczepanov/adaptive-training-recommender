@@ -30,6 +30,17 @@ export interface PrescribedStepTarget {
     load?: SessionLoad;
     effort?: SessionEffort;
     restSeconds?: RangeOrNumber;
+    tempo?: string;
+    notes?: string;
+}
+
+/** An athlete's recorded choice (e.g. an exercise substitution) attached to the step it applies to. */
+export interface StepChoiceDetail {
+    choiceId: string;
+    optionId: string;
+    optionLabel?: string;
+    reason?: string;
+    completedAt: string;
 }
 
 export interface PerformedRestDetail {
@@ -68,6 +79,7 @@ export interface StructuredStepDetail {
     isOptional: boolean;
     prescribed: PrescribedStepTarget;
     sets: PerformedSetRow[];
+    choices?: StepChoiceDetail[];
 }
 
 function prescribedTarget(step: SessionStep): PrescribedStepTarget {
@@ -88,6 +100,8 @@ function prescribedTarget(step: SessionStep): PrescribedStepTarget {
     if (step.load) target.load = step.load;
     if (step.effort) target.effort = step.effort;
     if (step.rest !== undefined) target.restSeconds = step.rest;
+    if (step.tempo) target.tempo = step.tempo;
+    if (step.notes) target.notes = step.notes;
     return { sets, ...target };
 }
 
@@ -111,10 +125,11 @@ export function buildStructuredStepDetails(
         });
     }
 
+    const choicesByStepId = collectChoices(definition, entries);
     const entriesByStepId = new Map<string, SessionEntry[]>();
     for (const entry of entries) {
         // A recorded athlete choice is not performed work (mirrors comparePlannedVsPerformed).
-        if (!entry.stepId || entry.payload.kind === 'choice') continue;
+        if (entry.deletedAt || !entry.stepId || entry.payload.kind === 'choice') continue;
         const list = entriesByStepId.get(entry.stepId) ?? [];
         list.push(entry);
         entriesByStepId.set(entry.stepId, list);
@@ -134,6 +149,7 @@ export function buildStructuredStepDetails(
                 isOptional: !!step.optional,
                 prescribed: prescribedTarget(step),
                 sets: toSetRows(stepEntries, restByEntryId),
+                ...choicesField(choicesByStepId.get(step.id)),
             });
         }
     }
@@ -142,6 +158,37 @@ export function buildStructuredStepDetails(
         details.push(unplannedStepDetail(stepId, sortedByCompletion(stepEntries), restByEntryId));
     }
     return details;
+}
+
+function choicesField(choices: readonly StepChoiceDetail[] | undefined): { choices?: StepChoiceDetail[] } {
+    return choices && choices.length > 0 ? { choices: [...choices] } : {};
+}
+
+/** Choice entries keyed by the step they apply to: the entry's own step, else the step the
+ * matching option set is anchored at. Choices that resolve to no step are dropped. */
+function collectChoices(
+    definition: SessionDefinition,
+    entries: readonly SessionEntry[],
+): Map<string, StepChoiceDetail[]> {
+    const optionSets = definition.blocks.flatMap(block => block.optionSets ?? []);
+    const byStepId = new Map<string, StepChoiceDetail[]>();
+    for (const entry of sortedByCompletion(entries)) {
+        const payload = entry.payload;
+        if (entry.deletedAt || payload.kind !== 'choice') continue;
+        const optionSet = optionSets.find(set => set.id === payload.choiceId);
+        const stepId = entry.stepId ?? optionSet?.appliesAtStepId;
+        if (!stepId) continue;
+        const optionLabel = optionSet?.options.find(option => option.id === payload.optionId)?.label;
+        const detail: StepChoiceDetail = {
+            choiceId: payload.choiceId,
+            optionId: payload.optionId,
+            ...(optionLabel !== undefined ? { optionLabel } : {}),
+            ...(payload.reason !== undefined ? { reason: payload.reason } : {}),
+            completedAt: entry.completedAt,
+        };
+        byStepId.set(stepId, [...(byStepId.get(stepId) ?? []), detail]);
+    }
+    return byStepId;
 }
 
 function sortedByCompletion(entries: readonly SessionEntry[]): SessionEntry[] {
