@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { DataState } from '../engine/dataState';
 import type { DailyRecoverySnapshot, DailySubjectiveCheckin } from '../engine/models';
 import type { HealthAnomalyAssessmentRevision } from '../derived/flags/illnessAnomaly/healthAnomalyModels';
+import { VISIBLE_V1_HEALTH_ANOMALY_THRESHOLDS } from '../derived/flags/illnessAnomaly/healthAnomaly';
 import { HealthAnomalyService } from './healthAnomalyService';
 import { addDaysToLocalDateString } from '../utils/localDate';
 
@@ -157,5 +158,92 @@ describe('HealthAnomalyService composition', () => {
         await expect(service.assessAndPersist('u1', '2026-08-21', 'shadow-v1'))
             .rejects.toThrow('previous assessment unavailable');
         expect(store.persistImmutable).not.toHaveBeenCalled();
+    });
+
+    it('uses visible-v1 thresholds by default and persists insufficient_evidence when history is missing', async () => {
+        const recovery = {
+            getRecoverySnapshotState: vi.fn().mockResolvedValue(available(day('2026-08-21', 50, 60, 14))),
+            getRecoverySnapshotsInRangeState: vi.fn().mockResolvedValue({ status: 'MISSING' }),
+        };
+        const checkins = { getCheckinState: vi.fn().mockResolvedValue(available(checkin())) };
+        const blocks = { getBlocksInRangeState: vi.fn().mockResolvedValue({ status: 'MISSING' }) };
+        const store = {
+            getLatestForDate: vi.fn().mockResolvedValue(null),
+            persistImmutable: vi.fn().mockImplementation(async (value: HealthAnomalyAssessmentRevision) => value),
+        };
+        const service = new HealthAnomalyService(recovery as never, checkins as never, blocks as never, store as never);
+
+        const result = await service.assessAndPersist('u1', '2026-08-21', 'visible-v1', undefined, '2026-08-21T06:30:00Z');
+        expect(result).not.toBeNull();
+        expect(result?.revision.mode).toBe('visible-v1');
+        expect(result?.revision.thresholdPolicy).toEqual(VISIBLE_V1_HEALTH_ANOMALY_THRESHOLDS);
+        expect(result?.assessment.state).toBe('insufficient_evidence');
+        expect(result?.assessment.earlyResponse).toBeDefined();
+    });
+
+    it('carries persistenceDays for physiological trace while keeping priorUnexplainedDays at zero after an explained strain day', async () => {
+        const current = day('2026-08-21', 56, 60, 14);
+        const history = Array.from({ length: 20 }, (_, index) => {
+            const date = addDaysToLocalDateString('2026-08-01', index);
+            return day(date, 49 + (index % 4), 56 + (index % 8), 13.8 + (index % 5) * 0.1);
+        });
+        const recovery = {
+            getRecoverySnapshotState: vi.fn().mockResolvedValue(available(current, 'current-rev')),
+            getRecoverySnapshotsInRangeState: vi.fn().mockResolvedValue(available(history, 'history-rev')),
+        };
+        const checkins = { getCheckinState: vi.fn().mockResolvedValue(available(checkin(), 'checkin-rev')) };
+        const blocks = { getBlocksInRangeState: vi.fn().mockResolvedValue(available([], 'travel-rev')) };
+        const priorExplained: HealthAnomalyAssessmentRevision = {
+            schemaVersion: 1,
+            userId: 'u1',
+            date: '2026-08-20',
+            revisionId: 'ha-0123456789abcdef',
+            idempotencyKey: '2026-08-20:0123456789abcdef',
+            computedAt: '2026-08-20T06:30:00Z',
+            policyVersion: 'health-anomaly/ha9-respiration-shadow-v1',
+            thresholdPolicy: VISIBLE_V1_HEALTH_ANOMALY_THRESHOLDS,
+            mode: 'visible-v1',
+            source: {
+                timezone: 'Europe/Warsaw',
+                recoverySnapshotRevision: 'r1',
+                checkinRevision: 'c1',
+                historyWindowStart: '2026-07-23',
+                historyWindowEndExclusive: '2026-08-20',
+                historySnapshotRevisions: [],
+                travelContextRevision: null,
+                persistenceLookbackStart: '2026-08-19',
+            },
+            assessment: {
+                state: 'explained_recovery_strain',
+                evidenceLevel: 'moderate',
+                coreSignals: [
+                    { signal: 'rhr', estimator: 'mean-stdev-28d', direction: 'high', status: 'moderate_anomaly', currentValue: 55, baselineValue: 50, scaleValue: 2.5, standardizedDeviation: 2.0, baselineVersion: 5 },
+                    { signal: 'respiration', estimator: 'median-mad-28d', direction: 'high', status: 'normal', currentValue: 14, baselineValue: 14, scaleValue: 0.5, standardizedDeviation: 0, baselineVersion: 5 },
+                    { signal: 'hrv', estimator: 'log-mean-stdev-28d', direction: 'low', status: 'normal', currentValue: 60, baselineValue: 60, scaleValue: 5, standardizedDeviation: 0, baselineVersion: 5 },
+                ],
+                supportingSignals: [],
+                explanations: [{ kind: 'hard_training', strength: 'strong', explainsSignals: ['rhr'], evidence: ['hard session yesterday'] }],
+                unexplainedEvidence: [],
+                persistenceDays: 1,
+                unexplainedPersistenceDays: 0,
+                episodeId: 'ep-1',
+                episodeDay: 1,
+                dataQuality: [],
+                rationale: { facts: [], explanations: [], cautions: [] },
+                policyVersion: 'health-anomaly/ha9-respiration-shadow-v1',
+                thresholdPolicyVersion: VISIBLE_V1_HEALTH_ANOMALY_THRESHOLDS.policyVersion,
+                mode: 'visible-v1',
+            },
+        };
+        const store = {
+            getLatestForDate: vi.fn().mockResolvedValue(priorExplained),
+            persistImmutable: vi.fn().mockImplementation(async (value: HealthAnomalyAssessmentRevision) => value),
+        };
+        const service = new HealthAnomalyService(recovery as never, checkins as never, blocks as never, store as never);
+
+        const result = await service.assessAndPersist('u1', '2026-08-21', 'visible-v1', undefined, '2026-08-21T06:30:00Z');
+        expect(result?.assessment.persistenceDays).toBe(2);
+        expect(result?.assessment.unexplainedPersistenceDays).toBe(1);
+        expect(result?.assessment.state).toBe('watch_unexplained');
     });
 });

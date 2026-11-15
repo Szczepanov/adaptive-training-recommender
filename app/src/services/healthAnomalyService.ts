@@ -3,6 +3,7 @@ import {
     evaluatePhysiologicalAnomaly,
     isAdverseCoreSignalEvidence,
     SHADOW_V1_HEALTH_ANOMALY_THRESHOLDS,
+    VISIBLE_V1_HEALTH_ANOMALY_THRESHOLDS,
 } from '../derived/flags/illnessAnomaly/healthAnomaly';
 import { HEALTH_ANOMALY_BASELINE_WINDOW_DAYS, mapRecoverySnapshotToHealthAnomalyFeatures } from '../derived/flags/illnessAnomaly/healthAnomalyFeatures';
 import type {
@@ -86,7 +87,9 @@ export class HealthAnomalyService {
         userId: string,
         date: string,
         policy: HealthAnomalyPolicy,
-        thresholds: HealthAnomalyThresholdPolicy = SHADOW_V1_HEALTH_ANOMALY_THRESHOLDS,
+        thresholds: HealthAnomalyThresholdPolicy = policy === 'visible-v1'
+            ? VISIBLE_V1_HEALTH_ANOMALY_THRESHOLDS
+            : SHADOW_V1_HEALTH_ANOMALY_THRESHOLDS,
         computedAt: string = new Date().toISOString(),
     ): Promise<HealthAnomalyServiceResult | null> {
         if (policy === 'off') return null;
@@ -135,6 +138,11 @@ export class HealthAnomalyService {
                 unexplainedPersistenceDays: previousAssessment
                     && previousAssessment.assessment.coreSignals.some(isAdverseCoreSignalEvidence)
                     ? previousAssessment.assessment.persistenceDays
+                    : 0,
+                priorUnexplainedDays: previousAssessment
+                    && previousAssessment.assessment.unexplainedEvidence.length > 0
+                    ? (previousAssessment.assessment.unexplainedPersistenceDays
+                        ?? previousAssessment.assessment.persistenceDays)
                     : 0,
             },
         };

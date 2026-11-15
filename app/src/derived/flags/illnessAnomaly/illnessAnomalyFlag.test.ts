@@ -62,7 +62,7 @@ describe('evaluateIllnessAnomalyFlag', () => {
         });
     });
 
-    it.each<PhysiologicalAnomalyState>(['normal', 'symptoms_reported'])(
+    it.each<PhysiologicalAnomalyState>(['normal', 'symptoms_reported', 'insufficient_evidence'])(
         'reports %s with no core signal as missing, never as a measured negative',
         state => {
             expect(evaluateIllnessAnomalyFlag(assessmentIn(state, 0))).toMatchObject({
@@ -74,6 +74,14 @@ describe('evaluateIllnessAnomalyFlag', () => {
             });
         },
     );
+
+    it('maps insufficient_evidence assessments to missing even if signal list is non-empty', () => {
+        expect(evaluateIllnessAnomalyFlag(assessmentIn('insufficient_evidence', 1))).toMatchObject({
+            active: null,
+            state: 'missing',
+            reasonCode: 'no_core_signals',
+        });
+    });
 
     it('records partial core-signal coverage on a measured result', () => {
         expect(evaluateIllnessAnomalyFlag(assessmentIn('normal', 1))).toMatchObject({

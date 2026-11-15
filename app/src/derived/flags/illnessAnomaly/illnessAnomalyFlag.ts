@@ -28,8 +28,8 @@ export function evaluateIllnessAnomalyFlag(assessment: PhysiologicalAnomalyAsses
             threshold: null,
         };
     }
-    // The evaluator reports 'normal' when every core signal is unavailable; that is "nothing
-    // measured", not "measured and clear", so it must not read as a negative (D-EXPORT).
+    // When every core signal is unavailable (or the assessment reports insufficient_evidence),
+    // treat the flag as missing rather than a measured negative (D-EXPORT).
     const availableCoreSignals = assessment.coreSignals.filter(signal => signal.status !== 'unavailable').length;
     const inputs: FlagEvaluation['inputs'] = [
         { name: 'anomaly_state', value: { value: assessment.state, source: ASSESSMENT_SOURCE, state: 'measured' } },
@@ -39,7 +39,7 @@ export function evaluateIllnessAnomalyFlag(assessment: PhysiologicalAnomalyAsses
     const definitionVersion = `${ILLNESS_ANOMALY_FLAG_DEFINITION_VERSION}+${assessment.thresholdPolicyVersion}`;
     const threshold = 'Active when the physiological anomaly state is possible_illness_or_systemic_stress '
         + `(persistent unexplained multi-signal anomaly) under ${assessment.thresholdPolicyVersion}`;
-    if (availableCoreSignals === 0) {
+    if (assessment.state === 'insufficient_evidence' || availableCoreSignals === 0) {
         return {
             id: 'illness_anomaly',
             active: null,

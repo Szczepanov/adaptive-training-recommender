@@ -2230,13 +2230,16 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
       // that the TypeScript guard does not enforce stay here (a non-number fails them).
       function hasValidHealthAnomalyThresholdPolicy(policy) {
         return policy is map
-          && policy.keys().hasOnly(['policyVersion', 'moderateDeviation', 'strongDeviation', 'minimumCoreSignalsForMultiSignal', 'persistenceDaysForEscalation', 'minimumHistoryCount', 'minimumRecentDayCoverage', 'maxBaselineAgeDays', 'estimatorBySignal'])
+          && policy.keys().hasOnly(['policyVersion', 'moderateDeviation', 'strongDeviation', 'minimumCoreSignalsForMultiSignal', 'persistenceDaysForEscalation', 'minimumHistoryCount', 'minimumRecentDayCoverage', 'maxBaselineAgeDays', 'estimatorBySignal', 'emergingHistoryCount', 'allowFirstNightMultiDomainEscalation', 'downgradeResolvingRespiration'])
           && isBoundedString(policy.policyVersion, 128)
           && policy.moderateDeviation <= 20
           && policy.strongDeviation <= 20
           && policy.persistenceDaysForEscalation <= 30
           && policy.minimumHistoryCount <= 28
           && policy.maxBaselineAgeDays <= 30
+          && (!('emergingHistoryCount' in policy) || (policy.emergingHistoryCount is int && policy.emergingHistoryCount >= 1 && policy.emergingHistoryCount <= 28))
+          && (!('allowFirstNightMultiDomainEscalation' in policy) || policy.allowFirstNightMultiDomainEscalation is bool)
+          && (!('downgradeResolvingRespiration' in policy) || policy.downgradeResolvingRespiration is bool)
           && policy.estimatorBySignal is map
           && policy.estimatorBySignal.keys().hasOnly(['rhr', 'respiration', 'hrv'])
           && policy.estimatorBySignal.keys().hasAll(['rhr', 'respiration', 'hrv']);
@@ -2263,20 +2266,31 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
           && source.historySnapshotRevisions is list && source.historySnapshotRevisions.size() <= 28
           && isValidActivityDate(source.persistenceLookbackStart)
           && assessment is map
-          && assessment.keys().hasOnly(['state', 'evidenceLevel', 'coreSignals', 'supportingSignals', 'explanations', 'unexplainedEvidence', 'persistenceDays', 'episodeId', 'episodeDay', 'dataQuality', 'rationale', 'respirationElevation', 'policyVersion', 'thresholdPolicyVersion', 'mode'])
+          && assessment.keys().hasOnly(['state', 'evidenceLevel', 'coreSignals', 'supportingSignals', 'explanations', 'unexplainedEvidence', 'persistenceDays', 'unexplainedPersistenceDays', 'episodeId', 'episodeDay', 'dataQuality', 'rationale', 'respirationElevation', 'calibrationStage', 'anomalySeverity', 'evidenceQuality', 'earlyResponse', 'activityMatchedExpectations', 'personalCalibration', 'policyVersion', 'thresholdPolicyVersion', 'mode'])
           && assessment.keys().hasAll(['state', 'evidenceLevel', 'coreSignals', 'supportingSignals', 'explanations', 'unexplainedEvidence', 'persistenceDays', 'episodeId', 'episodeDay', 'dataQuality', 'rationale', 'policyVersion', 'thresholdPolicyVersion', 'mode'])
           && assessment.coreSignals is list && assessment.coreSignals.size() == 3
           && assessment.supportingSignals is list && assessment.supportingSignals.size() <= 32
           && assessment.explanations is list && assessment.explanations.size() <= 32
           && assessment.unexplainedEvidence is list && assessment.unexplainedEvidence.size() <= 3
           && assessment.persistenceDays <= 365
+          && (!('unexplainedPersistenceDays' in assessment) || (assessment.unexplainedPersistenceDays is int && assessment.unexplainedPersistenceDays >= 0 && assessment.unexplainedPersistenceDays <= 365))
           && (assessment.episodeId == null || (assessment.episodeId is string && assessment.episodeId.size() <= 160))
           && (assessment.episodeDay == null || assessment.episodeDay <= 365)
           && assessment.dataQuality is list && assessment.dataQuality.size() <= 3
           && assessment.rationale is map
           // Keep the server boundary bounded; the application parser validates every scalar.
           && (!('respirationElevation' in assessment)
-            || (assessment.respirationElevation is map && assessment.respirationElevation.size() <= 11));
+            || (assessment.respirationElevation is map && assessment.respirationElevation.size() <= 11))
+          && (!('calibrationStage' in assessment) || isBoundedString(assessment.calibrationStage, 64))
+          && (!('anomalySeverity' in assessment) || isBoundedString(assessment.anomalySeverity, 32))
+          && (!('evidenceQuality' in assessment) || isBoundedString(assessment.evidenceQuality, 64))
+          && (!('earlyResponse' in assessment)
+            || (assessment.earlyResponse is map && assessment.earlyResponse.size() <= 12))
+          && (!('activityMatchedExpectations' in assessment)
+            || (assessment.activityMatchedExpectations is list && assessment.activityMatchedExpectations.size() <= 3))
+          && (!('personalCalibration' in assessment)
+            || assessment.personalCalibration == null
+            || (assessment.personalCalibration is map && assessment.personalCalibration.size() <= 12));
       }
 
       allow read: if isOwner(userId);

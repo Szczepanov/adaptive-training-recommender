@@ -19,24 +19,6 @@ export interface SessionFlagInput {
     evaluation: FlagEvaluation;
 }
 
-const DEFAULT_HA7_WITHHELD_ITEM: FlagStripItem = {
-    id: 'illness_anomaly',
-    active: null,
-    state: 'not_yet_supported',
-    reasonCode: 'ha7_release_gate_unmet',
-    threshold: 'Withheld until the HA7 release gate is met',
-    inputs: [
-        {
-            name: 'ha7_release_gate',
-            value: {
-                value: 'unmet',
-                source: 'health_anomaly_assessment',
-                state: 'not_yet_supported',
-            },
-        },
-    ],
-};
-
 function notRecordedItem(id: LedgerFlagId): FlagStripItem {
     return {
         id,
@@ -56,13 +38,6 @@ function toStripItem(
     const resolvedRef = sessionRef ?? ('sessionRef' in evaluation ? evaluation.sessionRef : undefined);
     // Internal capture digest is for idempotency auditing, not athlete display.
     const visibleInputs = evaluation.inputs.filter(input => input.name !== 'source_revision');
-    if (evaluation.id === 'illness_anomaly') {
-        return {
-            ...DEFAULT_HA7_WITHHELD_ITEM,
-            ...(resolvedRef ? { sessionRef: resolvedRef } : {}),
-            ...(sessionTitle ? { sessionTitle } : {}),
-        };
-    }
     return {
         id: evaluation.id,
         active: evaluation.active,
@@ -93,9 +68,8 @@ function latestByKey(
  * Resolves the deterministic ordered list of D-FLAGS for `FlagStrip` on today's
  * ledger card or session launch screen.
  *
- * - Date-scoped flags (`recovery_beyond_baseline`, `illness_risk_symptom`) use the
+ * - Date-scoped flags (`recovery_beyond_baseline`, `illness_risk_symptom`, `illness_anomaly`) use the
  *   latest captured evaluation for today, or an explicit `not_recorded` entry.
- * - `illness_anomaly` is always rendered as `not_yet_supported` (HA7 withheld).
  * - `injury_constraint_touches_session`: when `sessionEvaluations` are provided
  *   (e.g. today's planned sessions on `LedgerTodayCard` or the previewed session on
  *   `SessionRunner`), emits one entry per session (preferring a matching captured
@@ -106,6 +80,7 @@ export function resolveTodayFlagStripItems(options: {
     capturedFlags?: readonly PersistedFlagEvaluation[];
     sessionEvaluations?: readonly SessionFlagInput[];
     fallbackIllnessRisk?: FlagEvaluation | null;
+    fallbackIllnessAnomaly?: FlagEvaluation | null;
 }): FlagStripItem[] {
     const latest = latestByKey(options.capturedFlags ?? []);
     const items: FlagStripItem[] = [];
@@ -122,7 +97,14 @@ export function resolveTodayFlagStripItems(options: {
         items.push(notRecordedItem('illness_risk_symptom'));
     }
 
-    items.push(DEFAULT_HA7_WITHHELD_ITEM);
+    const illnessAnomaly = latest.get('illness_anomaly::');
+    if (illnessAnomaly) {
+        items.push(toStripItem(illnessAnomaly));
+    } else if (options.fallbackIllnessAnomaly) {
+        items.push(toStripItem(options.fallbackIllnessAnomaly));
+    } else {
+        items.push(notRecordedItem('illness_anomaly'));
+    }
 
     if (options.sessionEvaluations && options.sessionEvaluations.length > 0) {
         for (const session of options.sessionEvaluations) {

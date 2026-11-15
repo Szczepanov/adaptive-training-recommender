@@ -3,13 +3,19 @@ import {
     type ContextExplanation,
     type CoreSignalDataQuality,
     type CoreSignalEvidence,
+    type EarlyResponseProtocol,
+    type HealthAnomalyCalibrationStage,
+    type HealthAnomalyEvidenceQuality,
     type HealthAnomalyInput,
     type HealthAnomalyPolicy,
     type HealthAnomalyRationaleFact,
+    type HealthAnomalySeverity,
     type HealthAnomalyThresholdPolicy,
     type HealthCoreSignal,
     type HealthCoreSignalFeatures,
+    type HealthSignalFeatureCandidate,
     type PhysiologicalAnomalyAssessment,
+    type PhysiologicalAnomalyState,
     type SupportingSignalEvidence,
 } from './healthAnomalyModels';
 import { evaluateRespirationElevation } from './respirationElevation';
@@ -31,6 +37,26 @@ export const SHADOW_V1_HEALTH_ANOMALY_THRESHOLDS: HealthAnomalyThresholdPolicy =
         respiration: 'median-mad-28d',
         hrv: 'log-mean-stdev-28d',
     },
+};
+
+/** Calibrated thresholds for visible non-diagnostic early warnings and replay comparison. */
+export const VISIBLE_V1_HEALTH_ANOMALY_THRESHOLDS: HealthAnomalyThresholdPolicy = {
+    policyVersion: 'health-anomaly-thresholds/visible-early-warning-v1',
+    moderateDeviation: 1.5,
+    strongDeviation: 2.5,
+    minimumCoreSignalsForMultiSignal: 2,
+    persistenceDaysForEscalation: 2,
+    minimumHistoryCount: 14,
+    minimumRecentDayCoverage: 4 / 7,
+    maxBaselineAgeDays: 3,
+    estimatorBySignal: {
+        rhr: 'mean-stdev-28d',
+        respiration: 'median-mad-28d',
+        hrv: 'log-mean-stdev-28d',
+    },
+    emergingHistoryCount: 7,
+    allowFirstNightMultiDomainEscalation: true,
+    downgradeResolvingRespiration: true,
 };
 
 const CORE_SIGNALS: readonly HealthCoreSignal[] = ['rhr', 'respiration', 'hrv'];
@@ -65,6 +91,15 @@ export function isHealthAnomalyThresholdPolicy(value: unknown): value is HealthA
     if (!value || typeof value !== 'object') return false;
     const policy = value as Partial<HealthAnomalyThresholdPolicy>;
     const estimators = policy.estimatorBySignal;
+    const emergingValid = policy.emergingHistoryCount === undefined || (
+        Number.isInteger(policy.emergingHistoryCount)
+        && policy.emergingHistoryCount >= 1
+        && policy.emergingHistoryCount <= (policy.minimumHistoryCount ?? 0)
+    );
+    const firstNightValid = policy.allowFirstNightMultiDomainEscalation === undefined
+        || typeof policy.allowFirstNightMultiDomainEscalation === 'boolean';
+    const resolvingValid = policy.downgradeResolvingRespiration === undefined
+        || typeof policy.downgradeResolvingRespiration === 'boolean';
     return typeof policy.policyVersion === 'string'
         && policy.policyVersion.length > 0
         && typeof policy.moderateDeviation === 'number'
@@ -86,6 +121,9 @@ export function isHealthAnomalyThresholdPolicy(value: unknown): value is HealthA
         && policy.minimumRecentDayCoverage <= 1
         && Number.isInteger(policy.maxBaselineAgeDays)
         && (policy.maxBaselineAgeDays ?? -1) >= 0
+        && emergingValid
+        && firstNightValid
+        && resolvingValid
         && !!estimators
         && typeof estimators === 'object'
         && ['mean-stdev-28d', 'median-mad-28d', 'log-mean-stdev-28d'].includes(estimators.rhr)
@@ -119,80 +157,119 @@ function qualityForSignal(
     return feature?.dataQuality ?? input.dataQuality.find(item => item.signal === signal) ?? null;
 }
 
+function isUsableCandidate(candidate: HealthSignalFeatureCandidate | undefined): candidate is HealthSignalFeatureCandidate {
+    return !!candidate
+        && candidate.status === 'available'
+        && candidate.standardizedDeviation !== null
+        && Number.isFinite(candidate.standardizedDeviation);
+}
+
+function selectSignalCandidate(
+    feature: HealthCoreSignalFeatures,
+    preferredEstimator: HealthAnomalyThresholdPolicy['estimatorBySignal'][HealthCoreSignal],
+    emergingBaseline: boolean,
+): HealthSignalFeatureCandidate | undefined {
+    const preferred = feature.candidates.find(item => item.estimator === preferredEstimator);
+    if (!emergingBaseline || isUsableCandidate(preferred)) {
+        return preferred;
+    }
+    return feature.candidates.find(
+        item => (item.estimator === 'mean-stdev-28d' || item.estimator === 'median-mad-28d')
+            && isUsableCandidate(item),
+    ) ?? preferred;
+}
+
 function categorizeSignal(
     input: HealthAnomalyInput,
     signal: HealthCoreSignal,
     thresholds: HealthAnomalyThresholdPolicy,
-): CoreSignalEvidence {
+): { evidence: CoreSignalEvidence; usedEmergingBaseline: boolean } {
     const feature = featuresForSignal(input, signal);
     if (!feature) {
-        return input.coreSignals.find(item => item.signal === signal) ?? unavailableEvidence(signal);
+        const evidence = input.coreSignals.find(item => item.signal === signal) ?? unavailableEvidence(signal);
+        const quality = qualityForSignal(input, signal, null);
+        const usedEmergingBaseline = evidence.status !== 'unavailable'
+            && quality !== null
+            && thresholds.emergingHistoryCount !== undefined
+            && quality.historyCount >= thresholds.emergingHistoryCount
+            && quality.historyCount < thresholds.minimumHistoryCount;
+        return { evidence, usedEmergingBaseline };
     }
 
-    const candidate = feature.candidates.find(
-        item => item.estimator === thresholds.estimatorBySignal[signal],
-    );
     const quality = qualityForSignal(input, signal, feature);
+    const isEmerging = quality !== null
+        && thresholds.emergingHistoryCount !== undefined
+        && quality.historyCount >= thresholds.emergingHistoryCount
+        && quality.historyCount < thresholds.minimumHistoryCount;
+    const candidate = selectSignalCandidate(feature, thresholds.estimatorBySignal[signal], isEmerging);
+    const hasEnoughHistory = quality !== null
+        && (quality.historyCount >= thresholds.minimumHistoryCount || isEmerging);
     if (
-        !candidate
-        || candidate.status !== 'available'
-        || candidate.standardizedDeviation === null
-        || !Number.isFinite(candidate.standardizedDeviation)
+        !isUsableCandidate(candidate)
         || !quality
         || quality.currentValueMissing
-        || quality.historyCount < thresholds.minimumHistoryCount
+        || !hasEnoughHistory
         || quality.recentDayCoverage < thresholds.minimumRecentDayCoverage
         || quality.baselineAgeDays === null
         || quality.baselineAgeDays > thresholds.maxBaselineAgeDays
     ) {
         return {
-            ...unavailableEvidence(signal),
-            currentValue: candidate?.currentValue ?? null,
-            baselineValue: candidate?.baselineValue ?? null,
-            scaleValue: candidate?.scaleValue ?? null,
-            estimator: candidate?.estimator ?? null,
-            baselineVersion: candidate?.baselineVersion ?? null,
+            evidence: {
+                ...unavailableEvidence(signal),
+                currentValue: candidate?.currentValue ?? null,
+                baselineValue: candidate?.baselineValue ?? null,
+                scaleValue: candidate?.scaleValue ?? null,
+                estimator: candidate?.estimator ?? null,
+                baselineVersion: candidate?.baselineVersion ?? null,
+            },
+            usedEmergingBaseline: false,
         };
     }
 
-    const deviation = candidate.standardizedDeviation;
+    const cutoffOffset = isEmerging ? 0.5 : 0;
+    const moderateDeviation = thresholds.moderateDeviation + cutoffOffset;
+    const strongDeviation = thresholds.strongDeviation + cutoffOffset;
+    const deviation = candidate.standardizedDeviation!;
     let status: CoreSignalEvidence['status'] = 'normal';
     let direction: CoreSignalEvidence['direction'] = null;
 
     if (signal === 'rhr' || signal === 'respiration') {
-        if (deviation >= thresholds.strongDeviation) {
+        if (deviation >= strongDeviation) {
             status = 'strong_anomaly';
             direction = 'high';
-        } else if (deviation >= thresholds.moderateDeviation) {
+        } else if (deviation >= moderateDeviation) {
             status = 'moderate_anomaly';
             direction = 'high';
         }
-    } else if (deviation <= -thresholds.strongDeviation) {
+    } else if (deviation <= -strongDeviation) {
         status = 'strong_anomaly';
         direction = 'low';
-    } else if (deviation <= -thresholds.moderateDeviation) {
+    } else if (deviation <= -moderateDeviation) {
         status = 'moderate_anomaly';
         direction = 'low';
-    } else if (deviation >= thresholds.strongDeviation) {
+    } else if (deviation >= strongDeviation) {
         // Retain unusually-high HRV as out-of-range telemetry without treating it as an
         // adverse illness vote. isAdverseCoreSignalEvidence deliberately excludes two_sided HRV.
         status = 'strong_anomaly';
         direction = 'two_sided';
-    } else if (deviation >= thresholds.moderateDeviation) {
+    } else if (deviation >= moderateDeviation) {
         status = 'moderate_anomaly';
         direction = 'two_sided';
     }
 
     return {
-        signal,
-        status,
-        direction,
-        currentValue: candidate.currentValue,
-        baselineValue: candidate.baselineValue,
-        scaleValue: candidate.scaleValue,
-        standardizedDeviation: deviation,
-        estimator: candidate.estimator,
-        baselineVersion: candidate.baselineVersion,
+        evidence: {
+            signal,
+            status,
+            direction,
+            currentValue: candidate.currentValue,
+            baselineValue: candidate.baselineValue,
+            scaleValue: candidate.scaleValue,
+            standardizedDeviation: deviation,
+            estimator: candidate.estimator,
+            baselineVersion: candidate.baselineVersion,
+        },
+        usedEmergingBaseline: isEmerging,
     };
 }
 
@@ -246,7 +323,10 @@ function addExplanation(
     explanations.push({ kind, strength, explainsSignals, evidence });
 }
 
-function resolveExplanations(input: HealthAnomalyInput): ContextExplanation[] {
+function resolveExplanations(
+    input: HealthAnomalyInput,
+    priorAdverseDays = 0,
+): ContextExplanation[] {
     const explanations: ContextExplanation[] = [];
     const snapshot = input.recoverySnapshot;
     const checkin = input.subjectiveCheckin;
@@ -312,11 +392,14 @@ function resolveExplanations(input: HealthAnomalyInput): ContextExplanation[] {
     if (health?.unusualHeatOrSauna === true && health.dehydrationOrFluidLoss === true) {
         addExplanation(explanations, 'dehydration', 'strong', ['rhr', 'hrv'], ['HEAT_WITH_FLUID_LOSS']);
     }
+    const multiDayConfounderStrength: ContextExplanation['strength'] = priorAdverseDays >= 2
+        ? 'moderate'
+        : 'strong';
     if (health?.recentVaccination === true) {
-        addExplanation(explanations, 'vaccination', 'strong', ['rhr', 'respiration', 'hrv'], ['RECENT_VACCINATION']);
+        addExplanation(explanations, 'vaccination', multiDayConfounderStrength, ['rhr', 'respiration', 'hrv'], ['RECENT_VACCINATION']);
     }
     if (health?.medicationChange === true) {
-        addExplanation(explanations, 'medication_change', 'strong', ['rhr', 'respiration', 'hrv'], ['MEDICATION_CHANGE']);
+        addExplanation(explanations, 'medication_change', multiDayConfounderStrength, ['rhr', 'respiration', 'hrv'], ['MEDICATION_CHANGE']);
     }
     if (health?.otherDisruption && health.otherDisruption.trim().length > 0) {
         // Presence only: free text remains opaque and is never parsed as evaluator evidence.
@@ -406,9 +489,12 @@ function episodeMetadata(
     input: HealthAnomalyInput,
     state: PhysiologicalAnomalyAssessment['state'],
 ): { episodeId: string | null; episodeDay: number | null } {
-    if (state === 'normal') return { episodeId: null, episodeDay: null };
+    if (state === 'normal' || state === 'insufficient_evidence') {
+        return { episodeId: null, episodeDay: null };
+    }
     const canContinue = input.persistence.previousState !== null
         && input.persistence.previousState !== 'normal'
+        && input.persistence.previousState !== 'insufficient_evidence'
         && input.persistence.previousEpisodeId !== null
         && isAdjacentDate(input.persistence.previousAssessmentDate, input.date);
     if (canContinue) {
@@ -418,6 +504,202 @@ function episodeMetadata(
         };
     }
     return { episodeId: `health-anomaly:${input.date}`, episodeDay: 1 };
+}
+
+function resolveCalibrationStage(
+    allCoreUnavailable: boolean,
+    anyEmergingAvailable: boolean,
+    anyReliableAvailable: boolean,
+    personalCalibration: HealthAnomalyInput['personalCalibration'],
+): HealthAnomalyCalibrationStage {
+    if (allCoreUnavailable) return 'insufficient_evidence';
+    if (anyEmergingAvailable && !anyReliableAvailable) return 'emerging_baseline';
+    if (personalCalibration?.calibrationEligible === true) return 'outcome_calibrated';
+    return 'reliable_baseline';
+}
+
+function resolveAnomalySeverity(
+    state: PhysiologicalAnomalyState,
+    adverseAnomalies: readonly CoreSignalEvidence[],
+    symptomsReported: boolean,
+    symptomsSeverity: 'mild' | 'moderate' | 'severe' | null,
+): HealthAnomalySeverity {
+    if (state === 'normal' || state === 'insufficient_evidence') return 'none';
+    const strongAdverseCount = adverseAnomalies.filter(item => item.status === 'strong_anomaly').length;
+    if (
+        state === 'possible_illness_or_systemic_stress'
+        || strongAdverseCount >= 2
+        || (symptomsReported && symptomsSeverity === 'severe')
+    ) {
+        return 'strong';
+    }
+    if (
+        strongAdverseCount === 1
+        || adverseAnomalies.length >= 2
+        || (symptomsReported && symptomsSeverity === 'moderate')
+    ) {
+        return 'moderate';
+    }
+    return 'mild';
+}
+
+function hasMultiDomainCoverage(signals: readonly CoreSignalEvidence[]): boolean {
+    const hasResp = signals.some(item => item.signal === 'respiration');
+    const hasAutonomic = signals.some(item => item.signal === 'rhr' || item.signal === 'hrv');
+    return hasResp && hasAutonomic;
+}
+
+function resolveEvidenceQuality(
+    allCoreUnavailable: boolean,
+    calibrationStage: HealthAnomalyCalibrationStage,
+    coreSignals: readonly CoreSignalEvidence[],
+    adverseAnomalies: readonly CoreSignalEvidence[],
+    unexplained: readonly CoreSignalEvidence[],
+): HealthAnomalyEvidenceQuality {
+    if (allCoreUnavailable) return 'insufficient';
+    if (calibrationStage === 'emerging_baseline') return 'emerging';
+
+    const target = unexplained.length > 0
+        ? unexplained
+        : adverseAnomalies.length > 0
+            ? adverseAnomalies
+            : coreSignals.filter(item => item.status !== 'unavailable');
+    if (hasMultiDomainCoverage(target)) return 'multi_domain_corroborated';
+    if (target.length >= 2) return 'correlated_autonomic_only';
+    return 'single_channel';
+}
+
+const NON_DIAGNOSTIC_NOTICE =
+    'Wearable recovery indicators reflect personal baseline comparisons for training planning only and are not a medical determination or clinical evaluation; seek healthcare guidance if you feel unwell.';
+
+const IOC_RED_FLAG_WARNINGS: readonly string[] = [
+    'Stop exercise and seek medical evaluation promptly if you notice fever, chills, chest pain or tightness, shortness of breath at rest or minimal effort, racing resting pulse, dizziness, or rapidly worsening symptoms.',
+    'Do not train through below-the-neck warning signs such as persistent cough, wheezing, chest discomfort, or marked fatigue with routine daily tasks.',
+];
+
+const THREE_STAGE_RETURN_TO_SPORT_GUIDANCE: readonly string[] = [
+    'Stage 1 (Symptom rest): Pause structured workouts while systemic symptoms remain active; prioritize sleep, fluids, and gentle daily movement only if comfortable.',
+    'Stage 2 (Easy re-entry): Once systemic symptoms have resolved and resting markers settle for 24-48 hours, test a brief easy aerobic session and verify next-morning recovery.',
+    'Stage 3 (Progressive build): Rebuild normal aerobic volume before reintroducing high-intensity intervals only after consecutive stable recovery mornings.',
+];
+
+export interface BuildEarlyResponseProtocolInput {
+    state: PhysiologicalAnomalyState;
+    unexplainedPersistenceDays: number;
+    anomalySeverity: HealthAnomalySeverity;
+    evidenceQuality: HealthAnomalyEvidenceQuality;
+    calibrationStage: HealthAnomalyCalibrationStage;
+}
+
+/**
+ * Pure builder mapping an anomaly assessment into graduated non-clinical athlete guidance.
+ */
+export function buildEarlyResponseProtocol(
+    input: BuildEarlyResponseProtocolInput,
+): EarlyResponseProtocol {
+    if (input.state === 'symptoms_reported') {
+        return {
+            level: 'level_3_symptoms_reported',
+            headline: 'Symptoms logged — prioritize recovery and rest',
+            summary: 'Active wellness symptoms were reported in your check-in. Pause hard training today, support sleep and hydration, and follow warning-sign precautions before resuming structured load.',
+            actions: [
+                'Replace structured or intense sessions with complete rest or very light mobility if comfortable.',
+                'Prioritize extended sleep, regular fluids, and nutrition while monitoring how symptoms change.',
+                'Re-check resting heart rate, breathing rate, and wellness symptoms tomorrow morning.',
+            ],
+            reassessTiming: 'Daily morning symptom and wearable check until symptom-free and baseline-settled for 24-48 hours.',
+            nonDiagnosticNotice: NON_DIAGNOSTIC_NOTICE,
+            redFlagWarnings: [...IOC_RED_FLAG_WARNINGS],
+            returnToSportGuidance: [...THREE_STAGE_RETURN_TO_SPORT_GUIDANCE],
+            followupPromptEligible: true,
+        };
+    }
+
+    if (input.state === 'possible_illness_or_systemic_stress') {
+        const persistentPhrase = input.unexplainedPersistenceDays > 1
+            ? 'Consecutive unexplained shifts across'
+            : 'Corroborated multi-domain shifts across';
+        return {
+            level: 'level_2_persistent_or_corroborated',
+            headline: 'Multi-domain or persistent physiological strain detected',
+            summary: `${persistentPhrase} your recovery channels sit well outside baseline without an explanatory training or lifestyle note.`,
+            actions: [
+                'Reduce today\'s training load to an easy recovery day or unscheduled rest day.',
+                'Log a quick symptom check-in so early wellness notes stay paired with wearable metrics.',
+                'Prioritize sleep and hydration, and defer high-intensity intervals until markers settle.',
+            ],
+            reassessTiming: 'Re-evaluate after tonight\'s sleep and morning check-in within 24 hours.',
+            nonDiagnosticNotice: NON_DIAGNOSTIC_NOTICE,
+            redFlagWarnings: [...IOC_RED_FLAG_WARNINGS],
+            returnToSportGuidance: input.anomalySeverity === 'strong'
+                ? [THREE_STAGE_RETURN_TO_SPORT_GUIDANCE[0]!, THREE_STAGE_RETURN_TO_SPORT_GUIDANCE[1]!]
+                : [THREE_STAGE_RETURN_TO_SPORT_GUIDANCE[1]!],
+            followupPromptEligible: true,
+        };
+    }
+
+    if (input.state === 'watch_unexplained') {
+        const baselineCaveat = input.calibrationStage === 'emerging_baseline'
+            ? ' Your wearable baseline is still maturing (7-13 nights), so treat this early shift cautiously.'
+            : input.evidenceQuality === 'correlated_autonomic_only'
+                ? ' Both autonomic markers shifted together while breathing rate remained normal.'
+                : '';
+        return {
+            level: 'level_1_early_watch',
+            headline: 'Early unexplained physiological shift — monitor recovery',
+            summary: `One or more overnight recovery markers deviated from baseline without a strong training or lifestyle explanation.${baselineCaveat}`,
+            actions: [
+                'Note any late meal, alcohol, travel, poor sleep, or early wellness changes in today\'s check-in.',
+                'Favor steady aerobic pacing and adjust hard intervals downward if perceived effort feels elevated.',
+                'Verify whether tomorrow\'s overnight wearable signals return toward baseline.',
+            ],
+            reassessTiming: 'Re-check tomorrow morning after one full sleep cycle.',
+            nonDiagnosticNotice: NON_DIAGNOSTIC_NOTICE,
+            redFlagWarnings: [],
+            returnToSportGuidance: [],
+            followupPromptEligible: true,
+        };
+    }
+
+    if (input.state === 'insufficient_evidence') {
+        return {
+            level: 'none',
+            headline: 'Insufficient wearable history for baseline comparison',
+            summary: 'Overnight baseline coverage or current core signals are not yet complete enough to evaluate physiological strain.',
+            actions: [],
+            reassessTiming: 'Comparisons activate automatically once at least 7-14 recent baseline nights are recorded.',
+            nonDiagnosticNotice: NON_DIAGNOSTIC_NOTICE,
+            redFlagWarnings: [],
+            returnToSportGuidance: [],
+            followupPromptEligible: false,
+        };
+    }
+
+    if (input.state === 'explained_recovery_strain') {
+        return {
+            level: 'none',
+            headline: 'Physiological strain matches logged recovery context',
+            summary: 'Overnight markers reflect transient strain aligned with recent training load or logged context rather than unexplained systemic stress.',
+            actions: [],
+            reassessTiming: 'Routine morning check tomorrow.',
+            nonDiagnosticNotice: NON_DIAGNOSTIC_NOTICE,
+            redFlagWarnings: [],
+            returnToSportGuidance: [],
+            followupPromptEligible: false,
+        };
+    }
+
+    return {
+        level: 'none',
+        headline: 'Recovery signals are within normal baseline range',
+        summary: 'Measured resting heart rate, breathing rate, and overnight HRV remain aligned with your personal baseline.',
+        actions: [],
+        reassessTiming: 'Routine morning check.',
+        nonDiagnosticNotice: NON_DIAGNOSTIC_NOTICE,
+        redFlagWarnings: [],
+        returnToSportGuidance: [],
+        followupPromptEligible: false,
+    };
 }
 
 function rationaleFacts(
@@ -456,7 +738,8 @@ export function evaluatePhysiologicalAnomaly(
 ): PhysiologicalAnomalyAssessment | null {
     if (policy === 'off' || !isHealthAnomalyThresholdPolicy(thresholds)) return null;
 
-    const coreSignals = CORE_SIGNALS.map(signal => categorizeSignal(input, signal, thresholds));
+    const categorized = CORE_SIGNALS.map(signal => categorizeSignal(input, signal, thresholds));
+    const rawCoreSignals = categorized.map(item => item.evidence);
     const dataQuality = CORE_SIGNALS
         .map(signal => qualityForSignal(input, signal, featuresForSignal(input, signal)))
         .filter((quality): quality is CoreSignalDataQuality => quality !== null);
@@ -474,8 +757,53 @@ export function evaluatePhysiologicalAnomaly(
         measurementEligible: (input.recoverySnapshot?.source.sourceSchemaVersion ?? 0) >= 3
             && input.recoverySnapshot?.source.timezone === 'Europe/Warsaw',
     });
+
+    const coreSignals = rawCoreSignals.map((evidence) => {
+        if (
+            evidence.signal === 'respiration'
+            && thresholds.downgradeResolvingRespiration === true
+            && respirationElevation.status === 'resolving'
+            && isAdverseCoreSignalEvidence(evidence)
+        ) {
+            return {
+                ...evidence,
+                status: 'normal' as const,
+                direction: null,
+            };
+        }
+        return evidence;
+    });
+
+    const allCoreUnavailable = coreSignals.every(evidence => evidence.status === 'unavailable');
+    const anyEmergingAvailable = categorized.some(
+        (item, index) => coreSignals[index]?.status !== 'unavailable' && item.usedEmergingBaseline,
+    );
+    const anyReliableAvailable = categorized.some(
+        (item, index) => coreSignals[index]?.status !== 'unavailable' && !item.usedEmergingBaseline,
+    );
+    const calibrationStage = resolveCalibrationStage(
+        allCoreUnavailable,
+        anyEmergingAvailable,
+        anyReliableAvailable,
+        input.personalCalibration,
+    );
+
+    const priorDaysAreContiguous = isAdjacentDate(input.persistence.previousAssessmentDate, input.date);
+    const priorAdverseDays = priorDaysAreContiguous
+        && Number.isFinite(input.persistence.unexplainedPersistenceDays)
+        ? Math.max(0, Math.floor(input.persistence.unexplainedPersistenceDays))
+        : 0;
+    const rawPriorUnexplained = input.persistence.priorUnexplainedDays !== undefined
+        ? input.persistence.priorUnexplainedDays
+        : (input.persistence.previousState === 'explained_recovery_strain'
+            ? 0
+            : input.persistence.unexplainedPersistenceDays);
+    const priorUnexplainedDays = priorDaysAreContiguous && Number.isFinite(rawPriorUnexplained)
+        ? Math.max(0, Math.floor(rawPriorUnexplained))
+        : 0;
+
     const supportingSignals = deriveSupportingSignals(input);
-    const explanations = resolveExplanations(input);
+    const explanations = resolveExplanations(input, priorAdverseDays);
     const adverseAnomalies = coreSignals.filter(isAdverseCoreSignalEvidence);
     const unexplained = adverseAnomalies.filter(
         evidence => strongestCoverage(evidence.signal, explanations) !== 'strong',
@@ -485,32 +813,76 @@ export function evaluatePhysiologicalAnomaly(
     );
     const symptomsReported = input.subjectiveCheckin?.healthContext?.symptoms?.present === true
         || input.subjectiveCheckin?.illnessSymptoms === true;
-    const priorDaysAreContiguous = isAdjacentDate(input.persistence.previousAssessmentDate, input.date);
-    const priorAdverseDays = priorDaysAreContiguous
-        && Number.isFinite(input.persistence.unexplainedPersistenceDays)
-        ? Math.max(0, Math.floor(input.persistence.unexplainedPersistenceDays))
-        : 0;
-    const persistenceDays = adverseAnomalies.length > 0
-        ? priorAdverseDays + 1
-        : 0;
+    const persistenceDays = adverseAnomalies.length > 0 ? priorAdverseDays + 1 : 0;
+    const unexplainedPersistenceDays = unexplained.length > 0 ? priorUnexplainedDays + 1 : 0;
 
-    let state: PhysiologicalAnomalyAssessment['state'];
+    const multiSignalPersistentEscalation = unexplained.length >= thresholds.minimumCoreSignalsForMultiSignal
+        && unexplainedPersistenceDays >= thresholds.persistenceDaysForEscalation;
+    const hasUnexplainedResp = unexplained.some(item => item.signal === 'respiration');
+    const hasUnexplainedAutonomic = unexplained.some(item => item.signal === 'rhr' || item.signal === 'hrv');
+    const strongUnexplainedCount = unexplained.filter(item => item.status === 'strong_anomaly').length;
+    const closeSickContact = input.subjectiveCheckin?.healthContext?.closeSickContact === true;
+    const firstNightMultiDomainEscalation = thresholds.allowFirstNightMultiDomainEscalation === true
+        && unexplainedPersistenceDays === 1
+        && hasUnexplainedResp
+        && hasUnexplainedAutonomic
+        && (
+            (unexplained.length === 3 && strongUnexplainedCount >= 1)
+            || strongUnexplainedCount >= 2
+            || (strongUnexplainedCount >= 1 && closeSickContact)
+        );
+
+    let state: PhysiologicalAnomalyState;
     if (symptomsReported) {
         state = 'symptoms_reported';
+    } else if (allCoreUnavailable) {
+        state = 'insufficient_evidence';
     } else if (adverseAnomalies.length === 0) {
         state = 'normal';
     } else if (unexplained.length === 0) {
         state = 'explained_recovery_strain';
     } else if (
-        unexplained.length >= thresholds.minimumCoreSignalsForMultiSignal
-        && persistenceDays >= thresholds.persistenceDaysForEscalation
+        calibrationStage !== 'emerging_baseline'
+        && (multiSignalPersistentEscalation || firstNightMultiDomainEscalation)
     ) {
         state = 'possible_illness_or_systemic_stress';
     } else {
         state = 'watch_unexplained';
     }
 
+    const anomalySeverity = resolveAnomalySeverity(
+        state,
+        adverseAnomalies,
+        symptomsReported,
+        input.subjectiveCheckin?.healthContext?.symptoms?.severity ?? null,
+    );
+    const evidenceQuality = resolveEvidenceQuality(
+        allCoreUnavailable,
+        calibrationStage,
+        coreSignals,
+        adverseAnomalies,
+        unexplained,
+    );
+    const earlyResponse = buildEarlyResponseProtocol({
+        state,
+        unexplainedPersistenceDays,
+        anomalySeverity,
+        evidenceQuality,
+        calibrationStage,
+    });
     const episode = episodeMetadata(input, state);
+
+    const cautions: string[] = [];
+    if (state === 'insufficient_evidence') {
+        cautions.push('INSUFFICIENT_WEARABLE_BASELINE_OR_SIGNALS');
+    }
+    if (calibrationStage === 'emerging_baseline') {
+        cautions.push('EMERGING_BASELINE_CAUTIOUS_INTERPRETATION');
+    }
+    if (state !== 'normal') {
+        cautions.push('NOT_A_DIAGNOSIS');
+    }
+
     return {
         state,
         evidenceLevel: evidenceLevel(coreSignals),
@@ -519,6 +891,7 @@ export function evaluatePhysiologicalAnomaly(
         explanations,
         unexplainedEvidence,
         persistenceDays,
+        unexplainedPersistenceDays,
         episodeId: episode.episodeId,
         episodeDay: episode.episodeDay,
         dataQuality,
@@ -539,9 +912,15 @@ export function evaluatePhysiologicalAnomaly(
                     : []),
             ],
             explanations: explanations.map(explanation => explanation.kind.toUpperCase()),
-            cautions: state === 'normal' ? [] : ['NOT_A_DIAGNOSIS'],
+            cautions,
         },
         respirationElevation,
+        calibrationStage,
+        anomalySeverity,
+        evidenceQuality,
+        earlyResponse,
+        activityMatchedExpectations: input.features?.activityMatchedExpectations ?? [],
+        personalCalibration: input.personalCalibration ?? null,
         policyVersion: HEALTH_ANOMALY_POLICY_VERSION,
         thresholdPolicyVersion: thresholds.policyVersion,
         mode: policy,

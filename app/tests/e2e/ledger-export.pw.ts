@@ -52,8 +52,12 @@ test('structured ledger download preserves source states and legacy brief at 390
   expect(ledger.flags.some(flag => flag.observedOn === date && flag.id === 'injury_constraint_touches_session'
     && flag.state === 'not_applicable' && flag.reasonCode === 'no_planned_session')).toBe(true);
   expect(ledger.flags.some(flag => flag.observedOn !== date && flag.state === 'not_recorded')).toBe(true);
-  expect(ledger.flags.filter(flag => flag.observedOn === date && flag.id === 'illness_anomaly')
-    .every(flag => flag.active === null && flag.state === 'not_yet_supported')).toBe(true);
+  const todayAnomalyFlags = ledger.flags.filter(flag => flag.observedOn === date && flag.id === 'illness_anomaly');
+  expect(todayAnomalyFlags.length).toBeGreaterThan(0);
+  expect(todayAnomalyFlags.every(flag =>
+    flag.active === null
+    && flag.state === 'missing'
+    && (flag.reasonCode === 'no_core_signals' || flag.reasonCode === 'no_assessment'))).toBe(true);
   expect(ledger.derived.find(metric => metric.id === 'biometric_baselines')?.metrics?.sleepScore7dAvg)
     .toMatchObject({ value: 80, state: 'measured' });
   expect(ledger.derived.find(metric => metric.id === 'subjective_baselines')?.metrics?.longRecordedDays)

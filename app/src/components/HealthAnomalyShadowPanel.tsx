@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react';
 import type { DailyDecisionInput } from '../engine/models';
-import type { HealthAnomalyAssessmentRevision } from '../derived/flags/illnessAnomaly/healthAnomalyModels';
+import type {
+  HealthAnomalyAssessmentRevision,
+  PhysiologicalAnomalyState,
+} from '../derived/flags/illnessAnomaly/healthAnomalyModels';
 import { healthAnomalyAssessmentRepository } from '../services/healthAnomalyPersistence';
 import { configuredHealthAnomalyShadowPolicy } from '../services/healthAnomalyRuntime';
 import { HealthAnomalyFollowupCard } from './HealthAnomalyFollowupCard';
@@ -17,6 +20,15 @@ interface HealthAnomalyShadowTraceProps {
   revision: HealthAnomalyAssessmentRevision;
   decisionInput: DailyDecisionInput;
 }
+
+const STATE_LABELS: Record<PhysiologicalAnomalyState, string> = {
+  insufficient_evidence: 'Insufficient wearable evidence',
+  normal: 'Within baseline',
+  explained_recovery_strain: 'Explained recovery strain',
+  watch_unexplained: 'Watch (unexplained)',
+  possible_illness_or_systemic_stress: 'Possible illness or systemic stress',
+  symptoms_reported: 'Symptoms reported',
+};
 
 function formatNumber(value: number | null | undefined, digits = 2): string {
   return typeof value === 'number' && Number.isFinite(value) ? value.toFixed(digits) : 'N/A';
@@ -42,7 +54,7 @@ export function HealthAnomalyShadowTrace({ revision, decisionInput }: HealthAnom
       <div className="data-grid">
         <div className="data-group">
           <h4>Assessment</h4>
-          <div className="data-item"><span className="data-label">State:</span><span className="data-value">{assessment.state}</span></div>
+          <div className="data-item"><span className="data-label">State:</span><span className="data-value">{STATE_LABELS[assessment.state]} ({assessment.state})</span></div>
           <div className="data-item"><span className="data-label">Evidence level:</span><span className="data-value">{assessment.evidenceLevel}</span></div>
           <div className="data-item"><span className="data-label">Mode:</span><span className="data-value">{revision.mode}</span></div>
           <div className="data-item"><span className="data-label">Evaluator:</span><span className="data-value">{revision.policyVersion}</span></div>
@@ -124,7 +136,7 @@ export function HealthAnomalyShadowTrace({ revision, decisionInput }: HealthAnom
 }
 
 export function HealthAnomalyShadowPanel({ userId, decisionInput, liveRevision }: HealthAnomalyShadowPanelProps) {
-  const shadowEnabled = configuredHealthAnomalyShadowPolicy() === 'shadow-v1';
+  const shadowEnabled = configuredHealthAnomalyShadowPolicy() !== 'off';
   const [persistedRevision, setPersistedRevision] = useState<HealthAnomalyAssessmentRevision | null>(null);
   const [loadResult, setLoadResult] = useState<HealthAnomalyLoadResult | null>(null);
   const date = decisionInput.date;

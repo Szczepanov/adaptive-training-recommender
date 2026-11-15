@@ -1,8 +1,10 @@
 import type { DataState } from '../engine/dataState';
 import type { FlagEvaluation } from '../derived/flags/flagEvaluation';
-import { ILLNESS_ANOMALY_FLAG_DEFINITION_VERSION } from '../derived/flags/illnessAnomaly/illnessAnomalyFlag';
+import type { HealthAnomalyAssessmentRevision } from '../derived/flags/illnessAnomaly/healthAnomalyModels';
+import { evaluateIllnessAnomalyFlag } from '../derived/flags/illnessAnomaly/illnessAnomalyFlag';
 import { evaluateIllnessRiskSymptom } from '../derived/flags/illnessRiskSymptom';
 import { evaluateRecoveryBeyondBaseline, RECOVERY_BEYOND_BASELINE_WINDOW } from '../derived/flags/recoveryBeyondBaseline';
+import { healthAnomalyAssessmentRepository } from './healthAnomalyPersistence';
 import { evaluateInjuryConstraintTouchesSession } from '../derived/flags/injuryConstraintTouchesSession';
 import { worstState } from '../ledger/export/ledgerValue';
 import type { SessionDefinition } from '../sessions/models';
@@ -37,7 +39,12 @@ const defaultReads = {
         return { executions: read.executions.map(execution => ({ execution })), invalidRecords: read.invalidRecords };
     },
     resolve: resolveSessionDefinition,
+    healthAnomaly: (userId: string, date: string) =>
+        healthAnomalyAssessmentRepository.getLatestForDateWithDiagnostics(userId, date).then(result => result.revision),
     persist: flagEvaluationRepository.persistImmutable,
+};
+type FlagCaptureReads = Omit<typeof defaultReads, 'healthAnomaly'> & {
+    healthAnomaly?: (userId: string, date: string) => Promise<HealthAnomalyAssessmentRevision | null>;
 };
 const data = <T,>(state: DataState<T>): T | null => state.status === 'AVAILABLE' ? state.data : null;
 const failure = (state: { status: string }): 'invalid' | 'unavailable' | null =>
@@ -53,13 +60,18 @@ async function readState<T>(operation: () => Promise<DataState<T>>): Promise<Dat
 /** Captures only the current Warsaw date; export never calls this writer. */
 export class FlagCaptureService {
     private readonly reads: typeof defaultReads;
-    constructor(reads: typeof defaultReads = defaultReads) { this.reads = reads; }
+    constructor(reads: FlagCaptureReads = defaultReads) {
+        this.reads = {
+            ...reads,
+            healthAnomaly: reads.healthAnomaly ?? defaultReads.healthAnomaly,
+        };
+    }
 
     async captureForDate(userId: string, date: string, today = getLocalDateString(), evaluatedAt = new Date().toISOString()): Promise<void> {
         if (!userId.trim() || userId.includes('/')) throw new Error('Invalid flag owner');
         assertLocalDate(date, 'observedOn');
         if (date !== today) throw new Error('Only the current Warsaw date may be captured');
-        const [recovery, checkin, settings, plan, occurrences, executionRead] = await Promise.all([
+        const [recovery, checkin, settings, plan, occurrences, executionRead, anomalyRead] = await Promise.all([
             readState(() => this.reads.recovery(userId, date)),
             readState(() => this.reads.checkin(userId, date)),
             readState(() => this.reads.settings(userId)),
@@ -67,6 +79,10 @@ export class FlagCaptureService {
             readState(() => this.reads.occurrences(userId, date)),
             this.reads.executions(userId, date).then(value => ({ status: 'AVAILABLE' as const, data: value }),
                 () => ({ status: 'UNAVAILABLE' as const })),
+            this.reads.healthAnomaly(userId, date).then(
+                revision => ({ status: 'AVAILABLE' as const, revision }),
+                () => ({ status: 'UNAVAILABLE' as const, revision: null }),
+            ),
         ]);
         const save = async (evaluation: FlagEvaluation, source: unknown, sessionRef?: string, baselineWindow?: string) => {
             // A digest binds mutable inputs without copying private notes or account identifiers.
@@ -91,14 +107,24 @@ export class FlagCaptureService {
             ]),
         ] };
         const checkinFlag = evaluateIllnessRiskSymptom(data(checkin));
+        const anomalyFlag = anomalyRead.status === 'UNAVAILABLE'
+            ? failed(evaluateIllnessAnomalyFlag(null), 'health_anomaly_assessments', 'unavailable')
+            : evaluateIllnessAnomalyFlag(anomalyRead.revision?.assessment ?? null);
         await save(failure(recovery) ? failed(recoveryFlag, 'daily_recovery_snapshots', failure(recovery)!) : recoveryFlag,
             recovery, undefined, RECOVERY_BEYOND_BASELINE_WINDOW);
         await save(failure(checkin) ? failed(checkinFlag, 'daily_subjective_checkins', failure(checkin)!) : checkinFlag, checkin);
-        await save({
-            id: 'illness_anomaly', active: null, state: 'not_yet_supported', reasonCode: 'ha7_release_gate_unmet',
-            definitionVersion: ILLNESS_ANOMALY_FLAG_DEFINITION_VERSION, threshold: 'Withheld until the HA7 release gate is met',
-            inputs: [{ name: 'ha7_release_gate', value: { value: 'unmet', source: 'health_anomaly_assessment', state: 'not_yet_supported' } }],
-        }, 'ha7_release_gate_unmet');
+        await save(
+            anomalyFlag,
+            anomalyRead.status === 'UNAVAILABLE'
+                ? { status: 'UNAVAILABLE' }
+                : (anomalyRead.revision
+                    ? {
+                        revisionId: anomalyRead.revision.revisionId,
+                        mode: anomalyRead.revision.mode,
+                        assessment: anomalyRead.revision.assessment,
+                    }
+                    : { status: 'MISSING' }),
+        );
 
         const constraints = data(settings)?.injuries ?? null;
         const empty = evaluateInjuryConstraintTouchesSession(constraints, date, null);

@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import type { DailyRecoverySnapshot, DailySubjectiveCheckin } from '../../../ledger/models';
-import { renderHealthAnomalyReplayMarkdown, runHealthAnomalyReplay } from './healthAnomalyReplay';
+import {
+    CANDIDATE_HEALTH_ANOMALY_REPLAY_POLICIES,
+    renderHealthAnomalyReplayMarkdown,
+    runHealthAnomalyReplay,
+} from './healthAnomalyReplay';
+import {
+    SHADOW_V1_HEALTH_ANOMALY_THRESHOLDS,
+    VISIBLE_V1_HEALTH_ANOMALY_THRESHOLDS,
+} from './healthAnomaly';
 import { addDaysToLocalDateString } from '../../../utils/localDate';
 
 function snapshot(date: string, rhr = 50, hrv = 60, respiration = 14): DailyRecoverySnapshot {
@@ -213,5 +221,80 @@ describe('health anomaly replay', () => {
         expect(markdown).toContain('Respiration elevation statuses:');
         expect(markdown).toContain('Respiration unavailable:');
         expect(markdown).toContain('MAD-normalized respiration deviation:');
+        expect(markdown).toContain('## Policy comparison summary');
+    });
+
+    it('compares CANDIDATE_HEALTH_ANOMALY_REPLAY_POLICIES and computes policySummaries lead time & false-alarm metrics', () => {
+        const baselineDays = Array.from({ length: 20 }, (_, index) => ({
+            date: dateAt(index),
+            recoverySnapshot: snapshot(dateAt(index), 49 + (index % 3), 58 + (index % 5), 13.8 + (index % 4) * 0.1),
+            subjectiveCheckin: checkin(dateAt(index)),
+        }));
+        const preDay1 = dateAt(20);
+        const symptomDay = dateAt(21);
+        const falseAlarmDay = dateAt(25);
+        const days = [
+            ...baselineDays,
+            // Strong multi-domain signal 1 day before symptom onset -> visible-v1 escalates Night 1, shadow-v1 stays watch
+            { date: preDay1, recoverySnapshot: snapshot(preDay1, 56, 36, 15.8), subjectiveCheckin: checkin(preDay1) },
+            { date: symptomDay, recoverySnapshot: snapshot(symptomDay, 58, 34, 16.0), subjectiveCheckin: checkin(symptomDay, true) },
+            { date: dateAt(22), recoverySnapshot: snapshot(dateAt(22), 50, 60, 14.0), subjectiveCheckin: checkin(dateAt(22)) },
+            { date: dateAt(23), recoverySnapshot: snapshot(dateAt(23), 50, 60, 14.0), subjectiveCheckin: checkin(dateAt(23)) },
+            { date: dateAt(24), recoverySnapshot: snapshot(dateAt(24), 50, 60, 14.0), subjectiveCheckin: checkin(dateAt(24)) },
+            // Isolated watch day without symptoms within +72h
+            { date: falseAlarmDay, recoverySnapshot: snapshot(falseAlarmDay, 55, 60, 14.0), subjectiveCheckin: checkin(falseAlarmDay) },
+        ];
+
+        const report = runHealthAnomalyReplay({ userId: 'u1', days }, CANDIDATE_HEALTH_ANOMALY_REPLAY_POLICIES);
+        expect(report.candidatePolicyVersions).toHaveLength(3);
+
+        const visibleSummary = report.policySummaries[VISIBLE_V1_HEALTH_ANOMALY_THRESHOLDS.policyVersion]!;
+        const shadowSummary = report.policySummaries[SHADOW_V1_HEALTH_ANOMALY_THRESHOLDS.policyVersion]!;
+
+        expect(visibleSummary.preSymptomaticEscalation72hHits).toBe(1);
+        expect(shadowSummary.preSymptomaticEscalation72hHits).toBe(0);
+        expect(visibleSummary.detectionRateBeforeSymptoms72h).toBe(1);
+        expect(visibleSummary.nonSymptomaticPreSymptomLeadTimeDaysMedian).toBe(1);
+        expect(visibleSummary.asymptomaticAlertDays).toBe(1);
+        expect(visibleSummary.falseAlarmRateWithout72hSymptoms).toBeCloseTo(0.5, 5);
+        expect(visibleSummary.episodeCount).toBe(2);
+
+        // Prior symptomatic day (dateAt(21)) must be excluded from later days' baseline calculation
+        const recoveryRow = report.rows.find(row => row.date === dateAt(22));
+        expect(recoveryRow?.candidateEstimators.find(s => s.signal === 'rhr')?.dataQuality.contaminatedDaysExcluded).toBe(1);
+
+        const markdown = renderHealthAnomalyReplayMarkdown(report);
+        expect(markdown).toContain(VISIBLE_V1_HEALTH_ANOMALY_THRESHOLDS.policyVersion);
+    });
+
+    it('resets unexplainedPersistenceDays after explained_recovery_strain in replay sequence', () => {
+        const baselineDays = Array.from({ length: 20 }, (_, index) => ({
+            date: dateAt(index),
+            recoverySnapshot: snapshot(dateAt(index), 49 + (index % 3), 58 + (index % 5), 13.8 + (index % 4) * 0.1),
+            subjectiveCheckin: checkin(dateAt(index)),
+        }));
+        const day1Snap = snapshot(dateAt(20), 56, 40, 14.0);
+        day1Snap.raw.yesterdayTraining = {
+            hardActivityCount: 1,
+            primaryActivity: { activityId: 1, type: 'Running', durationMin: 60, trainingEffect: 4.1, intensityTag: 'hard' },
+        };
+        day1Snap.raw.last3DaysHardSessionsCount = 1;
+        const day2Snap = snapshot(dateAt(21), 56, 40, 14.0);
+
+        const report = runHealthAnomalyReplay({
+            days: [
+                ...baselineDays,
+                { date: dateAt(20), recoverySnapshot: day1Snap, subjectiveCheckin: checkin(dateAt(20)) },
+                { date: dateAt(21), recoverySnapshot: day2Snap, subjectiveCheckin: checkin(dateAt(21)) },
+            ],
+        }, [SHADOW_V1_HEALTH_ANOMALY_THRESHOLDS]);
+
+        const day1State = report.rows.find(r => r.date === dateAt(20))?.assessmentStates[SHADOW_V1_HEALTH_ANOMALY_THRESHOLDS.policyVersion];
+        const day2State = report.rows.find(r => r.date === dateAt(21))?.assessmentStates[SHADOW_V1_HEALTH_ANOMALY_THRESHOLDS.policyVersion];
+        expect(day1State?.state).toBe('explained_recovery_strain');
+        expect(day1State?.unexplainedPersistenceDays).toBe(0);
+        expect(day2State?.persistenceDays).toBe(2);
+        expect(day2State?.unexplainedPersistenceDays).toBe(1);
+        expect(day2State?.state).toBe('watch_unexplained');
     });
 });

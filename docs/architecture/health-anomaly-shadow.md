@@ -1,155 +1,56 @@
-# Health anomaly shadow assessment architecture
+# Health Anomaly Early Warnings, Shadow Observability, and Replay
 
-This document describes the implemented HA-B through HA-E evidence path from
-`docs/plans/health-anomaly-and-illness-risk-alerting.md`.
+Implemented architecture for the physiological anomaly evaluator, Tier 1 **`visible-v1`** early warnings, **`illness_anomaly`** D-FLAG integration, and shadow/replay observability under [ADR-0025](../adr/0025-physiological-anomaly-and-possible-illness-signals.md) and [the 2026-11-15 HA7 release decision](../analysis/2026-11-15-ha7-visible-early-warning-release-decision.md).
 
-## Runtime boundary
+## Runtime policy selector and defaults
 
-The health-anomaly evaluator is separate from readiness and recommendation selection.
-`HealthAnomalyService` gathers canonical recovery/check-in/travel/history inputs, maps HA2
-features, calls the pure evaluator, and persists a revision only for an explicit non-`off`
-policy. No recommendation, fatigue, optimizer or weekly-allocation path consumes the result.
+Runtime gating lives in `app/src/services/healthAnomalyRuntime.ts`:
 
-The evaluator family lives in `app/src/derived/flags/illnessAnomaly/` (moved out of `engine/`
-by ADR-0052 Phase 1, #1144 PR1-1), with the check-in health-context types in
-`app/src/ledger/models.ts`. `illnessAnomalyFlag.ts` `evaluateIllnessAnomalyFlag` maps a persisted
-assessment onto the D-FLAGS `illness_anomaly` flag: active only for
-`possible_illness_or_systemic_stress`, and `missing` (never a measured negative) when no
-assessment exists or when every core signal was unavailable.
+* `resolveConfiguredHealthAnomalyRuntimePolicy` resolves `VITE_HEALTH_ANOMALY_POLICY` into `HealthAnomalyActiveRuntimePolicy`:
+  * **Default (`undefined` / empty string):** `'visible-v1'` (following Tier 1 release on 2026-11-15);
+  * **`'visible-v1'` / `'shadow-v1'` / `'off'`:** respected explicitly;
+  * **`'tighten-v1'`:** fails safe by clamping to `'visible-v1'` — autonomous training restriction remains inactive until HA9 outcome validation unlocks Tier 2;
+  * **Malformed / unrecognized values:** fail closed to `'off'`.
+* `runConfiguredHealthAnomalyShadow` executes the active pipeline for `'visible-v1'` and `'shadow-v1'` and is inert on `'off'`, supplying `VISIBLE_V1_HEALTH_ANOMALY_THRESHOLDS` by default when `visible-v1` is active (while preserving `SHADOW_V1_HEALTH_ANOMALY_THRESHOLDS` for diagnostic shadow/replay runs).
 
-HA-D adds an intentionally narrower runtime selector than the future-facing policy enum. The
-app evaluates and persists health-anomaly evidence only when:
+Under [ADR-0052](../adr/0052-user-ledger-and-external-ai-planning-authority.md), both `shadow-v1` and `visible-v1` are strictly advisory and never veto or alter training decisions (`EnginePolicy` / `recommendation` outputs remain unchanged).
 
-```text
-VITE_HEALTH_ANOMALY_POLICY=shadow-v1
-```
+## Core evaluator, Stage A–C calibration, and state machine
 
-Missing/invalid configuration and even the reserved `visible-v1` / `tighten-v1` values resolve
-to runtime `off` in this slice. Those later modes remain blocked on their separate evidence and
-release decisions. With runtime `off`, the app shell does not call the HA service and the shadow
-Data screen renders nothing and performs no assessment read.
+Pure evaluation and feature logic live under `app/src/derived/flags/illnessAnomaly/` (extracted out of `engine/` per ADR-0052):
 
-Shadow collection is fire-and-forget relative to normal decision composition. Its result is
-never fed back into the same recommendation.
+* **Feature extraction & baselines (`healthAnomalyFeatures.ts`):**
+  * `extractSignalObservations` builds rolling 28-day baselines (`HEALTH_ANOMALY_BASELINE_WINDOW_DAYS`) across `rhr` (`mean-stdev-28d`), `respiration` (`median-mad-28d`), and `hrv` (`log-mean-stdev-28d`), paired with `evaluateRespirationElevation`.
+  * Supports causal `contaminatedDates` exclusion (dropping strictly prior symptomatic dates `< currentDate` while preserving at least `HEALTH_ANOMALY_EMERGING_BASELINE_OBSERVATIONS` [`7`] clean nights, and recording `contaminatedDaysExcluded` in `AssessmentDataQuality`), which is currently wired into `runHealthAnomalyReplay` (live `HealthAnomalyService.assessAndPersist` invokes `mapRecoverySnapshotToHealthAnomalyFeatures(snapshot, history)` without passing prior-symptomatic check-in dates yet).
+  * `computeActivityMatchedExpectations` computes stratum-specific expectations (`post_hard_or_high_cost` vs. `post_easy_or_rest`) using empirical-Bayes shrinkage (`HEALTH_ANOMALY_ACTIVITY_SHRINKAGE_PRIOR_DAYS = 5`) toward the clean 28-day baseline, and is populated live by `HealthAnomalyService.assessAndPersist` via `mapRecoverySnapshotToHealthAnomalyFeatures(snapshot, history)`.
+* **Pure evaluation (`healthAnomaly.ts`):** `evaluatePhysiologicalAnomaly` outputs a 6-state assessment (`PhysiologicalAnomalyState`) paired with the 3-concept warning model (`anomalySeverity`, `evidenceQuality`, `state`), `calibrationStage` (`HealthAnomalyCalibrationStage`), and 3-level `EarlyResponseProtocol` (`buildEarlyResponseProtocol`):
+  * **`insufficient_evidence`:** emitted whenever `availableCoreSignals === 0` (cold start `< 7` clean nights, stale baselines, or unmeasured day) and no illness symptoms are reported — attaching `INSUFFICIENT_WEARABLE_BASELINE_OR_SIGNALS` with `episodeId: null` and `episodeDay: null` rather than false-reassurance `'normal'`.
+  * **`emerging_baseline` (`7–13` clean nights):** applies a conservative `+0.5z` deviation penalty and caps unexplained anomalies at `watch_unexplained`.
+  * **`reliable_baseline` (`>= 14` clean nights):** applies `VISIBLE_V1_HEALTH_ANOMALY_THRESHOLDS` (`moderateDeviation: 1.5`, `strongDeviation: 2.5`, `allowFirstNightMultiDomainEscalation: true`, `downgradeResolvingRespiration: true`).
+  * **RSA / autonomic coupling guard:** Night-1 RHR + HRV co-deviation without elevated respiration is typed as `correlated_autonomic_only` and stays at `watch_unexplained`; Night-1 `multi_domain_corroborated` (`respiration` + `rhr`/`hrv`) can escalate directly to `possible_illness_or_systemic_stress` when deviations are strong or moderate + `closeSickContact`.
+  * **Resolving respiration & confounder decay:** single resolving respiration tail days (`evaluateRespirationElevation` reporting `status === 'resolving'`) are attenuated (`downgradeResolvingRespiration`), and `vaccination` / `medication_change` confounder coverage steps down from `'strong'` to `'moderate'` once `priorAdverseDays >= 2` (Day 3+).
+  * **Dual persistence tracking:** `persistenceDays` tracks consecutive days of adverse core physiology (`explained_recovery_strain` or unexplained), whereas `unexplainedPersistenceDays` (`priorUnexplainedDays`) tracks consecutive days with `unexplainedEvidence.length > 0`, kept identical across `HealthAnomalyService` and `runHealthAnomalyReplay`.
+* **Stage C personal outcome calibration (`healthAnomalyOutcome.ts`):** `summarizePersonalOutcomeCalibration` scans strictly causal outcome records (`< asOfDate` across source assessment, update, symptom onset, and respiratory test timestamps) and sets `calibrationEligible: true` (`calibrationStage: 'outcome_calibrated'`) only once `priorEpisodesCount >= 3 && resolvedCount >= 3`. It is implemented as a pure calibration/schema helper (`personalCalibration` on `PhysiologicalAnomalyAssessment` / `HealthAnomalyAssessmentRevision`) and is not yet queried live by `HealthAnomalyService`.
 
-## Candidate shadow policy
+## Visible UX, Early-Response Protocol, and D-FLAG integration
 
-`shadow-v1` uses versioned candidate thresholds. They are replay/calibration parameters, not
-physiological truths and not authorization for user-visible illness wording. RHR and
-respiration use high-side adverse evidence; HRV uses low-side adverse evidence while retaining
-unusually high HRV as two-sided out-of-range telemetry. Supporting Garmin composites never
-satisfy the core multi-signal escalation rule.
+* **Home early-warning card (`HealthAnomalyCard.tsx`, mounted in `Home.tsx`):**
+  * Renders non-diagnostic guidance when physiology warrants attention (`watch_unexplained`, `possible_illness_or_systemic_stress`, `symptoms_reported`, and structured context summaries) without flooding healthy normal days.
+  * Displays `anomalySeverity`, `evidenceQuality`, measured channel deltas/explanations, `EarlyResponseProtocol` (`level_1_early_watch`, `level_2_persistent_or_corroborated`, `level_3_symptoms_reported`), IOC consensus red-flag screen + 3-stage return-to-sport (RTS) guidance, explicit `nonDiagnosticNotice`, and inline trigger for `HealthAnomalyFollowupCard` (`followupPromptEligible`).
+* **`illness_anomaly` D-FLAG integration (`illnessAnomalyFlag.ts`):**
+  * `FlagCaptureService` (`app/src/services/flagCaptureService.ts`), `resolveTodayFlagStripItems` (`app/src/derived/flags/flagStripItems.ts`), `FlagStrip.tsx`, and `buildLedgerExport` (`app/src/ledger/export/buildLedgerExport.ts`) consume live persisted `HealthAnomalyAssessmentRevision` records via `evaluateIllnessAnomalyFlag` instead of clamping to `ha7_release_gate_unmet`.
+  * `state === 'insufficient_evidence'` or `availableCoreSignals === 0` maps deterministically to D-FLAG `state: 'missing'`, `reasonCode: 'no_core_signals'`.
+  * `D-FLAGS` remain strictly advisory in ledger mode with zero workout veto.
 
-Context explanations remain structured. A strong explanation can cover a core signal for the
-purpose of residual evidence, but the original signal remains present in the assessment trace.
-Symptoms have semantic priority over wearable appearance.
+## User-scoped Firestore persistence and rules
 
-## Persistence
+`HealthAnomalyService`, `healthAnomalyPersistence.ts`, and `healthAnomalyOutcomeService.ts` persist records strictly scoped to `users/{userId}/` (enforced by `app/rules/07-health-anomalies.rules`):
 
-Assessments are immutable nested revisions at:
+* `health_anomaly_assessments`: immutable append-only same-day `HealthAnomalyAssessmentRevision` documents (`anomalySeverity`, `evidenceQuality`, `calibrationStage`, `unexplainedPersistenceDays`, `earlyResponse`, `activityMatchedExpectations`, `personalCalibration`, `dataQuality`, `explanations`, `coreSignals`, `supportingSignals`).
+* `health_anomaly_episodes`: continuous episode summary records grouping consecutive unexplained/anomaly days (`watch_unexplained`, `possible_illness_or_systemic_stress`, `symptoms_reported`) and pausing cleanly on `'insufficient_evidence'` / `'normal'`.
+* `health_anomaly_outcomes`: separate append/update prospective HA6 follow-up documents (`HealthAnomalyOutcomeRecord`: symptoms developed, onset timestamp, optional test result, retrospective explanation attribution) referencing the immutable assessment revision and never mutating past assessment snapshots.
 
-`users/{userId}/health_anomaly_assessments/{date}/revisions/{revisionId}`
+## Shadow diagnostics and deterministic replay
 
-The identity fingerprints the effective date, mode, evaluator/threshold versions, exact
-canonical recovery/check-in/history content, and travel/persistence provenance. An exact retry
-reuses the same revision; a corrected/rebuilt source produces a different revision even when
-its external timestamp is unchanged. Outcome labels are intentionally not part of this
-revision; they live in a separate mutable document (see "Prospective outcome capture" below).
-
-Firestore permits owner reads and create-only revisions after structural validation. Updates
-and deletes are denied.
-
-## Episode semantics
-
-A non-normal assessment starts an episode. The next observed calendar day continues the prior
-episode when the immediately previous assessment is non-normal. Residual persistence is
-carried forward only from a prior assessment that still had unexplained core evidence. The
-live evaluator never backdates an episode from future information.
-
-## Prospective outcome capture (HA6.1–HA6.3)
-
-Once a shadow episode exists, the athlete can later record what actually explained it. This is
-a distinct mutable record from the immutable assessment revision:
-
-`users/{userId}/health_anomaly_outcomes/{episodeId}`
-
-* `sourceAssessment` (`{date, revisionId}`) references the assessment revision that opened the
-  episode; Firestore requires the referenced revision to exist and its `assessment.episodeId`
-  to match the outcome document before any write is accepted.
-* `explanation` is one of a bounded retrospective vocabulary (illness symptoms, hard
-  training/recovery, poor sleep, alcohol, travel/jet lag, stress, heat/dehydration,
-  vaccination/medication, nothing obvious, other/not sure) and may change on a later update —
-  "nothing obvious" today can become "illness symptoms" tomorrow.
-* `symptomOnset` is an optional Warsaw-local day-precision date; absence remains unknown, never
-  "no symptoms".
-* `respiratoryTest` is an optional explicit positive/negative result plus test date, stored with
-  `source: 'user_reported'`; absence remains unknown, never a negative result.
-* `episodeId`, `sourceAssessment`, `createdAt` and `schemaVersion` are immutable after creation;
-  only `explanation`, `symptomOnset`, `respiratoryTest` and `note` may change on update.
-  Deletion is denied.
-
-Eligibility is deliberately not immediate: the app never prompts on the first day of a brand
-new episode. `findRecentHealthAnomalyFollowupCandidate` in
-`app/src/services/healthAnomalyOutcomeService.ts` offers a candidate only once a continuing
-episode reaches its second day, or — for a one-day episode — on a later day via a bounded
-prior-day lookback over already-persisted assessment revisions. No future data is fed back
-into the original assessment; only the separate outcome document is written or revised.
-
-The follow-up form (`HealthAnomalyFollowupCard`) is mounted only beside the existing shadow
-trace on the Data screen. It carries the same "evidence only, does not change your
-recommendation" framing as the shadow trace itself, and never renders the
-`possible illness or systemic stress` alert wording — that remains gated on the HA7 evidence
-decision.
-
-HA6.4 (a personal expected-response model built from these labels) is deliberately not part of
-this slice; it requires enough labelled real episodes per athlete before it can be evaluated
-without fitting sparse noise.
-
-## Shadow diagnostics
-
-When `shadow-v1` is explicitly enabled, the Data screen appends a developer-only
-**Health anomaly (shadow)** trace. It shows:
-
-- state, evidence level, episode/persistence and policy/revision provenance;
-- current RHR/respiration/HRV, baseline, measured scale and standardized deviation;
-- selected estimator/baseline version and signal data-quality coverage;
-- recent hard-session, sleep, Garmin stress and subjective stress context;
-- optional check-in context such as alcohol/travel/heat/dehydration/vaccination/medication;
-- structured explanation coverage, residual evidence and supporting Garmin composites.
-
-The panel explicitly states that the trace is evidence only, is not a diagnosis, and does not
-alter the recommendation. There is no Home alert in HA-D.
-
-## Historical replay / evidence report
-
-`healthAnomalyReplay.ts` `runHealthAnomalyReplay` reuses the real HA2 feature mapper and HA3 evaluator.
-For each replay day it supplies only that day's inputs plus prior recovery history. After all
-assessments have been computed it joins future 24/48/72-hour symptom reports as retrospective
-labels, so future information can never influence the live state machine.
-
-Input is a JSON object containing a `days` array. Each day contains `date`, a canonical
-`recoverySnapshot` (or `null`), an optional canonical `subjectiveCheckin`, and optional
-`authoredTravelActive` context.
-
-Run the report from `app/`:
-
-```text
-npm run evidence:health-anomaly -- \
-  --input path/to/replay.json \
-  --json-out artifacts/health-anomaly-reports/latest/report.json \
-  --markdown-out artifacts/health-anomaly-reports/latest/report.md
-```
-
-The CLI uses Vite SSR to execute the repository's actual TypeScript evaluator rather than a
-parallel implementation. The JSON retains all candidate estimator traces and structured
-context. `healthAnomalyReplay.ts` `renderHealthAnomalyReplayMarkdown` renders the Markdown
-file as a compact day-by-day table with core evidence, hard-load, sleep/stress, state,
-same-day symptoms and 24/48/72-hour labels.
-
-## Still not enabled
-
-HA-E adds prospective outcome capture (HA6.1–HA6.3) but no Home alert, notification, illness
-probability, readiness weight, optimizer input, or training gate. HA6.4 personal
-expected-response modelling is deliberately deferred pending enough labelled real episodes.
-Visible wording still requires the HA7 evidence decision, and `tighten-v1` remains a later
-separate release decision.
+* **Detailed Data panel (`HealthAnomalyShadowPanel.tsx`):** renders when `configuredHealthAnomalyShadowPolicy() !== 'off'`, displaying `HealthAnomalyShadowTrace` (current assessment `state` including the `insufficient_evidence` label, `evidenceLevel`, `mode`, policy versions, active `episodeId` / `episodeDay`, `persistenceDays`, core signal evidence/coverage/age/scale checks, recovery & check-in context, explanations, and residual/supporting evidence) plus `HealthAnomalyFollowupCard`. (`baselineMaturity`, `contaminatedDaysExcluded`, multi-day episode timelines, and replay policy comparison tables live in `HealthAnomalyAssessmentRevision` telemetry and `healthAnomalyReplay.ts` rather than in the Detailed Data UI.)
+* **Deterministic replay (`healthAnomalyReplay.ts` and `npm run evidence:health-anomaly`):** `runHealthAnomalyReplay` evaluates historical snapshots deterministically (wiring causal prior symptomatic `contaminatedDates` exclusions across the replay history) using `CANDIDATE_HEALTH_ANOMALY_REPLAY_POLICIES` (`shadow-v1` vs. `VISIBLE_V1_HEALTH_ANOMALY_THRESHOLDS` and variants) and emits `policySummaries` (`HealthAnomalyPolicyReplaySummary`) alongside `renderHealthAnomalyReplayMarkdown` so alert burden, Night-1 multi-domain escalation frequency, resolving-tail reductions, and outcome lead time stay continuously measurable.

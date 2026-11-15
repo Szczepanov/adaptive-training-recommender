@@ -1,3 +1,5 @@
+import type { PersonalOutcomeCalibrationSummary } from './healthAnomalyModels';
+
 export const HEALTH_ANOMALY_OUTCOME_EXPLANATIONS = [
     'illness_symptoms',
     'allergy_or_hay_fever',
@@ -168,4 +170,125 @@ export function buildHealthAnomalyEpisodeOutcome(input: {
         updatedAt: input.now,
         schemaVersion: 1,
     }, input.userId, input.episodeId);
+}
+
+const CONFOUNDER_EXPLANATIONS: ReadonlySet<HealthAnomalyOutcomeExplanation> = new Set([
+    'allergy_or_hay_fever',
+    'hard_training_recovery',
+    'poor_sleep',
+    'alcohol',
+    'travel_jetlag',
+    'stress',
+    'heat_dehydration',
+    'vaccination_medication',
+]);
+
+function epochDay(date: string): number {
+    const [year, month, day] = date.split('-').map(Number);
+    return Math.floor(Date.UTC(year, month - 1, day) / 86_400_000);
+}
+
+function medianOf(values: readonly number[]): number | null {
+    if (values.length === 0) return null;
+    const sorted = [...values].sort((left, right) => left - right);
+    const mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2 === 0
+        ? (sorted[mid - 1] + sorted[mid]) / 2
+        : sorted[mid];
+}
+
+/**
+ * Stage C: Summarize causally prior prospective episode outcome labels as of `asOfDate`.
+ *
+ * Only outcomes whose source assessment date AND `updatedAt` calendar date strictly precede
+ * `asOfDate` are included, guaranteeing that future illness labels never leak backward into
+ * live prediction or point-in-time historical replay.
+ */
+export function summarizePersonalOutcomeCalibration(
+    outcomes: readonly HealthAnomalyEpisodeOutcome[],
+    asOfDate: string,
+): PersonalOutcomeCalibrationSummary {
+    if (!isRealLocalDate(asOfDate)) {
+        return {
+            asOfDate,
+            priorEpisodesCount: 0,
+            illnessConfirmedCount: 0,
+            confounderExplainedCount: 0,
+            noIllnessCount: 0,
+            unknownCount: 0,
+            positiveRespiratoryTestsCount: 0,
+            negativeRespiratoryTestsCount: 0,
+            medianLeadTimeDays: null,
+            calibrationEligible: false,
+        };
+    }
+
+    const byEpisode = new Map<string, HealthAnomalyEpisodeOutcome>();
+    for (const outcome of outcomes) {
+        if (!isRealLocalDate(outcome.sourceAssessment.date) || outcome.sourceAssessment.date >= asOfDate) {
+            continue;
+        }
+        const updatedDate = outcome.updatedAt.slice(0, 10);
+        if (!isRealLocalDate(updatedDate) || updatedDate >= asOfDate) {
+            continue;
+        }
+        if (outcome.symptomOnset?.date && outcome.symptomOnset.date >= asOfDate) {
+            continue;
+        }
+        if (outcome.respiratoryTest?.testedOn && outcome.respiratoryTest.testedOn >= asOfDate) {
+            continue;
+        }
+        const existing = byEpisode.get(outcome.episodeId);
+        if (!existing || outcome.updatedAt.localeCompare(existing.updatedAt) >= 0) {
+            byEpisode.set(outcome.episodeId, outcome);
+        }
+    }
+
+    const eligible = [...byEpisode.values()];
+    let illnessConfirmedCount = 0;
+    let confounderExplainedCount = 0;
+    let noIllnessCount = 0;
+    let unknownCount = 0;
+    let positiveRespiratoryTestsCount = 0;
+    let negativeRespiratoryTestsCount = 0;
+    const leadTimes: number[] = [];
+
+    for (const outcome of eligible) {
+        if (outcome.respiratoryTest?.result === 'positive') positiveRespiratoryTestsCount += 1;
+        if (outcome.respiratoryTest?.result === 'negative') negativeRespiratoryTestsCount += 1;
+
+        const isIllness = outcome.explanation === 'illness_symptoms'
+            || outcome.respiratoryTest?.result === 'positive';
+        if (isIllness) {
+            illnessConfirmedCount += 1;
+        } else if (CONFOUNDER_EXPLANATIONS.has(outcome.explanation)) {
+            confounderExplainedCount += 1;
+        } else if (
+            outcome.explanation === 'nothing_obvious'
+            || outcome.respiratoryTest?.result === 'negative'
+        ) {
+            noIllnessCount += 1;
+        } else {
+            unknownCount += 1;
+        }
+
+        if (outcome.symptomOnset?.date && isRealLocalDate(outcome.symptomOnset.date)) {
+            leadTimes.push(epochDay(outcome.symptomOnset.date) - epochDay(outcome.sourceAssessment.date));
+        }
+    }
+
+    const priorEpisodesCount = eligible.length;
+    const resolvedCount = illnessConfirmedCount + confounderExplainedCount + noIllnessCount;
+    return {
+        asOfDate,
+        priorEpisodesCount,
+        illnessConfirmedCount,
+        confounderExplainedCount,
+        noIllnessCount,
+        unknownCount,
+        positiveRespiratoryTestsCount,
+        negativeRespiratoryTestsCount,
+        medianLeadTimeDays: medianOf(leadTimes),
+        calibrationEligible: priorEpisodesCount >= 3 && resolvedCount >= 3,
+    };
 }

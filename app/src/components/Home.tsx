@@ -80,6 +80,8 @@ import { GarminSyncNowButton } from './GarminSyncNowButton';
 import { DataConfidenceIndicator } from './DataConfidenceIndicator';
 import { MorningDecisionCard } from './MorningDecisionCard';
 import { LedgerTodayCard } from './LedgerTodayCard';
+import { HealthAnomalyCard } from './HealthAnomalyCard';
+import type { HealthAnomalyAssessmentRevision } from '../derived/flags/illnessAnomaly/healthAnomalyModels';
 import { resolvePlanningAuthorityMode } from '../ledger/planningAuthorityMode';
 import { hasRecordedRedFlag } from '../ledger/redFlagPause';
 import { AdditionalSessionsCard } from './session/AdditionalSessionsCard';
@@ -125,6 +127,7 @@ interface HomeProps {
   onNavigate: (screen: Screen) => void;
   onViewData?: () => void;
   onCapabilityMaintenanceResolved?: (userId: string, date: string, result: CapabilityMaintenanceResult | null) => void;
+  healthAnomalyRevision?: HealthAnomalyAssessmentRevision | null;
   /** Launches today's immutable session binding through the source-neutral runner. */
   onStartSession?: (binding: SessionReferenceBinding, options?: { allowDuplicateCompleted?: boolean }) => void | Promise<void>;
 }
@@ -146,7 +149,7 @@ function verifySessionBindingReplay(userId: string, saved: DailyRecommendation |
  * fail-closed, while non-authoritative forecast failures are isolated so they cannot
  * hide an otherwise valid current-day decision.
  */
-export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabilityMaintenanceResolved }: HomeProps) {
+export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabilityMaintenanceResolved, healthAnomalyRevision }: HomeProps) {
   const WEEK_AHEAD_DAYS = 7;
   const [decisionInput, setDecisionInput] = useState<ComposedDailyDecisionInput | null>(null);
   const [recommendation, setRecommendation] = useState<Recommendation | null>(null);
@@ -1705,6 +1708,15 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
               engineVerdict={todaysEngineVerdict}
               engineRevealed={recommendationEffectivelyRevealed}
               onEntryChange={handleJournalEntryChange}
+            />
+          )}
+
+          {decisionInput?.date && (
+            <HealthAnomalyCard
+              userId={userId}
+              currentDate={decisionInput.date}
+              onNavigate={onNavigate}
+              liveRevision={healthAnomalyRevision}
             />
           )}
 

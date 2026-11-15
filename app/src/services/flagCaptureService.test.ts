@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DataState } from '../engine/dataState';
+import type { HealthAnomalyAssessmentRevision } from '../derived/flags/illnessAnomaly/healthAnomalyModels';
 import type { PersistedFlagEvaluation } from '../ledger/flagEvaluation';
 import type { DailyRecoverySnapshot, DailySubjectiveCheckin, TrainingSettings } from '../ledger/models';
 import type { ActiveExternalPlan } from './activeExternalPlanService';
@@ -31,7 +32,10 @@ describe('dated flag capture', () => {
         settings: vi.fn<() => Promise<DataState<TrainingSettings>>>(),
         plan: vi.fn<() => Promise<DataState<ActiveExternalPlan>>>(),
         occurrences: vi.fn<() => Promise<DataState<SessionOccurrence[]>>>(),
-        executions: vi.fn(), resolve: vi.fn(), persist: vi.fn(),
+        executions: vi.fn(),
+        resolve: vi.fn(),
+        healthAnomaly: vi.fn<() => Promise<HealthAnomalyAssessmentRevision | null>>(),
+        persist: vi.fn(),
     };
     let saved: PersistedFlagEvaluation[];
     let service: FlagCaptureService;
@@ -44,18 +48,98 @@ describe('dated flag capture', () => {
         reads.occurrences.mockResolvedValue(ok([]));
         reads.executions.mockResolvedValue({ executions: [], invalidRecords: 0 });
         reads.resolve.mockResolvedValue(ok(definition));
+        reads.healthAnomaly.mockResolvedValue(null);
         reads.persist.mockImplementation(async (v: PersistedFlagEvaluation) => { saved.push(v); return v; });
         service = new FlagCaptureService(reads);
     });
     const capture = () => service.captureForDate('alice', date, date, '2026-10-28T08:00:00.000Z');
-    it('records a confirmed rest day as not applicable and withholds HA7', async () => {
+    it('records a confirmed rest day as not applicable and missing illness_anomaly when no assessment exists', async () => {
         await capture();
         expect(saved).toHaveLength(4);
         expect(saved.find(f => f.id === 'injury_constraint_touches_session')).toMatchObject({
             active: false, state: 'not_applicable', reasonCode: 'no_planned_session',
         });
         expect(saved.find(f => f.id === 'illness_anomaly')).toMatchObject({
-            active: null, state: 'not_yet_supported', reasonCode: 'ha7_release_gate_unmet',
+            active: null, state: 'missing', reasonCode: 'no_assessment',
+        });
+    });
+    it('evaluates illness_anomaly from the latest health anomaly assessment revision', async () => {
+        const makeRevision = (state: 'possible_illness_or_systemic_stress' | 'watch_unexplained' | 'normal'): HealthAnomalyAssessmentRevision => ({
+            schemaVersion: 1,
+            userId: 'alice',
+            date,
+            revisionId: `ha-${'0'.repeat(16)}`,
+            idempotencyKey: `${date}:${'0'.repeat(16)}`,
+            computedAt: '2026-10-28T07:00:00.000Z',
+            policyVersion: 'health-anomaly/ha3-v1',
+            thresholdPolicy: {
+                policyVersion: 'health-anomaly-thresholds/visible-early-warning-v1',
+                moderateDeviation: 1.5,
+                strongDeviation: 2.5,
+                minimumCoreSignalsForMultiSignal: 2,
+                persistenceDaysForEscalation: 2,
+                minimumHistoryCount: 14,
+                minimumRecentDayCoverage: 4 / 7,
+                maxBaselineAgeDays: 3,
+                estimatorBySignal: { rhr: 'mean-stdev-28d', respiration: 'median-mad-28d', hrv: 'log-mean-stdev-28d' },
+            },
+            mode: 'visible-v1',
+            source: {
+                timezone: 'Europe/Warsaw',
+                recoverySnapshotRevision: 'r1',
+                checkinRevision: null,
+                historyWindowStart: '2026-09-30',
+                historyWindowEndExclusive: date,
+                historySnapshotRevisions: [],
+                travelContextRevision: null,
+                persistenceLookbackStart: '2026-10-25',
+            },
+            assessment: {
+                state,
+                evidenceLevel: state === 'possible_illness_or_systemic_stress' ? 'high' : 'low',
+                coreSignals: [
+                    { signal: 'rhr', estimator: 'mean-stdev-28d', direction: 'high', status: 'moderate_anomaly', currentValue: 58, baselineValue: 50, scaleValue: 4, standardizedDeviation: 2.0, baselineVersion: 5 },
+                    { signal: 'respiration', estimator: 'median-mad-28d', direction: 'high', status: 'normal', currentValue: 14, baselineValue: 14, scaleValue: 0.5, standardizedDeviation: 0, baselineVersion: 5 },
+                    { signal: 'hrv', estimator: 'log-mean-stdev-28d', direction: 'low', status: 'normal', currentValue: 60, baselineValue: 62, scaleValue: 5, standardizedDeviation: -0.2, baselineVersion: 5 },
+                ],
+                supportingSignals: [],
+                explanations: [],
+                unexplainedEvidence: ['rhr'],
+                persistenceDays: 2,
+                episodeId: 'ep-1',
+                episodeDay: 2,
+                dataQuality: [],
+                rationale: { facts: [], explanations: [], cautions: [] },
+                policyVersion: 'health-anomaly/ha3-v1',
+                thresholdPolicyVersion: 'health-anomaly-thresholds/visible-early-warning-v1',
+                mode: 'visible-v1',
+            },
+        });
+
+        reads.healthAnomaly.mockResolvedValue(makeRevision('possible_illness_or_systemic_stress'));
+        await capture();
+        expect(saved.find(f => f.id === 'illness_anomaly')).toMatchObject({
+            active: true,
+            state: 'measured',
+            reasonCode: 'possible_illness_or_systemic_stress',
+        });
+
+        saved = [];
+        reads.healthAnomaly.mockResolvedValue(makeRevision('watch_unexplained'));
+        await capture();
+        expect(saved.find(f => f.id === 'illness_anomaly')).toMatchObject({
+            active: false,
+            state: 'measured',
+            reasonCode: 'watch_unexplained',
+        });
+
+        saved = [];
+        reads.healthAnomaly.mockRejectedValue(new Error('firestore down'));
+        await capture();
+        expect(saved.find(f => f.id === 'illness_anomaly')).toMatchObject({
+            active: null,
+            state: 'unavailable',
+            reasonCode: 'source_unavailable',
         });
     });
     it('records the actual recovery comparison values, not just an opaque evidence digest', async () => {

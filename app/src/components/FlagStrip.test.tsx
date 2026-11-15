@@ -74,6 +74,37 @@ describe('FlagStrip', () => {
     expect(html).not.toMatch(/source_|daily_recovery_snapshots|daily_subjective_checkins|information prevented/);
   });
 
+  it('renders evaluated measured illness_anomaly flags alongside legacy not_yet_supported', () => {
+    const measuredHtml = renderToStaticMarkup(<FlagStrip flags={[
+      flag({
+        id: 'illness_anomaly',
+        active: true,
+        state: 'measured',
+        reasonCode: 'possible_illness_or_systemic_stress',
+        inputs: [
+          { name: 'anomaly_state', value: { value: 'possible_illness_or_systemic_stress', source: 'health_anomaly_assessment', state: 'measured' } },
+          { name: 'assessment_mode', value: { value: 'visible-v1', source: 'health_anomaly_assessment', state: 'measured' } },
+          { name: 'available_core_signals', value: { value: 3, source: 'health_anomaly_assessment', state: 'measured' } },
+        ],
+      }),
+      flag({
+        id: 'illness_anomaly',
+        active: false,
+        state: 'measured',
+        reasonCode: 'watch_unexplained',
+      }),
+    ]} />);
+    expect(measuredHtml).toContain('Strong anomaly pattern');
+    expect(measuredHtml).toContain('Early watch signal');
+    expect(measuredHtml).toContain('Anomaly assessment:');
+    expect(measuredHtml).toContain('Persistent multi-signal shift');
+    expect(measuredHtml).toContain('Assessment mode:');
+    expect(measuredHtml).toContain('Early warnings');
+    expect(measuredHtml).toContain('Available signals:');
+    expect(measuredHtml).toContain('Evaluation rules');
+    expect(measuredHtml).not.toMatch(/ADR-|HA7/);
+  });
+
   it('humanizes injury rule-table severities', () => {
     const html = renderToStaticMarkup(<FlagStrip flags={[flag({})]} />);
     expect(html).toMatch(/· (Limit|Exclude):/);

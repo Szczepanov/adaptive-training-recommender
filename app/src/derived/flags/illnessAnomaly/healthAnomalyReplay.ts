@@ -2,6 +2,7 @@ import {
     evaluatePhysiologicalAnomaly,
     isAdverseCoreSignalEvidence,
     SHADOW_V1_HEALTH_ANOMALY_THRESHOLDS,
+    VISIBLE_V1_HEALTH_ANOMALY_THRESHOLDS,
 } from './healthAnomaly';
 import { HEALTH_ANOMALY_BASELINE_WINDOW_DAYS, mapRecoverySnapshotToHealthAnomalyFeatures } from './healthAnomalyFeatures';
 import type {
@@ -9,6 +10,7 @@ import type {
     HealthAnomalyFeatureSet,
     HealthAnomalyThresholdPolicy,
     PhysiologicalAnomalyAssessment,
+    PhysiologicalAnomalyState,
     RespirationElevationEvidence,
 } from './healthAnomalyModels';
 import type { DailyRecoverySnapshot, DailySubjectiveCheckin } from '../../../ledger/models';
@@ -32,8 +34,25 @@ export interface HealthAnomalyReplayPolicyResult {
     evidenceLevel: PhysiologicalAnomalyAssessment['evidenceLevel'];
     unexplainedEvidence: string[];
     persistenceDays: number;
+    unexplainedPersistenceDays: number;
     episodeId: string | null;
     episodeDay: number | null;
+}
+
+export interface HealthAnomalyPolicyReplaySummary {
+    thresholdPolicyVersion: string;
+    totalDays: number;
+    stateCounts: Record<PhysiologicalAnomalyState, number>;
+    watchOrHigherDays: number;
+    escalationDays: number;
+    symptomaticDays: number;
+    preSymptomaticWatch48hHits: number;
+    preSymptomaticEscalation72hHits: number;
+    asymptomaticAlertDays: number;
+    episodeCount: number;
+    nonSymptomaticPreSymptomLeadTimeDaysMedian: number | null;
+    falseAlarmRateWithout72hSymptoms: number | null;
+    detectionRateBeforeSymptoms72h: number | null;
 }
 
 export interface HealthAnomalyReplayRow {
@@ -78,6 +97,7 @@ export interface HealthAnomalyReplayReport {
     evaluatorMode: 'shadow-v1';
     candidatePolicyVersions: string[];
     observedDays: number;
+    policySummaries: Record<string, HealthAnomalyPolicyReplaySummary>;
     respirationElevationSummary: {
         statusCounts: Record<string, number>;
         elevatedOrStrongDays: number;
@@ -105,6 +125,16 @@ export const HEALTH_ANOMALY_REPLAY_POLICIES: readonly HealthAnomalyThresholdPoli
     SHADOW_V1_HEALTH_ANOMALY_THRESHOLDS,
 ];
 
+export const CANDIDATE_HEALTH_ANOMALY_REPLAY_POLICIES: readonly HealthAnomalyThresholdPolicy[] = [
+    SHADOW_V1_HEALTH_ANOMALY_THRESHOLDS,
+    VISIBLE_V1_HEALTH_ANOMALY_THRESHOLDS,
+    {
+        ...VISIBLE_V1_HEALTH_ANOMALY_THRESHOLDS,
+        policyVersion: 'health-anomaly-thresholds/visible-early-warning-1night-candidate',
+        persistenceDaysForEscalation: 1,
+    },
+];
+
 function symptomsReported(checkin: DailySubjectiveCheckin | null | undefined): boolean {
     return checkin?.healthContext?.symptoms?.present === true || checkin?.illnessSymptoms === true;
 }
@@ -121,6 +151,9 @@ function policyResult(assessment: PhysiologicalAnomalyAssessment): HealthAnomaly
         evidenceLevel: assessment.evidenceLevel,
         unexplainedEvidence: [...assessment.unexplainedEvidence],
         persistenceDays: assessment.persistenceDays,
+        unexplainedPersistenceDays: assessment.unexplainedPersistenceDays ?? (
+            assessment.unexplainedEvidence.length > 0 ? assessment.persistenceDays : 0
+        ),
         episodeId: assessment.episodeId,
         episodeDay: assessment.episodeDay,
     };
@@ -207,6 +240,121 @@ function summarizeRespirationElevation(rows: HealthAnomalyReplayRow[]): HealthAn
     };
 }
 
+function emptyStateCounts(): Record<PhysiologicalAnomalyState, number> {
+    return {
+        insufficient_evidence: 0,
+        normal: 0,
+        explained_recovery_strain: 0,
+        watch_unexplained: 0,
+        possible_illness_or_systemic_stress: 0,
+        symptoms_reported: 0,
+    };
+}
+
+function summarizePolicy(
+    thresholdPolicyVersion: string,
+    rows: readonly HealthAnomalyReplayRow[],
+): HealthAnomalyPolicyReplaySummary {
+    const stateCounts = emptyStateCounts();
+    const rowByDate = new Map<string, HealthAnomalyReplayRow>();
+    const episodeIds = new Set<string>();
+    const nonSymptomaticAlertStates = new Set<PhysiologicalAnomalyState>([
+        'watch_unexplained',
+        'possible_illness_or_systemic_stress',
+    ]);
+
+    let totalDays = 0;
+    let watchOrHigherDays = 0;
+    let escalationDays = 0;
+    let symptomaticDays = 0;
+    let nonSymptomaticAlertDays = 0;
+    let preSymptomaticWatch48hHits = 0;
+    let preSymptomaticEscalation72hHits = 0;
+    let asymptomaticAlertDays = 0;
+
+    for (const row of rows) {
+        rowByDate.set(row.date, row);
+        const result = row.assessmentStates[thresholdPolicyVersion];
+        if (!result) continue;
+
+        totalDays += 1;
+        stateCounts[result.state] += 1;
+        if (result.episodeId) episodeIds.add(result.episodeId);
+        if (row.symptomsReported) symptomaticDays += 1;
+        if (
+            result.state === 'watch_unexplained'
+            || result.state === 'possible_illness_or_systemic_stress'
+            || result.state === 'symptoms_reported'
+        ) {
+            watchOrHigherDays += 1;
+        }
+        if (result.state === 'possible_illness_or_systemic_stress') {
+            escalationDays += 1;
+        }
+
+        if (!row.symptomsReported && nonSymptomaticAlertStates.has(result.state)) {
+            nonSymptomaticAlertDays += 1;
+            if (row.futureSymptoms48h) preSymptomaticWatch48hHits += 1;
+            if (result.state === 'possible_illness_or_systemic_stress' && row.futureSymptoms72h) {
+                preSymptomaticEscalation72hHits += 1;
+            }
+            if (!row.futureSymptoms72h) {
+                asymptomaticAlertDays += 1;
+            }
+        }
+    }
+
+    const leadTimes: number[] = [];
+    let symptomOnsetCount = 0;
+    let detectedOnsetCount = 0;
+
+    for (const row of rows) {
+        if (!row.symptomsReported) continue;
+        const previousDay = rowByDate.get(addDaysToLocalDateString(row.date, -1));
+        if (previousDay?.symptomsReported) continue;
+        symptomOnsetCount += 1;
+
+        let earliestLeadDays: number | null = null;
+        for (const offset of [3, 2, 1]) {
+            const lookbackRow = rowByDate.get(addDaysToLocalDateString(row.date, -offset));
+            const lookbackState = lookbackRow?.assessmentStates[thresholdPolicyVersion]?.state;
+            if (
+                lookbackRow
+                && !lookbackRow.symptomsReported
+                && lookbackState !== undefined
+                && nonSymptomaticAlertStates.has(lookbackState)
+            ) {
+                earliestLeadDays = offset;
+                break;
+            }
+        }
+        if (earliestLeadDays !== null) {
+            detectedOnsetCount += 1;
+            leadTimes.push(earliestLeadDays);
+        }
+    }
+
+    return {
+        thresholdPolicyVersion,
+        totalDays,
+        stateCounts,
+        watchOrHigherDays,
+        escalationDays,
+        symptomaticDays,
+        preSymptomaticWatch48hHits,
+        preSymptomaticEscalation72hHits,
+        asymptomaticAlertDays,
+        episodeCount: episodeIds.size,
+        nonSymptomaticPreSymptomLeadTimeDaysMedian: median(leadTimes),
+        falseAlarmRateWithout72hSymptoms: nonSymptomaticAlertDays > 0
+            ? asymptomaticAlertDays / nonSymptomaticAlertDays
+            : null,
+        detectionRateBeforeSymptoms72h: symptomOnsetCount > 0
+            ? detectedOnsetCount / symptomOnsetCount
+            : null,
+    };
+}
+
 /**
  * Historical HA5 replay. Evaluation for each row receives only current-day inputs and prior
  * recovery history. Future symptom observations are joined after all assessments have already
@@ -219,6 +367,7 @@ export function runHealthAnomalyReplay(
 ): HealthAnomalyReplayReport {
     const days = [...input.days].sort((left, right) => left.date.localeCompare(right.date));
     const priorAssessments = new Map<string, { date: string; assessment: PhysiologicalAnomalyAssessment }>();
+    const priorSymptomaticDates = new Set<string>();
     const rowsWithoutLabels: Omit<HealthAnomalyReplayRow, 'futureSymptoms24h' | 'futureSymptoms48h' | 'futureSymptoms72h'>[] = [];
 
     for (const day of days) {
@@ -226,7 +375,9 @@ export function runHealthAnomalyReplay(
             .filter(candidate => candidate.recoverySnapshot && withinHistoryWindow(day.date, candidate.date))
             .map(candidate => candidate.recoverySnapshot as DailyRecoverySnapshot);
         const features = day.recoverySnapshot
-            ? mapRecoverySnapshotToHealthAnomalyFeatures(day.recoverySnapshot, history)
+            ? mapRecoverySnapshotToHealthAnomalyFeatures(day.recoverySnapshot, history, {
+                contaminatedDates: priorSymptomaticDates,
+            })
             : null;
         const assessmentStates: Record<string, HealthAnomalyReplayPolicyResult> = {};
         let representativeAssessment: PhysiologicalAnomalyAssessment | null = null;
@@ -253,9 +404,8 @@ export function runHealthAnomalyReplay(
                     previousEpisodeId: previous?.assessment.episodeId ?? null,
                     previousEpisodeDay: previous?.assessment.episodeDay ?? null,
                     previousAssessmentDate: previous?.date ?? null,
-                    unexplainedPersistenceDays: previous && previous.assessment.unexplainedEvidence.length > 0
-                        ? previous.assessment.persistenceDays
-                        : 0,
+                    unexplainedPersistenceDays: previous?.assessment.persistenceDays ?? 0,
+                    priorUnexplainedDays: previous?.assessment.unexplainedPersistenceDays ?? 0,
                 },
             }, 'shadow-v1', thresholds);
             if (!assessment) continue;
@@ -266,6 +416,7 @@ export function runHealthAnomalyReplay(
 
         const checkin = day.subjectiveCheckin ?? null;
         const health = checkin?.healthContext;
+        const dayHasSymptoms = symptomsReported(checkin);
         rowsWithoutLabels.push({
             date: day.date,
             respirationElevation: representativeAssessment?.respirationElevation ?? null,
@@ -298,8 +449,12 @@ export function runHealthAnomalyReplay(
                 closeSickContact: health?.closeSickContact ?? null,
             },
             assessmentStates,
-            symptomsReported: symptomsReported(checkin),
+            symptomsReported: dayHasSymptoms,
         });
+
+        if (dayHasSymptoms) {
+            priorSymptomaticDates.add(day.date);
+        }
     }
 
     const symptomDates = new Set(days.filter(day => symptomsReported(day.subjectiveCheckin)).map(day => day.date));
@@ -310,11 +465,17 @@ export function runHealthAnomalyReplay(
         futureSymptoms72h: futureSymptoms(symptomDates, row.date, 3),
     }));
 
+    const candidatePolicyVersions = policies.map(policy => policy.policyVersion);
+    const policySummaries = Object.fromEntries(
+        candidatePolicyVersions.map(version => [version, summarizePolicy(version, rows)]),
+    );
+
     return {
         generatedFrom: 'historical-replay',
         evaluatorMode: 'shadow-v1',
-        candidatePolicyVersions: policies.map(policy => policy.policyVersion),
+        candidatePolicyVersions,
         observedDays: rows.length,
+        policySummaries,
         respirationElevationSummary: summarizeRespirationElevation(rows),
         limitations: [
             'Future 24/48/72h symptom flags are retrospective labels joined after evaluation and are never live evaluator input.',
@@ -339,10 +500,21 @@ function numberOrNa(value: number | null, digits = 2): string {
     return value === null ? 'N/A' : value.toFixed(digits);
 }
 
+function rateOrNa(value: number | null): string {
+    return value === null ? 'N/A' : `${(value * 100).toFixed(1)}%`;
+}
+
 export function renderHealthAnomalyReplayMarkdown(report: HealthAnomalyReplayReport): string {
     const primaryPolicy = report.candidatePolicyVersions[0];
     const summary = report.respirationElevationSummary;
     const robust = summary.robustDeviation;
+    const policySummaryRows = report.candidatePolicyVersions.map((version) => {
+        const ps = report.policySummaries?.[version];
+        if (!ps) {
+            return `| ${version} | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | N/A | N/A | N/A |`;
+        }
+        return `| ${ps.thresholdPolicyVersion} | ${ps.totalDays} | ${ps.stateCounts.insufficient_evidence} | ${ps.stateCounts.normal} | ${ps.stateCounts.explained_recovery_strain} | ${ps.stateCounts.watch_unexplained} | ${ps.stateCounts.possible_illness_or_systemic_stress} | ${ps.stateCounts.symptoms_reported} | ${ps.episodeCount} | ${numberOrNa(ps.nonSymptomaticPreSymptomLeadTimeDaysMedian, 1)} | ${rateOrNa(ps.falseAlarmRateWithout72hSymptoms)} | ${rateOrNa(ps.detectionRateBeforeSymptoms72h)} |`;
+    });
     const lines = [
         '# Health anomaly shadow replay',
         '',
@@ -353,6 +525,12 @@ export function renderHealthAnomalyReplayMarkdown(report: HealthAnomalyReplayRep
         `- Respiration unavailable: ${summary.unavailableDays}/${report.observedDays} (${(summary.unavailableRate * 100).toFixed(1)}%); reasons: ${JSON.stringify(summary.unavailableReasonCounts)}`,
         `- Elevated/strong days: ${summary.elevatedOrStrongDays}; two-night persistent: ${summary.persistentTwoNightDays}; corroborated: ${summary.corroboratedDays}; isolated: ${summary.isolatedDays}; resolving: ${summary.resolvingDays}`,
         `- Robust 28d MAD-normalized respiration deviation: available ${robust.availableDays}/${report.observedDays}; elevated-with-scale ${robust.elevatedAvailableDays}/${summary.elevatedOrStrongDays}; elevated median ${numberOrNa(robust.elevatedMedian)}z (range ${numberOrNa(robust.elevatedMin)} to ${numberOrNa(robust.elevatedMax)}z)`,
+        '',
+        '## Policy comparison summary',
+        '',
+        '| Policy | Days | Insufficient | Normal | Explained | Watch | Escalated | Symptoms | Episodes | Median lead (d) | 72h false-alarm rate | 72h detection rate |',
+        '| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |',
+        ...policySummaryRows,
         '',
         '## Evidence framing',
         '',

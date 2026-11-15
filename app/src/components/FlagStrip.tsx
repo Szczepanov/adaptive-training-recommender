@@ -21,6 +21,8 @@ const INPUT_LABELS: Record<string, string> = {
   touched_patterns: 'Matching movements', touched_modalities: 'Matching activities',
   session_pattern_evidence_complete: 'Movement information', matched_regions: 'Matching regions',
   daily_recovery_snapshots: 'Recovery data', daily_subjective_checkins: 'Check-in',
+  anomaly_state: 'Anomaly assessment', assessment_mode: 'Assessment mode',
+  available_core_signals: 'Available signals', health_anomaly_assessments: 'Health anomaly assessment',
 };
 
 const STATE_LABELS: Record<LedgerState, string> = {
@@ -40,6 +42,13 @@ const REASONS: Record<string, string> = {
   unmapped_active_constraint: 'A restriction does not have enough information to check.',
   source_unavailable: 'The information for this check could not be loaded.',
   source_invalid: 'The information for this check could not be read.',
+  no_assessment: 'No wearable anomaly assessment is recorded for today.',
+  no_core_signals: 'Resting heart rate, heart rate variability, and respiration rate are all unavailable today.',
+  insufficient_evidence: 'Not enough baseline history or core signals are available yet.',
+  explained_recovery_strain: 'Signals shifted, with a plausible training, sleep, or stress explanation.',
+  watch_unexplained: 'An early physiological shift was detected without a clear context explanation yet.',
+  possible_illness_or_systemic_stress: 'Persistent or corroborated multi-signal shift beyond personal baseline.',
+  symptoms_reported: 'Illness symptoms were reported on today’s check-in.',
 };
 
 const ILLNESS_CLEAR_LABELS: Record<string, string> = {
@@ -47,9 +56,28 @@ const ILLNESS_CLEAR_LABELS: Record<string, string> = {
   no_illness_symptoms: 'No illness symptoms reported',
 };
 
-const RULES: Record<Exclude<LedgerFlagId, 'illness_anomaly'>, string> = {
+const ANOMALY_CLEAR_LABELS: Record<string, string> = {
+  normal: 'Within baseline',
+  explained_recovery_strain: 'Explained strain',
+  watch_unexplained: 'Early watch signal',
+  symptoms_reported: 'Symptoms reported',
+};
+
+const ANOMALY_VALUE_LABELS: Record<string, string> = {
+  insufficient_evidence: 'Insufficient evidence',
+  normal: 'Within baseline',
+  explained_recovery_strain: 'Explained recovery strain',
+  watch_unexplained: 'Early watch signal',
+  possible_illness_or_systemic_stress: 'Persistent multi-signal shift',
+  symptoms_reported: 'Symptoms reported',
+  'visible-v1': 'Early warnings',
+  'shadow-v1': 'Shadow',
+};
+
+const RULES: Record<LedgerFlagId, string> = {
   recovery_beyond_baseline: `A decrease in heart rate variability or sleep score, or an increase in resting heart rate, triggers this check when the 7-day change reaches the greater of 28-day variability and the minimum threshold: ${RECOVERY_VARIABILITY_FLOORS.hrv} ms for heart rate variability, ${RECOVERY_VARIABILITY_FLOORS.rhr} bpm for resting heart rate, and ${RECOVERY_VARIABILITY_FLOORS.sleep} points for sleep. A sleep score below ${SLEEP_SCORE_ABSOLUTE_FLOOR} also triggers it. All three signals must be current and assessed to rule out a flag.`,
   illness_risk_symptom: 'Checks reported illness symptoms. A mild or moderate self-reported allergy with only congestion, runny nose or sneezing is treated as an allergy-like symptom pattern.',
+  illness_anomaly: 'Evaluates resting heart rate, overnight heart rate variability, and respiratory rate against your personal baseline alongside recent training load and check-in context. Flags persistent unexplained multi-signal shifts; early single-signal changes appear in the Early physiological signals card.',
   injury_constraint_touches_session: 'Compares active limit or exclude restrictions with the session’s recorded movements and activity types. Monitor-only entries are not counted. Missing movement or activity information can leave the assessment incomplete.',
 };
 
@@ -70,6 +98,8 @@ function formatInputValue(input: FlagStripItem['inputs'][number]): string {
     formatted = value.length ? value.map(entry => readable(String(entry))).join(', ') : 'None';
   } else if (typeof value === 'object') {
     formatted = JSON.stringify(value).replace(/_/g, ' ');
+  } else if (typeof value === 'string' && value in ANOMALY_VALUE_LABELS) {
+    formatted = ANOMALY_VALUE_LABELS[value];
   } else {
     formatted = typeof value === 'string' && value.includes('_') ? readable(value) : String(value);
   }
@@ -78,7 +108,7 @@ function formatInputValue(input: FlagStripItem['inputs'][number]): string {
 }
 
 function statusBadge(item: FlagStripItem): { label: string; tone: 'active' | 'clear' | 'missing' | 'withheld' | 'na' } {
-  if (item.id === 'illness_anomaly' || item.state === 'not_yet_supported') return { label: 'Not available', tone: 'withheld' };
+  if (item.state === 'not_yet_supported') return { label: 'Not available', tone: 'withheld' };
   if (item.state === 'not_applicable') return { label: 'Not applicable', tone: 'na' };
   if (item.active === null) return { label: item.id === 'injury_constraint_touches_session' ? 'Couldn’t fully check this session' : 'Not fully assessed', tone: 'missing' };
   if (item.id === 'injury_constraint_touches_session') return item.active
@@ -87,6 +117,9 @@ function statusBadge(item: FlagStripItem): { label: string; tone: 'active' | 'cl
   if (item.id === 'illness_risk_symptom') return item.active
     ? { label: 'Illness symptoms reported', tone: 'active' }
     : { label: ILLNESS_CLEAR_LABELS[item.reasonCode] ?? 'No illness flag', tone: 'clear' };
+  if (item.id === 'illness_anomaly') return item.active
+    ? { label: 'Strong anomaly pattern', tone: 'active' }
+    : { label: ANOMALY_CLEAR_LABELS[item.reasonCode] ?? 'Within baseline', tone: 'clear' };
   return item.active ? { label: 'Needs attention', tone: 'active' } : { label: 'No adverse signals', tone: 'clear' };
 }
 
@@ -121,7 +154,7 @@ export function FlagStrip({ flags, title = 'Today’s checks' }: FlagStripProps)
                 </div>
                 <span className={`flag-strip-badge tone-${badge.tone}`}>{badge.label}</span>
               </div>
-              {item.id === 'illness_anomaly' ? <p className="flag-strip-missingness">Automatic illness detection isn’t available.</p> : <>
+              {item.state === 'not_yet_supported' ? <p className="flag-strip-missingness">Automatic illness detection isn’t available.</p> : <>
                 {adverse && <p className="flag-strip-missingness">Signals needing attention: {adverse}.</p>}
                 {reason && <p className="flag-strip-missingness">{reason}</p>}
                 {item.active === null && !reason && <p className="flag-strip-missingness">{STATE_LABELS[item.state]} information prevented a complete assessment.</p>}

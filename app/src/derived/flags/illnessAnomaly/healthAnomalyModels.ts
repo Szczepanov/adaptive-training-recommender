@@ -27,6 +27,8 @@ export interface CoreSignalEvidence {
     baselineVersion: number | null;
 }
 
+export type BaselineMaturity = 'insufficient' | 'emerging' | 'reliable';
+
 export interface CoreSignalDataQuality {
     signal: HealthCoreSignal;
     historyCount: number;
@@ -37,6 +39,8 @@ export interface CoreSignalDataQuality {
     zeroOrNearZeroScale: boolean;
     currentValueMissing: boolean;
     suspectedQuantizationOrTies: boolean;
+    baselineMaturity?: BaselineMaturity;
+    contaminatedDaysExcluded?: number;
 }
 
 /** Candidate estimators are observation-only in HA2; HA3 chooses how to interpret them. */
@@ -79,6 +83,20 @@ export interface HealthCoreSignalFeatures {
     measurementProvenance: string | null;
 }
 
+export type ActivityStratum = 'post_hard_or_high_cost' | 'post_easy_or_rest';
+
+export interface ActivityMatchedSignalExpectation {
+    signal: HealthCoreSignal;
+    stratum: ActivityStratum;
+    stratumSampleCount: number;
+    unconditionalBaseline: number | null;
+    shrunkExpectedValue: number | null;
+    currentValue: number | null;
+    residualFromExpected: number | null;
+    residualStandardizedDeviation: number | null;
+    withinExpectedTrainingResponse: boolean;
+}
+
 /**
  * HA2 output consumed by the HA3 evaluator. Feature plumbing remains threshold-free and does
  * not decide whether physiology is normal or anomalous.
@@ -87,6 +105,7 @@ export interface HealthAnomalyFeatureSet {
     date: string;
     baselineVersion: number | null;
     coreSignals: HealthCoreSignalFeatures[];
+    activityMatchedExpectations?: ActivityMatchedSignalExpectation[];
 }
 
 export interface SupportingSignalEvidence {
@@ -116,11 +135,58 @@ export interface ContextExplanation {
 }
 
 export type PhysiologicalAnomalyState =
+    | 'insufficient_evidence'
     | 'normal'
     | 'explained_recovery_strain'
     | 'watch_unexplained'
     | 'possible_illness_or_systemic_stress'
     | 'symptoms_reported';
+
+export type HealthAnomalyCalibrationStage =
+    | 'insufficient_evidence'
+    | 'emerging_baseline'
+    | 'reliable_baseline'
+    | 'outcome_calibrated';
+
+export type HealthAnomalySeverity = 'none' | 'mild' | 'moderate' | 'strong';
+
+export type HealthAnomalyEvidenceQuality =
+    | 'insufficient'
+    | 'emerging'
+    | 'single_channel'
+    | 'correlated_autonomic_only'
+    | 'multi_domain_corroborated';
+
+export interface PersonalOutcomeCalibrationSummary {
+    asOfDate: string;
+    priorEpisodesCount: number;
+    illnessConfirmedCount: number;
+    confounderExplainedCount: number;
+    noIllnessCount: number;
+    unknownCount: number;
+    positiveRespiratoryTestsCount: number;
+    negativeRespiratoryTestsCount: number;
+    medianLeadTimeDays: number | null;
+    calibrationEligible: boolean;
+}
+
+export type EarlyResponseLevel =
+    | 'none'
+    | 'level_1_early_watch'
+    | 'level_2_persistent_or_corroborated'
+    | 'level_3_symptoms_reported';
+
+export interface EarlyResponseProtocol {
+    level: EarlyResponseLevel;
+    headline: string;
+    summary: string;
+    actions: string[];
+    reassessTiming: string;
+    nonDiagnosticNotice: string;
+    redFlagWarnings: string[];
+    returnToSportGuidance: string[];
+    followupPromptEligible: boolean;
+}
 
 export interface HealthAnomalyThresholdPolicy {
     policyVersion: string;
@@ -132,6 +198,9 @@ export interface HealthAnomalyThresholdPolicy {
     minimumRecentDayCoverage: number;
     maxBaselineAgeDays: number;
     estimatorBySignal: Record<HealthCoreSignal, HealthAnomalyEstimator>;
+    emergingHistoryCount?: number;
+    allowFirstNightMultiDomainEscalation?: boolean;
+    downgradeResolvingRespiration?: boolean;
 }
 
 export interface HealthAnomalyStructuredContext {
@@ -217,8 +286,10 @@ export interface HealthAnomalyPersistenceInput {
     previousEpisodeId: string | null;
     previousEpisodeDay: number | null;
     previousAssessmentDate?: string | null;
-    /** Legacy name: this counter now preserves consecutive adverse core physiology even when context is strong. */
+    /** Legacy name: this counter preserves consecutive adverse core physiology even when context is strong. */
     unexplainedPersistenceDays: number;
+    /** Consecutive prior days where at least one adverse core signal remained unexplained by strong context. */
+    priorUnexplainedDays?: number;
 }
 
 export interface HealthAnomalyInput {
@@ -235,6 +306,7 @@ export interface HealthAnomalyInput {
     /** Issue #809: prior high-dose sessions also explain next-day RHR/HRV strain. */
     last3DaysHighCostSessionsCount?: number;
     structuredContext?: HealthAnomalyStructuredContext | null;
+    personalCalibration?: PersonalOutcomeCalibrationSummary | null;
     persistence: HealthAnomalyPersistenceInput;
 }
 
@@ -246,12 +318,19 @@ export interface PhysiologicalAnomalyAssessment {
     explanations: ContextExplanation[];
     unexplainedEvidence: string[];
     persistenceDays: number;
+    unexplainedPersistenceDays?: number;
     episodeId: string | null;
     episodeDay: number | null;
     dataQuality: CoreSignalDataQuality[];
     rationale: HealthAnomalyRationaleTokens;
     /** Observation-only HA9 evidence. It is not an input to the live training selector. */
     respirationElevation?: RespirationElevationEvidence;
+    calibrationStage?: HealthAnomalyCalibrationStage;
+    anomalySeverity?: HealthAnomalySeverity;
+    evidenceQuality?: HealthAnomalyEvidenceQuality;
+    earlyResponse?: EarlyResponseProtocol;
+    activityMatchedExpectations?: ActivityMatchedSignalExpectation[];
+    personalCalibration?: PersonalOutcomeCalibrationSummary | null;
     policyVersion: string;
     thresholdPolicyVersion: string;
     mode: Exclude<HealthAnomalyPolicy, 'off'>;

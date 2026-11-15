@@ -9,12 +9,35 @@ import type {
 } from '../derived/flags/illnessAnomaly/healthAnomalyModels';
 
 const ASSESSMENT_STATES = [
+    'insufficient_evidence',
     'normal',
     'explained_recovery_strain',
     'watch_unexplained',
     'possible_illness_or_systemic_stress',
     'symptoms_reported',
 ] as const;
+const CALIBRATION_STAGES = [
+    'insufficient_evidence',
+    'emerging_baseline',
+    'reliable_baseline',
+    'outcome_calibrated',
+] as const;
+const ANOMALY_SEVERITIES = ['none', 'mild', 'moderate', 'strong'] as const;
+const EVIDENCE_QUALITIES = [
+    'insufficient',
+    'emerging',
+    'single_channel',
+    'correlated_autonomic_only',
+    'multi_domain_corroborated',
+] as const;
+const EARLY_RESPONSE_LEVELS = [
+    'none',
+    'level_1_early_watch',
+    'level_2_persistent_or_corroborated',
+    'level_3_symptoms_reported',
+] as const;
+const CORE_SIGNALS = ['rhr', 'respiration', 'hrv'] as const;
+const ACTIVITY_STRATA = ['post_hard_or_high_cost', 'post_easy_or_rest'] as const;
 const EVIDENCE_LEVELS = ['none', 'low', 'moderate', 'high'] as const;
 const NON_OFF_MODES = ['shadow-v1', 'visible-v1', 'tighten-v1'] as const;
 const RESPIRATION_ELEVATION_STATUSES = [
@@ -134,6 +157,59 @@ function isNullableFiniteNumber(value: unknown): boolean {
     return value === null || (typeof value === 'number' && Number.isFinite(value));
 }
 
+function isNonNegativeInt(value: unknown): boolean {
+    return Number.isInteger(value) && (value as number) >= 0;
+}
+
+function isNonEmptyString(value: unknown): value is string {
+    return typeof value === 'string' && value.length > 0;
+}
+
+function isStringArray(value: unknown): value is string[] {
+    return Array.isArray(value) && value.every(item => typeof item === 'string');
+}
+
+function isEarlyResponseProtocol(value: unknown): boolean {
+    if (!isPlainObject(value)) return false;
+    return (EARLY_RESPONSE_LEVELS as readonly unknown[]).includes(value.level)
+        && isNonEmptyString(value.headline)
+        && isNonEmptyString(value.summary)
+        && isStringArray(value.actions)
+        && isNonEmptyString(value.reassessTiming)
+        && isNonEmptyString(value.nonDiagnosticNotice)
+        && isStringArray(value.redFlagWarnings)
+        && isStringArray(value.returnToSportGuidance)
+        && typeof value.followupPromptEligible === 'boolean';
+}
+
+function isActivityMatchedSignalExpectation(value: unknown): boolean {
+    if (!isPlainObject(value)) return false;
+    return (CORE_SIGNALS as readonly unknown[]).includes(value.signal)
+        && (ACTIVITY_STRATA as readonly unknown[]).includes(value.stratum)
+        && isNonNegativeInt(value.stratumSampleCount)
+        && isNullableFiniteNumber(value.unconditionalBaseline)
+        && isNullableFiniteNumber(value.shrunkExpectedValue)
+        && isNullableFiniteNumber(value.currentValue)
+        && isNullableFiniteNumber(value.residualFromExpected)
+        && isNullableFiniteNumber(value.residualStandardizedDeviation)
+        && typeof value.withinExpectedTrainingResponse === 'boolean';
+}
+
+function isPersonalOutcomeCalibrationSummary(value: unknown): boolean {
+    if (!isPlainObject(value)) return false;
+    return typeof value.asOfDate === 'string'
+        && /^\d{4}-\d{2}-\d{2}$/.test(value.asOfDate)
+        && isNonNegativeInt(value.priorEpisodesCount)
+        && isNonNegativeInt(value.illnessConfirmedCount)
+        && isNonNegativeInt(value.confounderExplainedCount)
+        && isNonNegativeInt(value.noIllnessCount)
+        && isNonNegativeInt(value.unknownCount)
+        && isNonNegativeInt(value.positiveRespiratoryTestsCount)
+        && isNonNegativeInt(value.negativeRespiratoryTestsCount)
+        && isNullableFiniteNumber(value.medianLeadTimeDays)
+        && typeof value.calibrationEligible === 'boolean';
+}
+
 function isRespirationElevationEvidence(value: unknown): boolean {
     if (!isPlainObject(value)) return false;
     return (RESPIRATION_ELEVATION_STATUSES as readonly unknown[]).includes(value.status)
@@ -184,6 +260,37 @@ export function parseHealthAnomalyAssessmentRevision(
         revision.assessment.respirationElevation !== undefined
         && !isRespirationElevationEvidence(revision.assessment.respirationElevation)
     ) throw new Error('Invalid respiration elevation evidence');
+    if (
+        revision.assessment.unexplainedPersistenceDays !== undefined
+        && !isNonNegativeInt(revision.assessment.unexplainedPersistenceDays)
+    ) throw new Error('Invalid health anomaly unexplainedPersistenceDays');
+    if (
+        revision.assessment.calibrationStage !== undefined
+        && !(CALIBRATION_STAGES as readonly unknown[]).includes(revision.assessment.calibrationStage)
+    ) throw new Error('Invalid health anomaly calibrationStage');
+    if (
+        revision.assessment.anomalySeverity !== undefined
+        && !(ANOMALY_SEVERITIES as readonly unknown[]).includes(revision.assessment.anomalySeverity)
+    ) throw new Error('Invalid health anomaly anomalySeverity');
+    if (
+        revision.assessment.evidenceQuality !== undefined
+        && !(EVIDENCE_QUALITIES as readonly unknown[]).includes(revision.assessment.evidenceQuality)
+    ) throw new Error('Invalid health anomaly evidenceQuality');
+    if (
+        revision.assessment.earlyResponse !== undefined
+        && !isEarlyResponseProtocol(revision.assessment.earlyResponse)
+    ) throw new Error('Invalid health anomaly earlyResponse');
+    if (
+        revision.assessment.activityMatchedExpectations !== undefined
+        && (!Array.isArray(revision.assessment.activityMatchedExpectations)
+            || revision.assessment.activityMatchedExpectations.length > 3
+            || !revision.assessment.activityMatchedExpectations.every(isActivityMatchedSignalExpectation))
+    ) throw new Error('Invalid health anomaly activityMatchedExpectations');
+    if (
+        revision.assessment.personalCalibration !== undefined
+        && revision.assessment.personalCalibration !== null
+        && !isPersonalOutcomeCalibrationSummary(revision.assessment.personalCalibration)
+    ) throw new Error('Invalid health anomaly personalCalibration');
     if (!Array.isArray(revision.assessment.coreSignals) || revision.assessment.coreSignals.length !== 3) throw new Error('Health anomaly revision requires three core signal traces');
     for (const signal of revision.assessment.coreSignals) {
         if (!['rhr', 'respiration', 'hrv'].includes(signal.signal)) throw new Error('Invalid health anomaly core signal');
