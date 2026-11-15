@@ -270,6 +270,36 @@ describe('WeekAheadStrip imported plan Today + Next 7 Days multi-session view', 
     expect(html).toContain('Authored');
   });
 
+  it('shows a later-starting imported plan on its own dates instead of today’s plan', () => {
+    const incoming = {
+      header: { contentHash: 'winter' },
+      plan: { planId: 'winter-block', revision: 1, title: 'Winter Block', restDays: [] },
+      placement: null,
+      placed: [{
+        session: {
+          id: 'winter-first', title: 'Winter Opener', priority: 'key',
+          placement: { week: 1, preferredDay: 'thursday', flexibility: 'preferred' },
+          gating: { modality: 'running', intensity: 'easy', durationMin: 30, durationMax: 40, environment: 'either', equipment: [] },
+          prescription: { summary: 'Easy opener.' },
+        },
+        date: '2026-09-17', status: 'planned', moved: false,
+      }],
+    } as unknown as NonNullable<Parameters<typeof WeekAheadStrip>[0]['externalPlan']>;
+    const dates = Array.from({ length: 8 }, (_, offset) => `2026-09-${String(14 + offset).padStart(2, '0')}`);
+    const externalPlanDays = dates.map(date => ({ date, active: date < '2026-09-17' ? sampleExternalPlan : incoming }));
+
+    const html = renderToStaticMarkup(
+      <WeekAheadStrip plan={null} externalPlan={sampleExternalPlan} externalPlanDays={externalPlanDays} today="2026-09-14" userId="u1" />,
+    );
+
+    expect(html).toContain('Today &amp; Next 7 Days · Hybrid Build Block → Winter Block');
+    expect(html).toContain('Imported plan schedule (r2 → r1)');
+    // Thursday's tile is the incoming plan's run (tile titles appear only in the selected day's detail).
+    expect(html).toContain('<span class="tile-weekday">Thu</span><span class="tile-icon" aria-hidden="true">🏃</span><span class="tile-category">Run</span>');
+    // The outgoing plan's authored rest on 2026-09-18 belongs to a date the incoming plan governs.
+    expect(html).not.toContain('Authored');
+  });
+
   it('withholds workout steps and export menu when clinicalEscalationRequired is true', () => {
     const html = renderToStaticMarkup(
       <WeekAheadStrip

@@ -91,6 +91,13 @@ vi.mock('../services/activeExternalPlanService', async importOriginal => ({
   ...await importOriginal<typeof import('../services/activeExternalPlanService')>(),
   activeExternalPlanService: {
     getActivePlanState: mocks.getActivePlanState,
+    // The outlook reads its dates per plan; here every date resolves to the mocked plan.
+    getGovernedPlanDays: async (userId: string, startDate: string, dayCount: number, fixed: unknown) => {
+      const actual = await vi.importActual<typeof import('../services/activeExternalPlanService')>('../services/activeExternalPlanService');
+      // Reads the configured value without counting as a today-decision resolver call.
+      const state = await mocks.getActivePlanState.getMockImplementation()?.(userId, startDate, fixed) ?? { status: 'MISSING' };
+      return actual.governedPlanDays(startDate, Array.from({ length: dayCount }, () => state));
+    },
   },
 }));
 vi.mock('../services/fixedActivityService', () => ({

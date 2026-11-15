@@ -368,6 +368,51 @@ export function externalRestContextForDate(active: ActiveExternalPlan, date: str
     };
 }
 
+/** One date of a display window and the plan that governs it, or null when none does. */
+export interface GovernedPlanDay {
+    date: string;
+    active: ActiveExternalPlan | null;
+}
+
+/**
+ * Pairs consecutive dates from `startDate` with their per-date resolver states. A window is
+ * never shown as one plan: once a newly imported plan's horizon begins, its dates belong to
+ * it even while today still belongs to the outgoing plan. Fails closed on the first
+ * INVALID/UNAVAILABLE date, as a single-date read does.
+ */
+export function governedPlanDays(
+    startDate: string,
+    states: readonly DataState<ActiveExternalPlan>[],
+): DataState<GovernedPlanDay[]> {
+    const failed = states.find(state => state.status === 'INVALID' || state.status === 'UNAVAILABLE');
+    if (failed) return failed;
+    return {
+        status: 'AVAILABLE',
+        data: states.map((state, offset) => ({
+            date: addDaysToLocalDateString(startDate, offset),
+            active: state.status === 'AVAILABLE' ? state.data : null,
+        })),
+        revision: null,
+    };
+}
+
+/** Every placed session (any status) on each day, taken only from that day's governing plan. */
+export function governedPlacedSessions(days: readonly GovernedPlanDay[]): PlacedSession[] {
+    return days.flatMap(day => day.active?.placed.filter(item => item.date === day.date) ?? []);
+}
+
+/** Titles of the plans governing the window, in date order, one per plan. */
+export function governingPlanTitles(days: readonly GovernedPlanDay[]): string[] {
+    const seen = new Set<string>();
+    const titles: string[] = [];
+    for (const day of days) {
+        if (!day.active || seen.has(day.active.plan.planId)) continue;
+        seen.add(day.active.plan.planId);
+        titles.push(day.active.plan.title);
+    }
+    return titles;
+}
+
 /**
  * Resolves which imported plan governs a given date.
  *
@@ -411,6 +456,19 @@ export class ActiveExternalPlanService {
         const dates: string[] = [];
         for (let date = startDate; date <= endDate; date = addDaysToLocalDateString(date, 1)) dates.push(date);
         return Promise.all(dates.map(date => this.resolveActivePlanState(userId, date, fixedActivities, options, cache)));
+    }
+
+    /** `dayCount` consecutive dates from `startDate`, each with the plan that governs it. */
+    async getGovernedPlanDays(
+        userId: string,
+        startDate: string,
+        dayCount: number,
+        fixedActivities: readonly FixedActivity[] = [],
+        options: ActivePlanReadOptions = {},
+    ): Promise<DataState<GovernedPlanDay[]>> {
+        const endDate = addDaysToLocalDateString(startDate, dayCount - 1);
+        const states = await this.getActivePlanStatesInRange(userId, startDate, endDate, fixedActivities, options);
+        return governedPlanDays(startDate, states);
     }
 
     private async resolveActivePlanState(

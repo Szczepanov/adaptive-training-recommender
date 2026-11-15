@@ -36,6 +36,8 @@ export interface ExternalPlanWeekProps {
     today: string;
     /** Active fixed activities in the week, used to exclude occupied days from the manual day picker. */
     fixedActivities?: readonly FixedActivity[];
+    /** Dates in the week governed by a different plan or revision, never offered as a move target. */
+    unavailableDates?: readonly string[];
     /** Produces a proposal for a session that was not done. Never writes. */
     onProposeReplacement: (sessionId: string, missedDate: string) => ReplacementProposal;
     /** Called only after the athlete confirms; `date` is null for a drop. */
@@ -69,7 +71,7 @@ function weekLevelFindings(critique: ExternalWeekCritique | null): ExternalCriti
  */
 export function ExternalPlanWeek({
     userId,
-    planTitle, weekStartDate, placed, critique, today, fixedActivities,
+    planTitle, weekStartDate, placed, critique, today, fixedActivities, unavailableDates,
     onProposeReplacement, onConfirmReplacement, onChooseDate, writeError = null,
     clinicalEscalationRequired = false,
 }: ExternalPlanWeekProps) {
@@ -105,8 +107,8 @@ export function ExternalPlanWeek({
         const fixedOccupied = (fixedActivities ?? [])
             .filter(activity => !activity.isCompleted && activity.date >= days[0] && activity.date <= days[6])
             .map(activity => activity.date);
-        return new Set([...inWeekOccupied, ...fixedOccupied]);
-    }, [inWeek, fixedActivities, days]);
+        return new Set([...inWeekOccupied, ...fixedOccupied, ...(unavailableDates ?? [])]);
+    }, [inWeek, fixedActivities, days, unavailableDates]);
 
     const weekFindings = weekLevelFindings(critique);
 

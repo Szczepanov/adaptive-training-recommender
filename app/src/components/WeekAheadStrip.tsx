@@ -4,7 +4,7 @@ import type { ExternalPlacementStatus, ExternalPrescriptionStep, ExternalRestDir
 import { capabilityMaintenanceReadout } from '../engine/capabilityMaintenance';
 import { resolveRestDatesByDate, type PlacedSession } from '../engine/externalPlacement';
 import { externalSessionDisplayPrescription } from '../engine/externalSessionProfiles';
-import type { ActiveExternalPlan } from '../services/activeExternalPlanService';
+import type { ActiveExternalPlan, GovernedPlanDay } from '../services/activeExternalPlanService';
 import type { PlanningAuthorityMode } from '../ledger/planningAuthorityMode';
 import { addDaysToLocalDateString } from '../utils/localDate';
 import { splitCoachingRationale } from '../utils/rationaleDisplay';
@@ -45,12 +45,31 @@ interface ImportedOutlookDay {
   restDay: ExternalRestDirective | null;
 }
 
-function buildImportedOutlookDays(externalPlan: ActiveExternalPlan, today: string): ImportedOutlookDay[] {
-  const restByDate = resolveRestDatesByDate(externalPlan.plan);
+/** The plan to show on `date`: the per-date governing plan when known, else today's plan. */
+function governingPlanFor(
+  date: string,
+  externalPlan: ActiveExternalPlan | null | undefined,
+  externalPlanDays: readonly GovernedPlanDay[] | null | undefined,
+): ActiveExternalPlan | null {
+  const day = externalPlanDays?.find(item => item.date === date);
+  return day ? day.active : externalPlan ?? null;
+}
+
+function buildImportedOutlookDays(
+  externalPlan: ActiveExternalPlan | null | undefined,
+  externalPlanDays: readonly GovernedPlanDay[] | null | undefined,
+  today: string,
+): { days: ImportedOutlookDay[]; plans: ActiveExternalPlan[] } {
   const days: ImportedOutlookDay[] = [];
+  const plans: ActiveExternalPlan[] = [];
   for (let offset = 0; offset < IMPORTED_HORIZON_DAYS; offset += 1) {
     const date = addDaysToLocalDateString(today, offset);
-    const sessions = externalPlan.placed
+    const governing = governingPlanFor(date, externalPlan, externalPlanDays);
+    if (governing && !plans.some(item => item.plan.planId === governing.plan.planId && item.plan.revision === governing.plan.revision)) {
+      plans.push(governing);
+    }
+    const placed = governing?.placed ?? [];
+    const sessions = placed
       .filter(item => item.date === date && item.status !== 'dropped' && item.status !== 'superseded')
       .slice()
       .sort((a, b) => {
@@ -58,16 +77,16 @@ function buildImportedOutlookDays(externalPlan: ActiveExternalPlan, today: strin
         const bOrder = 'intraday' in b.session && b.session.intraday ? b.session.intraday.order : Number.MAX_SAFE_INTEGER;
         return aOrder - bOrder;
       });
-    const dropped = externalPlan.placed.filter(item => item.date === date && item.status === 'dropped');
+    const dropped = placed.filter(item => item.date === date && item.status === 'dropped');
     days.push({
       date,
       offset,
       sessions,
       dropped,
-      restDay: restByDate.get(date) ?? null,
+      restDay: governing ? resolveRestDatesByDate(governing.plan).get(date) ?? null : null,
     });
   }
-  return days;
+  return { days, plans };
 }
 
 interface WeekAheadStripProps {
@@ -84,6 +103,9 @@ interface WeekAheadStripProps {
   planningMode?: PlanningMode;
   /** When an imported external plan is active, display Today + next 7 days from the imported plan. */
   externalPlan?: ActiveExternalPlan | null;
+  /** The plan governing each outlook date. A plan imported to start later owns its own
+   * dates even while `externalPlan` (today's plan) is the outgoing one. */
+  externalPlanDays?: readonly GovernedPlanDay[] | null;
   /** Today's Warsaw-local YYYY-MM-DD date string for anchoring the imported plan horizon. */
   today?: string;
   /** Optional userId to enable WorkoutExportMenu on imported sessions. */
@@ -221,6 +243,7 @@ export const WeekAheadStrip = memo(function WeekAheadStrip({
   scheduleOverlays,
   planningMode,
   externalPlan,
+  externalPlanDays,
   today,
   userId,
   clinicalEscalationRequired = false,
@@ -229,8 +252,16 @@ export const WeekAheadStrip = memo(function WeekAheadStrip({
 }: WeekAheadStripProps) {
   const [selectedIndex, setSelectedIndex] = useState(0);
 
-  if (externalPlan && today) {
-    const importedDays = buildImportedOutlookDays(externalPlan, today);
+  // In engine mode a plan starting later never displaces today's engine forecast here.
+  const importedOutlook = today && (externalPlan || (planningAuthorityMode === 'ledger' && externalPlanDays?.some(day => day.active)))
+    ? buildImportedOutlookDays(externalPlan, externalPlanDays, today)
+    : null;
+  if (importedOutlook && importedOutlook.plans.length > 0) {
+    const importedDays = importedOutlook.days;
+    const outlookTitle = importedOutlook.plans
+      .filter((item, index, all) => all.findIndex(other => other.plan.planId === item.plan.planId) === index)
+      .map(item => item.plan.title).join(' → ');
+    const outlookRevisions = importedOutlook.plans.map(item => `r${item.plan.revision}`).join(' → ');
     const safeImportedIndex = Math.min(selectedIndex, importedDays.length - 1);
     const selectedImported = importedDays[safeImportedIndex];
     const selectedOverlay = scheduleOverlays?.find(
@@ -255,9 +286,9 @@ export const WeekAheadStrip = memo(function WeekAheadStrip({
       <div className="dashboard-card week-ahead-card imported-outlook-card">
         <div className="card-header">
           <div className="header-title-group">
-            <h3>Today &amp; Next 7 Days · {externalPlan.plan.title}</h3>
+            <h3>Today &amp; Next 7 Days · {outlookTitle}</h3>
             <span className="provisional-tag">
-              Imported plan schedule (r{externalPlan.plan.revision})
+              Imported plan schedule ({outlookRevisions})
             </span>
           </div>
         </div>
