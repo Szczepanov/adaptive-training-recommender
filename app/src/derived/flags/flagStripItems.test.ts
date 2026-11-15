@@ -57,6 +57,11 @@ describe('resolveTodayFlagStripItems', () => {
     expect(anomalyItem?.reasonCode).toBe('possible_illness_or_systemic_stress');
     expect(anomalyItem?.inputs.some(inp => inp.name === 'source_revision')).toBe(false);
 
+    const chained = resolveTodayFlagStripItems({ capturedFlags: [makePersistedFlag({
+      inputs: [{ name: 'supersedes_revision', value: { value: 'flag-' + 'a'.repeat(64), source: 'flag_capture', state: 'measured' } }],
+    })] });
+    expect(chained.find(i => i.id === 'recovery_beyond_baseline')?.inputs).toEqual([]);
+
     const capturedLegacy = makePersistedFlag({
       id: 'illness_anomaly',
       active: null,

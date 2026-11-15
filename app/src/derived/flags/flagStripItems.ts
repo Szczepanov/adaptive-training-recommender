@@ -19,6 +19,9 @@ export interface SessionFlagInput {
     evaluation: FlagEvaluation;
 }
 
+/** Capture-bookkeeping inputs (evidence digest, revision chain); not user-facing evidence. */
+const HIDDEN_INPUTS = new Set(['source_revision', 'supersedes_revision']);
+
 function notRecordedItem(id: LedgerFlagId): FlagStripItem {
     return {
         id,
@@ -37,7 +40,7 @@ function toStripItem(
 ): FlagStripItem {
     const resolvedRef = sessionRef ?? ('sessionRef' in evaluation ? evaluation.sessionRef : undefined);
     // Internal capture digest is for idempotency auditing, not athlete display.
-    const visibleInputs = evaluation.inputs.filter(input => input.name !== 'source_revision');
+    const visibleInputs = evaluation.inputs.filter(input => !HIDDEN_INPUTS.has(input.name));
     return {
         id: evaluation.id,
         active: evaluation.active,

@@ -5,7 +5,7 @@ import type { PersistedFlagEvaluation } from '../ledger/flagEvaluation';
 import type { DailyRecoverySnapshot, DailySubjectiveCheckin, TrainingSettings } from '../ledger/models';
 import type { ActiveExternalPlan } from './activeExternalPlanService';
 import type { SessionDefinition, SessionOccurrence } from '../sessions/models';
-import { FlagCaptureService } from './flagCaptureService';
+import { captureCurrentFlags, FlagCaptureService, flagCaptureService } from './flagCaptureService';
 import { fullRecords } from '../ledger/export/ledgerExportFixtures.testSupport';
 
 vi.mock('../firebase', () => ({ getDb: () => ({}) }));
@@ -36,6 +36,7 @@ describe('dated flag capture', () => {
         resolve: vi.fn(),
         healthAnomaly: vi.fn<() => Promise<HealthAnomalyAssessmentRevision | { revision: HealthAnomalyAssessmentRevision | null; unreadableCount: number } | null>>(),
         persist: vi.fn(),
+        priorFlags: vi.fn<() => Promise<DataState<PersistedFlagEvaluation[]>>>(),
     };
     let saved: PersistedFlagEvaluation[];
     let service: FlagCaptureService;
@@ -50,6 +51,7 @@ describe('dated flag capture', () => {
         reads.resolve.mockResolvedValue(ok(definition));
         reads.healthAnomaly.mockResolvedValue(null);
         reads.persist.mockImplementation(async (v: PersistedFlagEvaluation) => { saved.push(v); return v; });
+        reads.priorFlags.mockResolvedValue(ok([]));
         service = new FlagCaptureService(reads);
     });
     const capture = () => service.captureForDate('alice', date, date, '2026-10-28T08:00:00.000Z');
@@ -303,5 +305,72 @@ describe('dated flag capture', () => {
             state: 'invalid',
         });
         expect(flag?.inputs.some(i => i.value.state === 'invalid')).toBe(true);
+    });
+    it('re-captures a result that repeats an older revision as a newer revision after a failed capture', async () => {
+        const store = new Map<string, PersistedFlagEvaluation>();
+        reads.persist.mockImplementation(async (v: PersistedFlagEvaluation) => {
+            const existing = store.get(v.revisionId);
+            if (existing) return existing; // persistImmutable keeps the first document's evaluatedAt
+            store.set(v.revisionId, v); saved.push(v); return v;
+        });
+        reads.priorFlags.mockImplementation(async () => ok([...store.values()]));
+        const anomaly = (at: string) => service.captureForDate('alice', date, date, at)
+            .then(() => [...store.values()].filter(f => f.id === 'illness_anomaly')
+                .sort((a, b) => a.evaluatedAt.localeCompare(b.evaluatedAt)).at(-1)!);
+        const first = await anomaly('2026-10-28T08:00:00.000Z');
+        expect(first.state).toBe('missing');
+        reads.healthAnomaly.mockRejectedValueOnce(new Error('offline'));
+        expect((await anomaly('2026-10-28T09:00:00.000Z')).state).toBe('unavailable');
+        const again = await anomaly('2026-10-28T10:00:00.000Z');
+        expect(again).toMatchObject({ state: 'missing', evaluatedAt: '2026-10-28T10:00:00.000Z' });
+        expect(again.revisionId).not.toBe(first.revisionId);
+        expect(again.inputs.find(i => i.name === 'supersedes_revision')).toBeDefined();
+        // A repeat of the latest revision stays idempotent and keeps the chain stable.
+        const count = store.size;
+        expect((await anomaly('2026-10-28T11:00:00.000Z')).revisionId).toBe(again.revisionId);
+        expect(store.size).toBe(count);
+        for (const flag of store.values()) expect(flag.inputs.length).toBeLessThanOrEqual(16);
+    });
+    it('keeps first-capture revision ids unchanged when no prior flags exist or the prior read fails', async () => {
+        await capture();
+        const ids = saved.map(f => f.revisionId);
+        saved = [];
+        reads.priorFlags.mockResolvedValue({ status: 'UNAVAILABLE', operation: 'read', retryable: true });
+        await capture();
+        expect(saved.map(f => f.revisionId)).toEqual(ids);
+        expect(saved.every(f => f.inputs.every(i => i.name !== 'supersedes_revision'))).toBe(true);
+    });
+});
+
+describe('captureCurrentFlags', () => {
+    it('runs overlapping captures for one user one at a time, and other users independently', async () => {
+        const order: string[] = [];
+        const releases: Array<() => void> = [];
+        const spy = vi.spyOn(flagCaptureService, 'captureForDate').mockImplementation(async (userId: string) => {
+            order.push('start:' + userId);
+            await new Promise<void>(resolve => releases.push(resolve));
+            order.push('end:' + userId);
+        });
+        const first = captureCurrentFlags('alice');
+        const second = captureCurrentFlags('alice');
+        const other = captureCurrentFlags('bob');
+        await vi.waitFor(() => expect(order).toEqual(['start:alice', 'start:bob']));
+        releases.shift()!();
+        await first;
+        await vi.waitFor(() => expect(order).toContain('start:alice'));
+        expect(order.filter(e => e === 'start:alice')).toHaveLength(2);
+        expect(order.indexOf('end:alice')).toBeLessThan(order.lastIndexOf('start:alice'));
+        while (releases.length) releases.shift()!();
+        await Promise.all([second, other]);
+        spy.mockRestore();
+    });
+    it('keeps the queue moving after a failed capture', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        const spy = vi.spyOn(flagCaptureService, 'captureForDate')
+            .mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce(undefined);
+        await Promise.all([captureCurrentFlags('alice'), captureCurrentFlags('alice')]);
+        expect(spy).toHaveBeenCalledTimes(2);
+        expect(warn).toHaveBeenCalledTimes(1);
+        spy.mockRestore(); warn.mockRestore();
     });
 });

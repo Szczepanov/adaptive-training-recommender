@@ -1,6 +1,7 @@
 import type { DataState } from '../engine/dataState';
 import type { FlagEvaluation } from '../derived/flags/flagEvaluation';
 import type { HealthAnomalyAssessmentRevision } from '../derived/flags/illnessAnomaly/healthAnomalyModels';
+import type { PersistedFlagEvaluation } from '../ledger/flagEvaluation';
 import { evaluateIllnessAnomalyFlag } from '../derived/flags/illnessAnomaly/illnessAnomalyFlag';
 import { evaluateIllnessRiskSymptom } from '../derived/flags/illnessRiskSymptom';
 import { evaluateRecoveryBeyondBaseline, RECOVERY_BEYOND_BASELINE_WINDOW } from '../derived/flags/recoveryBeyondBaseline';
@@ -42,7 +43,23 @@ const defaultReads = {
     healthAnomaly: (userId: string, date: string) =>
         healthAnomalyAssessmentRepository.getLatestForDateWithDiagnostics(userId, date),
     persist: flagEvaluationRepository.persistImmutable,
+    priorFlags: (userId: string, date: string) => flagEvaluationRepository.getInRangeState(userId, date, date),
 };
+/** Audit input linking a re-captured flag to the revision it replaces (see `chooseRevision`). */
+export const SUPERSEDES_REVISION_INPUT = 'supersedes_revision';
+const flagKey = (id: string, sessionRef?: string) => `${id}::${sessionRef ?? ''}`;
+function latestPriorFlags(state: DataState<PersistedFlagEvaluation[]>): {
+    latest: Map<string, PersistedFlagEvaluation>; revisionIds: Set<string>;
+} {
+    const latest = new Map<string, PersistedFlagEvaluation>();
+    const flags = state.status === 'AVAILABLE' ? state.data : [];
+    for (const flag of flags) {
+        const key = flagKey(flag.id, flag.sessionRef);
+        const prev = latest.get(key);
+        if (!prev || flag.evaluatedAt >= prev.evaluatedAt) latest.set(key, flag);
+    }
+    return { latest, revisionIds: new Set(flags.map(flag => flag.revisionId)) };
+}
 type HealthAnomalyDiagnosticRead = {
     revision: HealthAnomalyAssessmentRevision | null;
     unreadableCount: number;
@@ -55,7 +72,8 @@ function normalizeHealthAnomalyRead(
     }
     return { revision: value, unreadableCount: 0 };
 }
-type FlagCaptureReads = Omit<typeof defaultReads, 'healthAnomaly'> & {
+type FlagCaptureReads = Omit<typeof defaultReads, 'healthAnomaly' | 'priorFlags'> & {
+    priorFlags?: typeof defaultReads.priorFlags;
     healthAnomaly?: (
         userId: string,
         date: string,
@@ -72,6 +90,25 @@ async function readState<T>(operation: () => Promise<DataState<T>>): Promise<Dat
     try { return await operation(); } catch { return { status: 'UNAVAILABLE', operation: 'capture flag input', retryable: true }; }
 }
 
+/**
+ * Flag revisions are content-addressed, so re-capturing an older result (A, then a failed
+ * read, then A again) would return the first document with its old `evaluatedAt`, and the
+ * newer failure would stay "latest". When the result repeats an older revision that is no
+ * longer the latest for its key, chain it to the latest so a new immutable revision is minted.
+ */
+async function chooseRevision(
+    build: (supersedes?: string) => Promise<PersistedFlagEvaluation>,
+    prior: ReturnType<typeof latestPriorFlags>,
+    key: string,
+): Promise<PersistedFlagEvaluation> {
+    const latest = prior.latest.get(key);
+    const latestLink = latest?.inputs.find(input => input.name === SUPERSEDES_REVISION_INPUT)?.value.value;
+    const repeat = await build(typeof latestLink === 'string' ? latestLink : undefined);
+    if (!latest || repeat.revisionId === latest.revisionId) return repeat;
+    const base = await build();
+    return prior.revisionIds.has(base.revisionId) ? build(latest.revisionId) : base;
+}
+
 /** Captures only the current Warsaw date; export never calls this writer. */
 export class FlagCaptureService {
     private readonly reads: typeof defaultReads;
@@ -79,6 +116,7 @@ export class FlagCaptureService {
         const readHealthAnomaly = reads.healthAnomaly ?? defaultReads.healthAnomaly;
         this.reads = {
             ...reads,
+            priorFlags: reads.priorFlags ?? defaultReads.priorFlags,
             healthAnomaly: async (userId: string, date: string) =>
                 normalizeHealthAnomalyRead(await readHealthAnomaly(userId, date)),
         };
@@ -88,7 +126,7 @@ export class FlagCaptureService {
         if (!userId.trim() || userId.includes('/')) throw new Error('Invalid flag owner');
         assertLocalDate(date, 'observedOn');
         if (date !== today) throw new Error('Only the current Warsaw date may be captured');
-        const [recovery, checkin, settings, plan, occurrences, executionRead, anomalyRead] = await Promise.all([
+        const [recovery, checkin, settings, plan, occurrences, executionRead, anomalyRead, priorRead] = await Promise.all([
             readState(() => this.reads.recovery(userId, date)),
             readState(() => this.reads.checkin(userId, date)),
             readState(() => this.reads.settings(userId)),
@@ -100,14 +138,20 @@ export class FlagCaptureService {
                 value => ({ status: 'AVAILABLE' as const, ...normalizeHealthAnomalyRead(value) }),
                 () => ({ status: 'UNAVAILABLE' as const, revision: null, unreadableCount: 0 }),
             ),
+            readState(() => this.reads.priorFlags(userId, date)),
         ]);
+        const prior = latestPriorFlags(priorRead);
         const save = async (evaluation: FlagEvaluation, source: unknown, sessionRef?: string, baselineWindow?: string) => {
             // A digest binds mutable inputs without copying private notes or account identifiers.
             const fingerprint = await flagEvidenceDigest(source);
-            const flag = { ...evaluation, inputs: [...evaluation.inputs, { name: 'source_revision',
-                value: { value: fingerprint, source: 'flag_capture', state: 'measured' as const } }] };
-            await this.reads.persist(await buildFlagEvaluationRevision({ userId, observedOn: date, evaluatedAt,
-                evaluation: flag, ...(sessionRef ? { sessionRef } : {}), ...(baselineWindow ? { baselineWindow } : {}) }));
+            const build = (supersedes?: string) => buildFlagEvaluationRevision({ userId, observedOn: date, evaluatedAt,
+                evaluation: { ...evaluation, inputs: [...evaluation.inputs,
+                    { name: 'source_revision', value: { value: fingerprint, source: 'flag_capture', state: 'measured' as const } },
+                    ...(supersedes ? [{ name: SUPERSEDES_REVISION_INPUT,
+                        value: { value: supersedes, source: 'flag_capture', state: 'measured' as const } }] : []),
+                ] },
+                ...(sessionRef ? { sessionRef } : {}), ...(baselineWindow ? { baselineWindow } : {}) });
+            await this.reads.persist(await chooseRevision(build, prior, flagKey(evaluation.id, sessionRef)));
         };
         const recoveryResult = evaluateRecoveryBeyondBaseline(data(recovery), date);
         const recoveryFlag = { ...recoveryResult.flag, inputs: [
@@ -218,9 +262,20 @@ export class FlagCaptureService {
 }
 export const flagCaptureService = new FlagCaptureService();
 
-/** Lazy, non-blocking lifecycle boundary. Never logs health records or document paths. */
-export function captureCurrentFlags(userId: string): void {
-    void flagCaptureService.captureForDate(userId, getLocalDateString()).catch(() => {
+const captureChains = new Map<string, Promise<void>>();
+
+/**
+ * Lazy, non-blocking lifecycle boundary. Never logs health records or document paths.
+ * Captures run one at a time per user: `chooseRevision` reads the latest prior revision,
+ * so overlapping captures could otherwise both judge against the same stale "latest".
+ * The date and evaluation instant are taken when each queued capture starts.
+ */
+export function captureCurrentFlags(userId: string): Promise<void> {
+    const previous = captureChains.get(userId) ?? Promise.resolve();
+    const next = previous.then(() => flagCaptureService.captureForDate(userId, getLocalDateString())).catch(() => {
         console.warn('Flag capture unavailable; the export will retain explicit gaps.');
     });
+    captureChains.set(userId, next);
+    void next.finally(() => { if (captureChains.get(userId) === next) captureChains.delete(userId); });
+    return next;
 }

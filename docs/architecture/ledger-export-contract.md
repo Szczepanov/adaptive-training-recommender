@@ -345,7 +345,14 @@ Each `users/{uid}/flag_evaluations/{revisionId}` document preserves the evaluato
 definition version, original evaluation instant, inputs and human-readable `threshold`
 rule. Its SHA-256 identity excludes the evaluation instant but includes the dated
 evaluation, source-evidence digests and optional session scope. Identical retries retain
-the original document; changed evidence creates a new immutable revision. Rules permit
+the original document; changed evidence creates a new immutable revision. A result that
+repeats an older revision which is no longer the latest for its flag id and session scope
+(for example measured, then `unavailable` after a failed read, then measured again) carries
+a `supersedes_revision` input naming the current latest revision, so it is stored as a new
+revision with a fresh evaluation instant instead of resolving to the stale original.
+`source_revision` and `supersedes_revision` are capture bookkeeping: the export passes them
+through, and `FlagStrip` hides them. Captures run one at a time per user so each judges
+against the latest stored revision. Rules permit
 owner reads/creates only and deny updates/deletes; the parser validates nested values.
 
 The export reads date-ordered pages of 200 with a 2,000-record bound plus one sentinel.
@@ -353,9 +360,12 @@ Corrupt history reports `invalid`; failed/truncated reads report `unavailable` a
 discard partial results. The source inventory includes `flag_evaluations` and an
 optional failure reason. Every date and flag id in the export window is represented;
 uncaptured pairs are `null / not_recorded`, with no synthetic inactive history.
-Recorded versions retain input transitions. HA7 is not released: `illness_anomaly`
-is always clamped to `null / not_yet_supported`, with reason
-`ha7_release_gate_unmet`; no raw shadow-assessment result is exposed.
+Recorded versions retain input transitions. Under the HA7 visible-v1 release gate
+([ADR-0054](../adr/0054-ha7-visible-early-warning-release-gate.md)), `illness_anomaly`
+exports the captured evaluation of the latest persisted health-anomaly assessment
+(`evaluateIllnessAnomalyFlag`); revisions captured before the unlock keep their recorded
+`null / not_yet_supported` state with reason `ha7_release_gate_unmet`. No raw
+shadow-assessment payload is exposed.
 
 ### Derived baseline leaves
 
