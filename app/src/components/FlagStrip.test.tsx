@@ -57,4 +57,26 @@ describe('FlagStrip', () => {
     expect(html).toContain('Restrictions match this session');
     expect(html).not.toContain('No symptoms reported');
   });
+
+  it('explains capture read failures without raw source or reason identifiers', () => {
+    const html = renderToStaticMarkup(<FlagStrip flags={[
+      flag({ id: 'recovery_beyond_baseline', active: null, state: 'unavailable', reasonCode: 'source_unavailable', inputs: [
+        { name: 'daily_recovery_snapshots', value: { value: null, source: 'daily_recovery_snapshots', state: 'unavailable' } },
+      ] }),
+      flag({ id: 'illness_risk_symptom', active: null, state: 'invalid', reasonCode: 'source_invalid', inputs: [
+        { name: 'daily_subjective_checkins', value: { value: null, source: 'daily_subjective_checkins', state: 'invalid' } },
+      ] }),
+    ]} />);
+    expect(html).toContain('The information for this check could not be loaded.');
+    expect(html).toContain('The information for this check could not be read.');
+    expect(html).toContain('Recovery data:');
+    expect(html).toContain('Check-in:');
+    expect(html).not.toMatch(/source_|daily_recovery_snapshots|daily_subjective_checkins|information prevented/);
+  });
+
+  it('humanizes injury rule-table severities', () => {
+    const html = renderToStaticMarkup(<FlagStrip flags={[flag({})]} />);
+    expect(html).toMatch(/· (Limit|Exclude):/);
+    expect(html).not.toMatch(/· (limit|exclude):/);
+  });
 });

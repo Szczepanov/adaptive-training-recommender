@@ -20,6 +20,7 @@ const INPUT_LABELS: Record<string, string> = {
   allergy_like_symptom_day: 'Allergy-like symptom pattern', active_constraint_families: 'Restriction categories',
   touched_patterns: 'Matching movements', touched_modalities: 'Matching activities',
   session_pattern_evidence_complete: 'Movement information', matched_regions: 'Matching regions',
+  daily_recovery_snapshots: 'Recovery data', daily_subjective_checkins: 'Check-in',
 };
 
 const STATE_LABELS: Record<LedgerState, string> = {
@@ -37,6 +38,13 @@ const REASONS: Record<string, string> = {
   no_session: 'Session information is missing.', pattern_evidence_incomplete: 'Movement information is incomplete.',
   session_modality_not_recorded: 'The session activity type is not recorded.',
   unmapped_active_constraint: 'A restriction does not have enough information to check.',
+  source_unavailable: 'The information for this check could not be loaded.',
+  source_invalid: 'The information for this check could not be read.',
+};
+
+const ILLNESS_CLEAR_LABELS: Record<string, string> = {
+  allergy_like_symptom_day: 'Allergy-like symptoms reported',
+  no_illness_symptoms: 'No illness symptoms reported',
 };
 
 const RULES: Record<Exclude<LedgerFlagId, 'illness_anomaly'>, string> = {
@@ -78,7 +86,7 @@ function statusBadge(item: FlagStripItem): { label: string; tone: 'active' | 'cl
     : { label: 'No matching restrictions', tone: 'clear' };
   if (item.id === 'illness_risk_symptom') return item.active
     ? { label: 'Illness symptoms reported', tone: 'active' }
-    : { label: item.reasonCode === 'allergy_like_symptom_day' ? 'Allergy-like symptoms reported' : item.reasonCode === 'no_illness_symptoms' ? 'No illness symptoms reported' : 'No illness flag', tone: 'clear' };
+    : { label: ILLNESS_CLEAR_LABELS[item.reasonCode] ?? 'No illness flag', tone: 'clear' };
   return item.active ? { label: 'Needs attention', tone: 'active' } : { label: 'No adverse signals', tone: 'clear' };
 }
 
@@ -134,7 +142,7 @@ export function FlagStrip({ flags, title = 'Today’s checks' }: FlagStripProps)
                     <p>Each exercise or alternative needs its own recorded movement evidence; required movements can add a match but do not complete missing evidence. Explicit activity restrictions are also checked.</p>
                     <ul>{Object.entries(INJURY_SESSION_TOUCH_TABLE).flatMap(([family, severities]) =>
                       Object.entries(severities).map(([severity, cell]) => (
-                        <li key={`${family}:${severity}`}>{readable(family)} · {severity}: {cell.patterns.map(readable).join(', ')}; activities: {cell.modalities.length ? cell.modalities.join(', ') : 'none'}</li>
+                        <li key={`${family}:${severity}`}>{readable(family)} · {readable(severity)}: {cell.patterns.map(readable).join(', ')}; activities: {cell.modalities.length ? cell.modalities.join(', ') : 'none'}</li>
                       )))}
                     </ul>
                   </>}

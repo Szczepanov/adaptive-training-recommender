@@ -147,7 +147,9 @@
 }
 
 .flag-strip-details { color: var(--text-secondary); font-size: 0.78rem; overflow-wrap: anywhere; }
-.flag-strip-details summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; gap: 0.4rem; }
-.flag-strip-details summary::before { content: '▸'; }
-.flag-strip-details[open] summary::before { content: '▾'; }
+.flag-strip-details summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; gap: 0.4rem; list-style: none; }
+.flag-strip-details summary::-webkit-details-marker { display: none; }
+/* Decorative marker: the empty alt text keeps screen readers from announcing the glyph. */
+.flag-strip-details summary::before { content: '▸'; content: '▸' / ''; }
+.flag-strip-details[open] summary::before { content: '▾'; content: '▾' / ''; }
 .flag-strip-details p { margin: 0 0 0.35rem; line-height: 1.4; }
