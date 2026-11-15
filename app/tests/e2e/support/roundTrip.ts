@@ -204,7 +204,7 @@ export async function planningBrief(page: Page, expectedHeading = '## External-p
 }
 
 export function ledgerPlanningBrief(page: Page): Promise<string> {
-  return planningBrief(page, '# Ledger export');
+  return planningBrief(page, '# Ledger update');
 }
 
 export async function finishStrength(page: Page, abandon = false): Promise<void> {

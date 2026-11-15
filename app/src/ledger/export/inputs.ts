@@ -44,7 +44,14 @@ export interface OccurrenceInput {
     /** Summarised from `session_executions`; absent means no summary is wired yet. */
     structuredEntries?: { exerciseCount: number; setCount: number };
     executedDefinitions?: { executionId: string; executedDefinition: 'authored' | 'reduced' | 'unknown' }[];
+    /** Ids of the occurrence's `structured_execution` source refs; [] = no structured work; absent = unknown. */
+    structuredExecutionIds?: readonly string[];
+    /** Validated per-occurrence set counts; absent = not summarised (exported `unavailable`). */
+    setCounts?: { planned: SetCountInput; work: SetCountInput; warmup: SetCountInput };
 }
+
+/** A count, or why it is absent. A missing denominator is never 0. */
+export type SetCountInput = { value: number } | { value: null; state: LedgerState };
 
 /** Structural subset of `FixedActivity` (`engine/models.ts`). */
 export interface FixedActivityInput {
@@ -119,6 +126,18 @@ export interface PlanRevisionInput {
     schema: string;
     /** Plan-level `notes` of the imported plan. */
     notes?: string;
+    /** Authored session content of the verified revision; absent when it was not read. */
+    sessions?: readonly PlanSessionContentInput[];
+}
+
+/** Structural subset of `ExternalPlanSession` the export carries for upcoming placements. */
+export interface PlanSessionContentInput {
+    id: string;
+    title: string;
+    priority?: string;
+    summary?: string;
+    stepNotes?: readonly string[];
+    fallback?: string;
 }
 
 /** Structural `ExternalPlanPlacement` (`engine/models.ts`): the mutable overlay, current state only. */

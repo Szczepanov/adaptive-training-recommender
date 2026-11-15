@@ -5,7 +5,7 @@ import { SOURCE_KEYS } from '../ledger/export/inputs';
 import { ENGINE_OPINION_KEYS } from '../ledger/export/schema';
 import { PLACEMENT_HISTORY_TRUNCATED_OPERATION } from '../ledger/placementHistory';
 const reads = vi.hoisted(() => Object.fromEntries([
-'flags', 'recovery', 'checkins', 'activities', 'preferences', 'goals', 'fixed', 'blocks', 'anthropometry', 'constraints', 'schedule', 'responses', 'outcomes', 'intent', 'assessments', 'executions', 'occurrences', 'settings', 'plans', 'header', 'activations', 'revision', 'placement', 'history', 'performed',
+'flags', 'recovery', 'checkins', 'activities', 'preferences', 'goals', 'fixed', 'blocks', 'anthropometry', 'constraints', 'schedule', 'responses', 'outcomes', 'intent', 'assessments', 'executions', 'occurrences', 'settings', 'plans', 'header', 'activations', 'revision', 'placement', 'history', 'performed', 'definition',
 ].map(key => [key, vi.fn()])));
 vi.mock('./flagEvaluationPersistence', () => ({ flagEvaluationRepository: { getInRangeState: reads.flags } }));
 vi.mock('./recoverySnapshotService', () => ({ recoverySnapshotService: { getRecoverySnapshotsInRangeState: reads.recovery } }));
@@ -26,6 +26,7 @@ vi.mock('./sessionExecutionService', () => ({ sessionExecutionService: { getExec
 vi.mock('./sessionOccurrenceService', () => ({ sessionOccurrenceService: { getOccurrencesInRangeState: reads.occurrences } }));
 vi.mock('./trainingSettingsService', () => ({ trainingSettingsService: { peekTrainingSettingsState: reads.settings } }));
 vi.mock('../nutrition/nutritionService', () => ({ nutritionService: { getNutritionDaysState: reads.nutrition = vi.fn() } }));
+vi.mock('../sessions/sessionDefinitionResolver', () => ({ resolveSessionDefinition: reads.definition }));
 vi.mock('../training-occurrence/repository', () => ({ performedTrainingOccurrenceRepository: { queryActiveInDateWindow: reads.performed } }));
 vi.mock('./externalPlanService', () => ({ externalPlanService: {
     listPlanIds: reads.plans, getHeaderState: reads.header, getActivationState: reads.activations,
@@ -47,6 +48,7 @@ describe('LedgerExportService', () => {
         reads.intent.mockResolvedValue({ blocks: [], unreadableCount: 0, truncated: false });
         reads.outcomes.mockResolvedValue({ outcomes: [], unreadableCount: 0, truncated: false });
         reads.assessments.mockResolvedValue({ sources: [], relevanceState: 'available', omittedCount: 0 });
+        reads.definition.mockResolvedValue({ status: 'MISSING' });
     });
     it.each([
         [{ status: 'INVALID', issues: [] }, 'invalid', 'corrupt_record'],
@@ -174,6 +176,24 @@ describe('LedgerExportService', () => {
         expect(corrupt.coachingHistory.planRevisions.state).toBe('invalid');
         expect(corrupt.coachingHistory.planRevisions.items).toEqual([]);
     });
+    it.each([
+        ['v1 prescription', { prescription: { summary: 'Sum', steps: [{ name: 'a', notes: 'n1' }, { name: 'b' }, { name: 'c', notes: ' ' }] } }],
+        ['v2+ definition', { definition: { summary: 'Sum', blocks: [{ steps: [{ notes: 'n1' }, {}] }, { steps: [{ notes: ' ' }] }] } }],
+    ])('maps authored %s content onto placements', async (_label, content) => {
+        const plan = { schema: 'external-plan@6', sessions: [{ id: 'session-1', title: 'Ride', priority: 'key', scaling: { fallback: 'Spin' }, ...content }] };
+        const contentHash = await computeContentHash(plan);
+        reads.plans.mockResolvedValue(available(['plan-1']));
+        reads.header.mockResolvedValue(available({ revision: 2, contentHash, importedAt: '2026-11-10T08:00:00Z' }));
+        reads.activations.mockResolvedValue(available([]));
+        reads.revision.mockResolvedValue(available(plan));
+        reads.placement.mockResolvedValue(available({ planId: 'plan-1', revision: 2, assignments: [{ sessionId: 'session-1', date: '2026-11-25', status: 'planned' }] }));
+        const fields = (await new LedgerExportService().build('owner', request)).coachingHistory.placements.items[0].fields;
+        expect(fields.title.value).toBe('Ride');
+        expect(fields.priority.value).toBe('key');
+        expect(fields.summary.value).toBe('Sum');
+        expect(fields.stepNotes.value).toEqual(['n1']);
+        expect(fields.fallback.value).toBe('Spin');
+    });
     it('reports incomplete bounded evidence rather than claiming a complete empty source', async () => {
         reads.outcomes.mockResolvedValue({ outcomes: [], unreadableCount: 0, truncated: true });
         reads.intent.mockResolvedValue({ blocks: [], unreadableCount: 1, truncated: false });
@@ -242,5 +262,52 @@ describe('LedgerExportService', () => {
             legacyEngine: { policyVersion: '9.9.9', verdict: 'proceed' },
         });
         expect(optedIn.legacyEngine).toEqual({ policyVersion: '9.9.9', verdict: 'proceed' });
+    });
+
+    describe('revisions referenced only by a future placement', () => {
+        const older = { schema: 'external-plan@6', sessions: [{ id: 'old-1', title: 'Old ride', definition: { summary: 'From revision 1', blocks: [] } }] };
+        const latest = { schema: 'external-plan@6', sessions: [] };
+        const future = { planId: 'plan-1', revision: 1, assignments: [{ sessionId: 'old-1', date: '2026-11-25', status: 'planned' }] };
+
+        async function setup(activations: unknown) {
+            const [oldHash, newHash] = [await computeContentHash(older), await computeContentHash(latest)];
+            reads.plans.mockResolvedValue(available(['plan-1']));
+            reads.header.mockResolvedValue(available({ revision: 2, contentHash: newHash, importedAt: '2026-11-18T08:00:00Z' }));
+            reads.activations.mockResolvedValue(typeof activations === 'function' ? activations(oldHash, newHash) : activations);
+            reads.revision.mockImplementation((_uid, _plan, revision) => Promise.resolve(available(revision === 1 ? older : latest)));
+            // Revision 1 is placed only through the legacy (unscoped) overlay; revision 2 has none.
+            reads.placement.mockImplementation((_uid, _plan, revision) => Promise.resolve(revision === undefined || revision === 1
+                ? available(future) : { status: 'MISSING' }));
+        }
+
+        it('exports the future placement content and a revision-1 header while the header is at revision 2', async () => {
+            await setup((oldHash: string, newHash: string) => available([
+                { revision: 1, contentHash: oldHash, activatedAt: '2026-11-01T08:00:00Z' },
+                { revision: 2, contentHash: newHash, activatedAt: '2026-11-18T08:00:00Z' },
+            ]));
+            const result = await new LedgerExportService().build('owner', { ...request, purpose: 'morning' });
+            const [placement] = result.coachingHistory.placements.items;
+            expect(placement.fields).toMatchObject({ revision: { value: 1 }, title: { value: 'Old ride', state: 'measured' },
+                summary: { value: 'From revision 1', state: 'measured' } });
+            expect(result.coachingHistory.planRevisions.items.map(row => row.id)).toEqual(['plan-1@1', 'plan-1@2']);
+        });
+
+        it('reads a revision found only through a future placement and keeps unverifiable content unavailable', async () => {
+            await setup({ status: 'UNAVAILABLE', operation: 'read', retryable: true });
+            const result = await new LedgerExportService().build('owner', { ...request, purpose: 'morning' });
+            expect(reads.revision).toHaveBeenCalledWith('owner', 'plan-1', 1);
+            const [placement] = result.coachingHistory.placements.items;
+            expect(placement.fields.sessionId.value).toBe('old-1');
+            expect(placement.fields.title).toMatchObject({ value: null, state: 'unavailable' });
+            expect(result.coachingHistory.planRevisions.items.map(row => row.id)).toEqual(['plan-1@2']);
+        });
+
+        it('does not read an older revision whose legacy placement lies outside the bounds', async () => {
+            await setup({ status: 'UNAVAILABLE', operation: 'read', retryable: true });
+            reads.placement.mockImplementation((_uid, _plan, revision) => Promise.resolve(revision === undefined || revision === 1
+                ? available({ ...future, assignments: [{ sessionId: 'old-1', date: '2026-11-28', status: 'planned' }] }) : { status: 'MISSING' }));
+            await new LedgerExportService().build('owner', { ...request, purpose: 'morning' });
+            expect(reads.revision).not.toHaveBeenCalledWith('owner', 'plan-1', 1);
+        });
     });
 });

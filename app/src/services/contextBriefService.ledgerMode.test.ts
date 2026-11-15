@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildLedgerExport } from '../ledger/export/buildLedgerExport';
 import { fullInput } from '../ledger/export/ledgerExportFixtures.testSupport';
+import { renderLedgerExportCompact } from '../ledger/export/compact/renderLedgerExportCompact';
+import { mergeCheckpoint, userContextCheckpoint } from '../ledger/export/compact/previousContext';
 import { ENGINE_OPINION_KEYS, LEDGER_EXPORT_SCHEMA_VERSION } from '../ledger/export/schema';
 
 const mocks = vi.hoisted(() => ({
@@ -61,7 +63,7 @@ describe('ContextBriefService ledger mode (#1167 P2-6, OD4, OD5)', () => {
         expect(result.asOfDate).toBe('2026-11-20');
         expect(result.windowDays).toBe(14);
         expect(result.unavailableSources).toEqual(['flag_evaluations']);
-        expect(result.text).toContain('# Ledger export');
+        expect(result.text).toContain('# Ledger update');
         expect(result.text).not.toContain('## Legacy engine (opt-in opinions)');
         for (const key of ENGINE_OPINION_KEYS) {
             expect(result.text).not.toContain(key);
@@ -117,5 +119,37 @@ describe('ContextBriefService ledger mode (#1167 P2-6, OD4, OD5)', () => {
         expect(result.text).toContain('## Legacy engine (opt-in opinions)');
         expect(result.text).toContain('policyVersion');
         expect(result.text).toContain('1.2.3');
+    });
+});
+
+describe('ContextBriefService ledger mode compact export (Phase 2 Task 5)', () => {
+    async function buildWith(options: Record<string, unknown>) {
+        mocks.getPreferencesState.mockResolvedValue({ status: 'AVAILABLE', data: { engineRecommendationsEnabled: false } });
+        const ledgerExporter = {
+            build: vi.fn(async (_u: string, request: { asOfDate: string; purpose: 'morning' | 'planning' | 'diagnostic'; exportedAt?: string }) =>
+                buildLedgerExport(fullInput({ asOfDate: request.asOfDate, purpose: request.purpose, exportedAt: '2026-11-20T06:12:03Z' }))),
+        };
+        return new ContextBriefService(ledgerExporter).build('u1', '2026-11-20', 14, 'full', undefined, { exportedAt: '2026-11-20T06:12:03Z', ...options });
+    }
+
+    it('ledger mode returns compact text, the context checkpoint and exportedAt', async () => {
+        const result = await buildWith({});
+        const ledger = buildLedgerExport(fullInput({ asOfDate: '2026-11-20', purpose: 'planning', exportedAt: '2026-11-20T06:12:03Z' }));
+        expect(result.text).toBe(renderLedgerExportCompact(ledger));
+        expect(result.contextCheckpoint).toEqual(userContextCheckpoint(ledger));
+        expect(Object.keys(result.contextCheckpoint?.itemHashes ?? {}).length).toBeGreaterThan(0);
+        expect(result.exportedAt).toBe('2026-11-20T06:12:03Z');
+    });
+
+    it('abbreviates against previousContext, and fullContext ignores previousContext', async () => {
+        const ledger = buildLedgerExport(fullInput({ asOfDate: '2026-11-20', purpose: 'planning', exportedAt: '2026-11-20T06:12:03Z' }));
+        const previousContext = mergeCheckpoint(undefined, userContextCheckpoint(ledger), '2026-11-19');
+        const abbreviated = await buildWith({ previousContext });
+        const full = await buildWith({ previousContext, fullContext: true });
+        const plain = await buildWith({});
+        expect(abbreviated.text).toBe(renderLedgerExportCompact(ledger, { previousContext }));
+        expect(abbreviated.text).not.toBe(plain.text);
+        expect(full.text).toBe(plain.text);
+        expect(full.contextCheckpoint).toEqual(plain.contextCheckpoint);
     });
 });

@@ -140,6 +140,10 @@ observedOn: 2026-11-19
 | durationMin | 60 | min | adaptive | measured | 2026-11-19 |
 | executedDefinitions | Not recorded | Not specified | adaptive | unavailable | 2026-11-19 |
 | structuredEntries | Not recorded | Not specified | adaptive | not_yet_supported | Not recorded |
+| plannedSets | 5 | sets | adaptive | measured | 2026-11-19 |
+| workSets | 4 | sets | adaptive | measured | 2026-11-19 |
+| warmupSets | 1 | sets | adaptive | measured | 2026-11-19 |
+| linkedResponseIds | &#91;"resp-1"&#93; | Not specified | adaptive | measured | 2026-11-19 |
 
 ### sessionResponses
 
@@ -303,6 +307,10 @@ inputs: &#91;&#93;
 | respiration7dAvg | Not recorded | breaths/min | daily_recovery_snapshots | missing | 2026-11-20 |
 | respiration28dAvg | Not recorded | breaths/min | daily_recovery_snapshots | missing | 2026-11-20 |
 | respiration28dMad | Not recorded | breaths/min | daily_recovery_snapshots | missing | 2026-11-20 |
+| sleepScore_delta28d | Not recorded | score | daily_recovery_snapshots | missing | 2026-11-20 |
+| restingHr_delta28d | Not recorded | bpm | daily_recovery_snapshots | missing | 2026-11-20 |
+| hrvOvernightAvg_delta28d | Not recorded | ms | daily_recovery_snapshots | missing | 2026-11-20 |
+| respirationAvg_delta28d | Not recorded | breaths/min | daily_recovery_snapshots | missing | 2026-11-20 |
 
 ### subjective_baselines
 
@@ -335,6 +343,12 @@ inputs: &#91;&#93;
 | motivation_variability | Not recorded | 1-10 | daily_subjective_checkins | missing | 2026-11-20 |
 | recentRecordedDays | 0 | days | daily_subjective_checkins | measured | 2026-11-20 |
 | longRecordedDays | 0 | days | daily_subjective_checkins | measured | 2026-11-20 |
+| readiness_delta28d | Not recorded | score_1_10 | daily_subjective_checkins | missing | 2026-11-20 |
+| sleepQuality_delta28d | Not recorded | score_1_10 | daily_subjective_checkins | missing | 2026-11-20 |
+| fatigue_delta28d | Not recorded | score_1_10 | daily_subjective_checkins | missing | 2026-11-20 |
+| soreness_delta28d | Not recorded | score_1_10 | daily_subjective_checkins | missing | 2026-11-20 |
+| mentalStress_delta28d | Not recorded | score_1_10 | daily_subjective_checkins | missing | 2026-11-20 |
+| motivation_delta28d | Not recorded | score_1_10 | daily_subjective_checkins | missing | 2026-11-20 |
 
 ### d_minus_1_step_normalization
 
@@ -1372,6 +1386,11 @@ observedOn: 2026-11-18
 | status | dropped | Not specified | adaptive | measured | 2026-11-18 |
 | date | 2026-11-18 | Not specified | adaptive | measured | 2026-11-18 |
 | statusHistory | Not recorded | Not specified | adaptive | not_yet_supported | Not recorded |
+| title | Not recorded | Not specified | adaptive | not_recorded | 2026-11-18 |
+| priority | Not recorded | Not specified | adaptive | not_recorded | 2026-11-18 |
+| summary | Not recorded | Not specified | adaptive | not_recorded | 2026-11-18 |
+| stepNotes | Not recorded | Not specified | adaptive | not_recorded | 2026-11-18 |
+| fallback | Not recorded | Not specified | adaptive | not_recorded | 2026-11-18 |
 
 #### plan-1@2:s1
 
@@ -1385,6 +1404,47 @@ observedOn: 2026-11-19
 | status | completed | Not specified | adaptive | measured | 2026-11-19 |
 | date | 2026-11-19 | Not specified | adaptive | measured | 2026-11-19 |
 | statusHistory | Not recorded | Not specified | adaptive | not_yet_supported | Not recorded |
+| title | Endurance ride | Not specified | adaptive | measured | 2026-11-19 |
+| priority | key | Not specified | adaptive | measured | 2026-11-19 |
+| summary | Steady Z2 for 60 min | Not specified | adaptive | measured | 2026-11-19 |
+| stepNotes | Not recorded | Not specified | adaptive | not_recorded | 2026-11-19 |
+| fallback | Not recorded | Not specified | adaptive | not_recorded | 2026-11-19 |
+
+#### plan-1@2:s4
+
+observedOn: 2026-11-20
+
+| Field | Value | Unit | Source | State | Observed on |
+| --- | --- | --- | --- | --- | --- |
+| planId | plan-1 | Not specified | adaptive | measured | 2026-11-20 |
+| revision | 2 | Not specified | adaptive | measured | 2026-11-20 |
+| sessionId | s4 | Not specified | adaptive | measured | 2026-11-20 |
+| status | planned | Not specified | adaptive | measured | 2026-11-20 |
+| date | 2026-11-20 | Not specified | adaptive | measured | 2026-11-20 |
+| statusHistory | Not recorded | Not specified | adaptive | not_yet_supported | Not recorded |
+| title | Openers | Not specified | adaptive | measured | 2026-11-20 |
+| priority | support | Not specified | adaptive | measured | 2026-11-20 |
+| summary | Short activation ride | Not specified | adaptive | measured | 2026-11-20 |
+| stepNotes | Not recorded | Not specified | adaptive | not_recorded | 2026-11-20 |
+| fallback | Not recorded | Not specified | adaptive | not_recorded | 2026-11-20 |
+
+#### plan-1@2:s3
+
+observedOn: 2026-11-22
+
+| Field | Value | Unit | Source | State | Observed on |
+| --- | --- | --- | --- | --- | --- |
+| planId | plan-1 | Not specified | adaptive | measured | 2026-11-22 |
+| revision | 2 | Not specified | adaptive | measured | 2026-11-22 |
+| sessionId | s3 | Not specified | adaptive | measured | 2026-11-22 |
+| status | planned | Not specified | adaptive | measured | 2026-11-22 |
+| date | 2026-11-22 | Not specified | adaptive | measured | 2026-11-22 |
+| statusHistory | Not recorded | Not specified | adaptive | not_yet_supported | Not recorded |
+| title | Tempo intervals | Not specified | adaptive | measured | 2026-11-22 |
+| priority | key | Not specified | adaptive | measured | 2026-11-22 |
+| summary | 3x10 min at tempo | Not specified | adaptive | measured | 2026-11-22 |
+| stepNotes | &#91;"Stay seated","Cadence 90"&#93; | Not specified | adaptive | measured | 2026-11-22 |
+| fallback | Easy 45 min spin | Not specified | adaptive | measured | 2026-11-22 |
 
 ### overrides
 

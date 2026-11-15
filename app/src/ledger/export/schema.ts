@@ -55,6 +55,8 @@ export interface LedgerCollection<T> {
     items: T[];
     /** Rows dropped because they carry no usable calendar date; never silently omitted. */
     droppedUndated: number;
+    /** Placements only: dated rows outside the information bounds, counted rather than hidden. */
+    droppedOutOfWindow?: number;
 }
 
 /** Provider activity detail is capped per purpose, so omission is counted, not hidden. */
@@ -129,6 +131,7 @@ export const CHECKIN_FIELDS = [
 ] as const;
 export const PERFORMED_TRAINING_FIELDS = [
     'status', 'modality', 'startedAt', 'endedAt', 'durationMin', 'structuredEntries', 'executedDefinitions',
+    'plannedSets', 'workSets', 'warmupSets', 'linkedResponseIds',
 ] as const;
 export const SESSION_RESPONSE_FIELDS = [
     'window', 'sourceSession', 'occurrenceId', 'sessionRpe', 'completedFraction', 'unexpectedFatigue',
@@ -177,7 +180,8 @@ export const CONSTRAINT_FIELDS = ['label', 'value', 'severity', 'isActive', 'cat
 export const PLAN_REVISION_FIELDS = [
     'planId', 'revision', 'contentHash', 'importedAt', 'schema', 'authorRationale',
 ] as const;
-export const PLACEMENT_FIELDS = ['planId', 'revision', 'sessionId', 'status', 'date', 'statusHistory'] as const;
+export const PLACEMENT_FIELDS = ['planId', 'revision', 'sessionId', 'status', 'date', 'statusHistory',
+    'title', 'priority', 'summary', 'stepNotes', 'fallback'] as const;
 export const OVERRIDE_FIELDS = ['planId', 'sessionId', 'kind', 'date', 'reason'] as const;
 export const PLANNED_TO_PERFORMED_FIELDS = ['planId', 'revision', 'sessionId', 'date', 'performedOccurrenceRef'] as const;
 

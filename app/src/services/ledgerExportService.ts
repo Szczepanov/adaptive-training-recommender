@@ -1,11 +1,14 @@
 import { buildLedgerExport } from '../ledger/export/buildLedgerExport';
-import type { BuildLedgerExportInput, LedgerExportRecords, SourceKey, SourceReadInput } from '../ledger/export/inputs';
+import type { BuildLedgerExportInput, LedgerExportRecords, PlanSessionContentInput, SourceKey, SourceReadInput } from '../ledger/export/inputs';
 import type { LedgerExport, LedgerState } from '../ledger/export/schema';
 import { LEDGER_PURPOSES } from '../ledger/export/schema';
-import { resolveWindow } from '../ledger/export/window';
+import { PLACEMENT_FORWARD_DAYS, resolveWindow } from '../ledger/export/window';
 import { worstState } from '../ledger/export/ledgerValue';
 import { addDaysToLocalDateString } from '../utils/localDate';
 import type { DataState } from '../engine/dataState';
+import type { ExternalPlanSession } from '../engine/models';
+import type { ExternalPlanSessionV2 } from '../sessions/externalPlanV2';
+import type { ExternalPlanSessionV4 } from '../sessions/externalPlanV4';
 import { flagEvaluationRepository } from './flagEvaluationPersistence';
 import { recoverySnapshotService } from './recoverySnapshotService';
 import { checkinService } from './checkinService';
@@ -29,6 +32,7 @@ import { sessionExecutionService } from './sessionExecutionService';
 import { externalPlanService } from './externalPlanService';
 import { computeContentHash } from '../engine/externalPlanHash';
 import { PLACEMENT_HISTORY_TRUNCATED_OPERATION } from '../ledger/placementHistory';
+import { projectStructuredWork } from './ledgerStructuredWork';
 
 interface Read<T> { data: T; state: LedgerState; reason?: string }
 function fromState<T>(result: DataState<T>, empty: T): Read<T> {
@@ -37,6 +41,25 @@ function fromState<T>(result: DataState<T>, empty: T): Read<T> {
 }
 const measured = <T,>(data: T): Read<T> => ({ data, state: 'measured' });
 export type LedgerExportRequest = Pick<BuildLedgerExportInput, 'asOfDate' | 'purpose' | 'window' | 'legacyEngine'> & { exportedAt?: string };
+
+/** Maps the authored session fields the export carries; absent optional text stays absent. */
+type StoredPlanSession = ExternalPlanSession | ExternalPlanSessionV2 | ExternalPlanSessionV4;
+
+function toSessionContent(session: StoredPlanSession): PlanSessionContentInput {
+    // v1 authors a `prescription`; v2+ author an executable `definition` with blocks of steps.
+    const steps = 'prescription' in session ? session.prescription?.steps ?? []
+        : (session.definition?.blocks ?? []).flatMap(block => block.steps);
+    const notes = steps.map(step => step.notes).filter((note): note is string => !!note?.trim());
+    const summary = 'prescription' in session ? session.prescription?.summary : session.definition?.summary;
+    return {
+        id: session.id,
+        title: session.title,
+        priority: session.priority,
+        summary,
+        ...(notes.length > 0 ? { stepNotes: notes } : {}),
+        fallback: session.scaling?.fallback,
+    };
+}
 
 /** User-initiated, read-only assembly. No default migration, reconciliation, or engine evaluation. */
 export class LedgerExportService {
@@ -118,14 +141,10 @@ export class LedgerExportService {
         ]);
         const executionRows = executions.status === 'fulfilled' ? executions.value.executions : [];
         const executionMap = new Map(executionRows.map(row => [row.execution.executionId, row]));
-        records.performedOccurrences = performed.status === 'fulfilled' ? performed.value.map(occurrence => {
-            const linked = occurrence.sourceRefs.filter(ref => ref.kind === 'structured_execution').map(ref => executionMap.get(ref.executionId));
-            const entries = linked.flatMap(row => row?.entries ?? []).filter(e => e.payload.kind !== 'choice' && !e.deletedAt);
-            return { ...occurrence, ...(linked.length > 0 && linked.every(Boolean) && executions.status === 'fulfilled' && executions.value.invalidRecords === 0 ? {
-                executedDefinitions: linked.map(row => ({ executionId: row!.execution.executionId, executedDefinition: row!.execution.executedDefinition ?? 'unknown' })),
-                structuredEntries: { exerciseCount: new Set(entries.map(e => (e.exerciseRef?.kind === 'catalog' ? e.exerciseRef.exerciseId : e.exerciseRef?.name) ?? e.stepId).filter(Boolean)).size, setCount: entries.length },
-            } : {}) };
-        }) : [];
+        const executionsReadable = executions.status === 'fulfilled' && executions.value.invalidRecords === 0;
+        records.performedOccurrences = performed.status === 'fulfilled' ? await Promise.all(performed.value.map(async occurrence => ({
+            ...occurrence, ...await projectStructuredWork(userId, occurrence.sourceRefs, executionMap, executionsReadable),
+        }))) : [];
         sources.performed_training_occurrences = { state: performed.status === 'rejected' || executions.status === 'rejected' ? 'unavailable'
             : executions.value.invalidRecords > 0 ? 'invalid' : 'measured', readAt: exportedAt };
         await read('planned_to_performed', 'plannedToPerformed', async () => {
@@ -141,7 +160,8 @@ export class LedgerExportService {
             }));
             return { data: rows, state: missingExecution ? 'unavailable' : sources.performed_training_occurrences!.state ?? 'unavailable' };
         }, []);
-        const verifiedPlans = await this.readPlans(userId, records, sources, exportedAt);
+        const placementBounds = { from: window.startDate, to: addDaysToLocalDateString(window.endDate, PLACEMENT_FORWARD_DAYS[request.purpose]) };
+        const verifiedPlans = await this.readPlans(userId, records, sources, exportedAt, placementBounds);
         records.plannedToPerformed = (records.plannedToPerformed ?? []).filter(link => {
             const verified = verifiedPlans.get(`${link.planId}@${link.revision}`);
             if (!verified) {
@@ -167,7 +187,8 @@ export class LedgerExportService {
     }
 
     private async readPlans(userId: string, records: LedgerExportRecords,
-        sources: Partial<Record<SourceKey, SourceReadInput>>, readAt: string): Promise<Map<string, { contentHash: string; sessionIds: Set<string> }>> {
+        sources: Partial<Record<SourceKey, SourceReadInput>>, readAt: string,
+        placementBounds: { from: string; to: string }): Promise<Map<string, { contentHash: string; sessionIds: Set<string> }>> {
         const verified = new Map<string, { contentHash: string; sessionIds: Set<string> }>();
         records.planRevisions = [];
         records.placements = [];
@@ -188,8 +209,14 @@ export class LedgerExportService {
                     placementState = worstState([placementState, state]);
                     continue;
                 }
+                // An older revision placed only through the legacy overlay is read too, when that
+                // placement falls inside the export's placement bounds (Phase 2b provenance).
+                const legacy = await externalPlanService.getPlacementState(userId, planId);
+                if (legacy.status === 'INVALID' || legacy.status === 'UNAVAILABLE') placementState = worstState([placementState, legacy.status === 'INVALID' ? 'invalid' : 'unavailable']);
+                const placed = legacy.status === 'AVAILABLE' && legacy.data.assignments
+                    .some(a => a.date >= placementBounds.from && a.date <= placementBounds.to) ? [legacy.data.revision] : [];
                 const refs = new Set([header.data.revision, ...(records.plannedToPerformed ?? []).filter(r => r.planId === planId).map(r => r.revision),
-                    ...(activations.status === 'AVAILABLE' ? activations.data.map(a => a.revision) : [])]);
+                    ...(activations.status === 'AVAILABLE' ? activations.data.map(a => a.revision) : []), ...placed]);
                 if (activations.status !== 'AVAILABLE') revisionState = worstState([revisionState, activations.status === 'INVALID' ? 'invalid' : 'unavailable']);
                 for (const revision of [...refs].sort((a, b) => a - b)) {
                     const plan = await externalPlanService.getRevisionState(userId, planId, revision);
@@ -208,7 +235,7 @@ export class LedgerExportService {
                     const importedAt = revision === header.data.revision ? header.data.importedAt : activation?.activatedAt;
                     if (!hash || !importedAt || await computeContentHash(plan.data) !== hash) { revisionState = worstState([revisionState, 'invalid']); continue; }
                     verified.set(`${planId}@${revision}`, { contentHash: hash, sessionIds: new Set(plan.data.sessions.map(session => session.id)) });
-                    records.planRevisions = [...records.planRevisions, { planId, revision, contentHash: hash, importedAt, schema: plan.data.schema, notes: plan.data.notes }];
+                    records.planRevisions = [...records.planRevisions, { planId, revision, contentHash: hash, importedAt, schema: plan.data.schema, notes: plan.data.notes, sessions: (plan.data.sessions as readonly StoredPlanSession[]).map(toSessionContent) }];
                 }
             }
         } catch { revisionState = 'unavailable'; placementState = 'unavailable'; }

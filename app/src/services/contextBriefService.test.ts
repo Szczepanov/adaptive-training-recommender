@@ -2047,12 +2047,12 @@ describe('ContextBriefService', () => {
         services.getRecoverySnapshotsInRangeState.mockRejectedValue(new Error('offline'));
 
         const result = await new ContextBriefService().build('u1', AS_OF, 14);
-        expect(result.text).toContain('# Ledger export');
+        expect(result.text).toContain('# Ledger update');
         expect(result.unavailableSources).toContain('daily_recovery_snapshots');
         expect(result.unavailableSources).toContain('training_settings');
         expect(result.unavailableSources).toContain('plan_blocks');
         expect(result.unavailableSources).toContain('preferences');
-        expect(result.text).toContain('state: unavailable');
+        expect(result.text).toContain('(unavailable)');
     });
 
     it('marks recommendations as unreadable when the read fails, showing "unknown, not none"', async () => {

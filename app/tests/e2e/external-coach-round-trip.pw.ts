@@ -134,7 +134,7 @@ test('ledger mode exports, imports external-plan@6 with reducedDefinition, execu
 
   // 1. Export the ledger before importing.
   const initialBrief = await ledgerPlanningBrief(page);
-  expect(initialBrief).toContain('schemaVersion: ledger-export-v1');
+  expect(initialBrief).toContain('schema: ledger-export-v1');
   const initialLedger = await exportLedgerJson(page);
   expect(initialLedger.facts.performedTraining.items).toHaveLength(0);
 

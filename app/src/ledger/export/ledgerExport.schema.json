@@ -362,6 +362,7 @@
           }
         },
         "metrics": {
+          "description": "Baseline leaves keyed by metric. Phase 2b deltas (value minus its matching 28-day baseline, same unit, measured only when both sides are measured for the same semantic date): biometric_baselines carries sleepScore_delta28d, restingHr_delta28d, hrvOvernightAvg_delta28d, respirationAvg_delta28d; subjective_baselines carries readiness_delta28d, sleepQuality_delta28d, fatigue_delta28d, soreness_delta28d, mentalStress_delta28d, motivation_delta28d.",
           "type": "object",
           "additionalProperties": {
             "$ref": "#/$defs/ledgerValue"
@@ -681,7 +682,11 @@
         "endedAt",
         "durationMin",
         "structuredEntries",
-        "executedDefinitions"
+        "executedDefinitions",
+        "plannedSets",
+        "workSets",
+        "warmupSets",
+        "linkedResponseIds"
       ],
       "properties": {
         "status": {
@@ -703,6 +708,18 @@
           "$ref": "#/$defs/ledgerValue"
         },
         "executedDefinitions": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "plannedSets": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "workSets": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "warmupSets": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "linkedResponseIds": {
           "$ref": "#/$defs/ledgerValue"
         }
       }
@@ -2233,7 +2250,12 @@
         "sessionId",
         "status",
         "date",
-        "statusHistory"
+        "statusHistory",
+        "title",
+        "priority",
+        "summary",
+        "stepNotes",
+        "fallback"
       ],
       "properties": {
         "planId": {
@@ -2253,6 +2275,21 @@
         },
         "statusHistory": {
           "$ref": "#/$defs/ledgerValue"
+        },
+        "title": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "priority": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "summary": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "stepNotes": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "fallback": {
+          "$ref": "#/$defs/ledgerValue"
         }
       }
     },
@@ -2263,7 +2300,8 @@
         "state",
         "source",
         "items",
-        "droppedUndated"
+        "droppedUndated",
+        "droppedOutOfWindow"
       ],
       "properties": {
         "state": {
@@ -2299,6 +2337,10 @@
           }
         },
         "droppedUndated": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "droppedOutOfWindow": {
           "type": "integer",
           "minimum": 0
         }

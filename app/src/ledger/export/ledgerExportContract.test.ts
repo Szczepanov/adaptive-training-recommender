@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { BASELINE_DELTA_KEYS } from './baselineDeltas.ts';
 import { buildLedgerExport } from './buildLedgerExport.ts';
 import { SOURCE_KEYS } from './inputs.ts';
 import { fullInput } from './ledgerExportFixtures.testSupport.ts';
@@ -125,6 +126,18 @@ describe('ledger export contract', () => {
         for (const input of [fullInput({ records: {} }), fullInput({ legacyEngine: { policyVersion: '9' } })]) {
             expect(validateAgainstSchema(SCHEMA, clone(buildLedgerExport(input)))).toEqual([]);
         }
+    });
+
+    it('promises every declared baseline delta key with a state, with or without records', () => {
+        for (const input of [fullInput(), fullInput({ records: {} })]) {
+            const result = buildLedgerExport(input);
+            for (const [id, keys] of Object.entries(BASELINE_DELTA_KEYS)) {
+                const metrics = result.derived.find(metric => metric.id === id)?.metrics ?? {};
+                for (const key of keys) expect(LEDGER_STATES, `${id}.${key}`).toContain(metrics[key]?.state);
+            }
+        }
+        const description = (SCHEMA.$defs.derivedMetric.properties as Record<string, { description?: string }>).metrics.description;
+        for (const key of Object.values(BASELINE_DELTA_KEYS).flat()) expect(description, key).toContain(key);
     });
 
     it('reports exactly the declared source keys, once each', () => {

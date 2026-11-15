@@ -7,6 +7,7 @@ import { buildActivities } from './buildActivities.ts';
 import { collect, sourceState, type BuildContext } from './buildContext.ts';
 import type { LedgerExportRecords, OccurrenceInput } from './inputs.ts';
 import { fact, fieldMap, notYetSupported, rangedFact, record, withSourceState, type ValueRange } from './ledgerValue.ts';
+import { linkedResponseIds, setCountFacts } from './performedTrainingLinks.ts';
 import {
     ASSESSMENT_FIELDS,
     BODY_COMPOSITION_FIELDS,
@@ -117,6 +118,7 @@ function occurrenceDurationMin(row: OccurrenceInput): number | null {
 }
 
 function buildPerformedTraining(records: LedgerExportRecords, context: BuildContext): LedgerFacts['performedTraining'] {
+    const responsesState = sourceState(context, 'session_responses', records.sessionResponses !== undefined);
     return collect(context, {
         key: 'performed_training_occurrences',
         records: records.performedOccurrences,
@@ -135,6 +137,8 @@ function buildPerformedTraining(records: LedgerExportRecords, context: BuildCont
                 structuredEntries: row.structuredEntries
                     ? fact(row.structuredEntries, base)
                     : notYetSupported('adaptive'),
+                ...setCountFacts(row, base),
+                linkedResponseIds: linkedResponseIds(row, records, responsesState, base),
             };
             return record(row.performedOccurrenceId, observedOn ?? null, values);
         },

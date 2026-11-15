@@ -3,13 +3,6 @@
  * Every fixture is typed as its real model with no cast, so a model change breaks `tsc`.
  * Identity fields the models do not declare are layered on by `withExtra`.
  */
-import type { AnthropometryEntry } from '../../anthropometry/models.ts';
-import type { NutritionDay } from '../../nutrition/models.ts';
-import type {
-    AssessmentAttempt,
-    CompetitionOutcome,
-    MetricObservationRevision,
-} from '../../observations/models.ts';
 import type { SessionResponse } from '../../responses/models.ts';
 import type {
     ActivitySegmentSummary,
@@ -27,9 +20,29 @@ import type {
     OccurrenceInput,
 } from './inputs.ts';
 
-export const FAKE_USER_ID = 'uid-SECRET-4471';
-export const FAKE_EMAIL = 'athlete.secret@example.com';
-export const FAKE_ACCOUNT_ID = 'garmin-acct-998877';
+import {
+    anthropometryEntry,
+    assessmentAttempt,
+    competitionOutcome,
+    FAKE_ACCOUNT_ID,
+    FAKE_EMAIL,
+    FAKE_USER_ID,
+    metricObservation,
+    nutritionDay,
+    unloggedNutritionDay,
+} from './ledgerExportObservationFixtures.testSupport.ts';
+
+export {
+    anthropometryEntry,
+    assessmentAttempt,
+    competitionOutcome,
+    FAKE_ACCOUNT_ID,
+    FAKE_EMAIL,
+    FAKE_USER_ID,
+    metricObservation,
+    nutritionDay,
+    unloggedNutritionDay,
+} from './ledgerExportObservationFixtures.testSupport.ts';
 
 export const AS_OF = '2026-11-20';
 export const EXPORTED_AT = '2026-11-20T06:12:03Z';
@@ -236,77 +249,6 @@ export const sessionResponse: SessionResponse = {
     updatedAt: '2026-11-19T18:00:00Z',
 };
 
-/** A day with a logged zero: protein genuinely 0 g with intake data present. */
-export const nutritionDay: NutritionDay = {
-    schemaVersion: 1,
-    date: '2026-11-19',
-    source: { provider: 'garmin', transport: 'garmin_connect', origin: null },
-    syncedAt: '2026-11-20T05:00:00Z',
-    energyIntakeKcal: 2800,
-    hasIntakeData: true,
-    macronutrients: { proteinGrams: 0, carbsGrams: 350, fatGrams: 90 },
-};
-
-export const unloggedNutritionDay: NutritionDay = {
-    schemaVersion: 1,
-    date: '2026-11-18',
-    source: { provider: 'garmin', transport: 'garmin_connect', origin: null },
-    syncedAt: '2026-11-20T05:00:00Z',
-    energyIntakeKcal: 0,
-    hasIntakeData: false,
-    macronutrients: { proteinGrams: 0, carbsGrams: 0, fatGrams: 0 },
-};
-
-export const anthropometryEntry: AnthropometryEntry = {
-    id: 'anthro-1',
-    userId: FAKE_USER_ID,
-    date: '2026-11-18',
-    observedAt: '2026-11-18T06:30:00Z',
-    protocol: 'home_anthropometry@1',
-    context: { morningPostVoidPreIntake: true, trainingBeforeMeasurement: false },
-    measurements: [{ metricId: 'body_mass_kg', unit: 'kg', readings: [78.2], value: 78.2 }],
-    schemaVersion: 1,
-    revision: 1,
-    createdAt: '2026-11-18T06:30:00Z',
-    updatedAt: '2026-11-18T06:30:00Z',
-};
-
-export const assessmentAttempt: AssessmentAttempt = {
-    id: 'attempt-1',
-    protocolRef: { id: 'ftp-ramp', revision: 1 },
-    completedAt: '2026-11-18T08:00:00Z',
-    state: 'completed',
-    purpose: 'checkpoint',
-};
-
-export const metricObservation: MetricObservationRevision = {
-    observationKey: 'obs-1',
-    revision: 1,
-    metricId: 'ftp_w',
-    value: 250,
-    unit: 'W',
-    observedAt: '2026-11-18T08:00:00Z',
-    source: 'manual',
-    protocolRef: { id: 'ftp-ramp', revision: 1 },
-    comparisonSeriesKey: 'ftp',
-    comparisonCanonicalizationVersion: '1',
-    assessmentAttemptId: 'attempt-1',
-    validity: 'valid',
-    context: {},
-    createdAt: '2026-11-18T08:00:00Z',
-};
-
-export const competitionOutcome: CompetitionOutcome = {
-    id: 'out-1',
-    sport: 'cycling',
-    occurredAt: '2026-11-15T09:00:00Z',
-    source: 'manual',
-    result: { completed: true, placing: 4 },
-    metrics: {},
-    context: {},
-    createdAt: '2026-11-15T12:00:00Z',
-};
-
 export const occurrence: OccurrenceInput = withExtra({
     performedOccurrenceId: 'occ-1',
     status: 'active',
@@ -314,6 +256,8 @@ export const occurrence: OccurrenceInput = withExtra({
     startedAt: '2026-11-19T16:00:00Z',
     endedAt: '2026-11-19T17:00:00Z',
     modality: 'Cycling',
+    structuredExecutionIds: ['exec-1'],
+    setCounts: { planned: { value: 5 }, work: { value: 4 }, warmup: { value: 1 } },
 }, { userId: FAKE_USER_ID });
 
 /** A fully populated record set exercising every collection. */
@@ -368,6 +312,12 @@ export function fullRecords(): LedgerExportRecords {
                 importedAt: '2026-11-10T08:00:00Z',
                 schema: 'adaptive-training-recommender/external-plan@6',
                 notes: 'Build aerobic base first.',
+                sessions: [
+                    { id: 's1', title: 'Endurance ride', priority: 'key', summary: 'Steady Z2 for 60 min' },
+                    { id: 's3', title: 'Tempo intervals', priority: 'key', summary: '3x10 min at tempo',
+                        stepNotes: ['Stay seated', 'Cadence 90'], fallback: 'Easy 45 min spin' },
+                    { id: 's4', title: 'Openers', priority: 'support', summary: 'Short activation ride' },
+                ],
             },
         ],
         placements: [{
@@ -376,6 +326,8 @@ export function fullRecords(): LedgerExportRecords {
             assignments: [
                 { sessionId: 's1', date: '2026-11-19', status: 'completed' },
                 { sessionId: 's2', date: '2026-11-18', status: 'dropped' },
+                { sessionId: 's4', date: '2026-11-20', status: 'planned' },
+                { sessionId: 's3', date: '2026-11-22', status: 'planned' },
             ],
         }],
         plannedToPerformed: [{ planId: 'plan-1', revision: 2, sessionId: 's1', date: '2026-11-19', performedOccurrenceId: 'occ-1' }],

@@ -1,7 +1,7 @@
 /** Layer 5: bounded coaching records and recorded placement history. */
 import { hasRecordedPrevious, placementAsOf, placementBeforeHistory, type PlacementAssignment } from '../placementHistory.ts';
 import { collect, sourceState, type BuildContext } from './buildContext.ts';
-import type { LedgerExportRecords, PlacementInput } from './inputs.ts';
+import type { LedgerExportRecords, PlacementInput, PlanSessionContentInput } from './inputs.ts';
 import { fact, notYetSupported, record, worstState } from './ledgerValue.ts';
 import type { LedgerState } from './schema.ts';
 import type {
@@ -12,7 +12,8 @@ import type {
     PLAN_REVISION_FIELDS,
     PLANNED_TO_PERFORMED_FIELDS,
 } from './schema.ts';
-import { inBounds, warsawDateOf, windowBounds } from './window.ts';
+import { addDaysToLocalDateString } from '../../utils/localDate.ts';
+import { inBounds, isLocalDate, PLACEMENT_FORWARD_DAYS, warsawDateOf, windowBounds, type DateBounds } from './window.ts';
 
 const SOURCE = 'adaptive';
 const OVERRIDE_STATUSES: readonly string[] = ['dropped', 'moved'];
@@ -36,11 +37,29 @@ function flatten(rows: readonly PlacementInput[] | undefined): FlatAssignment[] 
 
 const assignmentId = (row: FlatAssignment): string => `${row.planId}@${row.revision}:${row.sessionId}`;
 
+/** Authored content of the placement's session, or the reason it cannot be read. */
+function sessionContent(row: FlatAssignment, records: LedgerExportRecords, context: BuildContext):
+    { session?: PlanSessionContentInput; absent: LedgerState } {
+    const revision = records.planRevisions?.find(item => item.planId === row.planId && item.revision === row.revision);
+    // A revision that is not exported failed verification (invalid source) or could not be read.
+    if (!revision?.sessions) {
+        return { absent: revision && !revision.sessions ? 'unavailable'
+            : context.sources.external_plan_revisions?.state === 'invalid' ? 'invalid' : 'unavailable' };
+    }
+    return { session: revision.sessions.find(item => item.id === row.sessionId), absent: 'not_recorded' };
+}
+
+/** Historical window plus the purpose's inclusive forward days (upcoming sessions). */
+function placementBounds(context: BuildContext): DateBounds {
+    return { from: context.window.startDate, to: addDaysToLocalDateString(context.window.endDate, PLACEMENT_FORWARD_DAYS[context.purpose]) };
+}
+
 function buildPlacements(flat: FlatAssignment[] | undefined, records: LedgerExportRecords, context: BuildContext) {
-    return collect(context, {
+    const result = collect(context, {
         key: 'external_plan_placements',
         records: flat,
         dateOf: row => row.date,
+        bounds: placementBounds(context),
         toItem: row => {
             const base = { source: SOURCE, observedOn: row.date };
             const history = records.placementHistory?.filter(event => event.planId === row.planId && event.revision === row.revision
@@ -55,6 +74,9 @@ function buildPlacements(flat: FlatAssignment[] | undefined, records: LedgerExpo
                     previous: event.previous.find(item => item.sessionId === row.sessionId) ?? null,
                     assignment: event.assignments.find(item => item.sessionId === row.sessionId) ?? null,
                     successor: event.successors[row.sessionId] ?? null }));
+            const { session, absent } = sessionContent(row, records, context);
+            const content = { ...base, absent };
+            const notes = session?.stepNotes?.filter(note => note.trim() !== '');
             const values: Record<typeof PLACEMENT_FIELDS[number], LedgerValue<unknown>> = {
                 planId: fact(row.planId, base),
                 revision: fact(row.revision, base),
@@ -65,10 +87,17 @@ function buildPlacements(flat: FlatAssignment[] | undefined, records: LedgerExpo
                 statusHistory: records.placementHistoryUnavailable?.some(item => item.planId === row.planId && item.revision === row.revision)
                     ? fact(null, { ...base, absent: 'unavailable' })
                     : history?.length ? fact(history, base) : notYetSupported(SOURCE),
+                title: fact(session?.title, content),
+                priority: fact(session?.priority, content),
+                summary: fact(session?.summary, content),
+                stepNotes: fact(notes?.length ? [...notes] : null, content),
+                fallback: fact(session?.fallback, content),
             };
             return record(assignmentId(row), row.date, values);
         },
     });
+    const dated = (flat ?? []).filter(row => isLocalDate(row.date)).length;
+    return { ...result, droppedOutOfWindow: dated - result.items.length };
 }
 
 function buildOverrides(flat: FlatAssignment[] | undefined, context: BuildContext) {
@@ -116,7 +145,8 @@ function buildPlanRevisions(
     context: BuildContext,
 ) {
     const bounds = windowBounds(context.window);
-    const referenced = new Set((flat ?? []).filter(row => inBounds(row.date, bounds))
+    // An exported placement keeps its revision header, including a future one on an older revision.
+    const referenced = new Set((flat ?? []).filter(row => inBounds(row.date, placementBounds(context)))
         .map(row => `${row.planId}@${row.revision}`));
     for (const link of records.plannedToPerformed ?? []) {
         if (inBounds(link.date, bounds)) referenced.add(`${link.planId}@${link.revision}`);
