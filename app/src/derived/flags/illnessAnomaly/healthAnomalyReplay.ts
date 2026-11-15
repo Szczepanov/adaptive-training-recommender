@@ -254,6 +254,7 @@ function emptyStateCounts(): Record<PhysiologicalAnomalyState, number> {
 function summarizePolicy(
     thresholdPolicyVersion: string,
     rows: readonly HealthAnomalyReplayRow[],
+    observedCheckinDates: ReadonlySet<string>,
 ): HealthAnomalyPolicyReplaySummary {
     const stateCounts = emptyStateCounts();
     const rowByDate = new Map<string, HealthAnomalyReplayRow>();
@@ -267,7 +268,7 @@ function summarizePolicy(
     let watchOrHigherDays = 0;
     let escalationDays = 0;
     let symptomaticDays = 0;
-    let nonSymptomaticAlertDays = 0;
+    let evaluable72hAlertDays = 0;
     let preSymptomaticWatch48hHits = 0;
     let preSymptomaticEscalation72hHits = 0;
     let asymptomaticAlertDays = 0;
@@ -293,13 +294,18 @@ function summarizePolicy(
         }
 
         if (!row.symptomsReported && nonSymptomaticAlertStates.has(result.state)) {
-            nonSymptomaticAlertDays += 1;
             if (row.futureSymptoms48h) preSymptomaticWatch48hHits += 1;
             if (result.state === 'possible_illness_or_systemic_stress' && row.futureSymptoms72h) {
                 preSymptomaticEscalation72hHits += 1;
             }
-            if (!row.futureSymptoms72h) {
-                asymptomaticAlertDays += 1;
+            const hasComplete72hFollowup = row.futureSymptoms72h || [1, 2, 3].every(
+                offset => observedCheckinDates.has(addDaysToLocalDateString(row.date, offset)),
+            );
+            if (hasComplete72hFollowup) {
+                evaluable72hAlertDays += 1;
+                if (!row.futureSymptoms72h) {
+                    asymptomaticAlertDays += 1;
+                }
             }
         }
     }
@@ -346,8 +352,8 @@ function summarizePolicy(
         asymptomaticAlertDays,
         episodeCount: episodeIds.size,
         nonSymptomaticPreSymptomLeadTimeDaysMedian: median(leadTimes),
-        falseAlarmRateWithout72hSymptoms: nonSymptomaticAlertDays > 0
-            ? asymptomaticAlertDays / nonSymptomaticAlertDays
+        falseAlarmRateWithout72hSymptoms: evaluable72hAlertDays > 0
+            ? asymptomaticAlertDays / evaluable72hAlertDays
             : null,
         detectionRateBeforeSymptoms72h: symptomOnsetCount > 0
             ? detectedOnsetCount / symptomOnsetCount
@@ -465,9 +471,14 @@ export function runHealthAnomalyReplay(
         futureSymptoms72h: futureSymptoms(symptomDates, row.date, 3),
     }));
 
+    const observedCheckinDates = new Set(
+        days
+            .filter(day => day.subjectiveCheckin !== null && day.subjectiveCheckin !== undefined)
+            .map(day => day.date),
+    );
     const candidatePolicyVersions = policies.map(policy => policy.policyVersion);
     const policySummaries = Object.fromEntries(
-        candidatePolicyVersions.map(version => [version, summarizePolicy(version, rows)]),
+        candidatePolicyVersions.map(version => [version, summarizePolicy(version, rows, observedCheckinDates)]),
     );
 
     return {

@@ -777,4 +777,49 @@ describe('evaluatePhysiologicalAnomaly visible-v1 early warning calibration', ()
         expect(concordantWithResp.state).toBe('watch_unexplained');
         expect(concordantWithResp.unexplainedEvidence).toEqual(['respiration:strong_anomaly:high']);
     });
+
+    it('keeps calibrationStage at emerging_baseline and blocks escalation when only emerging signals are anomalous alongside a normal reliable signal', () => {
+        const mixedFeatures: HealthAnomalyFeatureSet = {
+            date: '2026-08-21',
+            baselineVersion: 5,
+            coreSignals: [
+                feature('rhr', 0, { historyCount: 20 }),
+                feature('respiration', 3.0, { historyCount: 9, recentDayCoverage: 1 }),
+                feature('hrv', -3.0, { historyCount: 9, recentDayCoverage: 1 }),
+            ],
+        };
+        const result = evaluateVisible(mixedFeatures);
+        expect(result.calibrationStage).toBe('emerging_baseline');
+        expect(result.state).toBe('watch_unexplained');
+        expect(result.rationale.cautions).toContain('EMERGING_BASELINE_CAUTIOUS_INTERPRETATION');
+
+        const oneReliableOneEmerging = {
+            date: '2026-08-21',
+            baselineVersion: 5,
+            coreSignals: [
+                feature('rhr', 3.0, { historyCount: 20 }),
+                feature('respiration', 3.0, { historyCount: 9, recentDayCoverage: 1 }),
+                feature('hrv', 0, { historyCount: 20 }),
+            ],
+        };
+        const partial = evaluateVisible(oneReliableOneEmerging);
+        expect(partial.state).toBe('watch_unexplained');
+    });
+
+    it('does not claim breathing rate was normal in correlated_autonomic_only caveats when respiration is unavailable', () => {
+        const unavailableRespFeatures: HealthAnomalyFeatureSet = {
+            date: '2026-08-21',
+            baselineVersion: 5,
+            coreSignals: [
+                feature('rhr', 2.2, { historyCount: 20 }),
+                feature('respiration', null, { historyCount: 20, currentValueMissing: true }),
+                feature('hrv', -2.2, { historyCount: 20 }),
+            ],
+        };
+        const result = evaluateVisible(unavailableRespFeatures);
+        expect(result.state).toBe('watch_unexplained');
+        expect(result.evidenceQuality).toBe('correlated_autonomic_only');
+        expect(result.earlyResponse?.summary).toContain('breathing rate was unavailable');
+        expect(result.earlyResponse?.summary).not.toContain('remained normal');
+    });
 });

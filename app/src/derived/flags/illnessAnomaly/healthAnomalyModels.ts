@@ -345,6 +345,9 @@ export interface HealthAnomalySourceIdentity {
     historySnapshotRevisions: Array<{ date: string; revision: string }>;
     travelContextRevision: string | null;
     persistenceLookbackStart: string;
+    previousAssessmentRevisionId?: string | null;
+    contaminatedDates?: string[];
+    personalCalibrationRevision?: string | null;
 }
 
 export interface HealthAnomalyAssessmentRevision {

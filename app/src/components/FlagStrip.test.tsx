@@ -110,4 +110,17 @@ describe('FlagStrip', () => {
     expect(html).toMatch(/· (Limit|Exclude):/);
     expect(html).not.toMatch(/· (limit|exclude):/);
   });
+
+  it('explains both insufficient baseline history and unavailable signals for no_core_signals', () => {
+    const html = renderToStaticMarkup(<FlagStrip flags={[
+      flag({
+        id: 'illness_anomaly',
+        active: false,
+        state: 'missing',
+        reasonCode: 'no_core_signals',
+      }),
+    ]} />);
+    expect(html).toContain('Not enough baseline history or core signals');
+    expect(html).not.toContain('are all unavailable today');
+  });
 });

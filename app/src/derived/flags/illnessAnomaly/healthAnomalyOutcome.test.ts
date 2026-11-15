@@ -203,4 +203,29 @@ describe('summarizePersonalOutcomeCalibration (causal guard)', () => {
             calibrationEligible: true,
         });
     });
+
+    it('uses Europe/Warsaw calendar dates rather than UTC prefixes for updatedAt causal filtering', () => {
+        // 2026-08-24T23:30:00.000Z is 2026-08-25T01:30:00+02:00 in Europe/Warsaw -> excluded for asOfDate 2026-08-25
+        const warsawSameDayAfterUtcMidnight = makeOutcome(
+            'ep-utc-midnight',
+            '2026-08-20',
+            '2026-08-24T23:30:00.000Z',
+            'illness_symptoms',
+        );
+        // 2026-08-24T21:30:00.000Z is 2026-08-24T23:30:00+02:00 in Europe/Warsaw -> strictly prior to 2026-08-25
+        const warsawPriorDay = makeOutcome(
+            'ep-prior-warsaw',
+            '2026-08-18',
+            '2026-08-24T21:30:00.000Z',
+            'hard_training_recovery',
+        );
+
+        const summary = summarizePersonalOutcomeCalibration(
+            [warsawSameDayAfterUtcMidnight, warsawPriorDay],
+            '2026-08-25',
+        );
+        expect(summary.priorEpisodesCount).toBe(1);
+        expect(summary.confounderExplainedCount).toBe(1);
+        expect(summary.illnessConfirmedCount).toBe(0);
+    });
 });

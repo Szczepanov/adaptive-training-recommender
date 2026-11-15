@@ -40,11 +40,26 @@ const defaultReads = {
     },
     resolve: resolveSessionDefinition,
     healthAnomaly: (userId: string, date: string) =>
-        healthAnomalyAssessmentRepository.getLatestForDateWithDiagnostics(userId, date).then(result => result.revision),
+        healthAnomalyAssessmentRepository.getLatestForDateWithDiagnostics(userId, date),
     persist: flagEvaluationRepository.persistImmutable,
 };
+type HealthAnomalyDiagnosticRead = {
+    revision: HealthAnomalyAssessmentRevision | null;
+    unreadableCount: number;
+};
+function normalizeHealthAnomalyRead(
+    value: HealthAnomalyAssessmentRevision | HealthAnomalyDiagnosticRead | null,
+): HealthAnomalyDiagnosticRead {
+    if (value && typeof value === 'object' && 'unreadableCount' in value) {
+        return value;
+    }
+    return { revision: value, unreadableCount: 0 };
+}
 type FlagCaptureReads = Omit<typeof defaultReads, 'healthAnomaly'> & {
-    healthAnomaly?: (userId: string, date: string) => Promise<HealthAnomalyAssessmentRevision | null>;
+    healthAnomaly?: (
+        userId: string,
+        date: string,
+    ) => Promise<HealthAnomalyAssessmentRevision | HealthAnomalyDiagnosticRead | null>;
 };
 const data = <T,>(state: DataState<T>): T | null => state.status === 'AVAILABLE' ? state.data : null;
 const failure = (state: { status: string }): 'invalid' | 'unavailable' | null =>
@@ -61,9 +76,11 @@ async function readState<T>(operation: () => Promise<DataState<T>>): Promise<Dat
 export class FlagCaptureService {
     private readonly reads: typeof defaultReads;
     constructor(reads: FlagCaptureReads = defaultReads) {
+        const readHealthAnomaly = reads.healthAnomaly ?? defaultReads.healthAnomaly;
         this.reads = {
             ...reads,
-            healthAnomaly: reads.healthAnomaly ?? defaultReads.healthAnomaly,
+            healthAnomaly: async (userId: string, date: string) =>
+                normalizeHealthAnomalyRead(await readHealthAnomaly(userId, date)),
         };
     }
 
@@ -80,8 +97,8 @@ export class FlagCaptureService {
             this.reads.executions(userId, date).then(value => ({ status: 'AVAILABLE' as const, data: value }),
                 () => ({ status: 'UNAVAILABLE' as const })),
             this.reads.healthAnomaly(userId, date).then(
-                revision => ({ status: 'AVAILABLE' as const, revision }),
-                () => ({ status: 'UNAVAILABLE' as const, revision: null }),
+                value => ({ status: 'AVAILABLE' as const, ...normalizeHealthAnomalyRead(value) }),
+                () => ({ status: 'UNAVAILABLE' as const, revision: null, unreadableCount: 0 }),
             ),
         ]);
         const save = async (evaluation: FlagEvaluation, source: unknown, sessionRef?: string, baselineWindow?: string) => {
@@ -109,22 +126,32 @@ export class FlagCaptureService {
         const checkinFlag = evaluateIllnessRiskSymptom(data(checkin));
         const anomalyFlag = anomalyRead.status === 'UNAVAILABLE'
             ? failed(evaluateIllnessAnomalyFlag(null), 'health_anomaly_assessments', 'unavailable')
-            : evaluateIllnessAnomalyFlag(anomalyRead.revision?.assessment ?? null);
+            : anomalyRead.unreadableCount > 0
+                ? failed(
+                    evaluateIllnessAnomalyFlag(anomalyRead.revision?.assessment ?? null),
+                    'health_anomaly_assessments',
+                    'invalid',
+                )
+                : evaluateIllnessAnomalyFlag(anomalyRead.revision?.assessment ?? null);
         await save(failure(recovery) ? failed(recoveryFlag, 'daily_recovery_snapshots', failure(recovery)!) : recoveryFlag,
             recovery, undefined, RECOVERY_BEYOND_BASELINE_WINDOW);
         await save(failure(checkin) ? failed(checkinFlag, 'daily_subjective_checkins', failure(checkin)!) : checkinFlag, checkin);
-        await save(
-            anomalyFlag,
-            anomalyRead.status === 'UNAVAILABLE'
-                ? { status: 'UNAVAILABLE' }
-                : (anomalyRead.revision
+        const anomalySource = anomalyRead.status === 'UNAVAILABLE'
+            ? { status: 'UNAVAILABLE' }
+            : anomalyRead.unreadableCount > 0
+                ? {
+                    status: 'UNREADABLE',
+                    unreadableCount: anomalyRead.unreadableCount,
+                    latestReadableRevisionId: anomalyRead.revision?.revisionId ?? null,
+                }
+                : anomalyRead.revision
                     ? {
                         revisionId: anomalyRead.revision.revisionId,
                         mode: anomalyRead.revision.mode,
                         assessment: anomalyRead.revision.assessment,
                     }
-                    : { status: 'MISSING' }),
-        );
+                    : { status: 'MISSING' };
+        await save(anomalyFlag, anomalySource);
 
         const constraints = data(settings)?.injuries ?? null;
         const empty = evaluateInjuryConstraintTouchesSession(constraints, date, null);

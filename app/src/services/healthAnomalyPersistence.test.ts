@@ -340,4 +340,28 @@ describe('health anomaly immutable persistence identity', () => {
         await expect(new HealthAnomalyAssessmentRepository().getLatestForDateWithDiagnostics('u1', '2026-08-21'))
             .resolves.toEqual({ revision: null, unreadableCount: 0 });
     });
+
+    it('includes previousAssessmentRevisionId, contaminatedDates, and personalCalibrationRevision in revision identity and parser validation', () => {
+        const enrichedSource = {
+            ...source,
+            previousAssessmentRevisionId: 'ha-aaaaaaaaaaaaaaaa',
+            contaminatedDates: ['2026-08-18'],
+            personalCalibrationRevision: '1234567890abcdef',
+        };
+        const record = buildHealthAnomalyAssessmentRevision({
+            userId: 'u1',
+            date: '2026-08-21',
+            computedAt: '2026-08-21T06:30:00Z',
+            mode: 'shadow-v1',
+            thresholdPolicy: SHADOW_V1_HEALTH_ANOMALY_THRESHOLDS,
+            source: enrichedSource,
+            assessment,
+        });
+        expect(record.revisionId).not.toBe(revision().revisionId);
+        expect(parseHealthAnomalyAssessmentRevision(record, 'u1', '2026-08-21')).toEqual(record);
+        expect(() => parseHealthAnomalyAssessmentRevision({
+            ...record,
+            source: { ...enrichedSource, contaminatedDates: '2026-08-18' as unknown as string[] },
+        }, 'u1', '2026-08-21')).toThrow('source identity');
+    });
 });

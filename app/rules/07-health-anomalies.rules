@@ -75,12 +75,15 @@
           && isBoundedString(data.policyVersion, 128)
           && hasValidHealthAnomalyThresholdPolicy(data.thresholdPolicy)
           && source is map
-          && source.keys().hasOnly(['timezone', 'recoverySnapshotRevision', 'checkinRevision', 'historyWindowStart', 'historyWindowEndExclusive', 'historySnapshotRevisions', 'travelContextRevision', 'persistenceLookbackStart'])
+          && source.keys().hasOnly(['timezone', 'recoverySnapshotRevision', 'checkinRevision', 'historyWindowStart', 'historyWindowEndExclusive', 'historySnapshotRevisions', 'travelContextRevision', 'persistenceLookbackStart', 'previousAssessmentRevisionId', 'contaminatedDates', 'personalCalibrationRevision'])
           && source.keys().hasAll(['timezone', 'recoverySnapshotRevision', 'checkinRevision', 'historyWindowStart', 'historyWindowEndExclusive', 'historySnapshotRevisions', 'travelContextRevision', 'persistenceLookbackStart'])
           && isValidActivityDate(source.historyWindowStart)
           && source.historyWindowEndExclusive == date
           && source.historySnapshotRevisions is list && source.historySnapshotRevisions.size() <= 28
           && isValidActivityDate(source.persistenceLookbackStart)
+          && (!('previousAssessmentRevisionId' in source) || source.previousAssessmentRevisionId == null || isBoundedString(source.previousAssessmentRevisionId, 64))
+          && (!('contaminatedDates' in source) || (source.contaminatedDates is list && source.contaminatedDates.size() <= 28))
+          && (!('personalCalibrationRevision' in source) || source.personalCalibrationRevision == null || isBoundedString(source.personalCalibrationRevision, 64))
           && assessment is map
           && assessment.keys().hasOnly(['state', 'evidenceLevel', 'coreSignals', 'supportingSignals', 'explanations', 'unexplainedEvidence', 'persistenceDays', 'unexplainedPersistenceDays', 'episodeId', 'episodeDay', 'dataQuality', 'rationale', 'respirationElevation', 'calibrationStage', 'anomalySeverity', 'evidenceQuality', 'earlyResponse', 'activityMatchedExpectations', 'personalCalibration', 'policyVersion', 'thresholdPolicyVersion', 'mode'])
           && assessment.keys().hasAll(['state', 'evidenceLevel', 'coreSignals', 'supportingSignals', 'explanations', 'unexplainedEvidence', 'persistenceDays', 'episodeId', 'episodeDay', 'dataQuality', 'rationale', 'policyVersion', 'thresholdPolicyVersion', 'mode'])

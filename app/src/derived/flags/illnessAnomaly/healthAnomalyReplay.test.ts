@@ -241,8 +241,11 @@ describe('health anomaly replay', () => {
             { date: dateAt(22), recoverySnapshot: snapshot(dateAt(22), 50, 60, 14.0), subjectiveCheckin: checkin(dateAt(22)) },
             { date: dateAt(23), recoverySnapshot: snapshot(dateAt(23), 50, 60, 14.0), subjectiveCheckin: checkin(dateAt(23)) },
             { date: dateAt(24), recoverySnapshot: snapshot(dateAt(24), 50, 60, 14.0), subjectiveCheckin: checkin(dateAt(24)) },
-            // Isolated watch day without symptoms within +72h
+            // Isolated watch day with complete +72h asymptomatic follow-up
             { date: falseAlarmDay, recoverySnapshot: snapshot(falseAlarmDay, 55, 60, 14.0), subjectiveCheckin: checkin(falseAlarmDay) },
+            { date: dateAt(26), recoverySnapshot: snapshot(dateAt(26), 50, 60, 14.0), subjectiveCheckin: checkin(dateAt(26)) },
+            { date: dateAt(27), recoverySnapshot: snapshot(dateAt(27), 50, 60, 14.0), subjectiveCheckin: checkin(dateAt(27)) },
+            { date: dateAt(28), recoverySnapshot: snapshot(dateAt(28), 50, 60, 14.0), subjectiveCheckin: checkin(dateAt(28)) },
         ];
 
         const report = runHealthAnomalyReplay({ userId: 'u1', days }, CANDIDATE_HEALTH_ANOMALY_REPLAY_POLICIES);
@@ -296,5 +299,31 @@ describe('health anomaly replay', () => {
         expect(day2State?.persistenceDays).toBe(2);
         expect(day2State?.unexplainedPersistenceDays).toBe(1);
         expect(day2State?.state).toBe('watch_unexplained');
+    });
+
+    it('excludes right-censored alerts with incomplete 72h follow-up from falseAlarmRateWithout72hSymptoms', () => {
+        const baselineDays = Array.from({ length: 20 }, (_, index) => ({
+            date: dateAt(index),
+            recoverySnapshot: snapshot(dateAt(index), 49 + (index % 3), 58 + (index % 5), 13.8 + (index % 4) * 0.1),
+            subjectiveCheckin: checkin(dateAt(index)),
+        }));
+        const preDay1 = dateAt(20);
+        const symptomDay = dateAt(21);
+        const censoredAlertDay = dateAt(25);
+        const days = [
+            ...baselineDays,
+            { date: preDay1, recoverySnapshot: snapshot(preDay1, 56, 36, 15.8), subjectiveCheckin: checkin(preDay1) },
+            { date: symptomDay, recoverySnapshot: snapshot(symptomDay, 58, 34, 16.0), subjectiveCheckin: checkin(symptomDay, true) },
+            { date: dateAt(22), recoverySnapshot: snapshot(dateAt(22), 50, 60, 14.0), subjectiveCheckin: checkin(dateAt(22)) },
+            { date: dateAt(23), recoverySnapshot: snapshot(dateAt(23), 50, 60, 14.0), subjectiveCheckin: checkin(dateAt(23)) },
+            { date: dateAt(24), recoverySnapshot: snapshot(dateAt(24), 50, 60, 14.0), subjectiveCheckin: checkin(dateAt(24)) },
+            // Final day in replay: no +1/+2/+3 check-in days exist -> incomplete 72h follow-up
+            { date: censoredAlertDay, recoverySnapshot: snapshot(censoredAlertDay, 55, 60, 14.0), subjectiveCheckin: checkin(censoredAlertDay) },
+        ];
+
+        const report = runHealthAnomalyReplay({ userId: 'u1', days }, [VISIBLE_V1_HEALTH_ANOMALY_THRESHOLDS]);
+        const summary = report.policySummaries[VISIBLE_V1_HEALTH_ANOMALY_THRESHOLDS.policyVersion]!;
+        expect(summary.asymptomaticAlertDays).toBe(0);
+        expect(summary.falseAlarmRateWithout72hSymptoms).toBe(0);
     });
 });

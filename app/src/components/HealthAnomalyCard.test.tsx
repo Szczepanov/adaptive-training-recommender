@@ -8,6 +8,7 @@ import type {
 import { VISIBLE_V1_HEALTH_ANOMALY_THRESHOLDS } from '../derived/flags/illnessAnomaly/healthAnomaly';
 import type { HealthAnomalyFollowupCandidate } from '../services/healthAnomalyOutcomeService';
 import { HealthAnomalyCard, HealthAnomalyCardView } from './HealthAnomalyCard';
+import { resolveHealthAnomalyCardState } from './healthAnomalyShadowView';
 
 const mockFollowupProps: Array<Record<string, unknown>> = [];
 
@@ -53,9 +54,9 @@ function makeAssessment(
         estimator: 'log-mean-stdev-28d',
         direction: 'low',
         status: 'normal',
-        currentValue: 58,
-        baselineValue: 60,
-        scaleValue: 5,
+        currentValue: Math.log(58),
+        baselineValue: Math.log(60),
+        scaleValue: 0.08,
         standardizedDeviation: -0.4,
         baselineVersion: 5,
       },
@@ -297,6 +298,9 @@ describe('HealthAnomalyCard', () => {
     expect(html).toContain('Resting heart rate');
     expect(html).toContain('56 bpm');
     expect(html).toContain('50 bpm');
+    expect(html).toContain('Overnight HRV');
+    expect(html).toContain('58 ms');
+    expect(html).toContain('60 ms');
     expect(html).toContain('+2.1z');
     expect(html).toContain('Emerging baseline (7–13d)');
     expect(html).toContain('Single channel');
@@ -421,5 +425,78 @@ describe('HealthAnomalyCard', () => {
         <HealthAnomalyCard userId="u1" currentDate="2026-11-15" liveRevision={makeRevision()} policyOverride="visible-v1" />,
       ),
     ).toContain('Resting heart rate');
+  });
+
+  it('withholds follow-up and renders an uncertainty notice when unreadableCount > 0', () => {
+    const persistent = makeRevision({ state: 'possible_illness_or_systemic_stress' });
+    const htmlWithAnomaly = renderToStaticMarkup(
+      <HealthAnomalyCardView
+        userId="u1"
+        currentDate="2026-11-15"
+        revision={persistent}
+        followupCandidate={candidate}
+        unreadableCount={2}
+        onNavigate={vi.fn()}
+      />,
+    );
+    expect(htmlWithAnomaly).toContain('2 stored assessment revision(s) for 2026-11-15 could not be read');
+    expect(htmlWithAnomaly).not.toContain('data-testid="embedded-followup-card"');
+
+    const normalRevision = makeRevision({ state: 'normal', episodeId: null, episodeDay: null, persistenceDays: 0 });
+    const htmlWithNormal = renderToStaticMarkup(
+      <HealthAnomalyCardView
+        userId="u1"
+        currentDate="2026-11-15"
+        revision={normalRevision}
+        followupCandidate={candidate}
+        unreadableCount={1}
+        onNavigate={vi.fn()}
+      />,
+    );
+    expect(htmlWithNormal).toContain('1 stored assessment revision(s) for 2026-11-15 could not be read');
+    expect(htmlWithNormal).not.toContain('data-testid="embedded-followup-card"');
+
+    const followupState = {
+      userId: 'u1',
+      date: '2026-11-15',
+      revisionId: persistent.revisionId,
+      candidate,
+    };
+    const loadingCard = resolveHealthAnomalyCardState({
+      userId: 'u1',
+      currentDate: '2026-11-15',
+      liveRevision: persistent,
+      persistedState: null,
+      followupState,
+    });
+    expect(loadingCard.followupAllowed).toBe(false);
+    expect(loadingCard.followupCandidate).toBeNull();
+
+    const uncertainCard = resolveHealthAnomalyCardState({
+      userId: 'u1',
+      currentDate: '2026-11-15',
+      liveRevision: persistent,
+      persistedState: {
+        revision: persistent,
+        loadResult: { userId: 'u1', date: '2026-11-15', status: 'ready', unreadableCount: 1 },
+      },
+      followupState,
+    });
+    expect(uncertainCard.followupAllowed).toBe(false);
+    expect(uncertainCard.followupCandidate).toBeNull();
+    expect(uncertainCard.unreadableCount).toBe(1);
+
+    const readyCard = resolveHealthAnomalyCardState({
+      userId: 'u1',
+      currentDate: '2026-11-15',
+      liveRevision: persistent,
+      persistedState: {
+        revision: persistent,
+        loadResult: { userId: 'u1', date: '2026-11-15', status: 'ready', unreadableCount: 0 },
+      },
+      followupState,
+    });
+    expect(readyCard.followupAllowed).toBe(true);
+    expect(readyCard.followupCandidate).toEqual(candidate);
   });
 });

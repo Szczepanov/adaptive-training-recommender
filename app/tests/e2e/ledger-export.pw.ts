@@ -26,9 +26,13 @@ test('structured ledger download preserves source states and legacy brief at 390
   });
   // Inspect as the owner through rules: the app, rather than a test seed, must write flags.
   await expect.poll(() => inspectAthlete(athlete, async db => {
-    const rows = await getDocs(collection(db, 'users', athlete.userId, 'flag_evaluations'));
-    return rows.docs.some(row => row.data().observedOn === date && row.data().id === 'illness_risk_symptom'
-      && row.data().state === 'measured');
+    const docs = (await getDocs(collection(db, 'users', athlete.userId, 'flag_evaluations'))).docs
+      .map(row => row.data());
+    const hasSymptom = docs.some(data => data.observedOn === date && data.id === 'illness_risk_symptom'
+      && data.state === 'measured');
+    const hasAnomaly = docs.some(data => data.observedOn === date && data.id === 'illness_anomaly'
+      && data.reasonCode === 'no_core_signals');
+    return hasSymptom && hasAnomaly;
   }), { timeout: 20_000 }).toBe(true);
   const originalBrief = await planningBrief(page, '(planning)');
   const button = page.getByRole('button', { name: 'Export ledger (JSON)', exact: true });

@@ -147,6 +147,26 @@ function isSourceIdentity(value: unknown): value is HealthAnomalySourceIdentity 
     if (value.recoverySnapshotRevision !== null && typeof value.recoverySnapshotRevision !== 'string') return false;
     if (value.checkinRevision !== null && typeof value.checkinRevision !== 'string') return false;
     if (value.travelContextRevision !== null && typeof value.travelContextRevision !== 'string') return false;
+    if (
+        value.previousAssessmentRevisionId !== undefined
+        && value.previousAssessmentRevisionId !== null
+        && typeof value.previousAssessmentRevisionId !== 'string'
+    ) {
+        return false;
+    }
+    if (
+        value.contaminatedDates !== undefined
+        && (!Array.isArray(value.contaminatedDates) || !value.contaminatedDates.every(item => typeof item === 'string'))
+    ) {
+        return false;
+    }
+    if (
+        value.personalCalibrationRevision !== undefined
+        && value.personalCalibrationRevision !== null
+        && typeof value.personalCalibrationRevision !== 'string'
+    ) {
+        return false;
+    }
     if (!Array.isArray(value.historySnapshotRevisions)) return false;
     return value.historySnapshotRevisions.every(item => isPlainObject(item)
         && typeof item.date === 'string'

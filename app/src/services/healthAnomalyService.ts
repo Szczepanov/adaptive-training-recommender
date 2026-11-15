@@ -6,6 +6,7 @@ import {
     VISIBLE_V1_HEALTH_ANOMALY_THRESHOLDS,
 } from '../derived/flags/illnessAnomaly/healthAnomaly';
 import { HEALTH_ANOMALY_BASELINE_WINDOW_DAYS, mapRecoverySnapshotToHealthAnomalyFeatures } from '../derived/flags/illnessAnomaly/healthAnomalyFeatures';
+import { summarizePersonalOutcomeCalibration } from '../derived/flags/illnessAnomaly/healthAnomalyOutcome';
 import type {
     HealthAnomalyAssessmentRevision,
     HealthAnomalyInput,
@@ -18,6 +19,10 @@ import type { AuthoredPlanBlock, DailyRecoverySnapshot, DailySubjectiveCheckin }
 import { addDaysToLocalDateString } from '../utils/localDate';
 import { checkinService, type CheckinService } from './checkinService';
 import {
+    healthAnomalyOutcomeRepository,
+    type HealthAnomalyOutcomeRepository,
+} from './healthAnomalyOutcomeService';
+import {
     buildHealthAnomalyAssessmentRevision,
     healthAnomalyAssessmentRepository,
     stableHealthAnomalyHash,
@@ -29,9 +34,10 @@ import { recoverySnapshotService, type RecoverySnapshotService } from './recover
 type PlanBlockWithId = AuthoredPlanBlock & { id: string };
 
 type RecoverySource = Pick<RecoverySnapshotService, 'getRecoverySnapshotState' | 'getRecoverySnapshotsInRangeState'>;
-type CheckinSource = Pick<CheckinService, 'getCheckinState'>;
+type CheckinSource = Pick<CheckinService, 'getCheckinState'> & Partial<Pick<CheckinService, 'getCheckinsInRangeState'>>;
 type PlanBlockSource = Pick<PlanBlockService, 'getBlocksInRangeState'>;
 type AssessmentStore = Pick<HealthAnomalyAssessmentRepository, 'getLatestForDate' | 'persistImmutable'>;
+type OutcomeSource = Pick<HealthAnomalyOutcomeRepository, 'listForUser'>;
 
 export interface HealthAnomalyServiceResult {
     assessment: PhysiologicalAnomalyAssessment;
@@ -70,17 +76,27 @@ export class HealthAnomalyService {
     private readonly checkins: CheckinSource;
     private readonly planBlocks: PlanBlockSource;
     private readonly assessments: AssessmentStore;
+    private readonly outcomes: OutcomeSource;
 
     constructor(
         recovery: RecoverySource = recoverySnapshotService,
         checkins: CheckinSource = checkinService,
         planBlocks: PlanBlockSource = planBlockService,
         assessments: AssessmentStore = healthAnomalyAssessmentRepository,
+        outcomes?: OutcomeSource,
     ) {
         this.recovery = recovery;
         this.checkins = checkins;
         this.planBlocks = planBlocks;
         this.assessments = assessments;
+        this.outcomes = outcomes ?? (
+            recovery === recoverySnapshotService
+            && checkins === checkinService
+            && planBlocks === planBlockService
+            && assessments === healthAnomalyAssessmentRepository
+                ? healthAnomalyOutcomeRepository
+                : { listForUser: async () => [] }
+        );
     }
 
     async assessAndPersist(
@@ -96,18 +112,37 @@ export class HealthAnomalyService {
 
         const historyStart = addDaysToLocalDateString(date, -HEALTH_ANOMALY_BASELINE_WINDOW_DAYS);
         const previousDate = addDaysToLocalDateString(date, -1);
-        const [snapshotState, checkinState, historyState, travelState, previousAssessment] = await Promise.all([
+        const [
+            snapshotState,
+            checkinState,
+            historyState,
+            checkinHistoryState,
+            travelState,
+            previousAssessment,
+            priorOutcomes,
+        ] = await Promise.all([
             this.recovery.getRecoverySnapshotState(userId, date),
             this.checkins.getCheckinState(userId, date),
             this.recovery.getRecoverySnapshotsInRangeState(userId, historyStart, date),
+            this.checkins.getCheckinsInRangeState
+                ? this.checkins.getCheckinsInRangeState(userId, historyStart, date)
+                : Promise.resolve<DataState<DailySubjectiveCheckin[]>>({ status: 'MISSING' }),
             this.planBlocks.getBlocksInRangeState(userId, date, date),
             this.assessments.getLatestForDate(userId, previousDate),
+            this.outcomes.listForUser(userId).catch(() => []),
         ]);
 
         const snapshot = availableData(snapshotState);
         const checkin = availableData(checkinState);
         const history = availableData(historyState) ?? [];
-        const features = snapshot ? mapRecoverySnapshotToHealthAnomalyFeatures(snapshot, history) : null;
+        const checkinHistory = availableData(checkinHistoryState) ?? [];
+        const contaminatedDates = Array.from(new Set(
+            checkinHistory
+                .filter(item => item.date < date && (item.healthContext?.symptoms?.present === true || item.illnessSymptoms === true))
+                .map(item => item.date),
+        )).sort();
+        const features = snapshot ? mapRecoverySnapshotToHealthAnomalyFeatures(snapshot, history, { contaminatedDates }) : null;
+        const personalCalibration = summarizePersonalOutcomeCalibration(priorOutcomes, date);
         const authoredTravelActive = travelState.status === 'AVAILABLE'
             ? activeTravelBlock(travelState.data, date)
             : travelState.status === 'MISSING' ? false : null;
@@ -145,6 +180,7 @@ export class HealthAnomalyService {
                         ?? previousAssessment.assessment.persistenceDays)
                     : 0,
             },
+            personalCalibration,
         };
 
         const assessment = evaluatePhysiologicalAnomaly(input, policy, thresholds);
@@ -166,6 +202,11 @@ export class HealthAnomalyService {
             })),
             travelContextRevision: travelState.status === 'AVAILABLE' ? travelState.revision ?? null : null,
             persistenceLookbackStart: previousDate,
+            ...(previousAssessment ? { previousAssessmentRevisionId: previousAssessment.revisionId } : {}),
+            ...(contaminatedDates.length > 0 ? { contaminatedDates } : {}),
+            ...(personalCalibration.priorEpisodesCount > 0
+                ? { personalCalibrationRevision: stableHealthAnomalyHash(personalCalibration) }
+                : {}),
         };
         const revision = buildHealthAnomalyAssessmentRevision({
             userId,

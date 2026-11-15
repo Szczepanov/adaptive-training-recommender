@@ -247,4 +247,25 @@ emulatorDescribe('Health anomaly assessment revision rules (HA4)', () => {
         const db = testEnvironment.authenticatedContext(ownerId).firestore();
         await assertSucceeds(setDoc(doc(db, revisionPath), mutate(revision())));
     });
+
+    it('accepts optional source lineage fields and rejects oversized contaminatedDates', async () => {
+        const db = testEnvironment.authenticatedContext(ownerId).firestore();
+        const base = revision();
+        await assertSucceeds(setDoc(doc(db, revisionPath), {
+            ...base,
+            source: {
+                ...base.source,
+                previousAssessmentRevisionId: 'ha-aaaaaaaaaaaaaaaa',
+                contaminatedDates: ['2026-08-18'],
+                personalCalibrationRevision: '1234567890abcdef',
+            },
+        }));
+        await assertFails(setDoc(doc(db, revisionPath), {
+            ...base,
+            source: {
+                ...base.source,
+                contaminatedDates: Array.from({ length: 29 }, (_, idx) => `2026-07-${String(idx + 1).padStart(2, '0')}`),
+            },
+        }));
+    });
 });

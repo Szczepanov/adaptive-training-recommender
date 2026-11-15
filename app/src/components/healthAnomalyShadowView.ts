@@ -1,4 +1,5 @@
 import type { HealthAnomalyAssessmentRevision } from '../derived/flags/illnessAnomaly/healthAnomalyModels';
+import type { HealthAnomalyFollowupCandidate } from '../services/healthAnomalyOutcomeService';
 
 /**
  * App-shell persistence and the panel's independent Firestore read can complete in either
@@ -70,4 +71,49 @@ export function healthAnomalyLoadStatusFor(
   unreadableCount: number,
 ): HealthAnomalyLoadStatus {
   return revision ? 'ready' : unreadableCount > 0 ? 'error' : 'missing';
+}
+
+export interface PersistedHealthAnomalyCardState {
+  revision: HealthAnomalyAssessmentRevision | null;
+  loadResult: HealthAnomalyLoadResult;
+}
+
+export function resolveHealthAnomalyCardState(params: {
+  userId: string;
+  currentDate: string;
+  liveRevision?: HealthAnomalyAssessmentRevision | null;
+  persistedState: PersistedHealthAnomalyCardState | null;
+  followupState: {
+    userId: string;
+    date: string;
+    revisionId: string | null;
+    candidate: HealthAnomalyFollowupCandidate | null;
+  } | null;
+}): {
+  revision: HealthAnomalyAssessmentRevision | null;
+  unreadableCount: number;
+  followupAllowed: boolean;
+  followupCandidate: HealthAnomalyFollowupCandidate | null;
+} {
+  const { userId, currentDate, liveRevision, persistedState, followupState } = params;
+  const loadResult = persistedState?.loadResult ?? null;
+  const loadState = selectHealthAnomalyLoadState(userId, currentDate, loadResult);
+  const targetMatches = loadResult !== null && loadResult.userId === userId && loadResult.date === currentDate;
+  const persistedRevision = targetMatches ? (persistedState?.revision ?? null) : null;
+  const revision = selectHealthAnomalyShadowRevision(userId, currentDate, liveRevision, persistedRevision);
+  const unreadableCount = targetMatches ? (loadResult.unreadableCount ?? 0) : 0;
+  const followupAllowed = loadState !== 'loading' && loadState !== 'error' && unreadableCount === 0;
+  const currentRevisionId = revision?.revisionId ?? null;
+  const matchingCandidate = followupState
+    && followupState.userId === userId
+    && followupState.date === currentDate
+    && followupState.revisionId === currentRevisionId
+    ? followupState.candidate
+    : null;
+  return {
+    revision,
+    unreadableCount,
+    followupAllowed,
+    followupCandidate: followupAllowed ? matchingCandidate : null,
+  };
 }

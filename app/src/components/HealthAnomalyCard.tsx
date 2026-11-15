@@ -23,7 +23,11 @@ import {
 } from '../services/healthAnomalyRuntime';
 import type { Screen } from '../types/navigation';
 import { HealthAnomalyFollowupCard } from './HealthAnomalyFollowupCard';
-import { selectHealthAnomalyShadowRevision } from './healthAnomalyShadowView';
+import {
+  healthAnomalyLoadStatusFor,
+  resolveHealthAnomalyCardState,
+  type PersistedHealthAnomalyCardState,
+} from './healthAnomalyShadowView';
 import './HealthAnomalyCard.css';
 
 export interface HealthAnomalyCardProps {
@@ -39,6 +43,7 @@ export interface HealthAnomalyCardViewProps {
   currentDate: string;
   revision: HealthAnomalyAssessmentRevision | null;
   followupCandidate?: HealthAnomalyFollowupCandidate | null;
+  unreadableCount?: number;
   onNavigate?: (screen: Screen) => void;
 }
 
@@ -103,6 +108,14 @@ const EXPLANATION_STRENGTH_LABELS = {
   moderate: 'Moderate context link',
   strong: 'Strong context link',
 } as const;
+
+function toDisplayMetricValue(
+  value: number | null | undefined,
+  estimator: CoreSignalEvidence['estimator'],
+): number | null | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return value;
+  return estimator === 'log-mean-stdev-28d' ? Math.exp(value) : value;
+}
 
 function formatMetricValue(value: number | null | undefined, unit: string): string {
   if (typeof value !== 'number' || !Number.isFinite(value)) return '—';
@@ -219,10 +232,26 @@ export function HealthAnomalyCardView({
   currentDate,
   revision,
   followupCandidate = null,
+  unreadableCount = 0,
   onNavigate,
 }: HealthAnomalyCardViewProps) {
+  const latestUncertain = unreadableCount > 0;
+  const effectiveFollowupCandidate = latestUncertain ? null : followupCandidate;
+  const uncertaintyNotice = latestUncertain ? (
+    <p className="ha-card-notice" role="status">
+      {unreadableCount} stored assessment revision(s) for {currentDate} could not be read. This may not be the latest one, so follow-up is unavailable.
+    </p>
+  ) : null;
+
   if (!revision) {
-    if (!followupCandidate) return null;
+    if (!effectiveFollowupCandidate) {
+      if (!uncertaintyNotice) return null;
+      return (
+        <section className="dashboard-card ha-card ha-card--insufficient" aria-label="Early physiological signals">
+          {uncertaintyNotice}
+        </section>
+      );
+    }
     return (
       <section className="dashboard-card ha-card ha-card--followup" aria-label="Health anomaly episode follow-up">
         <div className="ha-card-header">
@@ -230,7 +259,7 @@ export function HealthAnomalyCardView({
             <span className="ha-card-kicker">Episode follow-up</span>
             <span className="ha-card-badge tone-quiet">Review due</span>
           </div>
-          <h2 className="ha-card-headline">How did the {followupCandidate.sourceAssessment.date} physiological shift turn out?</h2>
+          <h2 className="ha-card-headline">How did the {effectiveFollowupCandidate.sourceAssessment.date} physiological shift turn out?</h2>
           <p className="ha-card-summary">
             Logging what happened helps calibrate future overnight alerts to your physiology.
           </p>
@@ -252,7 +281,14 @@ export function HealthAnomalyCardView({
   const { assessment } = revision;
 
   if (assessment.state === 'normal') {
-    if (!followupCandidate) return null;
+    if (!effectiveFollowupCandidate) {
+      if (!uncertaintyNotice) return null;
+      return (
+        <section className="dashboard-card ha-card ha-card--insufficient" aria-label="Early physiological signals">
+          {uncertaintyNotice}
+        </section>
+      );
+    }
     return (
       <section className="dashboard-card ha-card ha-card--followup" aria-label="Health anomaly episode follow-up">
         <div className="ha-card-header">
@@ -260,7 +296,7 @@ export function HealthAnomalyCardView({
             <span className="ha-card-kicker">Episode follow-up</span>
             <span className="ha-card-badge tone-quiet">Today within baseline</span>
           </div>
-          <h2 className="ha-card-headline">Overnight signals are normal today — confirm your {followupCandidate.sourceAssessment.date} episode</h2>
+          <h2 className="ha-card-headline">Overnight signals are normal today — confirm your {effectiveFollowupCandidate.sourceAssessment.date} episode</h2>
           <p className="ha-card-summary">
             Recording whether that earlier shift led to illness or reflected training/life load personalizes future alerts.
           </p>
@@ -285,6 +321,7 @@ export function HealthAnomalyCardView({
   if (assessment.state === 'insufficient_evidence') {
     return (
       <section className="dashboard-card ha-card ha-card--insufficient" aria-label="Early physiological signals">
+        {uncertaintyNotice}
         <div className="ha-card-header">
           <div className="ha-card-title-row">
             <span className="ha-card-kicker">Early physiological signals</span>
@@ -312,7 +349,7 @@ export function HealthAnomalyCardView({
           </button>
         </div>
 
-        {followupCandidate && (
+        {effectiveFollowupCandidate && (
           <div className="ha-card-followup-wrap">
             <HealthAnomalyFollowupCard userId={userId} date={currentDate} currentRevision={revision} />
           </div>
@@ -376,8 +413,8 @@ export function HealthAnomalyCardView({
                   </span>
                 </div>
                 <div className="ha-card-signal-metrics">
-                  <span>Current: <strong>{formatMetricValue(signal.currentValue, meta.unit)}</strong></span>
-                  <span>28d baseline: {formatMetricValue(signal.baselineValue, meta.unit)}</span>
+                  <span>Current: <strong>{formatMetricValue(toDisplayMetricValue(signal.currentValue, signal.estimator), meta.unit)}</strong></span>
+                  <span>28d baseline: {formatMetricValue(toDisplayMetricValue(signal.baselineValue, signal.estimator), meta.unit)}</span>
                   <span className="ha-card-signal-z">Deviation: <strong>{formatStandardizedDeviation(signal.standardizedDeviation)}</strong></span>
                 </div>
               </li>
@@ -475,11 +512,13 @@ export function HealthAnomalyCardView({
         </button>
       </div>
 
-      {followupCandidate && (
+      {effectiveFollowupCandidate && (
         <div className="ha-card-followup-wrap">
           <HealthAnomalyFollowupCard userId={userId} date={currentDate} currentRevision={revision} />
         </div>
       )}
+
+      {uncertaintyNotice}
 
       <p className="ha-card-notice">{earlyResponse?.nonDiagnosticNotice ?? DEFAULT_GUIDANCE_NOTICE}</p>
     </section>
@@ -498,11 +537,7 @@ export function HealthAnomalyCard({
     : configuredHealthAnomalyRuntimePolicy();
   const visibleEnabled = activePolicy === 'visible-v1';
 
-  const [persistedState, setPersistedState] = useState<{
-    userId: string;
-    date: string;
-    revision: HealthAnomalyAssessmentRevision | null;
-  } | null>(null);
+  const [persistedState, setPersistedState] = useState<PersistedHealthAnomalyCardState | null>(null);
 
   const [followupState, setFollowupState] = useState<{
     userId: string;
@@ -515,29 +550,45 @@ export function HealthAnomalyCard({
     if (!visibleEnabled || !userId || !currentDate) return;
     let cancelled = false;
     healthAnomalyAssessmentRepository.getLatestForDateWithDiagnostics(userId, currentDate)
-      .then(({ revision }) => {
+      .then(({ revision, unreadableCount }) => {
         if (!cancelled) {
-          setPersistedState({ userId, date: currentDate, revision });
+          setPersistedState({
+            revision,
+            loadResult: {
+              userId,
+              date: currentDate,
+              status: healthAnomalyLoadStatusFor(revision, unreadableCount),
+              unreadableCount,
+            },
+          });
         }
       })
       .catch(() => {
         if (!cancelled) {
-          setPersistedState({ userId, date: currentDate, revision: null });
+          setPersistedState({
+            revision: null,
+            loadResult: { userId, date: currentDate, status: 'error' },
+          });
         }
       });
     return () => { cancelled = true; };
   }, [visibleEnabled, userId, currentDate]);
 
-  const persistedRevision = persistedState && persistedState.userId === userId && persistedState.date === currentDate
-    ? persistedState.revision
+  const cardState = visibleEnabled && userId && currentDate
+    ? resolveHealthAnomalyCardState({
+        userId,
+        currentDate,
+        liveRevision,
+        persistedState,
+        followupState,
+      })
     : null;
-  const revision = visibleEnabled && userId && currentDate
-    ? selectHealthAnomalyShadowRevision(userId, currentDate, liveRevision, persistedRevision)
-    : null;
+  const revision = cardState?.revision ?? null;
   const currentRevisionId = revision?.revisionId ?? null;
+  const followupAllowed = cardState?.followupAllowed ?? false;
 
   useEffect(() => {
-    if (!visibleEnabled || !userId || !currentDate) return;
+    if (!visibleEnabled || !userId || !currentDate || !followupAllowed) return;
     let cancelled = false;
     findRecentHealthAnomalyFollowupCandidate(userId, currentDate, revision)
       .then(candidate => {
@@ -551,23 +602,17 @@ export function HealthAnomalyCard({
         }
       });
     return () => { cancelled = true; };
-  }, [visibleEnabled, userId, currentDate, revision, currentRevisionId]);
+  }, [visibleEnabled, userId, currentDate, followupAllowed, revision, currentRevisionId]);
 
-  if (!visibleEnabled || !userId || !currentDate) return null;
-
-  const followupCandidate = followupState
-    && followupState.userId === userId
-    && followupState.date === currentDate
-    && followupState.revisionId === currentRevisionId
-    ? followupState.candidate
-    : null;
+  if (!visibleEnabled || !userId || !currentDate || !cardState) return null;
 
   return (
     <HealthAnomalyCardView
       userId={userId}
       currentDate={currentDate}
-      revision={revision}
-      followupCandidate={followupCandidate}
+      revision={cardState.revision}
+      followupCandidate={cardState.followupCandidate}
+      unreadableCount={cardState.unreadableCount}
       onNavigate={onNavigate}
     />
   );

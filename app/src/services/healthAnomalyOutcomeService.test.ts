@@ -2,8 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { HealthAnomalyAssessmentRevision } from '../derived/flags/illnessAnomaly/healthAnomalyModels';
 
 const firestore = vi.hoisted(() => ({
+    collection: vi.fn(),
     doc: vi.fn(),
     getDoc: vi.fn(),
+    getDocs: vi.fn(),
     runTransaction: vi.fn(),
 }));
 const assessmentRepo = vi.hoisted(() => ({ getLatestForDate: vi.fn() }));
@@ -111,5 +113,24 @@ describe('HealthAnomalyOutcomeRepository', () => {
         expect(result.sourceAssessment).toEqual(existing.sourceAssessment);
         expect(result.createdAt).toBe(existing.createdAt);
         expect(result.explanation).toBe('illness_symptoms');
+    });
+
+    it('lists valid outcomes for a user while skipping unreadable documents', async () => {
+        firestore.collection.mockReturnValue({ path: 'outcomes' });
+        const valid = {
+            userId: 'u1', episodeId: 'health-anomaly:2026-08-20',
+            sourceAssessment: { date: '2026-08-20', revisionId: 'ha-1234567890abcdef' },
+            explanation: 'illness_symptoms', symptomOnset: null, respiratoryTest: null, note: null,
+            createdAt: '2026-08-21T06:00:00.000Z', updatedAt: '2026-08-21T06:00:00.000Z', schemaVersion: 1,
+        };
+        firestore.getDocs.mockResolvedValue({
+            docs: [
+                { id: valid.episodeId, data: () => valid },
+                { id: 'bad-doc', data: () => ({ invalid: true }) },
+            ],
+        });
+
+        const outcomes = await new HealthAnomalyOutcomeRepository().listForUser('u1');
+        expect(outcomes).toEqual([valid]);
     });
 });

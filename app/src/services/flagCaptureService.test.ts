@@ -34,7 +34,7 @@ describe('dated flag capture', () => {
         occurrences: vi.fn<() => Promise<DataState<SessionOccurrence[]>>>(),
         executions: vi.fn(),
         resolve: vi.fn(),
-        healthAnomaly: vi.fn<() => Promise<HealthAnomalyAssessmentRevision | null>>(),
+        healthAnomaly: vi.fn<() => Promise<HealthAnomalyAssessmentRevision | { revision: HealthAnomalyAssessmentRevision | null; unreadableCount: number } | null>>(),
         persist: vi.fn(),
     };
     let saved: PersistedFlagEvaluation[];
@@ -293,5 +293,15 @@ describe('dated flag capture', () => {
     it('never captures a historical date using current settings', async () => {
         await expect(service.captureForDate('alice', '2026-10-27', date)).rejects.toThrow();
         expect(reads.persist).not.toHaveBeenCalled();
+    });
+    it('marks illness_anomaly invalid when unreadable revisions exist in diagnostics read', async () => {
+        reads.healthAnomaly.mockResolvedValue({ revision: null, unreadableCount: 2 });
+        await capture();
+        const flag = saved.find(f => f.id === 'illness_anomaly');
+        expect(flag).toMatchObject({
+            active: null,
+            state: 'invalid',
+        });
+        expect(flag?.inputs.some(i => i.value.state === 'invalid')).toBe(true);
     });
 });

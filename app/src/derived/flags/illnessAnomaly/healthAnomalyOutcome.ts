@@ -1,4 +1,5 @@
 import type { PersonalOutcomeCalibrationSummary } from './healthAnomalyModels';
+import { getLocalDateString } from '../../../utils/localDate';
 
 export const HEALTH_ANOMALY_OUTCOME_EXPLANATIONS = [
     'illness_symptoms',
@@ -228,7 +229,11 @@ export function summarizePersonalOutcomeCalibration(
         if (!isRealLocalDate(outcome.sourceAssessment.date) || outcome.sourceAssessment.date >= asOfDate) {
             continue;
         }
-        const updatedDate = outcome.updatedAt.slice(0, 10);
+        const parsedUpdatedAt = new Date(outcome.updatedAt);
+        if (Number.isNaN(parsedUpdatedAt.getTime())) {
+            continue;
+        }
+        const updatedDate = getLocalDateString(parsedUpdatedAt, 'Europe/Warsaw');
         if (!isRealLocalDate(updatedDate) || updatedDate >= asOfDate) {
             continue;
         }

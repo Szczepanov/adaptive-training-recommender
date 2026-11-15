@@ -1,10 +1,8 @@
 # ADR-0025: Physiological anomaly and possible-illness signals
 
-* **Status:** Accepted (2026-08-21); Amended 2026-11-15 (HA7 two-tier release gate, Stage A–C calibration architecture, `visible-v1` unlock)
-* **Date:** 2026-08-21 (amended 2026-11-15)
+* **Status:** Accepted (partially superseded by [ADR-0054](./0054-ha7-visible-early-warning-release-gate.md) for the HA7 two-tier release gate, Stage A–C calibration model, and `visible-v1` rollout defaults)
+* **Date:** 2026-08-21
 * **Deciders:** Core Engineering Team
-* **Related decisions:** [ADR-0024](./0024-biometric-baseline-estimator-policy.md), [ADR-0052](./0052-user-ledger-and-external-ai-planning-authority.md)
-* **Release audit:** [2026-11-15 HA7 visible early-warning release decision](../analysis/2026-11-15-ha7-visible-early-warning-release-decision.md)
 
 ---
 
@@ -49,67 +47,23 @@ It is **not** part of `metricStrain` and does not initially change recommendatio
 The evaluator produces a versioned, explainable assessment with at least:
 
 ```ts
-type PhysiologicalAnomalyState =
-  | 'insufficient_evidence'
-  | 'normal'
-  | 'explained_recovery_strain'
-  | 'watch_unexplained'
-  | 'possible_illness_or_systemic_stress'
-  | 'symptoms_reported';
-
-type HealthAnomalySeverity = 'none' | 'mild' | 'moderate' | 'strong';
-type HealthAnomalyEvidenceQuality =
-  | 'insufficient'
-  | 'emerging'
-  | 'single_channel'
-  | 'correlated_autonomic_only'
-  | 'multi_domain_corroborated';
-type HealthAnomalyCalibrationStage =
-  | 'insufficient_evidence'
-  | 'emerging_baseline'
-  | 'reliable_baseline'
-  | 'outcome_calibrated';
-type EarlyResponseLevel =
-  | 'none'
-  | 'level_1_early_watch'
-  | 'level_2_persistent_or_corroborated'
-  | 'level_3_symptoms_reported';
-
 interface PhysiologicalAnomalyAssessment {
-  state: PhysiologicalAnomalyState;
+  state:
+    | 'normal'
+    | 'explained_recovery_strain'
+    | 'watch_unexplained'
+    | 'possible_illness_or_systemic_stress'
+    | 'symptoms_reported';
   evidenceLevel: 'none' | 'low' | 'moderate' | 'high';
-  anomalySeverity: HealthAnomalySeverity;
-  evidenceQuality: HealthAnomalyEvidenceQuality;
-  calibrationStage: HealthAnomalyCalibrationStage;
   coreSignals: CoreSignalEvidence[];
   supportingSignals: SupportingSignalEvidence[];
   explanations: ContextExplanation[];
   unexplainedEvidence: string[];
   persistenceDays: number;
-  unexplainedPersistenceDays?: number;
-  earlyResponse: EarlyResponseProtocol;
-  activityMatchedExpectations?: ActivityMatchedSignalExpectation[];
-  personalCalibration?: PersonalOutcomeCalibrationSummary | null;
   dataQuality: AssessmentDataQuality;
   policyVersion: string;
 }
 ```
-
-#### 2026-11-15 Amendment — Three-stage calibration architecture & three-concept warning model
-
-To replace the original catch-22 cutover gate and eliminate six runtime correctness defects documented in [the 2026-11-15 HA7 release decision](../analysis/2026-11-15-ha7-visible-early-warning-release-decision.md), the evaluator operates across three calibration stages (`HealthAnomalyCalibrationStage`):
-
-1. **Stage A — Personal baseline readiness:**
-   * **`insufficient_evidence` (`< 7` clean observations or `availableCoreSignals === 0`):** when all three core channels are `unavailable` and no illness symptoms are reported, emit `state: 'insufficient_evidence'` (with caution `INSUFFICIENT_WEARABLE_BASELINE_OR_SIGNALS`, `episodeId: null`, `episodeDay: null`) rather than false-reassurance `'normal'`.
-   * **`emerging_baseline` (`7–13` clean observations):** evaluates wearable deviations with a conservative `+0.5z` threshold penalty and caps unexplained escalation at `watch_unexplained`.
-   * **`reliable_baseline` (`>= 14` clean observations within 28 days):** enables full `VISIBLE_V1_HEALTH_ANOMALY_THRESHOLDS` sensitivity.
-2. **Stage B — Contamination protection & activity-matched adaptation:**
-   * Causally excludes strictly prior symptomatic nights (`< currentDate`) via `contaminatedDates` (currently wired into `runHealthAnomalyReplay`) while preserving at least `HEALTH_ANOMALY_EMERGING_BASELINE_OBSERVATIONS` clean nights.
-   * Computes empirical-Bayes shrunk `activityMatchedExpectations` (`post_hard_or_high_cost` vs. `post_easy_or_rest`) live in `HealthAnomalyService.assessAndPersist` via `mapRecoverySnapshotToHealthAnomalyFeatures(snapshot, history)` so expected post-exercise shifts are attributed cleanly rather than conflated with systemic anomalies.
-3. **Stage C — Causal personal outcome calibration:**
-   * `summarizePersonalOutcomeCalibration` is implemented as a pure calibration/schema helper aggregating strictly causal prior outcome records (`< asOfDate`), reporting `calibrationEligible: true` (`outcome_calibrated`) only after `priorEpisodesCount >= 3 && resolvedCount >= 3` (not yet queried live by `HealthAnomalyService`).
-
-Every visible assessment separates **`anomalySeverity`** (deviation strength), **`evidenceQuality`** (`insufficient | emerging | single_channel | correlated_autonomic_only | multi_domain_corroborated`), and **`state`** (`PhysiologicalAnomalyState`), paired with a structured 3-level **`EarlyResponseProtocol`** (`none`, `level_1_early_watch`, `level_2_persistent_or_corroborated`, `level_3_symptoms_reported`) embedding IOC consensus red-flag warnings and staged return-to-sport guidance.
 
 Exact TypeScript names may change during implementation. The semantic separation may not.
 
@@ -146,11 +100,20 @@ data the evaluator effectively fabricated:
 * **Baseline age** — a baseline older than its policy-defined refresh window is treated as stale
   and downgrades the channel to `unavailable` rather than being scored against a stale
   reference.
-* **Missing or failed-quality current value / cold start** — a missing, non-finite, or quality-flagged current value produces `unavailable` for that channel. `unavailable` is evidence-neutral: it must not be interpreted as `normal` and must not silently drop out of the multi-signal count. When all three core channels are `unavailable` and no illness symptoms are reported, `evaluatePhysiologicalAnomaly` must emit `state: 'insufficient_evidence'` rather than `'normal'`.
-* **Evidence required for `watch_unexplained`** — at least one core channel at `moderate_anomaly` or stronger with `status != 'unavailable'` (or emerging-baseline conservative threshold `+0.5z`), and no explanation strong enough to cover it; Night-1 `correlated_autonomic_only` (RHR + HRV without respiration) also caps at `watch_unexplained`.
-* **Evidence required for `possible_illness_or_systemic_stress`** — requires `reliable_baseline` maturity (`>= 14` clean nights) and either multi-day unexplained persistence (`unexplainedPersistenceDays >= persistenceDaysForEscalation` with multi-signal qualification) or, under `VISIBLE_V1_HEALTH_ANOMALY_THRESHOLDS.allowFirstNightMultiDomainEscalation`, a first-night **`multi_domain_corroborated`** cardiorespiratory pattern (`respiration` + `rhr`/`hrv`) reaching strong deviation or moderate deviation paired with `closeSickContact`. A single-channel anomaly, however strong, cannot alone reach `possible_illness_or_systemic_stress`.
-* Resolving respiration trajectories (`evaluateRespirationElevation` reporting `status === 'resolving'`) are attenuated when `downgradeResolvingRespiration` is enabled so 28-day median lag does not extend recovery tails; Day 3+ acute vaccination/medication confounders (`priorAdverseDays >= 2`) cap at `'moderate'` coverage.
-* Exact minimum-observation counts, baseline windows, and `minimumCoreSignalsForMultiSignal`/`persistenceDaysForEscalation` values are versioned policy calibrated via replay and Stage C outcome tracking, not fixed constants in UI code.
+* **Missing or failed-quality current value** — a missing, non-finite, or quality-flagged
+  current value produces `unavailable` for that channel. `unavailable` is evidence-neutral: it
+  must not be interpreted as `normal` and must not silently drop out of the multi-signal count.
+* **Evidence required for `watch_unexplained`** — at least one core channel at
+  `moderate_anomaly` or stronger with `status != 'unavailable'`, and no explanation strong
+  enough to cover it.
+* **Evidence required for `possible_illness_or_systemic_stress`** — at least
+  `HealthAnomalyThresholdPolicy.minimumCoreSignalsForMultiSignal` independently scored core
+  channels (not `unavailable`, not explained away) at `moderate_anomaly` or stronger,
+  persisting for at least `persistenceDaysForEscalation` observed days per §8. A single-channel
+  anomaly, however strong, cannot alone reach `possible_illness_or_systemic_stress`.
+* Exact minimum-observation counts, baseline windows, and
+  `minimumCoreSignalsForMultiSignal`/`persistenceDaysForEscalation` values are versioned policy
+  calibrated in shadow replay (§9's evidence gates), not fixed by this ADR.
 
 ### 3. Garmin composite metrics are supporting/context signals, not independent votes
 
@@ -232,11 +195,13 @@ Before calibration, user-visible output must not say:
 
 Approved semantics are:
 
-* **insufficient evidence** — fewer than `HEALTH_ANOMALY_EMERGING_BASELINE_OBSERVATIONS` (`7`) clean nights, stale baselines, or zero core channels measured today without symptoms; never masked as `normal`;
-* **normal** — measured wearable channels sit within personal expectations and no symptoms are reported;
-* **explained recovery strain** — physiology is altered but known training/recovery context is a plausible explanation;
-* **unusual physiology — watch** — one or more signals are unusual (including Night-1 `correlated_autonomic_only` or emerging-baseline deviations) and no strong explanation is present;
-* **possible illness or systemic stress** — a `multi_domain_corroborated` or multi-day persistent unexplained pattern resembles systemic stress/illness patterns seen in wearable studies;
+* **normal** — no meaningful anomaly;
+* **explained recovery strain** — physiology is altered but known training/recovery context is
+  a plausible explanation;
+* **unusual physiology — watch** — one or more signals are unusual and no strong explanation
+  is present;
+* **possible illness or systemic stress** — a persistent/multi-signal pattern remains
+  unexplained and resembles patterns seen around illness in wearable studies;
 * **symptoms reported** — the athlete has explicitly reported illness symptoms.
 
 `possible illness` is a hypothesis label, never a diagnosis.
@@ -260,9 +225,11 @@ This avoids the false precision of arbitrary "-2 illness points for hard trainin
 
 A single anomalous night and a multi-night pattern are not equivalent.
 
-The evaluator tracks both consecutive adverse core-physiology days (`persistenceDays`) and consecutive unexplained anomaly days (`unexplainedPersistenceDays`) consistently across live evaluation (`HealthAnomalyService`) and deterministic replay (`runHealthAnomalyReplay`). Persistent unexplained patterns escalate `watch_unexplained` to `possible_illness_or_systemic_stress`, while `multi_domain_corroborated` patterns (`respiration` + `rhr`/`hrv`) can qualify on Night 1 under `VISIBLE_V1_HEALTH_ANOMALY_THRESHOLDS.allowFirstNightMultiDomainEscalation` without diluting `persistenceDays` semantics.
+The evaluator records episode/persistence state explicitly. Candidate policies may use
+persistence to escalate `watch_unexplained` to `possible_illness_or_systemic_stress`, but the
+exact duration/threshold must be calibrated in replay/prospective data.
 
-### 9. Rollout is staged (advisory `visible-v1` active; `tighten-v1` gated)
+### 9. Rollout is staged and default-off
 
 Add a policy selector with semantics equivalent to:
 
@@ -276,10 +243,10 @@ type HealthAnomalyPolicy =
 
 * `off` — no evaluator/output.
 * `shadow-v1` — compute/persist/debug only; no user-facing alert and no training change.
-* `visible-v1` — default active policy as of 2026-11-15: shows non-diagnostic anomaly severity, evidence quality, explanations, the 3-level early-response protocol, and unlocks the advisory `illness_anomaly` D-FLAG without exercising any workout veto.
-* `tighten-v1` — a validated alert may tighten training decisions, never loosen them. **Remains inactive:** `resolveConfiguredHealthAnomalyRuntimePolicy` clamps any configured `'tighten-v1'` to `'visible-v1'` until HA9 validation unlocks it.
+* `visible-v1` — show evidence-backed anomaly/explanation information; no training-mode change.
+* `tighten-v1` — a validated alert may tighten training decisions, never loosen them.
 
-Original HA0–HA6 development started at `'off'` / `'shadow-v1'`; following the 2026-11-15 HA7 two-tier redesign, unset production environments default to `'visible-v1'` while explicit `'off'` and `'shadow-v1'` remain available for opt-out or diagnostic replay, and `'tighten-v1'` stays fail-safe clamped to `'visible-v1'`.
+Production begins at `off`; implementation/replay explicitly opts into `shadow-v1`.
 
 #### Privacy, retention and access controls
 
@@ -384,18 +351,19 @@ ML becomes a separate decision when enough labelled history exists.
 
 ---
 
-## User-facing severity semantics and early-response protocol
+## User-facing severity semantics
 
-| Early-Response Level | State | Example message | Training effect (`visible-v1` vs. `tighten-v1`) |
+| Surface | State | Example message | Training effect at first release |
 |---|---|---|---|
-| `none` | `insufficient_evidence` | "Not enough baseline wearable data yet — continuing passive collection." | none (`illness_anomaly` D-FLAG reports `missing` / `no_core_signals`) |
-| `none` | `normal` | No health alert. | none |
-| `none` | `explained_recovery_strain` | "Your recovery signals are off baseline, but yesterday's hard training / short sleep is a plausible explanation." | none beyond existing readiness / athlete discretion |
-| `level_1_early_watch` | `watch_unexplained` | "Early physiology watch — mild/single-channel or Day-1 autonomic shift without a clear confounder. Stay hydrated, monitor how you feel, and avoid forcing maximal strain." | advisory only (`visible-v1`); zero automatic veto |
-| `level_2_persistent_or_corroborated` | `possible_illness_or_systemic_stress` | "Multi-domain or persistent physiological anomaly without a clear training/lifestyle explanation. Consider easing intensity to aerobic/recovery work, check red-flag symptoms, and reassess tomorrow." | advisory only in `visible-v1`; plan tightening remains gated behind HA9 (`tighten-v1`) |
-| `level_3_symptoms_reported` | `symptoms_reported` | "You reported illness symptoms. Prioritize rest, monitor IOC red-flag symptoms (fever, chest pain, disproportionate breathlessness, systemic aches), and follow staged return-to-sport before resuming hard work." | conservative symptom safety handling active; zero permissive override |
+| none | `normal` | No health alert. | none |
+| info | `explained_recovery_strain` | "Your recovery signals are off baseline, but yesterday's hard training / short sleep is a plausible explanation." | none beyond existing readiness logic |
+| caution | `watch_unexplained` | "Your physiology is unusual today and we don't have a clear explanation yet. Watch for symptoms and re-check tomorrow." | none in `visible-v1` |
+| warning | `possible_illness_or_systemic_stress` | "Several recovery signals are unusually stressed and the pattern is persisting without a clear training/sleep/travel explanation. Possible illness or other systemic stress." | only after `tighten-v1` validation |
+| safety | `symptoms_reported` | "You reported illness symptoms. Keep today conservative and prioritize recovery." | preserve existing conservative handling |
 
-The detail view shows **`anomalySeverity`**, **`evidenceQuality`**, and **`why`** (for example `RHR +6 bpm vs baseline`, `respiration +1.8 br/min`, `HRV below normal range`, `2nd night`, `no hard session`), alongside structured explanations (`short sleep`, `2 drinks`, `post-hard training`) and prospective 24–72h outcome capture (`HealthAnomalyFollowupCard`).
+The detail view should show **why**: for example `RHR +6 bpm vs baseline`, `respiration +1.8
+br/min`, `HRV below normal range`, `2nd night`, `no hard session`, while separately showing
+known explanations such as `short sleep` or `2 drinks`.
 
 ---
 
@@ -406,20 +374,50 @@ The detail view shows **`anomalySeverity`**, **`evidenceQuality`**, and **`why`*
 Requires only implementation correctness, data-quality gates, tests and no production
 behavior change.
 
-### Tier 1 (`shadow-v1` -> `visible-v1` — Redesigned 2026-11-15 HA7 Gate)
+### `shadow-v1` -> `visible-v1`
 
-The original 2026-08-21 gate required both `>= 60` observed days and `>= 5` distinct anomaly episodes before entering `visible-v1`. As audited in [the 2026-11-15 HA7 release decision](../analysis/2026-11-15-ha7-visible-early-warning-release-decision.md), requiring five personal illness/anomaly episodes conflated physiological baseline readiness with illness incidence and permanently locked out healthy athletes (while forcing `flagCaptureService` and `buildLedgerExport` to hardcode `ha7_release_gate_unmet`).
+Requires a recorded replay/prospective report demonstrating that the user-facing category is
+truthful and not excessively noisy. At minimum report:
 
-Under the **2026-11-15 Two-Tier Gate Redesign**, **Tier 1 (`visible-v1` + advisory `illness_anomaly` D-FLAG)** is authorized on **per-athlete Stage A/B physiological baseline readiness + safety-guard compliance** rather than prior illness episode count:
+* alerts per 30 observed days;
+* per-signal and multi-signal alert counts;
+* persistence distribution;
+* context-explained fraction;
+* false-alert causes;
+* symptom follow-up within 24/48/72 h when available;
+* alert lead time around illness episodes;
+* missing-data behavior;
+* duplicate/repeated-alert burden.
 
-* **Personal baseline readiness:** `emerging_baseline` (`>= 7` clean nights via `HEALTH_ANOMALY_EMERGING_BASELINE_OBSERVATIONS`, applying conservative `+0.5z` deviation thresholds and capping unexplained alerts at `watch_unexplained`) -> `reliable_baseline` (`>= 14` clean nights within the 28-day window); `< 7` clean nights or zero core signals emits explicit `insufficient_evidence`.
-* **Contamination & activity hygiene (Stage B):** strictly prior symptomatic nights are excluded causally from rolling baselines while empirical-Bayes activity-matched shrinkage (`HEALTH_ANOMALY_ACTIVITY_SHRINKAGE_PRIOR_DAYS`) reduces post-training false positives.
-* **Non-diagnostic & advisory bounds:** UI and D-FLAGS remain strictly non-diagnostic (zero PPV pseudo-probabilities, explicit `nonDiagnosticNotice`), adhere to [ADR-0052](./0052-user-ledger-and-external-ai-planning-authority.md) zero-veto advisory authority, embed IOC consensus red-flag / 3-stage RTS boundaries, and collect HA6 prospective outcomes (`summarizePersonalOutcomeCalibration`).
-* **Ongoing telemetry & rollback:** `runHealthAnomalyReplay` (`policySummaries`) continues monitoring alert rate per 30 days, multi-domain corroboration rate, context-explained fraction, and outcome conversion; any unacceptable false-alarm spike can revert runtime policy via environment selector (`shadow-v1` or `off`) without code edits.
+A generic `unusual physiology` message can be released on weaker evidence than a `possible
+illness` interpretation because it makes a narrower claim.
 
-### Tier 2 (`visible-v1` -> `tighten-v1` — Remains Gated Behind HA9)
+#### Numeric gate and ownership
 
-Automatic training restriction (`tighten-v1`) remains **inactive** (`resolveConfiguredHealthAnomalyRuntimePolicy` clamps `'tighten-v1'` to `'visible-v1'`). Authorizing autonomous training tightening requires evidence that the gate improves safety/decision quality without causing an unacceptable rate of unnecessary hard-session suppression, backed by actual recommendation flips and athlete outcomes. Synthetic scenarios alone cannot authorize this cutover.
+* **Minimum observation window:** at least 60 observed days per candidate policy, with all
+  three core channels reaching non-`unavailable` coverage on at least 80% of those days.
+* **Minimum episode count:** at least 5 distinct anomaly episodes (`watch_unexplained` or
+  stronger) in the report window; fewer means shadow mode continues rather than cutting over on
+  an underpowered sample.
+* **Noise bound:** unexplained-alert rate on days the athlete retrospectively reports healthy
+  must not exceed a stated versioned ceiling (candidate starting point: no more than 1
+  unexplained `watch_unexplained`-or-stronger alert per 10 observed healthy days). The exact
+  ceiling is fixed as calibrated policy in the HA7 report, not invented ad hoc at cutover time.
+* **Confidence requirement:** the reported truthfulness metrics (context-explained fraction,
+  symptom-follow-up fraction, per-signal/multi-signal alert counts) must be stable across at
+  least two non-overlapping observation windows before cutover, not a single window.
+* **Decision owner:** the engineering owner recorded in this ADR's `Deciders` field approves the
+  HA7 report and the cutover; no cutover ships without that sign-off recorded in the report.
+* **Rollback condition:** if post-cutover monitoring shows the unexplained-alert rate or
+  context-explained fraction regressing beyond the HA7 report's stated bounds for 14
+  consecutive observed days, the policy selector reverts to `shadow-v1` and a new HA7-style
+  report is required before re-attempting `visible-v1`.
+
+### `visible-v1` -> `tighten-v1`
+
+Requires evidence that the new gate improves safety/decision quality without causing an
+unacceptable rate of unnecessary hard-session suppression. Report actual recommendation
+flips and athlete outcomes. Synthetic scenarios alone cannot authorize this cutover.
 
 #### Numeric gate and ownership
 
@@ -431,13 +429,17 @@ Automatic training restriction (`tighten-v1`) remains **inactive** (`resolveConf
   (episodes later explained as non-illness) must not exceed a stated versioned ceiling
   (candidate starting point: no more than 1 in 5 suppressions retrospectively found
   unnecessary).
-* **Decision owner:** the engineering owner recorded in this ADR's `Deciders` field approves the separate Tier-2 / HA9 training-gate report before `tighten-v1` can ever be un-clamped.
+* **Decision owner:** the same named engineering owner as the `visible-v1` cutover; requires a
+  fresh, dated report specific to the training-gate decision — the `shadow-v1 -> visible-v1`
+  report cannot be reused.
 * **Rollback condition:** if `tighten-v1` produces recommendation flips later judged
   unnecessary at a rate exceeding the stated ceiling over any rolling 30-day window, the policy
   selector reverts to `visible-v1` immediately and a corrective report is required before
   re-attempting `tighten-v1`.
 
-The candidate numeric ceilings above are starting points for the HA9 training-gate report to confirm or refine with real outcome data rather than subjective cutoffs.
+The candidate numeric ceilings above are starting points for the HA7 report to confirm or
+tighten with real data, not final physiological truths; they replace subjective phrases like
+"not excessively noisy" or "unacceptable rate" with a reproducible ship/no-ship decision.
 
 ---
 
@@ -489,7 +491,6 @@ and confounder episodes to justify model complexity or calibrated probabilities.
 
 ## References
 
-Research synthesis, release decision, and direct links are maintained in:
+Research synthesis and direct links are maintained in:
 
-* [`../analysis/2026-08-21-physiological-anomaly-and-illness-risk-research.md`](../analysis/2026-08-21-physiological-anomaly-and-illness-risk-research.md)
-* [`../analysis/2026-11-15-ha7-visible-early-warning-release-decision.md`](../analysis/2026-11-15-ha7-visible-early-warning-release-decision.md)
+[`../analysis/2026-08-21-physiological-anomaly-and-illness-risk-research.md`](../analysis/2026-08-21-physiological-anomaly-and-illness-risk-research.md)

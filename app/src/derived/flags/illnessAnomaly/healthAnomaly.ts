@@ -508,12 +508,11 @@ function episodeMetadata(
 
 function resolveCalibrationStage(
     allCoreUnavailable: boolean,
-    anyEmergingAvailable: boolean,
-    anyReliableAvailable: boolean,
+    emergingOnly: boolean,
     personalCalibration: HealthAnomalyInput['personalCalibration'],
 ): HealthAnomalyCalibrationStage {
     if (allCoreUnavailable) return 'insufficient_evidence';
-    if (anyEmergingAvailable && !anyReliableAvailable) return 'emerging_baseline';
+    if (emergingOnly) return 'emerging_baseline';
     if (personalCalibration?.calibrationEligible === true) return 'outcome_calibrated';
     return 'reliable_baseline';
 }
@@ -589,6 +588,7 @@ export interface BuildEarlyResponseProtocolInput {
     anomalySeverity: HealthAnomalySeverity;
     evidenceQuality: HealthAnomalyEvidenceQuality;
     calibrationStage: HealthAnomalyCalibrationStage;
+    respirationStatus?: CoreSignalEvidence['status'];
 }
 
 /**
@@ -642,7 +642,9 @@ export function buildEarlyResponseProtocol(
         const baselineCaveat = input.calibrationStage === 'emerging_baseline'
             ? ' Your wearable baseline is still maturing (7-13 nights), so treat this early shift cautiously.'
             : input.evidenceQuality === 'correlated_autonomic_only'
-                ? ' Both autonomic markers shifted together while breathing rate remained normal.'
+                ? (input.respirationStatus === 'unavailable'
+                    ? ' Both autonomic markers shifted together while breathing rate was unavailable.'
+                    : ' Both autonomic markers shifted together while breathing rate remained normal.')
                 : '';
         return {
             level: 'level_1_early_watch',
@@ -774,17 +776,18 @@ export function evaluatePhysiologicalAnomaly(
         return evidence;
     });
 
-    const allCoreUnavailable = coreSignals.every(evidence => evidence.status === 'unavailable');
-    const anyEmergingAvailable = categorized.some(
-        (item, index) => coreSignals[index]?.status !== 'unavailable' && item.usedEmergingBaseline,
+    const emergingBySignal = new Map<HealthCoreSignal, boolean>(
+        categorized.map(item => [item.evidence.signal, item.usedEmergingBaseline]),
     );
-    const anyReliableAvailable = categorized.some(
-        (item, index) => coreSignals[index]?.status !== 'unavailable' && !item.usedEmergingBaseline,
-    );
+    const availableSignals = coreSignals.filter(evidence => evidence.status !== 'unavailable');
+    const adverseSignals = coreSignals.filter(isAdverseCoreSignalEvidence);
+    const allCoreUnavailable = availableSignals.length === 0;
+    const stageCandidateSignals = adverseSignals.length > 0 ? adverseSignals : availableSignals;
+    const anyEmergingCandidate = stageCandidateSignals.some(evidence => emergingBySignal.get(evidence.signal) === true);
+    const anyReliableCandidate = stageCandidateSignals.some(evidence => emergingBySignal.get(evidence.signal) !== true);
     const calibrationStage = resolveCalibrationStage(
         allCoreUnavailable,
-        anyEmergingAvailable,
-        anyReliableAvailable,
+        anyEmergingCandidate && !anyReliableCandidate,
         input.personalCalibration,
     );
 
@@ -816,18 +819,19 @@ export function evaluatePhysiologicalAnomaly(
     const persistenceDays = adverseAnomalies.length > 0 ? priorAdverseDays + 1 : 0;
     const unexplainedPersistenceDays = unexplained.length > 0 ? priorUnexplainedDays + 1 : 0;
 
-    const multiSignalPersistentEscalation = unexplained.length >= thresholds.minimumCoreSignalsForMultiSignal
+    const reliableUnexplained = unexplained.filter(item => emergingBySignal.get(item.signal) !== true);
+    const multiSignalPersistentEscalation = reliableUnexplained.length >= thresholds.minimumCoreSignalsForMultiSignal
         && unexplainedPersistenceDays >= thresholds.persistenceDaysForEscalation;
-    const hasUnexplainedResp = unexplained.some(item => item.signal === 'respiration');
-    const hasUnexplainedAutonomic = unexplained.some(item => item.signal === 'rhr' || item.signal === 'hrv');
-    const strongUnexplainedCount = unexplained.filter(item => item.status === 'strong_anomaly').length;
+    const hasUnexplainedResp = reliableUnexplained.some(item => item.signal === 'respiration');
+    const hasUnexplainedAutonomic = reliableUnexplained.some(item => item.signal === 'rhr' || item.signal === 'hrv');
+    const strongUnexplainedCount = reliableUnexplained.filter(item => item.status === 'strong_anomaly').length;
     const closeSickContact = input.subjectiveCheckin?.healthContext?.closeSickContact === true;
     const firstNightMultiDomainEscalation = thresholds.allowFirstNightMultiDomainEscalation === true
         && unexplainedPersistenceDays === 1
         && hasUnexplainedResp
         && hasUnexplainedAutonomic
         && (
-            (unexplained.length === 3 && strongUnexplainedCount >= 1)
+            (reliableUnexplained.length === 3 && strongUnexplainedCount >= 1)
             || strongUnexplainedCount >= 2
             || (strongUnexplainedCount >= 1 && closeSickContact)
         );
@@ -869,6 +873,7 @@ export function evaluatePhysiologicalAnomaly(
         anomalySeverity,
         evidenceQuality,
         calibrationStage,
+        respirationStatus: respirationQuality?.currentValueMissing ? 'unavailable' : coreSignals.find(signal => signal.signal === 'respiration')?.status,
     });
     const episode = episodeMetadata(input, state);
 

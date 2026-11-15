@@ -5,9 +5,9 @@
 * **Implementation status:** HA0/HA1 (`#162`, `#168`), HA2–HA4 (`#166`, `#165`), HA5 (`#171`, `#173`), and HA6.1–HA6.3 (`#174`) are merged on `main`. On 2026-11-15 (`feat/health-anomaly-visible-early-warnings`), the HA7 two-tier release decision unlocked Tier 1 **`visible-v1`** (default runtime policy, Stage A–C calibration scaffolding, 3-level early-response protocol, `HealthAnomalyCard` on `Home`, live `illness_anomaly` D-FLAG capture/strip/export, and HA6 follow-up prompt eligibility).
 * **Blocked by:** Tier 1 (`visible-v1`) is unblocked and shipped. Tier 2 **HA9** (`tighten-v1` automatic training-plan restriction) remains blocked on prospective labelled outcome evidence (`>= 90` observed days in `visible-v1` and `>= 3` outcome-labelled episodes) and [ADR-0052](../adr/0052-user-ledger-and-external-ai-planning-authority.md) authority review.
 * **Unlocks:** non-diagnostic pre-symptomatic physiological early warnings (`visible-v1`); live `illness_anomaly` D-FLAG telemetry; prospective athlete-specific calibration; later HA9 `tighten-v1` review
-* **Decision:** [ADR-0025](../adr/0025-physiological-anomaly-and-possible-illness-signals.md)
+* **Decision:** [ADR-0025](../adr/0025-physiological-anomaly-and-possible-illness-signals.md) (partially superseded by [ADR-0054](../adr/0054-ha7-visible-early-warning-release-gate.md))
 * **Release Decision:** [2026-11-15 HA7 visible early-warning release decision](../analysis/2026-11-15-ha7-visible-early-warning-release-decision.md)
-* **Research:** [2026-08-21 physiological anomaly and illness-risk review](../analysis/2026-08-21-physiological-anomaly-and-illness-risk-research.md)
+* **Research:** [2026-08-21 physiological anomaly and illness-risk review](../analysis/2026-08-21-physiological-anomaly-and-illness-risk-research.md) and [2026-11-15 literature & calibration evidence](../analysis/2026-11-15-physiological-anomaly-literature-and-calibration-evidence.md)
 
 ---
 
@@ -786,14 +786,14 @@ label source. Do not require a test and do not treat absence of a test as negati
 
 Implemented deterministically without uncalibrated ML weights:
 
-* **Stage B (`computeActivityMatchedExpectations`):** separates `post_hard_or_high_cost` vs. `post_easy_or_rest` strata using clean prior observations (`extractSignalObservations`) and empirical-Bayes shrinkage (`HEALTH_ANOMALY_ACTIVITY_SHRINKAGE_PRIOR_DAYS`) toward the overall 28-day baseline, populated live in `HealthAnomalyService.assessAndPersist` via `mapRecoverySnapshotToHealthAnomalyFeatures(snapshot, history)` (while causal `contaminatedDates` prior-symptomatic baseline exclusion is currently wired in `runHealthAnomalyReplay`).
-* **Stage C (`summarizePersonalOutcomeCalibration`):** implemented as a pure calibration/schema helper aggregating strictly causal outcome records (`< asOfDate` across source assessment, update, onset, and test timestamps) and gating `calibrationEligible: true` on `priorEpisodesCount >= 3 && resolvedCount >= 3`; not yet queried live by `HealthAnomalyService`.
+* **Stage B (`computeActivityMatchedExpectations` & causal `contaminatedDates`):** separates `post_hard_or_high_cost` vs. `post_easy_or_rest` strata using clean prior observations (`extractSignalObservations`, excluding strictly prior symptomatic dates `< date`) and empirical-Bayes shrinkage (`HEALTH_ANOMALY_ACTIVITY_SHRINKAGE_PRIOR_DAYS`) toward the overall 28-day baseline, wired live in `HealthAnomalyService.assessAndPersist` (via `checkinService.getCheckinsInRangeState` + `mapRecoverySnapshotToHealthAnomalyFeatures`) and in `runHealthAnomalyReplay`.
+* **Stage C (`summarizePersonalOutcomeCalibration`):** aggregates strictly causal prior outcome records (`< asOfDate` in `Europe/Warsaw` across source assessment, update, onset, and test timestamps) and gates `calibrationEligible: true` (`calibrationStage: 'outcome_calibrated'`) on `priorEpisodesCount >= 3` and resolved outcomes `>= 3`; wired live in `HealthAnomalyService.assessAndPersist` via `healthAnomalyOutcomeRepository.listForUser`.
 
 ---
 
 ## HA7 — release report for visible alerts
 
-**Status:** **Complete (2026-11-15 Two-Tier Gate Redesign)** — see [2026-11-15 HA7 visible early-warning release decision](../analysis/2026-11-15-ha7-visible-early-warning-release-decision.md) and amended [ADR-0025](../adr/0025-physiological-anomaly-and-possible-illness-signals.md).
+**Status:** **Complete (2026-11-15 Two-Tier Gate Redesign)** — see [2026-11-15 HA7 visible early-warning release decision](../analysis/2026-11-15-ha7-visible-early-warning-release-decision.md) and [ADR-0054](../adr/0054-ha7-visible-early-warning-release-gate.md).
 
 ### Summary of the HA7 decision
 
@@ -1095,8 +1095,8 @@ Keep implementation reviewable and protect production behavior.
 
 ### PR HA-F — visible anomaly UX & D-FLAG release — **implemented (`feat/health-anomaly-visible-early-warnings`)**
 
-* 2026-11-15 HA7 two-tier release decision (`2026-11-15-ha7-visible-early-warning-release-decision.md`) and ADR-0025 amendment;
-* six defect fixes (`insufficient_evidence`, unified `unexplainedPersistenceDays`, Night-1 multi-domain corroboration + `EarlyResponseProtocol`, resolving respiration downgrade, causal clean-window baseline exclusion, Day 3+ acute confounder cap) plus Stage B `computeActivityMatchedExpectations` and Stage C `summarizePersonalOutcomeCalibration`;
+* 2026-11-15 HA7 two-tier release decision (`2026-11-15-ha7-visible-early-warning-release-decision.md`) and [ADR-0054](../adr/0054-ha7-visible-early-warning-release-gate.md);
+* six defect fixes (`insufficient_evidence`, unified `unexplainedPersistenceDays`, Night-1 multi-domain corroboration + `EarlyResponseProtocol`, resolving respiration downgrade, causal clean-window baseline exclusion wired live + in replay, Day 3+ acute confounder cap) plus Stage B `computeActivityMatchedExpectations` and Stage C `summarizePersonalOutcomeCalibration` (wired live via `HealthAnomalyService.assessAndPersist`);
 * `visible-v1` default runtime policy, `HealthAnomalyCard` on `Home`, live `illness_anomaly` D-FLAG in capture/strip/export, and enhanced `runHealthAnomalyReplay` (`policySummaries`).
 
 ### PR HA-G — training gate — **blocked by HA9 Tier-2 release decision**
@@ -1148,7 +1148,7 @@ For **training integration complete** (Tier 2 / HA9 — **pending**):
 
 Continue from shipped Tier 1 (`visible-v1`) rather than reverting or re-gating it:
 
-1. Read [ADR-0025](../adr/0025-physiological-anomaly-and-possible-illness-signals.md), [ADR-0024](../adr/0024-biometric-baseline-estimator-policy.md), [ADR-0052](../adr/0052-user-ledger-and-external-ai-planning-authority.md), [the 2026-11-15 HA7 release decision](../analysis/2026-11-15-ha7-visible-early-warning-release-decision.md), this plan, and `docs/architecture/health-anomaly-shadow.md`.
+1. Read [ADR-0025](../adr/0025-physiological-anomaly-and-possible-illness-signals.md), [ADR-0054](../adr/0054-ha7-visible-early-warning-release-gate.md), [ADR-0024](../adr/0024-biometric-baseline-estimator-policy.md), [ADR-0052](../adr/0052-user-ledger-and-external-ai-planning-authority.md), [the 2026-11-15 HA7 release decision](../analysis/2026-11-15-ha7-visible-early-warning-release-decision.md), [the 2026-11-15 literature & calibration evidence](../analysis/2026-11-15-physiological-anomaly-literature-and-calibration-evidence.md), this plan, and `docs/architecture/health-anomaly-shadow.md`.
 2. Keep `'visible-v1'` active as the default non-diagnostic early-warning policy; opt out only via explicit `VITE_HEALTH_ANOMALY_POLICY=off` or `shadow-v1`.
 3. Accumulate real prospective HA6 episode follow-ups (`HealthAnomalyOutcomeRecord`) and run `runHealthAnomalyReplay` (`policySummaries`) to monitor false-alert rate per 30 days, Night-1 multi-domain corroboration yield, and `calibrationEligible` readiness across athletes.
 4. Keep `'tighten-v1'` clamped to `'visible-v1'` until `>= 90` observed days in `visible-v1` and `>= 3` outcome-labelled episodes support a separate HA9 Tier-2 release decision.

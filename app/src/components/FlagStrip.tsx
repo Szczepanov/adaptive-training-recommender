@@ -43,7 +43,7 @@ const REASONS: Record<string, string> = {
   source_unavailable: 'The information for this check could not be loaded.',
   source_invalid: 'The information for this check could not be read.',
   no_assessment: 'No wearable anomaly assessment is recorded for today.',
-  no_core_signals: 'Resting heart rate, heart rate variability, and respiration rate are all unavailable today.',
+  no_core_signals: 'Not enough baseline history or core signals (resting heart rate, heart rate variability, respiration rate) are available today.',
   insufficient_evidence: 'Not enough baseline history or core signals are available yet.',
   explained_recovery_strain: 'Signals shifted, with a plausible training, sleep, or stress explanation.',
   watch_unexplained: 'An early physiological shift was detected without a clear context explanation yet.',

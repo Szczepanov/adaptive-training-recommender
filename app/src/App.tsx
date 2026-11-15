@@ -20,7 +20,7 @@ import { strengthSessionService } from './services/strengthSessionService';
 import { sessionExecutionService } from './services/sessionExecutionService';
 import { assessmentAttemptService } from './services/assessmentAttemptService';
 import { runConfiguredHealthAnomalyShadow } from './services/healthAnomalyRuntime';
-import { FLAG_INPUTS_CHANGED } from './services/flagCaptureRuntime';
+import { FLAG_INPUTS_CHANGED, notifyFlagInputsChanged } from './services/flagCaptureRuntime';
 import { resolveSessionDefinition } from './sessions/sessionDefinitionResolver';
 import { OnboardingWizard } from './components/OnboardingWizard';
 
@@ -128,6 +128,7 @@ function App() {
             && decisionInputRequestRevision.current === requestRevision
           ) {
             setHealthAnomalyShadowRevision(result.revision);
+            notifyFlagInputsChanged(requestUserId);
           }
         })
         .catch(error => {
