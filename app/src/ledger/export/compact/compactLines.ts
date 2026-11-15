@@ -46,10 +46,17 @@ export function fieldLine(name: string, value: LedgerValue<unknown>, group?: str
     return `${text(name)}: ${text(value.value)}${unit}${semantic}${provenance}`;
 }
 
+const missingStateLabel = (value: LedgerValue<unknown>) => `${text(value.state)}${value.state === 'measured' ? ', null' : ''}`;
+
+/** `missing: a, b (not_recorded); c (missing)`: names grouped by state, states in first-seen order. */
 export function missingLine(entries: readonly FieldEntry[]): string | null {
-    const missing = entries.filter(([, value]) => isMissing(value));
-    return missing.length
-        ? `missing: ${missing.map(([name, value]) => `${text(name)} (${text(value.state)}${value.state === 'measured' ? ', null' : ''})`).join(', ')}`
+    const groups = new Map<string, string[]>();
+    for (const [name, value] of entries.filter(([, entry]) => isMissing(entry))) {
+        const label = missingStateLabel(value);
+        groups.set(label, [...(groups.get(label) ?? []), text(name)]);
+    }
+    return groups.size
+        ? `missing: ${[...groups].map(([label, names]) => `${names.join(', ')} (${label})`).join('; ')}`
         : null;
 }
 

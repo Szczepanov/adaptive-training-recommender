@@ -21,11 +21,26 @@ describe('userContextCheckpoint', () => {
         const start = ledger.window.startDate;
         expect(checkpoint.formatVersion).toBe(CHECKPOINT_FORMAT_VERSION);
         expect(Object.keys(checkpoint.collections).sort()).toEqual(Object.keys(ledger.userContext).sort());
-        expect(checkpoint.collections.availability).toEqual({ scope: `from:${start}`, complete: true });
-        expect(checkpoint.collections.injuries).toEqual({ scope: `active+resolved-from:${start}`, complete: true });
+        expect(checkpoint.collections.availability).toEqual({ scope: `from:${start}`, complete: true, from: start });
+        expect(checkpoint.collections.injuries).toEqual({ scope: `active+resolved-from:${start}`, complete: true, from: start });
         expect(checkpoint.collections.goals).toEqual({ scope: 'all-active', complete: true });
         expect(checkpoint.collections.equipment).toEqual({ scope: 'current', complete: true });
         expect(checkpoint.itemHashes).toEqual(userContextItemHashes(ledger));
+    });
+
+    it('stores the date each windowed item is selected by, and none for unbounded items', () => {
+        const { selectionDates } = userContextCheckpoint(build());
+        expect(selectionDates).toMatchObject({
+            'availability/window-win-1': '2026-11-21',
+            'availability/fixed-fx-1': '2026-11-26',
+            'events/block-ib-1': '2026-12-14',
+            'events/goal-goal-1': '2027-04-18',
+            'travel/block-1': '2026-11-28',
+            'venueRestrictions/fx-1': '2026-11-26',
+        });
+        expect(Object.keys(selectionDates).filter(key => /^(goals|constraints)\//.test(key))).toEqual([]);
+        // An active injury is selected regardless of date.
+        expect(selectionDates['injuries/injury-001']).toBeUndefined();
     });
 
     it('is complete only for a measured read with nothing omitted', () => {
@@ -82,13 +97,22 @@ describe('mergeCheckpoint', () => {
         expect(merged.collections.goals).toEqual(prior.collections.goals);
     });
 
-    it('a truncated read keeps the prior hashes even for items read now', () => {
+    it('a truncated read keeps prior hashes for absent items and takes current hashes for present ones', () => {
         const prior = confirmed();
         const now = build();
         now.userContext.availability.droppedUndated = 1;
-        now.userContext.availability.items = now.userContext.availability.items.slice(1);
-        const merged = mergeCheckpoint(prior, userContextCheckpoint(now), '2026-11-20');
+        const [absent, ...present] = now.userContext.availability.items;
+        present[0].fields.startLocal.value = '05:00';
+        now.userContext.availability.items = present;
+        const current = userContextCheckpoint(now);
+        const merged = mergeCheckpoint(prior, current, '2026-11-20');
         expect(keysOf(merged.itemHashes, 'availability')).toEqual(keysOf(prior.itemHashes, 'availability'));
+        const absentKey = `availability/${absent.id}`;
+        const presentKey = `availability/${present[0].id}`;
+        expect(merged.itemHashes[absentKey]).toBe(prior.itemHashes[absentKey]);
+        expect(merged.itemHashes[presentKey]).toBe(current.itemHashes[presentKey]);
+        expect(merged.itemHashes[presentKey]).not.toBe(prior.itemHashes[presentKey]);
+        expect(merged.selectionDates[absentKey]).toBe(prior.selectionDates[absentKey]);
         expect(merged.collections.availability).toEqual(prior.collections.availability);
     });
 

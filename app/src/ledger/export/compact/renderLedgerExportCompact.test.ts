@@ -26,7 +26,11 @@ describe('renderLedgerExportCompact', () => {
         rec.fields.weightKg = { value: null, source: 'garmin', state: 'missing' };
         rec.fields.bodyFatPct = { value: null, source: 'garmin', state: 'unavailable' };
         const out = renderLedgerExportCompact(ledger);
-        expect(out).toContain('missing: weightKg (missing), bodyFatPct (unavailable)');
+        expect(out).toContain('missing: weightKg (missing); bodyFatPct (unavailable)');
+        rec.fields.bodyFatPct = { value: null, source: 'garmin', state: 'missing' };
+        rec.fields.stressAvg = { value: null, source: 'garmin', state: 'measured' };
+        // Names are grouped by state, each state printed once; a measured null stays explicit.
+        expect(renderLedgerExportCompact(ledger)).toContain('missing: stressAvg (measured, null); weightKg, bodyFatPct (missing)');
         expect(out).not.toMatch(/weightKg: (0|false)/);
         expect(out).toContain('totalSteps: 0 steps');
     });

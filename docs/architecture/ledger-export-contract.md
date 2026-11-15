@@ -37,10 +37,13 @@ bump is required.
 `ledger/export/compact/renderLedgerExportCompact.ts` is a pure Markdown view of the same
 `LedgerExport`, sized for pasting into one long-lived AI chat. Every
 leaf that is missing, stale or unavailable stays visible, grouped into one `missing:` line per item
-rather than printed as zero or false. Some recorded detail is summarised, with the full record in the
+rather than printed as zero or false; names sharing a state are listed once before it
+(`missing: stepNotes, fallback (not_recorded); statusHistory (not_yet_supported)`). Some recorded detail is summarised, with the full record in the
 JSON: a placement's status history is a count and the latest change date, a performed occurrence's
 set counts are one `<work>/<planned> work sets (+<warmup> warm-up)` phrase, a consumed placement or link row is printed once
-(under Today, Yesterday or Upcoming; its collection then prints `<name>: <n> shown above`). An
+(under Today, Yesterday or Upcoming; its collection then prints `<name>: <n> shown above`). A
+user-context collection whose items are all abbreviated prints `<name>: <n> unchanged (listed above)`
+instead, since those items are only named on the `unchanged since` line. An
 inactive or unavailable flag is a summary line; an active flag prints in full, with its
 `definitionVersion` and `evaluatedAt` when persisted. Placement headers and the planned
 part of a yesterday line carry the record ids (`plan-1@2:s4`, `plan-1@2:s1 → occ-1`).
@@ -115,9 +118,9 @@ source.
 ### Abbreviating unchanged user context
 
 `compact/contextCheckpoint.ts` `userContextCheckpoint` describes one export's user context as a
-checkpoint: `formatVersion` (`CHECKPOINT_FORMAT_VERSION`), `itemHashes` and, per user-context name,
-`collections[name] = { scope, complete }`. It stores only hashes and comparison metadata, never
-context text.
+checkpoint: `formatVersion` (`CHECKPOINT_FORMAT_VERSION`), `itemHashes`, `selectionDates` and, per
+user-context name, `collections[name] = { scope, complete, from? }`. It stores only hashes and
+comparison metadata, never context text.
 
 - **Hashes.** `userContextItemHashes` hashes each item (key `<collection>/<id>`, `<name>` for single
   records and `trainingDislikes`) with a stable 32-bit FNV-1a over its sorted-key JSON: the leaves
@@ -128,13 +131,20 @@ context text.
   case a changed item would read as unchanged. The hash is for change detection, not security.
 - **Scope.** Mirrors `buildUserContext`: `from:<window start>` for `travel`, `venueRestrictions`,
   `availability` and `events`; `active+resolved-from:<window start>` for `injuries`; `all-active`
-  for `goals` and `constraints`; `current` for the single records and `trainingDislikes`.
+  for `goals` and `constraints`; `current` for the single records and `trainingDislikes`. The
+  date-windowed collections also store their lower bound, `from` (the window start).
+- **Selection dates.** `selectionDates[key]` is the date the collection's bound compares against in
+  `buildUserContext`: `travel` and `events` by end date (an intent block's `dateRange.endDate`; a goal
+  event's end date is its `targetDate`), `availability` and `venueRestrictions` by `date`, a resolved
+  injury by `resolvedAt`. An active injury, goals, constraints and single records have none: they are
+  not selected by date.
 - **Complete.** A collection is complete only when its state is `measured`, `droppedUndated` is 0 and
   it is not truncated. A single record is complete when its settings source (`training_settings` or
   `preferences`) was read `measured`. `trainingDislikes` has no source to read: `measured` or
   `not_yet_supported` (a schema-fixed state) counts as complete.
 - **Version.** `CHECKPOINT_FORMAT_VERSION` is bumped whenever the hash contract or these rules change.
-  Version 1 added `observedOn` to the hash and the metadata. Both the renderer and the store reader
+  Version 1 added `observedOn` to the hash and the metadata; version 2 added `selectionDates` and
+  `from`, which decide removal on a moved window. Both the renderer and the store reader
   treat another or no `formatVersion` (a legacy stored value) as no checkpoint: full context.
 
 Given a `PreviousContext` (a checkpoint plus `exportedOn`, which is the confirmed export's
@@ -143,22 +153,26 @@ hash both match into `unchanged since <exportedOn>: <n> items (<keys>)`, except 
 whose read failed (`unavailable`), which are never abbreviated. Changed and new items print in full.
 A key that disappeared prints:
 
-- `removed: <key>` only when the current read of its collection is complete **and** the checkpoint's
-  entry for that collection is complete with the same scope;
+- `removed: <key>` only when the current read of its collection is complete, the checkpoint's entry
+  for that collection is complete, and the key is still within the current selection: the same
+  scope, or, for a date-windowed collection whose window moved, a stored selection date on or after
+  the new `from` (or no selection date, as for an active injury);
 - `not readable now: <key> (<state>)` when the current read is incomplete (`incomplete` when the state
   is `measured` but rows were omitted or truncated);
-- `out of scope now: <key>` when the read is complete but the scope differs, as with the morning
-  window moving forward a day.
+- `out of scope now: <key>` when the read is complete but the key left the selection by date: its
+  selection date fell before the new window start, as when the morning window moves forward a day
+  past it.
 
 The renderer takes the checkpoint as an explicit input and reads no store or clock.
 
 `mergeCheckpoint` builds the checkpoint stored on confirmation. A complete read replaces its
-collection's hashes and metadata. An incomplete read keeps the prior checkpoint's hashes and metadata
-for that collection, or stores nothing for it when there is no prior, so an unreadable item is never
-later abbreviated as unchanged. A complete read in a new scope (a moving date window) advances the
-checkpoint to that scope: out-of-scope keys are reported once as `out of scope now` and not carried,
-since carrying them would fabricate a later `removed:` or accumulate stale keys; an item that
-reappears prints in full. This follows the Phase 2c spec as amended by an agent ruling that the owner
+collection's hashes, selection dates and metadata. An incomplete read keeps the prior checkpoint's
+metadata and the prior entries of items absent now, and overwrites the entries of items present now
+with their current hash and date (they were printed in full, so the chat holds that version); with no
+prior it stores nothing for the collection. An unreadable item is therefore never later abbreviated
+as unchanged. A complete read in a moved window advances the checkpoint to it: out-of-scope keys are
+reported once as `out of scope now` and not carried, since carrying them would accumulate stale keys;
+an item that reappears prints in full. This follows the Phase 2c spec as amended by an agent ruling that the owner
 is to confirm in PR review.
 
 The brief screen (`DataView`, `components/useBriefCheckpoint.ts`) advances nothing on copy or

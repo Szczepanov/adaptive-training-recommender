@@ -34,7 +34,11 @@ afterEach(() => vi.unstubAllGlobals());
 const CHECKPOINT = {
   formatVersion: CHECKPOINT_FORMAT_VERSION,
   itemHashes: { 'goals/a': 'x', 'availability/b': 'y' },
-  collections: { goals: { scope: 'all-active', complete: true }, availability: { scope: 'from:2026-11-12', complete: true } },
+  selectionDates: { 'availability/b': '2026-11-14' },
+  collections: {
+    goals: { scope: 'all-active', complete: true },
+    availability: { scope: 'from:2026-11-12', complete: true, from: '2026-11-12' },
+  },
 };
 const T1 = '2026-11-13T06:00:00.000Z';
 const T2 = '2026-11-13T07:00:00.000Z';
@@ -177,6 +181,10 @@ describe('briefPreviousContext resilience', () => {
     ['array', '[]'],
     ['legacy (no formatVersion)', JSON.stringify({ exportedOn: '2026-11-13', itemHashes: {} })],
     ['another formatVersion', valid.replace(`"formatVersion":${CHECKPOINT_FORMAT_VERSION}`, '"formatVersion":999')],
+    ['format version 1', valid.replace(`"formatVersion":${CHECKPOINT_FORMAT_VERSION}`, '"formatVersion":1')],
+    ['missing selection dates', valid.replace(/"selectionDates":\{[^}]*\},/, '')],
+    ['non-date selection date', valid.replace('"availability/b":"2026-11-14"', '"availability/b":"soon"')],
+    ['non-date collection bound', valid.replace('"from":"2026-11-12"', '"from":12')],
     ['missing exportedOn', valid.replace('"exportedOn":"2026-11-13",', '')],
     ['bad date', valid.replace('"exportedOn":"2026-11-13"', '"exportedOn":"yesterday"')],
     ['missing exportedAt', valid.replace(`,"exportedAt":"${T1}"`, '')],

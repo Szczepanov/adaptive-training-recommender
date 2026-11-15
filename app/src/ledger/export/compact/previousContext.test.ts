@@ -87,12 +87,13 @@ describe('previousContext', () => {
         expect(out).toContain('not readable now: goals/gone-9 (incomplete)');
     });
 
-    it('a moving window reports out of scope now, never removed', () => {
+    it('a moving window reports an item dated before the new window start out of scope now, never removed', () => {
         const ledger = build();
         const previous = withHash(previousOf(ledger), 'availability/fixed-old');
         const moved: PreviousContext = {
             ...previous,
-            collections: { ...previous.collections, availability: { scope: 'from:2026-11-01', complete: true } },
+            selectionDates: { ...previous.selectionDates, 'availability/fixed-old': '2026-11-02' },
+            collections: { ...previous.collections, availability: { scope: 'from:2026-11-01', complete: true, from: '2026-11-01' } },
         };
         const out = userContext(renderLedgerExportCompact(ledger, { previousContext: moved }));
         expect(out).not.toContain('removed:');
@@ -101,6 +102,7 @@ describe('previousContext', () => {
 
     it.each([
         ['another format version', { formatVersion: CHECKPOINT_FORMAT_VERSION + 1 }],
+        ['format version 1', { formatVersion: 1 }],
         ['no format version (legacy)', { formatVersion: undefined }],
     ])('%s gives full context', (_name, patch) => {
         const ledger = build();
@@ -109,6 +111,14 @@ describe('previousContext', () => {
         expect(out).not.toContain('unchanged since');
         expect(out).toContain('region: knee');
         expect(renderLedgerExportCompact(ledger, { previousContext: previous })).toBe(renderLedgerExportCompact(ledger));
+    });
+
+    it('a user-context collection whose items are all unchanged says so, never "shown above"', () => {
+        const ledger = build();
+        const out = userContext(renderLedgerExportCompact(ledger, { previousContext: previousOf(ledger) }));
+        expect(out).not.toContain('shown above');
+        expect(out).toContain(`availability: ${ledger.userContext.availability.items.length} unchanged (listed above)`);
+        expect(out).toContain('injuries: 1 unchanged (listed above)');
     });
 
     it('without previousContext everything prints in full', () => {

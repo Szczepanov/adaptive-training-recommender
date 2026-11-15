@@ -15,11 +15,11 @@ export {
 export interface ContextDelta {
     /** Keys present now whose hash equals the previous one, sorted. */
     unchanged: string[];
-    /** Keys gone after a complete read in the checkpoint's own scope, sorted. */
+    /** Keys gone after a complete read while still within the current selection, sorted. */
     removed: string[];
     /** Keys gone while their collection's read is incomplete now, with why, sorted. */
     unreadable: Array<{ key: string; reason: string }>;
-    /** Keys gone after a complete read in a different scope (a moving window), sorted. */
+    /** Keys gone after a complete read whose selection date fell before the window start, sorted. */
     outOfScope: string[];
     /** Same keys as `unchanged`, for lookup. */
     unchangedKeys: ReadonlySet<string>;
@@ -40,17 +40,26 @@ export function userContextStates(ledger: LedgerExport): Record<string, LedgerSt
 
 type GoneKind = 'removed' | 'unreadable' | 'outOfScope';
 
+/**
+ * An absent key under a complete read is removed when it would still be selected now: the same
+ * scope, or a date-windowed collection whose bound moved and the key's stored selection date is
+ * on or after the new lower bound (a key with no selection date was not date-bounded). A key
+ * dated before the new bound left by date: out of scope.
+ */
 function classifyGone(key: string, current: UserContextCheckpoint, previous: PreviousContext): GoneKind {
     const name = collectionOf(key);
     const now = current.collections[name];
     const before = previous.collections[name];
     if (now && !now.complete) return 'unreadable';
-    if (now && before?.complete && before.scope === now.scope) return 'removed';
-    return 'outOfScope';
+    if (!now || !before?.complete) return 'outOfScope';
+    if (before.scope === now.scope) return 'removed';
+    if (now.from === undefined) return 'outOfScope';
+    const date = previous.selectionDates[key];
+    return date === undefined || date >= now.from ? 'removed' : 'outOfScope';
 }
 
-/** Compares this export with the confirmed checkpoint. Removal needs a complete read in the
- * same scope; anything less is unknown or out of scope, never deletion (spec 2c). */
+/** Compares this export with the confirmed checkpoint. Removal needs a complete read and a key
+ * still within the current selection; anything less is unknown or out of scope (spec 2c). */
 export function contextDelta(
     current: UserContextCheckpoint, previous: PreviousContext, states: Readonly<Record<string, LedgerState>>,
 ): ContextDelta {

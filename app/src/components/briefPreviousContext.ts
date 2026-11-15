@@ -58,33 +58,37 @@ const isPlainObject = (value: unknown): value is Record<string, unknown> =>
 
 const isInstant = (value: unknown): value is string => typeof value === 'string' && !Number.isNaN(Date.parse(value));
 
+const isDate = (value: unknown): value is string => typeof value === 'string' && DATE_PATTERN.test(value);
+
 function parseCollections(raw: unknown): Record<string, CollectionCheckpoint> | undefined {
   if (!isPlainObject(raw)) return undefined;
   const entries = Object.entries(raw);
   const valid = entries.every(([, meta]) => isPlainObject(meta)
-    && typeof meta.scope === 'string' && typeof meta.complete === 'boolean');
+    && typeof meta.scope === 'string' && typeof meta.complete === 'boolean'
+    && (meta.from === undefined || isDate(meta.from)));
   if (!valid) return undefined;
   return Object.fromEntries(entries.map(([name, meta]) => {
-    const { scope, complete } = meta as unknown as CollectionCheckpoint;
-    return [name, { scope, complete }];
+    const { scope, complete, from } = meta as unknown as CollectionCheckpoint;
+    return [name, from === undefined ? { scope, complete } : { scope, complete, from }];
   }));
 }
 
-function parseHashes(raw: unknown): Record<string, string> | undefined {
+function parseStringMap(raw: unknown, isValue: (value: unknown) => boolean): Record<string, string> | undefined {
   if (!isPlainObject(raw)) return undefined;
   const entries = Object.entries(raw);
-  return entries.every(([, hash]) => typeof hash === 'string') ? Object.fromEntries(entries) as Record<string, string> : undefined;
+  return entries.every(([, value]) => isValue(value)) ? Object.fromEntries(entries) as Record<string, string> : undefined;
 }
 
 /** A stored value of another or no format version (legacy) is not a checkpoint: full context. */
 function parseStoredCheckpoint(raw: unknown): StoredCheckpoint | undefined {
   if (!isPlainObject(raw) || raw.formatVersion !== CHECKPOINT_FORMAT_VERSION) return undefined;
   const { exportedOn, exportedAt } = raw;
-  if (typeof exportedOn !== 'string' || !DATE_PATTERN.test(exportedOn) || !isInstant(exportedAt)) return undefined;
-  const itemHashes = parseHashes(raw.itemHashes);
+  if (!isDate(exportedOn) || !isInstant(exportedAt)) return undefined;
+  const itemHashes = parseStringMap(raw.itemHashes, hash => typeof hash === 'string');
+  const selectionDates = parseStringMap(raw.selectionDates, isDate);
   const collections = parseCollections(raw.collections);
-  if (!itemHashes || !collections) return undefined;
-  return { formatVersion: CHECKPOINT_FORMAT_VERSION, exportedOn, exportedAt, itemHashes, collections };
+  if (!itemHashes || !selectionDates || !collections) return undefined;
+  return { formatVersion: CHECKPOINT_FORMAT_VERSION, exportedOn, exportedAt, itemHashes, selectionDates, collections };
 }
 
 function readItem(key: string): string | null {

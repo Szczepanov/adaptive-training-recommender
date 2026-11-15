@@ -44,7 +44,11 @@ function recordLines(row: LedgerRecord, group: string | undefined): string[] {
 
 const fieldSourceOf = (rows: LedgerCollection<LedgerRecord>) => dominantSource(rows.items.flatMap(row => Object.entries(row.fields)));
 
-export function collectionLines(name: string, rows: LedgerCollection<LedgerRecord>, skipIds: SkipIds = NO_SKIP): string[] {
+/** `skipped` names where skipped rows are: `shown above` for rows a Today section printed,
+ * `unchanged (listed above)` for user-context rows named on the `unchanged since` line. */
+export function collectionLines(
+    name: string, rows: LedgerCollection<LedgerRecord>, skipIds: SkipIds = NO_SKIP, skipped = 'shown above',
+): string[] {
     const items = rows.items.filter(row => !skipIds.has(row.id));
     const group = fieldSourceOf(rows);
     const dropped = [
@@ -59,7 +63,7 @@ export function collectionLines(name: string, rows: LedgerCollection<LedgerRecor
         return [`${[`${text(name)}: ${text(rows.state)}, no rows`, ...dropped, ...truncation].join(', ')}${source}`, ''];
     }
     const meta = [rows.state === 'measured' ? '' : `state: ${text(rows.state)}`, ...dropped, ...truncation].filter(Boolean);
-    if (!items.length) return [[`${text(name)}: ${rows.items.length} shown above`, ...meta].join('; '), ''];
+    if (!items.length) return [[`${text(name)}: ${rows.items.length} ${skipped}`, ...meta].join('; '), ''];
     return [`### ${text(name)} (${groupLabel(rows.source, group)})`, ...meta, ...items.flatMap(row => recordLines(row, group)), ''];
 }
 
@@ -110,7 +114,7 @@ export function userContextSection(ledger: LedgerExport, checkpoint?: PreviousCo
         if ('items' in context) {
             const rows = context as LedgerCollection<ContextRecord>;
             const skip = new Set(rows.items.filter(row => isUnchanged(`${name}/${row.id}`)).map(row => row.id));
-            return collectionLines(name, rows, skip);
+            return collectionLines(name, rows, skip, 'unchanged (listed above)');
         }
         if (isUnchanged(name)) return [];
         if ('fields' in context) return singletonLines(name, context);
