@@ -300,6 +300,16 @@ describe('WeekAheadStrip imported plan Today + Next 7 Days multi-session view', 
     expect(html).not.toContain('Authored');
   });
 
+  it('fails closed instead of showing today’s plan on every date when the per-date read failed', () => {
+    const html = renderToStaticMarkup(
+      <WeekAheadStrip plan={null} externalPlan={sampleExternalPlan} externalPlanDays="unavailable" today="2026-09-14" userId="u1" />,
+    );
+
+    expect(html).toContain('Outlook unavailable');
+    expect(html).not.toContain('Morning Threshold Ride');
+    expect(html).not.toContain('Export / Sync');
+  });
+
   it('withholds workout steps and export menu when clinicalEscalationRequired is true', () => {
     const html = renderToStaticMarkup(
       <WeekAheadStrip

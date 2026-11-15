@@ -105,7 +105,7 @@ interface WeekAheadStripProps {
   externalPlan?: ActiveExternalPlan | null;
   /** The plan governing each outlook date. A plan imported to start later owns its own
    * dates even while `externalPlan` (today's plan) is the outgoing one. */
-  externalPlanDays?: readonly GovernedPlanDay[] | null;
+  externalPlanDays?: readonly GovernedPlanDay[] | 'unavailable' | null;
   /** Today's Warsaw-local YYYY-MM-DD date string for anchoring the imported plan horizon. */
   today?: string;
   /** Optional userId to enable WorkoutExportMenu on imported sessions. */
@@ -252,9 +252,24 @@ export const WeekAheadStrip = memo(function WeekAheadStrip({
 }: WeekAheadStripProps) {
   const [selectedIndex, setSelectedIndex] = useState(0);
 
+  if (externalPlanDays === 'unavailable' && externalPlan) {
+    // Fail closed: without per-date authority, today's plan must not be shown on later dates.
+    return (
+      <div className="dashboard-card week-ahead-card imported-outlook-card" role="region" aria-label="Week ahead">
+        <div className="card-header">
+          <div className="header-title-group">
+            <h3>Today &amp; Next 7 Days</h3>
+            <span className="provisional-tag">Outlook unavailable</span>
+          </div>
+        </div>
+        <p className="detail-caveat">Which imported plan governs the coming days could not be verified. Reload to try again.</p>
+      </div>
+    );
+  }
+  const governedDays = Array.isArray(externalPlanDays) ? externalPlanDays : null;
   // In engine mode a plan starting later never displaces today's engine forecast here.
-  const importedOutlook = today && (externalPlan || (planningAuthorityMode === 'ledger' && externalPlanDays?.some(day => day.active)))
-    ? buildImportedOutlookDays(externalPlan, externalPlanDays, today)
+  const importedOutlook = today && (externalPlan || (planningAuthorityMode === 'ledger' && governedDays?.some(day => day.active)))
+    ? buildImportedOutlookDays(externalPlan, governedDays, today)
     : null;
   if (importedOutlook && importedOutlook.plans.length > 0) {
     const importedDays = importedOutlook.days;

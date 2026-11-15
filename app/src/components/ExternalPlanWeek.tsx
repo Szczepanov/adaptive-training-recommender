@@ -38,8 +38,9 @@ export interface ExternalPlanWeekProps {
     fixedActivities?: readonly FixedActivity[];
     /** Dates in the week governed by a different plan or revision, never offered as a move target. */
     unavailableDates?: readonly string[];
-    /** Produces a proposal for a session that was not done. Never writes. */
-    onProposeReplacement: (sessionId: string, missedDate: string) => ReplacementProposal;
+    /** Produces a proposal for a session that was not done. Never writes. May resolve
+     * asynchronously when the target date's governing plan must be read. */
+    onProposeReplacement: (sessionId: string, missedDate: string) => ReplacementProposal | Promise<ReplacementProposal>;
     /** Called only after the athlete confirms; `date` is null for a drop. */
     onConfirmReplacement: (proposal: ReplacementProposal) => void | Promise<void>;
     /** Free days in the same week, offered when the athlete rejects the proposed date. */
@@ -112,10 +113,10 @@ export function ExternalPlanWeek({
 
     const weekFindings = weekLevelFindings(critique);
 
-    const startProposal = (sessionId: string, missedDate: string) => {
+    const startProposal = async (sessionId: string, missedDate: string) => {
         if (clinicalEscalationRequired) return;
         setChoosingFor(null);
-        setProposal(onProposeReplacement(sessionId, missedDate));
+        setProposal(await onProposeReplacement(sessionId, missedDate));
     };
 
     const handleConfirm = async (proposalToConfirm: ReplacementProposal) => {
@@ -205,7 +206,7 @@ export function ExternalPlanWeek({
                                                             <button
                                                                 type="button"
                                                                 className="external-week-missed-btn"
-                                                                onClick={() => startProposal(item.session.id, date)}
+                                                                onClick={() => void startProposal(item.session.id, date)}
                                                             >
                                                                 {date === today ? 'Reschedule' : 'Missed it'}
                                                             </button>

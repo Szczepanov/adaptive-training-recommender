@@ -59,7 +59,7 @@ vi.mock('../services/activeExternalPlanService', async importOriginal => {
     };
     return {
         ...actual,
-        activeExternalPlanService: { getGovernedPlanDays },
+        activeExternalPlanService: { getGovernedPlanDays, getActivePlanState: mocks.activePlan },
         externalRestContextForDate: vi.fn(() => null),
     };
 });
@@ -221,8 +221,40 @@ describe('PlanView planning authority modes (ADR-0052 Phase 2, #1167 P2-4)', () 
         // The engine proposal knows only today's plan; a date the incoming plan governs is refused.
         const blockedDate = (week?.props.unavailableDates as string[])[0];
         mocks.proposeReplacement = () => ({ sessionId: 'autumn-today', missedDate: 'x', outcome: 'rescheduled', date: blockedDate, rationale: 'r' });
-        const propose = week?.props.onProposeReplacement as (id: string, date: string) => { outcome: string };
-        expect(propose('autumn-today', addDaysToLocalDateString(blockedDate, -3)).outcome).toBe('unresolved');
+        const propose = week?.props.onProposeReplacement as (id: string, date: string) => Promise<{ outcome: string; rationale: string }>;
+        expect((await propose('autumn-today', addDaysToLocalDateString(blockedDate, -3))).outcome).toBe('unresolved');
+        expect(mocks.activePlan).not.toHaveBeenCalled();
+
+        // A carry-forward target beyond the shown week is resolved before it is offered.
+        const today = (week?.props.placed as { date: string }[])[0].date;
+        const beyond = addDaysToLocalDateString(today, 10);
+        mocks.proposeReplacement = () => ({ sessionId: 'autumn-today', missedDate: today, outcome: 'rescheduled', date: beyond, rationale: 'r' });
+        mocks.activePlan.mockResolvedValueOnce({ status: 'AVAILABLE', revision: null, data: { plan: { planId: 'winter-block', revision: 1 } } });
+        expect((await propose('autumn-today', today)).outcome).toBe('unresolved');
+        expect(mocks.activePlan).toHaveBeenLastCalledWith('athlete-a', beyond);
+
+        mocks.activePlan.mockResolvedValueOnce({ status: 'AVAILABLE', revision: null, data: { plan: { planId: 'autumn-block', revision: 2 } } });
+        expect((await propose('autumn-today', today)).outcome).toBe('rescheduled');
+
+        mocks.activePlan.mockResolvedValueOnce({ status: 'UNAVAILABLE', operation: 'read', retryable: true });
+        expect((await propose('autumn-today', today)).rationale).toContain('could not be verified');
+    });
+
+    it('warns when a later revision of the same plan has unreadable saved moves', async () => {
+        mocks.composeDailyDecisionInput.mockResolvedValue(decisionInputWithPreferences({ engineRecommendationsEnabled: false }));
+        const revision = (number: number, overlayInvalid: boolean) => ({
+            header: { contentHash: `r${number}` }, placement: null, placed: [],
+            plan: { planId: 'autumn-block', revision: number, title: 'Autumn block' },
+            ...(overlayInvalid ? { placementOverlayInvalid: true } : {}),
+        });
+        mocks.weekStates = () => Array.from({ length: 7 }, (_, offset) => ({
+            status: 'AVAILABLE', revision: null, data: offset < 3 ? revision(1, false) : revision(2, true),
+        }));
+
+        const elements = await mount();
+
+        expect(elements.some(item => item.props.role === 'status'
+            && String(item.props.children).includes('Saved moves for a plan later this week could not be read'))).toBe(true);
     });
 
     it('runs engine forecast + critique and renders ai_forecast tab and PlanAuthorityBanner in engine mode', async () => {

@@ -422,7 +422,7 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
     .map(day => day.date), [governedWeek, activePlan]);
   // A later plan in the week whose saved moves could not be read shows its default dates.
   const laterPlanOverlayInvalid = governedWeek.some(day => day.active?.placementOverlayInvalid
-    && day.active.plan.planId !== activePlan?.plan.planId);
+    && (day.active.plan.planId !== activePlan?.plan.planId || day.active.plan.revision !== activePlan?.plan.revision));
   // Engine-mode critique reviews today's plan only; its findings on another plan's dates would
   // describe sessions this week does not show.
   const weekCritique = useMemo(() => critique && {
@@ -431,7 +431,7 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
   }, [critique, datesOutsideActivePlan]);
 
   const handleProposeReplacement = useCallback(
-    (sessionId: string, missedDate: string): ReplacementProposal => {
+    async (sessionId: string, missedDate: string): Promise<ReplacementProposal> => {
       if (!activePlan) throw new Error('No imported plan is active.');
       const proposal = proposeReplacement(
         activePlan.plan,
@@ -441,16 +441,28 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
         { fixedActivities },
         today,
       );
-      // Only the dates shown this week are resolved here; a move onto one another plan governs
-      // would vanish, so the athlete picks a day instead.
-      if (proposal.outcome === 'rescheduled' && proposal.date && datesOutsideActivePlan.includes(proposal.date)) {
+      if (proposal.outcome !== 'rescheduled' || !proposal.date) return proposal;
+      // A move onto a date another plan or revision governs would vanish, so the athlete picks a
+      // day instead. Dates shown this week are already resolved; a carry-forward target beyond
+      // the week is resolved here before it is offered.
+      const target = proposal.date;
+      const shownDay = governedWeek.find(day => day.date === target);
+      const targetState = shownDay ? null : await activeExternalPlanService.getActivePlanState(userId, target);
+      if (targetState && targetState.status !== 'AVAILABLE' && targetState.status !== 'MISSING') {
         return {
           sessionId, missedDate, outcome: 'unresolved',
-          rationale: `${proposal.date} belongs to another imported plan, so this session cannot move there.`,
+          rationale: `Which plan governs ${target} could not be verified, so this session cannot move there yet.`,
+        };
+      }
+      const governing = shownDay ? shownDay.active : targetState?.status === 'AVAILABLE' ? targetState.data : null;
+      if (governing?.plan.planId !== activePlan.plan.planId || governing?.plan.revision !== activePlan.plan.revision) {
+        return {
+          sessionId, missedDate, outcome: 'unresolved',
+          rationale: `${target} belongs to another imported plan, so this session cannot move there.`,
         };
       }
       return proposal;
-    }, [activePlan, fixedActivities, today, datesOutsideActivePlan],
+    }, [activePlan, fixedActivities, today, governedWeek, userId],
   );
 
   // The reset card unmounts once the repaired plan reloads; focus lands on the screen heading
