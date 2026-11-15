@@ -30,10 +30,19 @@ vi.mock('react', async importOriginal => ({
     useEffect: (effect: () => unknown) => { mocks.effect ??= effect; },
 }));
 vi.mock('../firebase', () => ({ getDb: vi.fn(), db: {}, auth: {} }));
-vi.mock('../services/activeExternalPlanService', () => ({
-    activeExternalPlanService: { getActivePlanState: mocks.activePlan },
-    externalRestContextForDate: vi.fn(() => null),
-}));
+vi.mock('../services/activeExternalPlanService', async importOriginal => {
+    const actual = await importOriginal<typeof import('../services/activeExternalPlanService')>();
+    // PlanView reads its week per date; every date here resolves to the single mocked plan.
+    const getGovernedPlanDays = async (userId: string, startDate: string, dayCount: number, fixed: unknown, options: unknown) => {
+        const state = await mocks.activePlan(userId, startDate, fixed, options);
+        return actual.governedPlanDays(startDate, Array.from({ length: dayCount }, () => state));
+    };
+    return {
+        ...actual,
+        activeExternalPlanService: { getGovernedPlanDays },
+        externalRestContextForDate: vi.fn(() => null),
+    };
+});
 vi.mock('../services/externalPlanService', () => ({ externalPlanService: { savePlacement: mocks.savePlacement } }));
 vi.mock('../services/fixedActivityService', () => ({ fixedActivityService: {
     getActivitiesInRangeState: vi.fn(async () => ({ status: 'AVAILABLE', data: [], revision: null })) } }));

@@ -1,11 +1,15 @@
 import { Children, isValidElement, type ReactElement, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { addDaysToLocalDateString } from '../utils/localDate';
 
 const mocks = vi.hoisted(() => ({
     slots: [] as unknown[],
     cursor: 0,
     effect: null as null | (() => unknown),
     activePlan: vi.fn(),
+    /** Per-date states for the week, when a test needs different plans on different dates. */
+    weekStates: null as null | ((startDate: string) => unknown[]),
+    proposeReplacement: null as null | ((...args: unknown[]) => unknown),
     composeDailyDecisionInput: vi.fn(),
     prepareTrainingHistorySnapshot: vi.fn(),
     resolveTrainingIntent: vi.fn(),
@@ -36,11 +40,29 @@ vi.mock('react', async importOriginal => ({
     useEffect: (effect: () => unknown) => { mocks.effect ??= effect; },
 }));
 
+vi.mock('../engine/externalPlacement', async importOriginal => {
+    const actual = await importOriginal<typeof import('../engine/externalPlacement')>();
+    return {
+        ...actual,
+        proposeReplacement: (...args: Parameters<typeof actual.proposeReplacement>) =>
+            mocks.proposeReplacement ? mocks.proposeReplacement(...args) : actual.proposeReplacement(...args),
+    };
+});
 vi.mock('../firebase', () => ({ getDb: vi.fn(), db: {}, auth: {} }));
-vi.mock('../services/activeExternalPlanService', () => ({
-    activeExternalPlanService: { getActivePlanState: mocks.activePlan },
-    externalRestContextForDate: vi.fn(() => null),
-}));
+vi.mock('../services/activeExternalPlanService', async importOriginal => {
+    const actual = await importOriginal<typeof import('../services/activeExternalPlanService')>();
+    // PlanView reads its week per date; every date here resolves to the single mocked plan.
+    const getGovernedPlanDays = async (userId: string, startDate: string, dayCount: number, fixed: unknown, options: unknown) => {
+        if (mocks.weekStates) return actual.governedPlanDays(startDate, mocks.weekStates(startDate) as never);
+        const state = await mocks.activePlan(userId, startDate, fixed, options);
+        return actual.governedPlanDays(startDate, Array.from({ length: dayCount }, () => state));
+    };
+    return {
+        ...actual,
+        activeExternalPlanService: { getGovernedPlanDays, getActivePlanState: mocks.activePlan },
+        externalRestContextForDate: vi.fn(() => null),
+    };
+});
 vi.mock('../services/externalPlanService', () => ({ externalPlanService: { savePlacement: vi.fn() } }));
 vi.mock('../services/fixedActivityService', () => ({
     fixedActivityService: {
@@ -143,6 +165,8 @@ beforeEach(() => {
     vi.clearAllMocks();
     mocks.slots = [];
     mocks.effect = null;
+    mocks.weekStates = null;
+    mocks.proposeReplacement = null;
     mocks.prepareTrainingHistorySnapshot.mockResolvedValue({ exposures: [] });
     mocks.resolveTrainingIntent.mockResolvedValue({
         microcycle: {},
@@ -166,6 +190,73 @@ beforeEach(() => {
 });
 
 describe('PlanView planning authority modes (ADR-0052 Phase 2, #1167 P2-4)', () => {
+    it('shows a later-starting imported plan on its own dates, not the plan governing today across the whole week', async () => {
+        mocks.composeDailyDecisionInput.mockResolvedValue(decisionInputWithPreferences({ engineRecommendationsEnabled: false }));
+        const placedOn = (date: string, id: string) => ({ date, status: 'planned', session: { id } });
+        mocks.weekStates = startDate => {
+            const day = (offset: number) => addDaysToLocalDateString(startDate, offset);
+            const outgoing = {
+                header: { contentHash: 'a' }, placement: null,
+                plan: { planId: 'autumn-block', revision: 2, title: 'Autumn block' },
+                // The outgoing plan still has sessions after the incoming plan begins.
+                placed: [placedOn(day(0), 'autumn-today'), placedOn(day(4), 'autumn-later')],
+            };
+            const incoming = {
+                header: { contentHash: 'b' }, placement: null,
+                plan: { planId: 'winter-block', revision: 1, title: 'Winter block' },
+                placed: [placedOn(day(4), 'winter-first')],
+            };
+            return Array.from({ length: 7 }, (_, offset) => ({
+                status: 'AVAILABLE', revision: null, data: offset < 3 ? outgoing : incoming,
+            }));
+        };
+
+        const week = find(await mount(), ExternalPlanWeek);
+
+        expect(week?.props.planTitle).toBe('Autumn block → Winter block');
+        expect((week?.props.placed as { session: { id: string } }[]).map(item => item.session.id))
+            .toEqual(['autumn-today', 'winter-first']);
+        expect(week?.props.unavailableDates).toHaveLength(4);
+
+        // The engine proposal knows only today's plan; a date the incoming plan governs is refused.
+        const blockedDate = (week?.props.unavailableDates as string[])[0];
+        mocks.proposeReplacement = () => ({ sessionId: 'autumn-today', missedDate: 'x', outcome: 'rescheduled', date: blockedDate, rationale: 'r' });
+        const propose = week?.props.onProposeReplacement as (id: string, date: string) => Promise<{ outcome: string; rationale: string }>;
+        expect((await propose('autumn-today', addDaysToLocalDateString(blockedDate, -3))).outcome).toBe('unresolved');
+        expect(mocks.activePlan).not.toHaveBeenCalled();
+
+        // A carry-forward target beyond the shown week is resolved before it is offered.
+        const today = (week?.props.placed as { date: string }[])[0].date;
+        const beyond = addDaysToLocalDateString(today, 10);
+        mocks.proposeReplacement = () => ({ sessionId: 'autumn-today', missedDate: today, outcome: 'rescheduled', date: beyond, rationale: 'r' });
+        mocks.activePlan.mockResolvedValueOnce({ status: 'AVAILABLE', revision: null, data: { plan: { planId: 'winter-block', revision: 1 } } });
+        expect((await propose('autumn-today', today)).outcome).toBe('unresolved');
+        expect(mocks.activePlan).toHaveBeenLastCalledWith('athlete-a', beyond);
+
+        mocks.activePlan.mockResolvedValueOnce({ status: 'AVAILABLE', revision: null, data: { plan: { planId: 'autumn-block', revision: 2 } } });
+        expect((await propose('autumn-today', today)).outcome).toBe('rescheduled');
+
+        mocks.activePlan.mockResolvedValueOnce({ status: 'UNAVAILABLE', operation: 'read', retryable: true });
+        expect((await propose('autumn-today', today)).rationale).toContain('could not be verified');
+    });
+
+    it('warns when a later revision of the same plan has unreadable saved moves', async () => {
+        mocks.composeDailyDecisionInput.mockResolvedValue(decisionInputWithPreferences({ engineRecommendationsEnabled: false }));
+        const revision = (number: number, overlayInvalid: boolean) => ({
+            header: { contentHash: `r${number}` }, placement: null, placed: [],
+            plan: { planId: 'autumn-block', revision: number, title: 'Autumn block' },
+            ...(overlayInvalid ? { placementOverlayInvalid: true } : {}),
+        });
+        mocks.weekStates = () => Array.from({ length: 7 }, (_, offset) => ({
+            status: 'AVAILABLE', revision: null, data: offset < 3 ? revision(1, false) : revision(2, true),
+        }));
+
+        const elements = await mount();
+
+        expect(elements.some(item => item.props.role === 'status'
+            && String(item.props.children).includes('Saved moves for a plan later this week could not be read'))).toBe(true);
+    });
+
     it('runs engine forecast + critique and renders ai_forecast tab and PlanAuthorityBanner in engine mode', async () => {
         mocks.composeDailyDecisionInput.mockResolvedValue(decisionInputWithPreferences({ engineRecommendationsEnabled: true }));
         mocks.activePlan.mockResolvedValue(activePlanResponse);

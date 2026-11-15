@@ -54,7 +54,8 @@
   min-width: 0;
 }
 
-.external-week-empty {
+.external-week-empty,
+.external-week-rest {
   margin: 0;
   font-size: 0.8rem;
   color: var(--text-secondary);

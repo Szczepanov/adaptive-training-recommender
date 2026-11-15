@@ -2,7 +2,11 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import {
   activeExternalPlanService,
   externalRestContextForDate,
+  governedPlacedSessions,
+  governedRestDates,
+  governingPlanTitles,
   type ActiveExternalPlan,
+  type GovernedPlanDay,
 } from '../services/activeExternalPlanService';
 import { externalPlanService } from '../services/externalPlanService';
 import { fixedActivityService } from '../services/fixedActivityService';
@@ -73,6 +77,8 @@ interface PlanViewProps {
 }
 
 const WEEKDAY_FORMATTER = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+/** The imported-plan week shown here: today and the following six days. */
+const PLAN_WEEK_DAYS = 7;
 
 function formatWeekRange(startDateStr: string): string {
   const start = new Date(`${startDateStr}T00:00:00Z`);
@@ -89,6 +95,9 @@ function formatSourceList(items: string[]): string {
 export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanChanged, onCapabilityMaintenanceResolved, planningAuthorityMode }) => {
   const today = useMemo(() => getLocalDateString(), []);
   const [activePlan, setActivePlan] = useState<ActiveExternalPlan | null>(null);
+  // The displayed week resolved per date: a plan imported to start later owns its own dates
+  // even while `activePlan` (today's governing plan) is the outgoing one.
+  const [governedWeek, setGovernedWeek] = useState<GovernedPlanDay[]>([]);
   const [critique, setCritique] = useState<ExternalWeekCritique | null>(null);
   const [fixedActivities, setFixedActivities] = useState<FixedActivity[]>([]);
   const [decisionInput, setDecisionInput] = useState<DailyDecisionInput | null>(null);
@@ -131,7 +140,7 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
     setClinicalEscalationRequired(false);
 
     try {
-      const weekEnd = addDaysToLocalDateString(today, 6);
+      const weekEnd = addDaysToLocalDateString(today, PLAN_WEEK_DAYS - 1);
       const [actState, blocksState, input] = await Promise.all([
         fixedActivityService.getActivitiesInRangeState(userId, today, weekEnd),
         planBlockService.getBlocksInRangeState(userId, today, weekEnd),
@@ -167,6 +176,7 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
         );
         setFixedActivities([]);
         setActivePlan(null);
+        setGovernedWeek([]);
         return;
       }
 
@@ -220,21 +230,26 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
       // silently decay to MISSING / no plan, as that could discard athlete placements.
       // #1172: an unreadable placement overlay alone degrades to the plan's own dates with an
       // explicit flag, so the athlete can see the warning and repair it here.
-      const activePlanState = await activeExternalPlanService.getActivePlanState(userId, today, acts, { degradeInvalidPlacement: true });
-      if (activePlanState.status === 'INVALID' || activePlanState.status === 'UNAVAILABLE') {
-        if (activePlanState.status === 'INVALID') setPlanImportRepairOffered(true);
+      const weekState = await activeExternalPlanService.getGovernedPlanDays(
+        userId, today, PLAN_WEEK_DAYS, acts, { degradeInvalidPlacement: true },
+      );
+      if (weekState.status === 'INVALID' || weekState.status === 'UNAVAILABLE') {
+        if (weekState.status === 'INVALID') setPlanImportRepairOffered(true);
         setForecastUnavailable(
-          activePlanState.status === 'UNAVAILABLE'
+          weekState.status === 'UNAVAILABLE'
             ? 'Your active coach plan is temporarily unavailable. Check your connection and retry.'
             : 'Your active coach plan is invalid. Import a corrected plan revision, then retry.',
         );
         setFixedActivities([]);
         setActivePlan(null);
+        setGovernedWeek([]);
         return;
       }
 
-      const currentPlan = activePlanState.status === 'AVAILABLE' ? activePlanState.data : null;
+      const week = weekState.status === 'AVAILABLE' ? weekState.data : [];
+      const currentPlan = week[0]?.active ?? null;
       setActivePlan(currentPlan);
+      setGovernedWeek(week);
 
       if (modeForLoad === 'ledger') {
         // ADR-0052 OQ2: a recorded red flag pauses launch in ledger mode; the plan week hides
@@ -398,10 +413,29 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
     loadPlanData();
   }, [loadPlanData]);
 
+  const weekHasPlan = governedWeek.some(day => day.active !== null);
+  const weekPlanTitle = useMemo(() => governingPlanTitles(governedWeek).join(' → '), [governedWeek]);
+  const weekPlacedSessions = useMemo(() => governedPlacedSessions(governedWeek), [governedWeek]);
+  const weekRestDates = useMemo(() => governedRestDates(governedWeek), [governedWeek]);
+  // Today's plan cannot move a session onto a date another plan or revision governs: the
+  // resolver would never show it there.
+  const datesOutsideActivePlan = useMemo(() => governedWeek
+    .filter(day => day.active?.plan.planId !== activePlan?.plan.planId || day.active?.plan.revision !== activePlan?.plan.revision)
+    .map(day => day.date), [governedWeek, activePlan]);
+  // A later plan in the week whose saved moves could not be read shows its default dates.
+  const laterPlanOverlayInvalid = governedWeek.some(day => day.active?.placementOverlayInvalid
+    && (day.active.plan.planId !== activePlan?.plan.planId || day.active.plan.revision !== activePlan?.plan.revision));
+  // Engine-mode critique reviews today's plan only; its findings on another plan's dates would
+  // describe sessions this week does not show.
+  const weekCritique = useMemo(() => critique && {
+    ...critique,
+    findings: critique.findings.filter(finding => finding.date === null || !datesOutsideActivePlan.includes(finding.date)),
+  }, [critique, datesOutsideActivePlan]);
+
   const handleProposeReplacement = useCallback(
-    (sessionId: string, missedDate: string): ReplacementProposal => {
+    async (sessionId: string, missedDate: string): Promise<ReplacementProposal> => {
       if (!activePlan) throw new Error('No imported plan is active.');
-      return proposeReplacement(
+      const proposal = proposeReplacement(
         activePlan.plan,
         activePlan.placement,
         sessionId,
@@ -409,7 +443,28 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
         { fixedActivities },
         today,
       );
-    }, [activePlan, fixedActivities, today],
+      if (proposal.outcome !== 'rescheduled' || !proposal.date) return proposal;
+      // A move onto a date another plan or revision governs would vanish, so the athlete picks a
+      // day instead. Dates shown this week are already resolved; a carry-forward target beyond
+      // the week is resolved here before it is offered.
+      const target = proposal.date;
+      const shownDay = governedWeek.find(day => day.date === target);
+      const targetState = shownDay ? null : await activeExternalPlanService.getActivePlanState(userId, target);
+      if (targetState && targetState.status !== 'AVAILABLE' && targetState.status !== 'MISSING') {
+        return {
+          sessionId, missedDate, outcome: 'unresolved',
+          rationale: `Which plan governs ${target} could not be verified, so this session cannot move there yet.`,
+        };
+      }
+      const governing = shownDay ? shownDay.active : targetState?.status === 'AVAILABLE' ? targetState.data : null;
+      if (governing?.plan.planId !== activePlan.plan.planId || governing?.plan.revision !== activePlan.plan.revision) {
+        return {
+          sessionId, missedDate, outcome: 'unresolved',
+          rationale: `${target} belongs to another imported plan, so this session cannot move there.`,
+        };
+      }
+      return proposal;
+    }, [activePlan, fixedActivities, today, governedWeek, userId],
   );
 
   // The reset card unmounts once the repaired plan reloads; focus lands on the screen heading
@@ -541,7 +596,7 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
         />
       )}
 
-      {activePlan && effectiveAuthorityMode === 'engine' && (
+      {weekHasPlan && effectiveAuthorityMode === 'engine' && (
         <div className="plan-view-mode-tabs" role="tablist" aria-label="Training plan views">
           <button
             type="button"
@@ -550,7 +605,7 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
             className={`plan-tab-btn ${viewMode === 'imported' ? 'active' : ''}`}
             onClick={() => setViewMode('imported')}
           >
-            📋 Coach's Plan ({activePlan.plan.title})
+            📋 Coach's Plan ({weekPlanTitle})
           </button>
           <button
             type="button"
@@ -611,9 +666,9 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
             </button>
           </div>
         </div>
-      ) : activePlan && effectiveViewMode === 'imported' ? (
+      ) : weekHasPlan && effectiveViewMode === 'imported' ? (
         <div className="plan-active-content">
-          {activePlan.placementOverlayInvalid && (
+          {activePlan?.placementOverlayInvalid && (
             <PlacementOverlayRecoveryCard
               onReset={async () => {
                 await persistAssignments([], { reportError: false });
@@ -622,12 +677,19 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
               disabled={clinicalEscalationRequired}
             />
           )}
+          {laterPlanOverlayInvalid && (
+            <p className="external-week-error" role="status">
+              Saved moves for a plan later this week could not be read, so its sessions show at the dates the plan itself sets.
+            </p>
+          )}
           <ExternalPlanWeek
             userId={userId}
-            planTitle={activePlan.plan.title}
+            planTitle={weekPlanTitle}
             weekStartDate={today}
-            placed={activePlan.placed}
-            critique={critique}
+            placed={weekPlacedSessions}
+            unavailableDates={datesOutsideActivePlan}
+            restDates={weekRestDates}
+            critique={weekCritique}
             today={today}
             fixedActivities={fixedActivities}
             onProposeReplacement={handleProposeReplacement}

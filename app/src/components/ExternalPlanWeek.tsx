@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import type { ExternalCritiqueFinding, ExternalWeekCritique } from '../engine/externalCritique';
 import type { PlacedSession, ReplacementProposal } from '../engine/externalPlacement';
 import type { FixedActivity } from '../engine/models';
@@ -36,8 +36,13 @@ export interface ExternalPlanWeekProps {
     today: string;
     /** Active fixed activities in the week, used to exclude occupied days from the manual day picker. */
     fixedActivities?: readonly FixedActivity[];
-    /** Produces a proposal for a session that was not done. Never writes. */
-    onProposeReplacement: (sessionId: string, missedDate: string) => ReplacementProposal;
+    /** Dates in the week governed by a different plan or revision, never offered as a move target. */
+    unavailableDates?: readonly string[];
+    /** Authored rest days (ADR-0035) in the week, shown as rest and never offered as a move target. */
+    restDates?: readonly string[];
+    /** Produces a proposal for a session that was not done. Never writes. May resolve
+     * asynchronously when the target date's governing plan must be read. */
+    onProposeReplacement: (sessionId: string, missedDate: string) => ReplacementProposal | Promise<ReplacementProposal>;
     /** Called only after the athlete confirms; `date` is null for a drop. */
     onConfirmReplacement: (proposal: ReplacementProposal) => void | Promise<void>;
     /** Free days in the same week, offered when the athlete rejects the proposed date. */
@@ -69,11 +74,14 @@ function weekLevelFindings(critique: ExternalWeekCritique | null): ExternalCriti
  */
 export function ExternalPlanWeek({
     userId,
-    planTitle, weekStartDate, placed, critique, today, fixedActivities,
+    planTitle, weekStartDate, placed, critique, today, fixedActivities, unavailableDates, restDates,
     onProposeReplacement, onConfirmReplacement, onChooseDate, writeError = null,
     clinicalEscalationRequired = false,
 }: ExternalPlanWeekProps) {
     const [proposal, setProposal] = useState<ReplacementProposal | null>(null);
+    // A proposal may resolve asynchronously; only the latest request may fill the panel, and a
+    // cancel invalidates any request still pending.
+    const proposalRequest = useRef(0);
     const [choosingFor, setChoosingFor] = useState<string | null>(null);
     const [expandedSessionIds, setExpandedSessionIds] = useState<Set<string>>(() => new Set());
 
@@ -105,15 +113,17 @@ export function ExternalPlanWeek({
         const fixedOccupied = (fixedActivities ?? [])
             .filter(activity => !activity.isCompleted && activity.date >= days[0] && activity.date <= days[6])
             .map(activity => activity.date);
-        return new Set([...inWeekOccupied, ...fixedOccupied]);
-    }, [inWeek, fixedActivities, days]);
+        return new Set([...inWeekOccupied, ...fixedOccupied, ...(unavailableDates ?? []), ...(restDates ?? [])]);
+    }, [inWeek, fixedActivities, days, unavailableDates, restDates]);
 
     const weekFindings = weekLevelFindings(critique);
 
-    const startProposal = (sessionId: string, missedDate: string) => {
+    const startProposal = async (sessionId: string, missedDate: string) => {
         if (clinicalEscalationRequired) return;
         setChoosingFor(null);
-        setProposal(onProposeReplacement(sessionId, missedDate));
+        const request = ++proposalRequest.current;
+        const next = await onProposeReplacement(sessionId, missedDate);
+        if (request === proposalRequest.current) setProposal(next);
     };
 
     const handleConfirm = async (proposalToConfirm: ReplacementProposal) => {
@@ -165,6 +175,7 @@ export function ExternalPlanWeek({
                 {days.map(date => {
                     const sessions = inWeek.filter(item => item.date === date);
                     const dayFindings = findingsFor(critique, date);
+                    const isRestDay = restDates?.includes(date) ?? false;
                     return (
                         <li key={date} className={`external-week-day ${date === today ? 'is-today' : ''}`}>
                             <div className="external-week-daylabel">
@@ -172,7 +183,9 @@ export function ExternalPlanWeek({
                                 <span className="external-week-date">{date}</span>
                             </div>
                             <div className="external-week-daybody">
-                                {sessions.length === 0 && <p className="external-week-empty">Nothing placed</p>}
+                                {sessions.length === 0 && (isRestDay
+                                    ? <p className="external-week-rest">💤 Rest day in your plan</p>
+                                    : <p className="external-week-empty">Nothing placed</p>)}
                                 {sessions.map(item => {
                                     const isExpanded = !clinicalEscalationRequired && expandedSessionIds.has(item.session.id);
                                     const displayPrescription = externalSessionDisplayPrescription(item.session);
@@ -203,7 +216,7 @@ export function ExternalPlanWeek({
                                                             <button
                                                                 type="button"
                                                                 className="external-week-missed-btn"
-                                                                onClick={() => startProposal(item.session.id, date)}
+                                                                onClick={() => void startProposal(item.session.id, date)}
                                                             >
                                                                 {date === today ? 'Reschedule' : 'Missed it'}
                                                             </button>
@@ -304,7 +317,7 @@ export function ExternalPlanWeek({
                         >
                             Choose another day
                         </button>
-                        <button type="button" className="external-week-cancel" onClick={() => { setProposal(null); setChoosingFor(null); }}>
+                        <button type="button" className="external-week-cancel" onClick={() => { proposalRequest.current += 1; setProposal(null); setChoosingFor(null); }}>
                             Leave it as is
                         </button>
                     </div>

@@ -52,6 +52,7 @@ import {
   resolveIntradayBundlePlacement,
   intradayBundlePlacementReplayInputs,
   type ActiveExternalPlan,
+  type GovernedPlanDay,
   type IntradayBundlePlacementContext,
 } from '../services/activeExternalPlanService';
 import {
@@ -172,6 +173,8 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
   const [reclassifyModalOpen, setReclassifyModalOpen] = useState(false);
   const [recentActivities, setRecentActivities] = useState<NormalizedGarminActivity[]>([]);
   const [activeExternalPlan, setActiveExternalPlan] = useState<ActiveExternalPlan | null>(null);
+  /** The outlook's plan per date, or 'unavailable' when that read failed; null before it loads. */
+  const [externalPlanDays, setExternalPlanDays] = useState<GovernedPlanDay[] | 'unavailable' | null>(null);
   const [bundleMemberStatuses, setBundleMemberStatuses] = useState<IntradayBundleMemberStatus[]>([]);
   /** The four dashboard-owned fingerprint fields from the evaluation that produced
    * `bundleMemberStatuses`. Kept so the launch claim can prove nothing they cover moved
@@ -357,6 +360,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
 
   const clearExternalPlanState = useCallback(() => {
     setActiveExternalPlan(null);
+    setExternalPlanDays(null);
     // The member statuses and their fingerprint describe a plan that is no longer active;
     // leaving them would keep a Start control on screen for a placement that is gone.
     setBundleMemberStatuses([]);
@@ -518,12 +522,17 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
       }
       const planWeekActivities = planWeekActivitiesState.status === 'AVAILABLE' ? planWeekActivitiesState.data : [];
 
-      const activeExternalState = await activeExternalPlanService.getActivePlanState(
-        userId, input.date, planWeekActivities,
-      );
+      // The outlook spans today and the next WEEK_AHEAD_DAYS dates; a plan imported to start
+      // later governs its own dates there. Display-only: today's decision uses `activeExternal`.
+      const [activeExternalState, outlookState] = await Promise.all([
+        activeExternalPlanService.getActivePlanState(userId, input.date, planWeekActivities),
+        activeExternalPlanService.getGovernedPlanDays(userId, input.date, WEEK_AHEAD_DAYS + 1, planWeekActivities),
+      ]);
       if (!isCurrent()) return;
       const activeExternal = activeExternalState.status === 'AVAILABLE' ? activeExternalState.data : null;
       setActiveExternalPlan(activeExternal);
+      // A failed outlook read is unknown, never "today's plan on every date".
+      setExternalPlanDays(outlookState.status === 'AVAILABLE' ? outlookState.data : 'unavailable');
       if (activeExternalState.status === 'INVALID' || activeExternalState.status === 'UNAVAILABLE') {
         console.warn(`External plan could not be read (${activeExternalState.status}); today falls back to the ranked path.`);
       }
@@ -1818,7 +1827,8 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
 
           {/* Ledger mode with no imported plan has nothing to outlook; LedgerTodayCard
               already carries the import prompt, so the empty section is hidden. */}
-          {(!isLedgerMode || activeExternalPlan) && (
+          {(!isLedgerMode || activeExternalPlan || externalPlanDays === 'unavailable'
+            || (Array.isArray(externalPlanDays) && externalPlanDays.some(day => day.active))) && (
             <div className="home-week-strip-section">
               <div className="section-header-row">
                 <h4>7-Day Outlook</h4>
@@ -1839,6 +1849,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
                 scheduleOverlays={decisionInput?.scheduleOverlays}
                 planningMode={resolvedPlanningMode}
                 externalPlan={activeExternalPlan}
+                externalPlanDays={externalPlanDays}
                 today={decisionInput?.date}
                 userId={userId}
                 planningAuthorityMode={isLedgerMode ? 'ledger' : 'engine'}
