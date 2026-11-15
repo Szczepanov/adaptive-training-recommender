@@ -54,6 +54,19 @@ applied. Once the athlete skips to the dashboard, Back and Forward restore the r
 visited without reapplying the startup check-in gate. The screen route is not an authorization
 boundary and does not expose user data.
 
+### Detailed daily checks
+
+Home and the session preview share `FlagStrip`. Measurements, matched injury restrictions,
+movement evidence and missing-data states remain visible by default. Only the general
+**Evaluation rules** explanation starts collapsed. Athlete-facing labels distinguish an
+active finding, no matching restriction and an incomplete assessment; a clear flag is not a
+general safety clearance. ADR references, release-gate identifiers and raw boolean status
+suffixes belong to diagnostics rather than this presentation. Underlying evaluations and
+exports retain their existing technical contracts.
+
+The sticky header and mobile navigation use opaque backgrounds so scrolling evidence does
+not compete with their labels.
+
 ### Manual activity details and lap observations
 
 Every Garmin activity in Data → Activities offers **Fetch activity details** (or

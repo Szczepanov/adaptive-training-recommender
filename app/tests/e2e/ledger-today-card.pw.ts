@@ -108,11 +108,12 @@ test('ledger mode displays active injury_constraint_touches_session flag on Ledg
   await submitTypicalCheckin(page);
   await dismissOnboardingIfVisible(page, 200);
 
-  const flagStrip = page.getByRole('region', { name: 'Safety & readiness flags' });
+  const flagStrip = page.getByRole('region', { name: 'Today’s checks' });
   await expect(flagStrip).toBeVisible();
-  await expect(flagStrip).toContainText('Injury constraint touches session');
-  await expect(flagStrip).toContainText('Active (true)');
-  await expect(flagStrip).toContainText('Not yet supported (HA7 withheld)');
+  await expect(flagStrip).toContainText('Injury restrictions');
+  await expect(flagStrip).toContainText('Restrictions match this session');
+  await expect(flagStrip).toContainText('Automatic illness detection isn’t available');
+  await expect(flagStrip).not.toContainText(/ADR-|HA7|active_constraint_families/);
 
   // D-FLAGS: active injury flag never blocks or re-doses the authored session.
   await page.getByRole('button', { name: `Start ${session.title}`, exact: true }).click();

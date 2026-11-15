@@ -2,10 +2,9 @@
   display: flex;
   flex-direction: column;
   gap: 0.65rem;
-  padding: 0.85rem 0.95rem;
+  padding: 0.65rem;
   border-radius: var(--radius-control);
-  background: rgba(15, 23, 42, 0.55);
-  border: 1px solid rgba(148, 163, 184, 0.2);
+  min-width: 0;
 }
 
 .flag-strip-header {
@@ -45,6 +44,7 @@
   border-radius: var(--radius-control);
   background: rgba(30, 41, 59, 0.6);
   border: 1px solid rgba(148, 163, 184, 0.16);
+  min-width: 0;
 }
 
 .flag-strip-item.tone-active {
@@ -58,6 +58,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 0.4rem;
+  min-width: 0;
 }
 
 .flag-strip-item-heading {
@@ -65,6 +66,7 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 0.4rem;
+  min-width: 0;
 }
 
 .flag-strip-flag-name {
@@ -87,7 +89,7 @@
   font-weight: 700;
   padding: 0.15rem 0.5rem;
   border-radius: 999px;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .flag-strip-badge.tone-active {
@@ -127,17 +129,13 @@
   list-style: none;
   margin: 0.1rem 0 0;
   padding: 0;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem;
+  display: grid;
+  gap: 0.15rem;
 }
 
 .flag-strip-input-chip {
   font-size: 0.73rem;
-  padding: 0.15rem 0.45rem;
-  border-radius: 0.35rem;
-  background: rgba(15, 23, 42, 0.65);
-  border: 1px solid rgba(148, 163, 184, 0.16);
+  padding: 0.1rem 0;
   color: var(--text-secondary);
   max-width: 100%;
   overflow-wrap: anywhere;
@@ -147,3 +145,11 @@
   font-weight: 600;
   color: var(--text-primary);
 }
+
+.flag-strip-details { color: var(--text-secondary); font-size: 0.78rem; overflow-wrap: anywhere; }
+.flag-strip-details summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; gap: 0.4rem; list-style: none; }
+.flag-strip-details summary::-webkit-details-marker { display: none; }
+/* Decorative marker: the empty alt text keeps screen readers from announcing the glyph. */
+.flag-strip-details summary::before { content: '▸'; content: '▸' / ''; }
+.flag-strip-details[open] summary::before { content: '▾'; content: '▾' / ''; }
+.flag-strip-details p { margin: 0 0 0.35rem; line-height: 1.4; }

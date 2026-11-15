@@ -374,9 +374,9 @@ describe('LedgerTodayCard', () => {
       ],
     };
     const html = renderHtml(flagOverrides);
-    expect(html).toContain('Injury constraint touches session');
-    expect(html).toContain('Active (true)');
-    expect(html).toContain('Active knee constraint overlaps Lower Body Strength');
+    expect(html).toContain('Injury restrictions');
+    expect(html).toContain('Restrictions match this session');
+    expect(html).toContain('Matching regions');
     expect(html).toContain('Start Lower Body Strength');
 
     const tree = renderTree(flagOverrides);

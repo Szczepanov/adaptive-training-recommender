@@ -20,6 +20,7 @@ import { TEMPLATES_BY_ID } from '../engine/templates';
 import { WORKOUTS_BY_ID } from '../workouts/catalog';
 import { resolveWorkoutPrescription } from '../workouts/prescription';
 import type { WorkoutPrescription } from '../workouts/models';
+import type { FlagEvaluation } from '../derived/flags/flagEvaluation';
 
 export const VISUAL_USER_ID = 'visual-athlete';
 export const VISUAL_DATE = '2026-09-12';
@@ -45,6 +46,7 @@ export interface VisualFixture {
   checkin: DailySubjectiveCheckin | null;
   recovery: DailyRecoverySnapshot | null;
   activities: NormalizedGarminActivity[];
+  flags?: FlagEvaluation[];
   /** An imported plan governing this date (ADR-0019). Absent for every other scenario, so
    * the ordinary screens keep exercising the ranked path. */
   externalPlan?: ExternalTrainingPlan;
@@ -195,7 +197,7 @@ const eventGoal: UserGoal & { id: string } = {
 const defaultModePreferences: UserPreferences = { ...preferences, engineRecommendationsEnabled: undefined };
 
 function buildFixture(
-  overrides: Partial<Pick<VisualFixture, 'settings' | 'preferences' | 'checkin' | 'recovery' | 'goals' | 'activities' | 'externalPlan' | 'strengthSession' | 'savedTemplates' | 'decisionJournalEntry' | 'initialSession' | 'resumeExecution'>> = {},
+  overrides: Partial<Pick<VisualFixture, 'settings' | 'preferences' | 'checkin' | 'recovery' | 'goals' | 'activities' | 'flags' | 'externalPlan' | 'strengthSession' | 'savedTemplates' | 'decisionJournalEntry' | 'initialSession' | 'resumeExecution'>> = {},
   trainingIntentProfile: TrainingIntentProfile | null = null,
 ): VisualFixture {
   const fixtureSettings = overrides.settings ?? settings;
@@ -230,6 +232,7 @@ function buildFixture(
     recovery: fixtureRecovery,
     goals: fixtureGoals,
     activities: fixtureActivities,
+    ...(overrides.flags ? { flags: overrides.flags } : {}),
     ...(overrides.externalPlan ? { externalPlan: overrides.externalPlan } : {}),
     ...(overrides.strengthSession ? { strengthSession: overrides.strengthSession } : {}),
     ...(overrides.savedTemplates ? { savedTemplates: overrides.savedTemplates } : {}),
@@ -702,6 +705,32 @@ export const VISUAL_SCENARIOS: VisualScenario[] = [
       'Reset restores the original Start action without a pointer-only interaction.',
     ],
     fixture: standardFixture,
+  },
+  {
+    id: 'home-ledger-checks',
+    title: 'Home — detailed training checks',
+    screen: 'home',
+    expectedFocus: ['Measurements and injury assessment are visible without opening the evaluation rules.'],
+    fixture: buildFixture({
+      preferences: { ...preferences, engineRecommendationsEnabled: false },
+      externalPlan: importedPlan,
+      settings: { ...settings, injuries: [{ region: 'knee', severity: 'limit', restrictedModalities: ['Cycling'] }] },
+      flags: [{
+        id: 'recovery_beyond_baseline', active: true, state: 'measured', reasonCode: 'adverse:rhr',
+        definitionVersion: 'visual-v1', threshold: 'Synthetic recovery rule',
+        inputs: [
+          { name: 'hrv', value: { value: 64, unit: 'ms', source: 'visual', state: 'measured' } },
+          { name: 'rhr', value: { value: 46, unit: 'bpm', source: 'visual', state: 'measured' } },
+          { name: 'sleep', value: { value: 81, unit: 'pts', source: 'visual', state: 'measured' } },
+          { name: 'hrv_delta7d', value: { value: -1.4, unit: 'ms', source: 'visual', state: 'measured' } },
+          { name: 'hrv_band', value: { value: 4.4, unit: 'ms', source: 'visual', state: 'measured' } },
+          { name: 'rhr_delta7d', value: { value: 3.7, unit: 'bpm', source: 'visual', state: 'measured' } },
+          { name: 'rhr_band', value: { value: 1.5, unit: 'bpm', source: 'visual', state: 'measured' } },
+          { name: 'sleep_delta7d', value: { value: -2.3, unit: 'pts', source: 'visual', state: 'measured' } },
+          { name: 'sleep_band', value: { value: 8.1, unit: 'pts', source: 'visual', state: 'measured' } },
+        ],
+      }],
+    }),
   },
   {
     id: 'home-externally-planned',
