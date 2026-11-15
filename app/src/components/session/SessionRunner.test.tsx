@@ -624,9 +624,9 @@ describe('SessionRunner launch FlagStrip and red-flag pause', () => {
                 ]}
             />,
         );
-        expect(html).toContain('Safety &amp; readiness flags');
-        expect(html).toContain('Injury constraint touches session');
-        expect(html).toContain('Not yet supported (HA7 withheld)');
+        expect(html).toContain('Today’s checks');
+        expect(html).toContain('Injury restrictions');
+        expect(html).toContain('Automatic illness detection isn’t available');
         expect(html).not.toContain('Training paused for clinical evaluation');
     });
 

@@ -8,7 +8,7 @@ const artifactDir = resolve('artifacts/visual-review/latest');
 const entriesPath = resolve(artifactDir, 'entries.ndjson');
 
 async function visitScenario(page: Page, scenario: VisualScenario): Promise<void> {
-  if (scenario.id === 'plan-recovery-authority-exit' || scenario.id === 'plan-ledger-imported') {
+  if (scenario.id === 'plan-recovery-authority-exit' || scenario.id === 'plan-ledger-imported' || scenario.id === 'home-ledger-checks') {
     await page.clock.setFixedTime('2026-09-12T08:00:00+02:00');
   }
   await page.goto(`/visual.html?scenario=${scenario.id}`);
@@ -113,6 +113,40 @@ for (const scenario of VISUAL_SCENARIOS) {
     }
     if (scenario.id === 'plan-recovery-authority-exit') {
       await expect(page.getByRole('region', { name: 'Roles planned beyond this forecast' })).toBeVisible();
+    }
+
+    if (scenario.id === 'home-ledger-checks') {
+      const checks = page.getByRole('region', { name: 'Today’s checks' });
+      await expect(checks).toBeVisible();
+      await expect(checks).toContainText('64 ms');
+      await expect(checks).toContainText('Injury restrictions');
+      await expect(checks).not.toContainText(/ADR-|HA7|hrv_delta7d|active_constraint_families/);
+      await checks.screenshot({ path: test.info().outputPath('checks.png') });
+      const rules = checks.locator('details').first();
+      await expect(rules).not.toHaveAttribute('open');
+      const summary = rules.locator('summary');
+      await expect(summary).toHaveText('Evaluation rules');
+      const bounds = await summary.boundingBox();
+      expect(bounds?.height).toBeGreaterThanOrEqual(44);
+      await summary.focus();
+      await expect(summary).toBeFocused();
+      await page.keyboard.press('Enter');
+      await expect(rules).toHaveAttribute('open', '');
+      await page.keyboard.press('Enter');
+      await expect(rules).not.toHaveAttribute('open');
+      if (test.info().project.name.includes('mobile')) {
+        const visible = await summary.evaluate(element => {
+          const box = element.getBoundingClientRect();
+          const header = document.querySelector('.global-navbar')?.getBoundingClientRect();
+          const nav = document.querySelector('.bottom-nav')?.getBoundingClientRect();
+          return box.top >= (header?.bottom ?? 0) && box.bottom <= (nav?.top ?? innerHeight);
+        });
+        expect(visible).toBe(true);
+      }
+      await page.locator('.app-content').evaluate(element => { element.scrollTop = 0; });
+      await summary.blur();
+      await page.evaluate(() => window.scrollTo(0, 0));
+      await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
     }
 
     if (scenario.id === 'checkin-new' || scenario.id === 'checkin-complete') {

@@ -3,101 +3,58 @@ import { describe, expect, it } from 'vitest';
 import type { FlagStripItem } from '../derived/flags/flagStripItems';
 import { FlagStrip } from './FlagStrip';
 
+const flag = (overrides: Partial<FlagStripItem>): FlagStripItem => ({
+  id: 'injury_constraint_touches_session', active: false, state: 'measured', reasonCode: 'no_touch',
+  threshold: 'internal rule ADR-0052', inputs: [], ...overrides,
+});
+
 describe('FlagStrip', () => {
-  it('renders active true, active false, missing null, HA7 not_yet_supported, and session-scoped injury flags', () => {
-    const flags: FlagStripItem[] = [
-      {
-        id: 'recovery_beyond_baseline',
-        active: true,
-        state: 'measured',
-        reasonCode: 'beyond_baseline',
-        threshold: 'HRV or sleep worse than 1.5 SD below 28d baseline',
-        inputs: [
-          { name: 'hrv_delta7d', value: { value: -14, unit: 'ms', source: 'daily_recovery_snapshots', state: 'measured' } },
-        ],
-      },
-      {
-        id: 'illness_risk_symptom',
-        active: false,
-        state: 'measured',
-        reasonCode: 'no_non_allergy_illness',
-        threshold: 'Non-allergy illness symptoms reported today',
-        inputs: [
-          { name: 'illness_symptoms', value: { value: false, source: 'daily_subjective_checkins', state: 'measured' } },
-        ],
-      },
-      {
-        id: 'illness_anomaly',
-        active: null,
-        state: 'not_yet_supported',
-        reasonCode: 'ha7_release_gate_unmet',
-        threshold: 'Withheld until the HA7 release gate is met',
-        inputs: [
-          { name: 'ha7_release_gate', value: { value: 'unmet', source: 'health_anomaly_assessment', state: 'not_yet_supported' } },
-        ],
-      },
-      {
-        id: 'injury_constraint_touches_session',
-        active: true,
-        state: 'measured',
-        reasonCode: 'constraint_touches_session',
-        threshold: 'Standing knee constraint overlaps Lower Body Strength',
-        sessionRef: 'external_plan:plan-1@1:strength-today',
-        sessionTitle: 'Lower Body Strength',
-        inputs: [
-          { name: 'matched_regions', value: { value: 'knee', source: 'training_settings', state: 'measured' } },
-        ],
-      },
-    ];
-
-    const html = renderToStaticMarkup(<FlagStrip flags={flags} />);
-    expect(html).toContain('Advisory only — never blocks or re-doses your session');
-    expect(html).toContain('Recovery beyond baseline');
-    expect(html).toContain('Active (true)');
-    expect(html).toContain('HRV or sleep worse than 1.5 SD below 28d baseline');
-    expect(html).toContain('hrv_delta7d:');
-    expect(html).toContain('-14 ms');
-
-    expect(html).toContain('Illness-risk symptom');
-    expect(html).toContain('Clear (false)');
-
-    expect(html).toContain('Illness / physiological anomaly');
-    expect(html).toContain('Not yet supported (HA7 withheld)');
-    expect(html).toContain('Withheld until the HA7 release gate is met');
-
-    expect(html).toContain('Injury constraint touches session');
-    expect(html).toContain('Lower Body Strength');
-    expect(html).toContain('matched_regions:');
-    expect(html).toContain('knee');
+  it('shows evidence by default with readable labels and separate closed rules', () => {
+    const html = renderToStaticMarkup(<FlagStrip flags={[
+      flag({ id: 'recovery_beyond_baseline', active: true, reasonCode: 'adverse:rhr', inputs: [
+        { name: 'rhr_delta7d', value: { value: 3.7, unit: 'bpm', source: 'snapshot', state: 'measured' } },
+      ] }),
+      flag({ sessionTitle: 'Lower Power', inputs: [
+        { name: 'active_constraint_families', value: { value: ['lower_limb_strength'], source: 'settings', state: 'measured' } },
+        { name: 'touched_patterns', value: { value: [], source: 'session', state: 'measured' } },
+        { name: 'session_pattern_evidence_complete', value: { value: false, source: 'session', state: 'measured' } },
+      ] }),
+      flag({ id: 'illness_anomaly', active: null, state: 'not_yet_supported', reasonCode: 'ha7_release_gate_unmet' }),
+    ]} />);
+    expect(html).toContain('Today’s checks');
+    expect(html).toContain('Recovery signals');
+    expect(html).toContain('Resting heart rate · 7-day change');
+    expect(html).toContain('3.7 bpm');
+    expect(html).toContain('Injury restrictions');
+    expect(html).toContain('No matching restrictions');
+    expect(html).toContain('Lower limb strength');
+    expect(html).toContain('Matching movements');
+    expect(html).toContain('None');
+    expect(html).toContain('Incomplete');
+    expect(html).toContain('<details');
+    expect(html).toContain('Evaluation rules');
+    expect(html).not.toContain('<details open');
+    expect(html).not.toMatch(/ADR-|HA7|rhr_delta7d|active_constraint_families|\(false\)/);
+    expect(html).toContain('Automatic illness detection isn’t available');
   });
 
-  it('renders missingness and null states clearly', () => {
-    const flags: FlagStripItem[] = [
-      {
-        id: 'recovery_beyond_baseline',
-        active: null,
-        state: 'missing',
-        reasonCode: 'no_snapshot',
-        threshold: null,
-        inputs: [
-          { name: 'snapshot', value: { value: null, source: 'daily_recovery_snapshots', state: 'missing' } },
-        ],
-      },
-      {
-        id: 'illness_risk_symptom',
-        active: null,
-        state: 'not_recorded',
-        reasonCode: 'flag_not_recorded',
-        threshold: null,
-        inputs: [],
-      },
-    ];
-
-    const html = renderToStaticMarkup(<FlagStrip flags={flags} />);
-    expect(html).toContain('Missing input (null)');
-    expect(html).toContain('missing · no_snapshot');
-    expect(html).toContain('Not evaluated (missing)');
-    expect(html).toContain('Not recorded (null)');
-    expect(html).toContain('not_recorded · flag_not_recorded');
+  it('distinguishes allergy symptoms, missing evidence, stale values and active matches', () => {
+    const html = renderToStaticMarkup(<FlagStrip flags={[
+      flag({ id: 'illness_risk_symptom', reasonCode: 'allergy_like_symptom_day' }),
+      flag({ active: null, state: 'not_recorded', reasonCode: 'pattern_evidence_incomplete', inputs: [
+        { name: 'active_constraint_families', value: { value: null, source: 'settings', state: 'missing' } },
+      ] }),
+      flag({ id: 'recovery_beyond_baseline', active: null, state: 'stale', reasonCode: 'snapshot_stale', inputs: [
+        { name: 'hrv', value: { value: 40, unit: 'ms', source: 'snapshot', state: 'stale' } },
+      ] }),
+      flag({ active: true, reasonCode: 'pattern_touch' }),
+    ]} />);
+    expect(html).toContain('Allergy-like symptoms reported');
+    expect(html).toContain('Couldn’t fully check this session');
+    expect(html).toContain('Movement information is incomplete');
+    expect(html).toContain('Missing');
+    expect(html).toContain('40 ms (out of date)');
+    expect(html).toContain('Restrictions match this session');
+    expect(html).not.toContain('No symptoms reported');
   });
 });

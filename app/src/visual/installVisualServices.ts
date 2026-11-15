@@ -9,6 +9,7 @@ import { recoverySnapshotService } from '../services/recoverySnapshotService';
 import { activityOverrideService } from '../services/activityOverrideService';
 import { activityAnnotationService, type ActivityAnnotation, type LapAnnotation } from '../services/activityAnnotationService';
 import { trainingSettingsService } from '../services/trainingSettingsService';
+import { buildFlagEvaluationRevision, flagEvaluationRepository } from '../services/flagEvaluationPersistence';
 import { trainingIntentProfileService } from '../services/trainingIntentProfileService';
 import { scheduleOverlayService } from '../services/scheduleOverlayService';
 import { strengthSessionService } from '../services/strengthSessionService';
@@ -130,6 +131,17 @@ export function installVisualServices(fixture: VisualFixture): void {
   preferencesService.upsertPreferences = async (_userId, updates) => ({ ...fixture.preferences, ...updates });
 
   trainingSettingsService.getTrainingSettings = async () => fixture.settings;
+  trainingSettingsService.peekTrainingSettingsState = async () => ({ status: 'AVAILABLE', data: fixture.settings, revision: null });
+  flagEvaluationRepository.getInRangeState = async () => ({
+    status: 'AVAILABLE',
+    data: await Promise.all((fixture.flags ?? []).map(evaluation => buildFlagEvaluationRevision({
+      userId: fixture.input.userId,
+      observedOn: fixture.input.date,
+      evaluatedAt: `${fixture.input.date}T08:00:00+02:00`,
+      evaluation,
+    }))),
+    revision: null,
+  });
   trainingSettingsService.updateTrainingSettings = async (_userId, update) => ({
     ...fixture.settings,
     ...update,
