@@ -252,8 +252,10 @@ export const WeekAheadStrip = memo(function WeekAheadStrip({
 }: WeekAheadStripProps) {
   const [selectedIndex, setSelectedIndex] = useState(0);
 
-  if (externalPlanDays === 'unavailable' && externalPlan) {
-    // Fail closed: without per-date authority, today's plan must not be shown on later dates.
+  if (externalPlanDays === 'unavailable' && (externalPlan || planningAuthorityMode === 'ledger')) {
+    // Fail closed: without per-date authority, today's plan must not be shown on later dates, and
+    // in ledger mode a failed read must not look like "no upcoming plan". Engine mode with no
+    // plan today keeps its own forecast.
     return (
       <div className="dashboard-card week-ahead-card imported-outlook-card" role="region" aria-label="Week ahead">
         <div className="card-header">

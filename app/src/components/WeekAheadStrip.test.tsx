@@ -310,6 +310,20 @@ describe('WeekAheadStrip imported plan Today + Next 7 Days multi-session view', 
     expect(html).not.toContain('Export / Sync');
   });
 
+  it('shows the unavailable outlook in ledger mode even when no plan governs today', () => {
+    const ledger = renderToStaticMarkup(
+      <WeekAheadStrip plan={null} externalPlan={null} externalPlanDays="unavailable" today="2026-09-14" planningAuthorityMode="ledger" />,
+    );
+    expect(ledger).toContain('Outlook unavailable');
+    expect(ledger).not.toContain('No imported plan');
+
+    const engine = renderToStaticMarkup(
+      <WeekAheadStrip plan={weekAheadPlan('Engine forecast stays.')} externalPlan={null} externalPlanDays="unavailable" today="2026-09-14" />,
+    );
+    expect(engine).not.toContain('Outlook unavailable');
+    expect(engine).toContain('Engine forecast stays.');
+  });
+
   it('withholds workout steps and export menu when clinicalEscalationRequired is true', () => {
     const html = renderToStaticMarkup(
       <WeekAheadStrip

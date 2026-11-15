@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import type { ExternalCritiqueFinding, ExternalWeekCritique } from '../engine/externalCritique';
 import type { PlacedSession, ReplacementProposal } from '../engine/externalPlacement';
 import type { FixedActivity } from '../engine/models';
@@ -77,6 +77,9 @@ export function ExternalPlanWeek({
     clinicalEscalationRequired = false,
 }: ExternalPlanWeekProps) {
     const [proposal, setProposal] = useState<ReplacementProposal | null>(null);
+    // A proposal may resolve asynchronously; only the latest request may fill the panel, and a
+    // cancel invalidates any request still pending.
+    const proposalRequest = useRef(0);
     const [choosingFor, setChoosingFor] = useState<string | null>(null);
     const [expandedSessionIds, setExpandedSessionIds] = useState<Set<string>>(() => new Set());
 
@@ -116,7 +119,9 @@ export function ExternalPlanWeek({
     const startProposal = async (sessionId: string, missedDate: string) => {
         if (clinicalEscalationRequired) return;
         setChoosingFor(null);
-        setProposal(await onProposeReplacement(sessionId, missedDate));
+        const request = ++proposalRequest.current;
+        const next = await onProposeReplacement(sessionId, missedDate);
+        if (request === proposalRequest.current) setProposal(next);
     };
 
     const handleConfirm = async (proposalToConfirm: ReplacementProposal) => {
@@ -307,7 +312,7 @@ export function ExternalPlanWeek({
                         >
                             Choose another day
                         </button>
-                        <button type="button" className="external-week-cancel" onClick={() => { setProposal(null); setChoosingFor(null); }}>
+                        <button type="button" className="external-week-cancel" onClick={() => { proposalRequest.current += 1; setProposal(null); setChoosingFor(null); }}>
                             Leave it as is
                         </button>
                     </div>

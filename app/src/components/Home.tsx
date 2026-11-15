@@ -1827,7 +1827,8 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
 
           {/* Ledger mode with no imported plan has nothing to outlook; LedgerTodayCard
               already carries the import prompt, so the empty section is hidden. */}
-          {(!isLedgerMode || activeExternalPlan || (Array.isArray(externalPlanDays) && externalPlanDays.some(day => day.active))) && (
+          {(!isLedgerMode || activeExternalPlan || externalPlanDays === 'unavailable'
+            || (Array.isArray(externalPlanDays) && externalPlanDays.some(day => day.active))) && (
             <div className="home-week-strip-section">
               <div className="section-header-row">
                 <h4>7-Day Outlook</h4>
