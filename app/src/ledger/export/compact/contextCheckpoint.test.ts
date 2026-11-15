@@ -7,7 +7,9 @@ import {
     userContextCheckpoint,
     userContextItemHashes,
     type PreviousContext,
+    type UserContextCheckpoint,
 } from './contextCheckpoint.ts';
+import { contextDelta, unchangedLines } from './previousContext.ts';
 
 const build = () => buildLedgerExport(fullInput({ purpose: 'morning' }));
 const confirmed = (ledger = build()): PreviousContext => ({ ...userContextCheckpoint(ledger), exportedOn: '2026-11-19' });
@@ -130,5 +132,51 @@ describe('mergeCheckpoint', () => {
         now.userContext.goals.state = 'unavailable';
         const merged = mergeCheckpoint(prior, userContextCheckpoint(now), '2026-11-20');
         expect(keysOf(merged.itemHashes, 'goals')).toEqual([]);
+    });
+
+    it('a present item without a selection date drops its prior date on an incomplete read', () => {
+        const key = 'injuries/injury-001';
+        const injuries = (from: string, complete: boolean) => ({ scope: `active+resolved-from:${from}`, complete, from });
+        // 1. Confirmed while resolved on 2026-11-10 (inside the window starting 2026-11-06).
+        const resolved = mergeCheckpoint(undefined, {
+            formatVersion: CHECKPOINT_FORMAT_VERSION,
+            itemHashes: { [key]: 'resolved' },
+            selectionDates: { [key]: '2026-11-10' },
+            collections: { injuries: injuries('2026-11-06', true) },
+        }, '2026-11-12');
+        // 2. Reopened: active and undated, confirmed under an incomplete read.
+        const reopened = mergeCheckpoint(resolved, {
+            formatVersion: CHECKPOINT_FORMAT_VERSION,
+            itemHashes: { [key]: 'active' },
+            selectionDates: {},
+            collections: { injuries: injuries('2026-11-07', false) },
+        }, '2026-11-13');
+        expect(reopened.itemHashes[key]).toBe('active');
+        expect(reopened.selectionDates[key]).toBeUndefined();
+        // 3. Deleted after the window moved past the old resolution date; the read is complete.
+        const current: UserContextCheckpoint = {
+            formatVersion: CHECKPOINT_FORMAT_VERSION,
+            itemHashes: {},
+            selectionDates: {},
+            collections: { injuries: injuries('2026-11-12', true) },
+        };
+        const delta = contextDelta(current, reopened, { injuries: 'measured' });
+        expect(unchangedLines(delta, reopened)).toEqual([`removed: ${key}`]);
+    });
+
+    it('an incomplete read keeps the prior selection date only for absent items', () => {
+        const prior = mergeCheckpoint(undefined, {
+            formatVersion: CHECKPOINT_FORMAT_VERSION,
+            itemHashes: { 'travel/a': 'a', 'travel/b': 'b' },
+            selectionDates: { 'travel/a': '2026-11-20', 'travel/b': '2026-11-21' },
+            collections: { travel: { scope: 'from:2026-11-06', complete: true, from: '2026-11-06' } },
+        }, '2026-11-12');
+        const merged = mergeCheckpoint(prior, {
+            formatVersion: CHECKPOINT_FORMAT_VERSION,
+            itemHashes: { 'travel/a': 'a2' },
+            selectionDates: { 'travel/a': '2026-11-25' },
+            collections: { travel: { scope: 'from:2026-11-07', complete: false, from: '2026-11-07' } },
+        }, '2026-11-13');
+        expect(merged.selectionDates).toEqual({ 'travel/a': '2026-11-25', 'travel/b': '2026-11-21' });
     });
 });

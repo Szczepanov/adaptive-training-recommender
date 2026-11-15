@@ -44,13 +44,27 @@ function setsPart({ workSets, plannedSets, warmupSets }: Occurrence['fields']): 
     return `${ratio} work sets${warmups}${notes.length ? ` (${notes.join('; ')})` : ''}`;
 }
 
-/** sRPE only from responses linked through the structured execution refs (never `occurrenceId`). */
+/** `(source X)`, `(stale)` or `(X, stale)`: the value's exceptions to the group default. */
+function rpeNotes(rpe: LedgerValue<unknown>, group: string | undefined): string {
+    if (rpe.state === 'measured') return sourceTag(rpe, group);
+    const source = group !== undefined && rpe.source !== group ? `${text(rpe.source)}, ` : '';
+    return ` (${source}${text(rpe.state)})`;
+}
+
+/**
+ * sRPE only from responses linked through the structured execution refs (never `occurrenceId`).
+ * A retained value keeps its state; with no value, a linked response's non-measured state wins
+ * over `not recorded`, which is kept for a measured null.
+ */
 function rpePart(ledger: LedgerExport, linked: LedgerValue<unknown>, group: string | undefined): string {
     if (!Array.isArray(linked.value)) return `sRPE: ${absent(linked)}`;
     const ids = linked.value as string[];
-    const rpe = ids.map(id => ledger.facts.sessionResponses.items.find(item => item.id === id)?.fields.sessionRpe)
-        .find(value => value !== undefined && present(value));
-    return rpe ? `sRPE ${text(rpe.value)}${sourceTag(rpe, group)}` : 'sRPE: not recorded';
+    const values = ids.map(id => ledger.facts.sessionResponses.items.find(item => item.id === id)?.fields.sessionRpe)
+        .filter((value): value is LedgerValue<unknown> => value !== undefined);
+    const rpe = values.find(present);
+    if (rpe) return `sRPE ${text(rpe.value)}${rpeNotes(rpe, group)}`;
+    const unread = values.find(value => value.state !== 'measured');
+    return `sRPE: ${unread ? absent(unread) : 'not recorded'}`;
 }
 
 function occurrenceLine(ledger: LedgerExport, row: Occurrence, consumed: Set<string>, group: string | undefined): string[] {

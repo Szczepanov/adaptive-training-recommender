@@ -36,9 +36,9 @@ function recordEntries(row: LedgerRecord): FieldEntry[] {
 
 function recordLines(row: LedgerRecord, group: string | undefined): string[] {
     const entries = recordEntries(row);
-    const collapsed = collapsedLine(row.id, entries);
+    const collapsed = collapsedLine(row.id, entries, group, row.observedOn);
+    if (collapsed) return [collapsed];
     const date = row.observedOn ? ` (${text(row.observedOn)})` : '';
-    if (collapsed) return [`${collapsed}${date}`];
     return [`#### ${text(row.id)}${date}`, ...entryLines(entries, group)];
 }
 
@@ -100,8 +100,8 @@ export function derivedSection(ledger: LedgerExport): string[] {
 
 function singletonLines(name: string, row: ContextRecord): string[] {
     const entries = recordEntries(row);
-    const collapsed = collapsedLine(name, entries);
     const group = dominantSource(Object.entries(row.fields));
+    const collapsed = collapsedLine(name, entries, group);
     return collapsed ? [collapsed] : [`### ${text(name)} (${groupLabel(undefined, group)})`, ...entryLines(entries, group)];
 }
 

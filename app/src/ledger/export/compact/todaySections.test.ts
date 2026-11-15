@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildLedgerExport } from '../buildLedgerExport.ts';
 import { fullInput } from '../ledgerExportFixtures.testSupport.ts';
-import type { LedgerExport, LedgerValue } from '../schema.ts';
+import type { LedgerExport, LedgerFlag, LedgerValue } from '../schema.ts';
 import { renderLedgerExportCompact } from './renderLedgerExportCompact.ts';
 import { renderTodaySections } from './todaySections.ts';
 
@@ -21,6 +21,20 @@ function withBaselines(ledger: LedgerExport): LedgerExport {
 }
 
 const build = (purpose: 'morning' | 'planning' = 'morning') => buildLedgerExport(fullInput({ purpose }));
+
+const todayFlag = (over: Partial<LedgerFlag>): LedgerFlag => ({
+    id: 'injury_constraint_touches_session', observedOn: '2026-11-20', evaluatedAt: null, definitionVersion: null,
+    active: false, state: 'measured', inputs: [], threshold: null, ...over,
+});
+
+function linkedRpe(ledger: LedgerExport, rpe: LedgerValue<unknown>): LedgerExport {
+    const ids = ledger.facts.performedTraining.items[0].fields.linkedResponseIds.value as string[];
+    const response = ledger.facts.sessionResponses.items.find(item => item.id === ids[0])!;
+    response.fields.sessionRpe = rpe;
+    return ledger;
+}
+
+const yesterdayLine = (ledger: LedgerExport) => renderTodaySections(ledger).lines.find(row => row.startsWith('Cycling'))!;
 
 describe('renderTodaySections', () => {
     it('prints check-in value with 28d baseline and delta', () => {
@@ -211,5 +225,33 @@ describe('renderTodaySections', () => {
         const before = JSON.stringify(ledger);
         expect(renderTodaySections(ledger)).toEqual(renderTodaySections(ledger));
         expect(JSON.stringify(ledger)).toBe(before);
+    });
+
+    it("keeps session, version and evaluation identity on Today's flags line", () => {
+        const ledger = build();
+        const version = 'injury_constraint_touches_session-v1';
+        ledger.flags = [
+            todayFlag({ sessionRef: 's-1', definitionVersion: version, evaluatedAt: '2026-11-20T06:00:00Z' }),
+            todayFlag({ sessionRef: 's-2', definitionVersion: version, evaluatedAt: '2026-11-20T07:00:00Z' }),
+            todayFlag({ id: 'illness_anomaly', state: 'stale', definitionVersion: 'illness_anomaly-v2', evaluatedAt: '2026-11-20T06:00:00Z' }),
+        ];
+        expect(renderTodaySections(ledger).lines).toContain('flags: '
+            + 'injury_constraint_touches_session inactive (definition v1; session s-1; evaluated 2026-11-20T06:00:00Z); '
+            + 'injury_constraint_touches_session inactive (definition v1; session s-2; evaluated 2026-11-20T07:00:00Z); '
+            + 'illness_anomaly inactive (stale; definition v2)');
+    });
+
+    it("prints the placements group label before today's placement blocks", () => {
+        const { lines } = renderTodaySections(build());
+        const today = lines.slice(0, lines.indexOf('## Yesterday (2026-11-19)'));
+        const block = today.indexOf('2026-11-20 Openers [support] (planned) plan-1@2:s4');
+        expect(today[block - 1]).toBe('placements (external_plan_placements; adaptive):');
+    });
+
+    it('keeps the linked sRPE state: stale value, unavailable null, measured null', () => {
+        expect(yesterdayLine(linkedRpe(build(), { value: 6, source: 'adaptive', state: 'stale' }))).toContain('· sRPE 6 (stale) ·');
+        expect(yesterdayLine(linkedRpe(build(), { value: 6, source: 'athlete', state: 'stale' }))).toContain('· sRPE 6 (athlete, stale) ·');
+        expect(yesterdayLine(linkedRpe(build(), { value: null, source: 'athlete', state: 'unavailable' }))).toContain('· sRPE: unavailable ·');
+        expect(yesterdayLine(linkedRpe(build(), { value: null, source: 'athlete', state: 'measured' }))).toContain('· sRPE: not recorded ·');
     });
 });

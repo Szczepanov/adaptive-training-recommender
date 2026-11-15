@@ -43,7 +43,7 @@ describe('renderLedgerExportCompact', () => {
         }
         ledger.userContext.guardrails.since = { value: null, source: 'athlete', state: 'not_recorded' };
         ledger.userContext.guardrails.revisions = { value: null, source: 'athlete', state: 'not_recorded' };
-        expect(renderLedgerExportCompact(ledger)).toContain('guardrails: missing 6 fields (not_recorded x6)');
+        expect(renderLedgerExportCompact(ledger)).toContain('guardrails: missing 6 fields — avoid_high_impact, avoid_heavy_lower_body, avoid_overhead_pressing, avoid_heavy_spinal_loading, since, revisions (not_recorded)');
     });
 
     it('summarises inactive flags per id with date ranges', () => {
@@ -140,7 +140,7 @@ describe('renderLedgerExportCompact', () => {
         const ledger = buildLedgerExport(fullInput());
         const rec = ledger.facts.recovery.items[0];
         for (const value of Object.values(rec.fields)) { value.value = null; value.state = 'missing'; }
-        expect(renderLedgerExportCompact(ledger)).toContain(`${rec.id}: missing 11 fields (missing x11) (${rec.observedOn})`);
+        expect(renderLedgerExportCompact(ledger)).toMatch(new RegExp(String.raw`^${rec.id} \(${rec.observedOn}\): missing 11 fields — [\w, ]+ \(missing\)$`, 'm'));
     });
 
     it('prints only non-measured sources', () => {

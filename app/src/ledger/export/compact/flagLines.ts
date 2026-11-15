@@ -35,14 +35,21 @@ interface Run { label: string; key: string; dates: string[]; flag: LedgerFlag; s
 /** `illness_anomaly-v1` on the `illness_anomaly` line reads `v1`; the id is already on the line. */
 const shortVersion = (flag: LedgerFlag) => (flag.definitionVersion ?? '').replace(`${flag.id}-`, '');
 
-function scopeNotes(run: Run): string {
-    const { flag } = run;
-    const notes = [
+/**
+ * `definition <v>`, `session <ref>` and, when several evaluations share the id and date,
+ * `evaluated <instant>`: what tells two evaluations of one flag apart. Shared with Today.
+ */
+export function flagScopeParts(flag: LedgerFlag, sameDayRepeat: boolean): string[] {
+    return [
         flag.definitionVersion ? `definition ${text(shortVersion(flag))}` : '',
         flag.sessionRef ? `session ${text(flag.sessionRef)}` : '',
-        // Same-day re-evaluations stay separate lines, told apart by their persisted instant.
-        run.single ? `evaluated ${flag.evaluatedAt ? text(flag.evaluatedAt) : 'time not persisted'}` : '',
+        // Same-day re-evaluations stay separate, told apart by their persisted instant.
+        sameDayRepeat ? `evaluated ${flag.evaluatedAt ? text(flag.evaluatedAt) : 'time not persisted'}` : '',
     ].filter(Boolean);
+}
+
+function scopeNotes(run: Run): string {
+    const notes = flagScopeParts(run.flag, run.single);
     return notes.length ? ` (${notes.join('; ')})` : '';
 }
 

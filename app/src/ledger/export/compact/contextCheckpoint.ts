@@ -215,7 +215,7 @@ function entriesOf(map: Readonly<Record<string, string>>, name: string): [string
  * The checkpoint to store on confirmation. A complete read replaces its collection, so a key
  * gone out of scope is dropped after being reported once. An incomplete one (failed, truncated
  * or with omitted rows) keeps the prior metadata and the prior entries of absent items, takes the
- * current hash and date of every item present now (it was printed in full), and stores nothing
+ * current hash and date (or lack of one) of every item present now (it was printed in full), and stores nothing
  * for the collection when there is no prior.
  */
 export function mergeCheckpoint(
@@ -233,9 +233,15 @@ export function mergeCheckpoint(
             dates.push(...entriesOf(current.selectionDates, name));
             collections[name] = meta;
         } else if (prior?.collections[name]) {
-            // Later entries win in `Object.fromEntries`: present items overwrite their prior entry.
+            // Later entries win in `Object.fromEntries`: present items overwrite their prior hash.
+            // A present item's date is the current one, including none: a prior date is kept
+            // only for an item absent now, or a reopened item would inherit a stale bound.
+            const present = new Set(Object.keys(current.itemHashes));
             itemHashes.push(...entriesOf(prior.itemHashes, name), ...entriesOf(current.itemHashes, name));
-            dates.push(...entriesOf(prior.selectionDates, name), ...entriesOf(current.selectionDates, name));
+            dates.push(
+                ...entriesOf(prior.selectionDates, name).filter(([key]) => !present.has(key)),
+                ...entriesOf(current.selectionDates, name),
+            );
             collections[name] = prior.collections[name];
         }
     }

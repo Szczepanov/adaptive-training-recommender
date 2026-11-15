@@ -57,4 +57,21 @@ describe('performedSetCounts', () => {
         const second = { entries: [rep('squat')], definition: null };
         expect(performedSetCounts([first, second])).toEqual({ work: 3, warmup: 0 });
     });
+
+    it('counts against the effective definition: a chosen per-side duration alternative pairs its holds', () => {
+        const withChoice = {
+            ...definition,
+            blocks: [{ id: 'core', role: 'main', executionMode: 'sequential',
+                optionSets: [{ id: 'swap', prompt: 'Swap?', options: [
+                    { id: 'hold', label: 'Hold instead', actions: [{ kind: 'select_alternative', targetStepId: 'pallof', alternativeId: 'iso' }] },
+                ] }],
+                steps: [{ id: 'pallof', kind: 'exercise', laterality: 'per_side', dose: { kind: 'repetition', sets: 2, reps: 10 },
+                    alternatives: [{ id: 'iso', title: 'Pallof hold', exerciseRef: { kind: 'catalog', exerciseId: 'pallof-hold' }, dose: { kind: 'duration', seconds: 30, sets: 2 } }] }] }],
+        } as unknown as SessionDefinition;
+        const choice = entry('pallof', { kind: 'choice', choiceId: 'swap', optionId: 'hold' } as unknown as SessionEntry['payload']);
+        const holds = [hold('pallof', 'left'), hold('pallof', 'right'), hold('pallof', 'left'), hold('pallof', 'right')];
+        expect(performedSetCounts([{ entries: [choice, ...holds], definition: withChoice }])).toEqual({ work: 2, warmup: 0 });
+        // Choice-free: the pinned repetition dose counts every logged entry, as before.
+        expect(performedSetCounts([{ entries: holds, definition: withChoice }])).toEqual({ work: 4, warmup: 0 });
+    });
 });

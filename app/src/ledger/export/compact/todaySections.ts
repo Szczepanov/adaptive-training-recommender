@@ -4,6 +4,7 @@ import type { LedgerExport, LedgerFlag, LedgerRecord, LedgerState } from '../sch
 import { PLACEMENT_FORWARD_DAYS } from '../window.ts';
 import { absentRecordLine, baselinedRecordLines, CHECKIN_BASELINES, RECOVERY_BASELINES } from './baselineLines.ts';
 import { dominantSource, groupLabel } from './compactLines.ts';
+import { flagScopeParts } from './flagLines.ts';
 import { placementBlock } from './placementBlocks.ts';
 import { yesterdaySection } from './yesterdaySection.ts';
 
@@ -13,13 +14,16 @@ export interface TodaySections {
     consumedIds: ReadonlySet<string>;
 }
 
+/** `<id> <active|inactive|unknown> (<state>; definition v; session s; evaluated t)`, notes as in Flags. */
 function flagsLine(flags: LedgerFlag[], date: string): string {
     const today = flags.filter(flag => flag.observedOn === date);
     if (!today.length) return `flags: none evaluated for ${text(date)}`;
+    const repeats = (flag: LedgerFlag) => today.filter(other => other.id === flag.id).length > 1;
     const label = (flag: LedgerFlag) => {
-        const note = flag.state === 'measured' ? '' : ` (${text(flag.state)})`;
-        if (flag.active === true) return `active${note}`;
-        return flag.active === false ? `inactive${note}` : `unknown (${text(flag.state)})`;
+        const word = flag.active === true ? 'active' : flag.active === false ? 'inactive' : 'unknown';
+        const state = flag.state === 'measured' && flag.active !== null ? '' : text(flag.state);
+        const notes = [state, ...flagScopeParts(flag, repeats(flag))].filter(Boolean);
+        return `${word}${notes.length ? ` (${notes.join('; ')})` : ''}`;
     };
     return `flags: ${today.map(flag => `${text(flag.id)} ${label(flag)}`).join('; ')}`;
 }
@@ -73,7 +77,7 @@ export function renderTodaySections(ledger: LedgerExport): TodaySections {
         ...todayRecords(ledger, 'check-in', ledger.facts.checkins, 'subjective_baselines', CHECKIN_BASELINES, consumed),
         ...todayRecords(ledger, 'recovery', ledger.facts.recovery, 'biometric_baselines', RECOVERY_BASELINES, consumed),
         flagsLine(ledger.flags, ledger.asOfDate),
-        ...(todays.length ? todays.flatMap(row => placementBlock(row, group.source))
+        ...(todays.length ? [group.label, ...todays.flatMap(row => placementBlock(row, group.source))]
             : [`placements: none dated ${text(ledger.asOfDate)}`]),
         '',
         ...yesterdaySection(ledger, consumed),

@@ -517,9 +517,16 @@ with char and token counts. The canonical surface supports clipboard copy plus d
 In ledger mode (the default) the copied and downloaded Markdown is the compact ledger update
 (`renderLedgerExportCompact`): `Today`, `Yesterday` and, when later sessions are planned,
 `Upcoming` (the next 7 days for the daily preset, 14 for block planning), followed by the
-non-measured sources, flags, facts, derived metrics, user context and coaching history. After a
-successful Markdown copy or download the screen remembers the exported user-context items on this
-device, per purpose; the next Markdown export collapses unchanged items into one
+non-measured sources, flags, facts, derived metrics, user context and coaching history.
+Copying or downloading the Markdown does not advance the unchanged-context checkpoint: it only
+holds the exported snapshot in memory (`useBriefCheckpoint` `recordExport`), bound to the account
+and the chat label it was exported for. The checkpoint is stored on this device only when the
+athlete then selects **Added to this chat** (`BriefConfirmChat`, `useBriefCheckpoint` `confirm` →
+`confirmSnapshot`, merged by `mergeCheckpoint`); switching account or chat label drops the pending
+confirmation, and a brief that is being rebuilt (date, preset, chat label or full-context change)
+cannot be copied or confirmed (`isBriefStale`). The stored checkpoint is scoped by user, chat label
+and purpose (`previousContextStorageKey`), so another chat or preset purpose starts from full
+context. The next Markdown export for the same scope collapses unchanged items into one
 `unchanged since <date>` line. The **Include full context** checkbox beside the preset toggle
 prints them in full again. JSON downloads stay the full envelope and are never abbreviated.
 In engine mode (the default-off rollback) Markdown is the legacy brief, and the JSON envelope

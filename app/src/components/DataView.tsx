@@ -10,6 +10,7 @@ import { BriefPresetToggle } from './BriefPresetToggle';
 import { BriefFullContextToggle } from './BriefFullContextToggle';
 import { BriefChatInput, BriefConfirmChat } from './BriefChatCheckpoint';
 import { useBriefCheckpoint } from './useBriefCheckpoint';
+import { isBriefStale } from './briefStaleness';
 import { buildBriefForPreset, loadStoredBriefPreset, persistBriefPreset } from './briefPreset';
 import { addDaysToLocalDateString, getLocalDateString } from '../utils/localDate';
 import {
@@ -247,8 +248,10 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery', onNav
     persistBriefPreset(preset);
   };
 
-  const briefStale = brief !== null && (builtVariant.fullContext !== briefFullContext
-    || builtVariant.chat !== checkpoint.chat || checkpoint.pending || brief.preset !== briefPreset);
+  const briefStale = isBriefStale({
+    brief, briefDate, briefPreset, builtVariant,
+    fullContext: briefFullContext, chat: checkpoint.chat, checkpointPending: checkpoint.pending,
+  });
 
   const copyBrief = async () => {
     if (!brief || briefStale) return;

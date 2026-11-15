@@ -32,13 +32,13 @@ function historyLine(history: LedgerValue<unknown>): string[] {
 export function placementBlock(row: Placement, group?: string): string[] {
     const { title, summary, stepNotes, fallback, statusHistory, priority } = row.fields;
     if (isMissing(title) && (title.state === 'unavailable' || title.state === 'invalid')) {
-        const history = missingLine([['statusHistory', statusHistory]]);
+        const history = missingLine([['statusHistory', statusHistory]], group);
         return [header(row, group), `content: ${text(title.state)}`, ...historyLine(statusHistory), ...(history ? [history] : [])];
     }
     const notes = Array.isArray(stepNotes.value) ? stepNotes.value : [];
     const leaves: FieldEntry[] = [['title', title], ['priority', priority], ['summary', summary], ['stepNotes', stepNotes], ['fallback', fallback], ['statusHistory', statusHistory]];
     const absent = leaves.filter(([, value]) => isMissing(value));
-    const missing = missingLine(absent);
+    const missing = missingLine(absent, group);
     return [
         header(row, group),
         ...(isMissing(summary) ? [] : [`summary: ${text(summary.value)}${sourceTag(summary, group)}`]),

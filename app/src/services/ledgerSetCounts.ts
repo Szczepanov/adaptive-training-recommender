@@ -1,8 +1,10 @@
 /**
  * Phase 2b validated set counts for one performed occurrence (ledger export service side).
  * Planned sets come from the pinned prescription's resolved definition; work and warm-up sets
- * come from live structured entries. Linked provider work is never counted.
+ * come from live structured entries, counted against the effective (choice-resolved) definition the
+ * runner used. Linked provider work is never counted.
  */
+import { resolveEffectiveSession } from '../sessions/choiceResolution';
 import { targetEntriesForGroupStep } from '../sessions/groupProgression';
 import type { SessionDefinition, SessionEntry, SessionStep } from '../sessions/models';
 import { completedPrescribedSets, countsTowardPrescribedSets, isWarmupEntry } from '../sessions/workSets';
@@ -43,8 +45,10 @@ export interface ExecutionSetInput {
 export function performedSetCounts(executions: readonly ExecutionSetInput[]): { work: number; warmup: number } {
     return executions.reduce((totals, { entries, definition }) => {
         const live = entries.filter(entry => !entry.deletedAt);
+        // Same view as `useSessionRunner`: a selected alternative can change dose and pairing.
+        const effective = definition ? resolveEffectiveSession(definition, live).definition : null;
         return {
-            work: totals.work + workSetCount(live, definition),
+            work: totals.work + workSetCount(live, effective),
             warmup: totals.warmup + live.filter(isWarmupEntry).length,
         };
     }, { work: 0, warmup: 0 });
