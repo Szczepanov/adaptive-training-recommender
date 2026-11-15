@@ -3,6 +3,7 @@ import {
   activeExternalPlanService,
   externalRestContextForDate,
   governedPlacedSessions,
+  governedRestDates,
   governingPlanTitles,
   type ActiveExternalPlan,
   type GovernedPlanDay,
@@ -415,6 +416,7 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
   const weekHasPlan = governedWeek.some(day => day.active !== null);
   const weekPlanTitle = useMemo(() => governingPlanTitles(governedWeek).join(' → '), [governedWeek]);
   const weekPlacedSessions = useMemo(() => governedPlacedSessions(governedWeek), [governedWeek]);
+  const weekRestDates = useMemo(() => governedRestDates(governedWeek), [governedWeek]);
   // Today's plan cannot move a session onto a date another plan or revision governs: the
   // resolver would never show it there.
   const datesOutsideActivePlan = useMemo(() => governedWeek
@@ -686,6 +688,7 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
             weekStartDate={today}
             placed={weekPlacedSessions}
             unavailableDates={datesOutsideActivePlan}
+            restDates={weekRestDates}
             critique={weekCritique}
             today={today}
             fixedActivities={fixedActivities}

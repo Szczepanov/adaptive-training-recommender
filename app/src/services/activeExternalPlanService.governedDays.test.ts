@@ -5,6 +5,7 @@ import {
     ActiveExternalPlanService,
     governedPlacedSessions,
     governedPlanDays,
+    governedRestDates,
     governingPlanTitles,
     type ActiveExternalPlan,
 } from './activeExternalPlanService';
@@ -98,6 +99,28 @@ describe('governed plan days (a newly imported plan that starts later)', () => {
         if (state.status !== 'AVAILABLE') throw new Error('unreachable');
         expect(state.data.every(day => day.active === null)).toBe(true);
         expect(governingPlanTitles(state.data)).toEqual([]);
+    });
+
+    it('marks each authored rest day under the plan that governs that date', async () => {
+        const restful = {
+            ...incoming,
+            restDays: [{ id: 'winter-w1-wed', week: 1, day: 'wednesday' }],
+        } as unknown as ExternalTrainingPlan;
+        // The outgoing plan's own rest day on 08-26 must not count: the incoming plan owns that date.
+        const outgoingWithRest = {
+            ...outgoing,
+            restDays: [{ id: 'autumn-w1-sat', week: 1, day: 'saturday' }, { id: 'autumn-w2-thu', week: 2, day: 'thursday' }],
+        } as unknown as ExternalTrainingPlan;
+        const active = (plan: ExternalTrainingPlan) => ({ plan, placed: [] }) as unknown as ActiveExternalPlan;
+        const days = [
+            { date: '2026-08-22', active: active(outgoingWithRest) },
+            { date: '2026-08-23', active: active(outgoingWithRest) },
+            { date: '2026-08-26', active: active(restful) },
+            { date: '2026-08-27', active: active(restful) },
+            { date: '2026-08-28', active: null },
+        ];
+
+        expect(governedRestDates(days)).toEqual(['2026-08-22', '2026-08-26']);
     });
 
     it('fails closed when any date in the window cannot be resolved', () => {

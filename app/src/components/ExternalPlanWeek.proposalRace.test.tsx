@@ -53,10 +53,10 @@ function deferred() {
 
 describe('ExternalPlanWeek asynchronous proposals', () => {
     const pending = new Map<string, ReturnType<typeof deferred>>();
-    const render = () => {
+    const render = (restDates: readonly string[] = []) => {
         mocks.cursor = 0;
         return walk(ExternalPlanWeek({
-            userId: 'u1', planTitle: 'Plan', weekStartDate: today, today, critique: null,
+            userId: 'u1', planTitle: 'Plan', weekStartDate: today, today, critique: null, restDates,
             placed: [session('session-a'), session('session-b')],
             onProposeReplacement: sessionId => {
                 const request = deferred();
@@ -110,5 +110,22 @@ describe('ExternalPlanWeek asynchronous proposals', () => {
         await Promise.resolve();
 
         expect(proposalText()).toBeUndefined();
+    });
+
+    it('never offers an authored rest day in the manual day picker', async () => {
+        const restDates = ['2026-08-20'];
+        const [first] = rescheduleButtons();
+        (first.props.onClick as () => void)();
+        pending.get('session-a')!.resolve(proposalFor('session-a'));
+        await Promise.resolve();
+        await Promise.resolve();
+
+        const choose = render(restDates).find(item => item.props.className === 'external-week-alt');
+        (choose!.props.onClick as () => void)();
+        const picker = render(restDates).find(item => item.props.className === 'external-week-daypicker');
+        const offered = walk(picker!).filter(item => item.type === 'button').map(item => String(item.key).split('$').pop());
+
+        expect(offered).not.toContain('2026-08-20');
+        expect(offered).toContain('2026-08-21');
     });
 });

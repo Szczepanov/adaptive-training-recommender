@@ -401,6 +401,13 @@ export function governedPlacedSessions(days: readonly GovernedPlanDay[]): Placed
     return days.flatMap(day => day.active?.placed.filter(item => item.date === day.date) ?? []);
 }
 
+/** Authored rest days (ADR-0035) in the window, each read from the plan governing that date. */
+export function governedRestDates(days: readonly GovernedPlanDay[]): string[] {
+    return days
+        .filter(day => day.active !== null && resolveRestDatesByDate(day.active.plan).has(day.date))
+        .map(day => day.date);
+}
+
 /** Titles of the plans governing the window, in date order, one per plan. */
 export function governingPlanTitles(days: readonly GovernedPlanDay[]): string[] {
     const seen = new Set<string>();

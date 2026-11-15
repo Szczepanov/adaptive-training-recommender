@@ -68,6 +68,29 @@ describe('ExternalPlanWeek occupancy and scheduling contracts', () => {
         expect(occupied.has('2026-08-19')).toBe(false); // Free day
     });
 
+    it('shows an authored rest day as rest, not as an empty day', () => {
+        const html = renderToStaticMarkup(
+            React.createElement(ExternalPlanWeek, {
+                userId: 'user-1',
+                planTitle: 'Adaptive Peak Plan',
+                weekStartDate: '2026-08-17',
+                placed,
+                restDates: ['2026-08-19'],
+                critique: null,
+                today: '2026-08-17',
+                onProposeReplacement: () => ({ sessionId: 's1', missedDate: '2026-08-17', outcome: 'unresolved' as const, rationale: '' }),
+                onConfirmReplacement: () => {},
+                onChooseDate: () => {},
+            }),
+        );
+
+        const restDay = html.split('<li').find(item => item.includes('2026-08-19')) ?? '';
+        expect(restDay).toContain('Rest day in your plan');
+        expect(restDay).not.toContain('Nothing placed');
+        // Days without a session or authored rest are still shown as empty.
+        expect(html.split('<li').find(item => item.includes('2026-08-20'))).toContain('Nothing placed');
+    });
+
     it('renders View workout button for scheduled sessions', () => {
         const html = renderToStaticMarkup(
             React.createElement(ExternalPlanWeek, {
