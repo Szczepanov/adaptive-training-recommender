@@ -99,20 +99,33 @@ to #1258.
 
 ### Task 9: Versioned, scope-aware checkpoint (spec 2c alignment)
 
-Shipped. `compact/contextCheckpoint.ts` adds `CHECKPOINT_FORMAT_VERSION` (1), per-collection
-`{ scope, complete }`, `userContextCheckpoint` and `mergeCheckpoint`; the item hash now includes the
-record's `observedOn`. `removed:` needs a complete read in the checkpoint's own scope; otherwise the
-renderer prints `not readable now:` or `out of scope now:`. A failed or truncated read keeps the prior
-hashes on confirmation. `ContextBriefService` returns `contextCheckpoint` and `exportedAt` (replacing
-`contextItemHashes`). The pending confirmation is bound to the captured user, chat and purpose, and
-`confirmSnapshot` re-reads storage and refuses an older export. Legacy stored values (no
-`formatVersion`) give full context. Ruling: a complete read in a moved window advances the stored
-scope rather than carrying out-of-scope hashes, which would grow daily. Fixture morning size with a
-matching checkpoint: 8,145 characters (at the target); without: 11,407.
+Shipped, then revised by the final-review fix wave (below). `compact/contextCheckpoint.ts` holds
+`CHECKPOINT_FORMAT_VERSION`, per-collection `{ scope, complete }` plus each windowed item's selection
+date, `userContextCheckpoint` and `mergeCheckpoint`; the item hash includes the record's `observedOn`.
+`ContextBriefService` returns `contextCheckpoint` and `exportedAt` (replacing `contextItemHashes`).
+The pending confirmation is bound to the captured user, chat and purpose, and `confirmSnapshot`
+re-reads storage and refuses an older export. Stored values with another or no `formatVersion` give
+full context.
+
+### Final-review fix wave (checkpoint v2)
+
+`CHECKPOINT_FORMAT_VERSION` is 2. Under a complete read, an absent item is `removed:` when its
+stored selection date is still within the current bound (or it has none), and `out of scope now:`
+once, then dropped, when its date fell before the new window start; this lets daily morning exports
+report real deletions. An incomplete read prints `not readable now:`, keeps prior hashes only for
+absent items and takes current hashes for present ones. Fully unchanged user-context collections
+print `N unchanged (listed above)`. Compact `missing:` lines group field names by state
+(`a, b (not_recorded); c (missing)`). Fixture morning size with a matching checkpoint: 7,671
+characters (target ≤ 8,145); without: 10,371 (target ≤ 13,032).
 
 ## Remaining / follow-ups
 
-- Merge of PR #1257 (spec) and #1258 (README row) is outside this branch.
+- The spec's Phase 2c checkpoint sentence carries an agent ruling for the owner to confirm in PR
+  review.
+- Injury context ids are positional (`injury-NNN`, pre-existing), so a deleted injury can renumber
+  the rest and `removed:` may name the wrong injury; follow-up.
+- An older revision placed only through the legacy overlay without an activation hash marks the
+  whole `external_plan_revisions` source `invalid`; follow-up.
 - Deferred review minors: `contextDelta` does not guard a malformed `previous.itemHashes` by itself
   (the stored value is validated on read); `plannedToPerformed` ids are not consumed on the Yesterday
   line; derived metrics are not collapsed and `activeFlagLines` omits `evaluatedAt`/`definitionVersion`

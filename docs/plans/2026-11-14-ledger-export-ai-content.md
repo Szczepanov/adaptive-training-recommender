@@ -278,11 +278,12 @@ It is not exposed in the UI by default.
 - Items whose hash matches print as one line: `userContext: <n> items unchanged since
   <exportedOn>`, followed by their ids.
 - New and changed items print in full. A failed or truncated read means unknown, not
-  deletion: it keeps the prior hashes for that collection and renders its missingness. An item
-  absent under a complete read is `removed` when its selection date is still within the
-  current selection bound. It is `out of scope now`, reported once and then dropped from the
-  checkpoint, when its date fell before the new window start. Do not abbreviate unreadable
-  items as unchanged.
+  deletion: it keeps the prior hashes of that collection's absent items (items present now
+  take their current hash) and renders its missingness. An item absent under a complete read
+  is `removed` when its selection date is still within the current selection bound, or when
+  it has no selection date (for example an active injury). It is `out of scope now`, reported
+  once and then dropped from the checkpoint, when its date fell before the new window start.
+  Do not abbreviate unreadable items as unchanged.
   _Agent ruling during Phase 2 implementation (2026-11-14); owner to confirm in PR review._
 - Without `previousContext`, everything prints in full.
 - The JSON always carries the full user context. Only the Markdown is abbreviated.
