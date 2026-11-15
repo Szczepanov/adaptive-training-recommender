@@ -102,7 +102,9 @@ function singletonLines(name: string, row: ContextRecord): string[] {
     const entries = recordEntries(row);
     const group = dominantSource(Object.entries(row.fields));
     const collapsed = collapsedLine(name, entries, group);
-    return collapsed ? [collapsed] : [`### ${text(name)} (${groupLabel(undefined, group)})`, ...entryLines(entries, group)];
+    // The heading names the group source even when the record collapses (source per group).
+    const heading = `### ${text(name)} (${groupLabel(undefined, group)})`;
+    return collapsed ? [heading, collapsed] : [heading, ...entryLines(entries, group)];
 }
 
 /** A checkpoint of another (or no) format version means full context. */

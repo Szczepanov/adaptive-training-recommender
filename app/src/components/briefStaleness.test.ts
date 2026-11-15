@@ -9,6 +9,8 @@ const current: BriefStalenessInput = {
   fullContext: false,
   chat: 'coach',
   checkpointPending: false,
+  builtCapabilityKey: 'null',
+  capabilityKey: 'null',
 };
 
 describe('isBriefStale', () => {
@@ -22,6 +24,10 @@ describe('isBriefStale', () => {
 
   it('is stale when the brief date moved forward with everything else unchanged', () => {
     expect(isBriefStale({ ...current, briefDate: '2026-11-16' })).toBe(true);
+  });
+
+  it('is stale while a capability-maintenance change rebuilds the brief (#1260 review)', () => {
+    expect(isBriefStale({ ...current, capabilityKey: '{"due":1}' })).toBe(true);
   });
 
   it('is stale when the date is not known yet', () => {

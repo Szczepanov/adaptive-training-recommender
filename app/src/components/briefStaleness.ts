@@ -8,11 +8,14 @@ export interface BriefStalenessInput {
   readonly fullContext: boolean;
   readonly chat: string;
   readonly checkpointPending: boolean;
+  /** Capability-maintenance context the on-screen brief was built with, and the current one. */
+  readonly builtCapabilityKey: string | null;
+  readonly capabilityKey: string;
 }
 
 /** True while the on-screen brief no longer matches what the controls ask for: a different
- * date, preset, chat label or full-context toggle, or a checkpoint still loading. A stale brief
- * must not be copied or confirmed -- the rebuild replaces it. */
+ * date, preset, chat label, full-context toggle or capability context, or a checkpoint still
+ * loading. A stale brief must not be copied or confirmed -- the rebuild replaces it. */
 export function isBriefStale(input: BriefStalenessInput): boolean {
   const { brief } = input;
   if (brief === null) return false;
@@ -20,5 +23,6 @@ export function isBriefStale(input: BriefStalenessInput): boolean {
     || brief.preset !== input.briefPreset
     || input.builtVariant.fullContext !== input.fullContext
     || input.builtVariant.chat !== input.chat
+    || input.builtCapabilityKey !== input.capabilityKey
     || input.checkpointPending;
 }

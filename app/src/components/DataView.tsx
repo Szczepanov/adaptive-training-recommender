@@ -251,6 +251,7 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery', onNav
   const briefStale = isBriefStale({
     brief, briefDate, briefPreset, builtVariant,
     fullContext: briefFullContext, chat: checkpoint.chat, checkpointPending: checkpoint.pending,
+    builtCapabilityKey: briefCapabilityMaintenanceKey, capabilityKey: capabilityMaintenanceKey,
   });
 
   const copyBrief = async () => {

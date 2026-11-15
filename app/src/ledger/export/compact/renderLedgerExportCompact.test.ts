@@ -44,6 +44,8 @@ describe('renderLedgerExportCompact', () => {
         ledger.userContext.guardrails.since = { value: null, source: 'athlete', state: 'not_recorded' };
         ledger.userContext.guardrails.revisions = { value: null, source: 'athlete', state: 'not_recorded' };
         expect(renderLedgerExportCompact(ledger)).toContain('guardrails: missing 6 fields — avoid_high_impact, avoid_heavy_lower_body, avoid_overhead_pressing, avoid_heavy_spinal_loading, since, revisions (not_recorded)');
+        // The group heading keeps the record's source visible (#1260 review).
+        expect(renderLedgerExportCompact(ledger)).toContain('### guardrails (athlete)\nguardrails: missing 6 fields');
     });
 
     it('summarises inactive flags per id with date ranges', () => {
