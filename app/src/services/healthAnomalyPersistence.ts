@@ -167,6 +167,12 @@ function isSourceIdentity(value: unknown): value is HealthAnomalySourceIdentity 
     ) {
         return false;
     }
+    if (
+        value.supersedesRevisionId !== undefined
+        && (typeof value.supersedesRevisionId !== 'string' || !/^ha-[0-9a-f]{16}$/.test(value.supersedesRevisionId))
+    ) {
+        return false;
+    }
     if (!Array.isArray(value.historySnapshotRevisions)) return false;
     return value.historySnapshotRevisions.every(item => isPlainObject(item)
         && typeof item.date === 'string'

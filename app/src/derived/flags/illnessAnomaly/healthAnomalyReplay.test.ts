@@ -270,6 +270,31 @@ describe('health anomaly replay', () => {
         expect(markdown).toContain(VISIBLE_V1_HEALTH_ANOMALY_THRESHOLDS.policyVersion);
     });
 
+    it('does not count a symptomatic day as an onset when its previous-day row is absent', () => {
+        const baselineDays = Array.from({ length: 20 }, (_, index) => ({
+            date: dateAt(index),
+            recoverySnapshot: snapshot(dateAt(index), 49 + (index % 3), 58 + (index % 5), 13.8 + (index % 4) * 0.1),
+            subjectiveCheckin: checkin(dateAt(index)),
+        }));
+        const preDay1 = dateAt(20);
+        const symptomDay = dateAt(21);
+        const midIllnessAfterGap = dateAt(24); // dateAt(23) is absent from the replay
+        const days = [
+            // Replay starts mid-illness: no previous-day row exists for the first day.
+            { ...baselineDays[0]!, subjectiveCheckin: checkin(dateAt(0), true) },
+            ...baselineDays.slice(1),
+            { date: preDay1, recoverySnapshot: snapshot(preDay1, 56, 36, 15.8), subjectiveCheckin: checkin(preDay1) },
+            { date: symptomDay, recoverySnapshot: snapshot(symptomDay, 58, 34, 16.0), subjectiveCheckin: checkin(symptomDay, true) },
+            { date: dateAt(22), recoverySnapshot: snapshot(dateAt(22), 50, 60, 14.0), subjectiveCheckin: checkin(dateAt(22), true) },
+            { date: midIllnessAfterGap, recoverySnapshot: snapshot(midIllnessAfterGap, 50, 60, 14.0), subjectiveCheckin: checkin(midIllnessAfterGap, true) },
+        ];
+
+        const report = runHealthAnomalyReplay({ userId: 'u1', days }, CANDIDATE_HEALTH_ANOMALY_REPLAY_POLICIES);
+        const visibleSummary = report.policySummaries[VISIBLE_V1_HEALTH_ANOMALY_THRESHOLDS.policyVersion]!;
+        // Only dateAt(21) is a known onset (dateAt(20) known and symptom-free), and it was detected.
+        expect(visibleSummary.detectionRateBeforeSymptoms72h).toBe(1);
+    });
+
     it('resets unexplainedPersistenceDays after explained_recovery_strain in replay sequence', () => {
         const baselineDays = Array.from({ length: 20 }, (_, index) => ({
             date: dateAt(index),

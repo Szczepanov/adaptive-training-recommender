@@ -92,6 +92,8 @@ export function resolveHealthAnomalyCardState(params: {
 }): {
   revision: HealthAnomalyAssessmentRevision | null;
   unreadableCount: number;
+  /** The persisted read rejected and nothing else is shown: the warning state is unknown, not empty. */
+  loadFailed: boolean;
   followupAllowed: boolean;
   followupCandidate: HealthAnomalyFollowupCandidate | null;
 } {
@@ -102,6 +104,7 @@ export function resolveHealthAnomalyCardState(params: {
   const persistedRevision = targetMatches ? (persistedState?.revision ?? null) : null;
   const revision = selectHealthAnomalyShadowRevision(userId, currentDate, liveRevision, persistedRevision);
   const unreadableCount = targetMatches ? (loadResult.unreadableCount ?? 0) : 0;
+  const loadFailed = targetMatches && loadResult.status === 'error' && revision === null && unreadableCount === 0;
   const followupAllowed = loadState !== 'loading' && loadState !== 'error' && unreadableCount === 0;
   const currentRevisionId = revision?.revisionId ?? null;
   const matchingCandidate = followupState
@@ -113,6 +116,7 @@ export function resolveHealthAnomalyCardState(params: {
   return {
     revision,
     unreadableCount,
+    loadFailed,
     followupAllowed,
     followupCandidate: followupAllowed ? matchingCandidate : null,
   };

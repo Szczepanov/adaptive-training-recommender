@@ -348,6 +348,11 @@ export interface HealthAnomalySourceIdentity {
     previousAssessmentRevisionId?: string | null;
     contaminatedDates?: string[];
     personalCalibrationRevision?: string | null;
+    /**
+     * Set only when this identity repeats an older same-date revision that is no longer the
+     * latest: links to the revision it supersedes so a fresh immutable document is minted.
+     */
+    supersedesRevisionId?: string;
 }
 
 export interface HealthAnomalyAssessmentRevision {

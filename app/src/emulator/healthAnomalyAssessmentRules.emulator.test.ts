@@ -248,7 +248,7 @@ emulatorDescribe('Health anomaly assessment revision rules (HA4)', () => {
         await assertSucceeds(setDoc(doc(db, revisionPath), mutate(revision())));
     });
 
-    it('accepts optional source lineage fields and rejects oversized contaminatedDates', async () => {
+    it('accepts optional source lineage fields and rejects oversized contaminatedDates or a malformed supersedes link', async () => {
         const db = testEnvironment.authenticatedContext(ownerId).firestore();
         const base = revision();
         await assertSucceeds(setDoc(doc(db, revisionPath), {
@@ -258,14 +258,29 @@ emulatorDescribe('Health anomaly assessment revision rules (HA4)', () => {
                 previousAssessmentRevisionId: 'ha-aaaaaaaaaaaaaaaa',
                 contaminatedDates: ['2026-08-18'],
                 personalCalibrationRevision: '1234567890abcdef',
+                supersedesRevisionId: 'ha-bbbbbbbbbbbbbbbb',
             },
         }));
-        await assertFails(setDoc(doc(db, revisionPath), {
+        // Fresh revision paths: revisions are create-only, so reusing revisionPath would be denied as
+        // an update and would not exercise the 28-entry cap.
+        const withContaminatedDates = (id: string, length: number) => ({
             ...base,
+            revisionId: id,
             source: {
                 ...base.source,
-                contaminatedDates: Array.from({ length: 29 }, (_, idx) => `2026-07-${String(idx + 1).padStart(2, '0')}`),
+                contaminatedDates: Array.from({ length }, (_, idx) => `2026-07-${String(idx + 1).padStart(2, '0')}`),
             },
+        });
+        const pathFor = (id: string) => `users/${ownerId}/health_anomaly_assessments/${date}/revisions/${id}`;
+        const atCapId = 'ha-28282828282828aa';
+        const overCapId = 'ha-29292929292929bb';
+        const badLinkId = 'ha-cccccccccccccccc';
+        await assertFails(setDoc(doc(db, pathFor(badLinkId)), {
+            ...base,
+            revisionId: badLinkId,
+            source: { ...base.source, supersedesRevisionId: 'not-a-revision' },
         }));
+        await assertSucceeds(setDoc(doc(db, pathFor(atCapId)), withContaminatedDates(atCapId, 28)));
+        await assertFails(setDoc(doc(db, pathFor(overCapId)), withContaminatedDates(overCapId, 29)));
     });
 });

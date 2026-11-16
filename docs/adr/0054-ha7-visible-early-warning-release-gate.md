@@ -3,7 +3,13 @@
 * **Status:** Accepted
 * **Date:** 2026-11-15
 * **Deciders:** Core Engineering Team
-* **Supersedes (in part):** [ADR-0025](./0025-physiological-anomaly-and-possible-illness-signals.md) (`shadow-v1 -> visible-v1` episode-count gate, rollout default `'off'`, and single-stage state contract)
+* **Supersedes (in part):** [ADR-0025](./0025-physiological-anomaly-and-possible-illness-signals.md) — only its `shadow-v1 -> visible-v1` cutover gate, rollout default `'off'`, and single-stage state contract. Disposition of each ADR-0025 `shadow-v1 -> visible-v1` prerequisite:
+  * *Minimum 5-episode count* — **superseded** by per-athlete Stage A/B baseline readiness (§1, §3).
+  * *60-observed-day window with ≥ 80% three-channel coverage* — **superseded** as a cohort cutover prerequisite; per-athlete readiness and explicit missingness (`insufficient_evidence`) replace it.
+  * *Healthy-day unexplained-alert noise bound* — **superseded** as a pre-cutover prerequisite; healthy-day burden is measured prospectively from HA6 follow-up outcomes and gates `tighten-v1` (HA9 flip-burden ceiling), not `visible-v1`.
+  * *Stability across two non-overlapping observation windows* — **superseded** as a pre-cutover prerequisite for `visible-v1`; not carried into HA9.
+  * *Rollback condition* — **retained in part**: the policy selector still reverts to `shadow-v1` (or `'off'`) through `resolveConfiguredHealthAnomalyRuntimePolicy`, but the automatic 14-day trigger against HA7-report bounds is superseded, because no cohort HA7 report with such bounds exists; reverting is an owner decision.
+  * ADR-0025's `visible-v1 -> tighten-v1` gate is **retained** unchanged (Tier 2 / HA9).
 * **Related decisions:** [ADR-0024](./0024-biometric-baseline-estimator-policy.md), [ADR-0052](./0052-user-ledger-and-external-ai-planning-authority.md), [ADR-0053](./0053-firestore-rules-scope.md)
 * **Supporting analyses:** [2026-11-15 HA7 visible early-warning release decision](../analysis/2026-11-15-ha7-visible-early-warning-release-decision.md), [2026-11-15 physiological anomaly literature & calibration evidence](../analysis/2026-11-15-physiological-anomaly-literature-and-calibration-evidence.md)
 
@@ -83,7 +89,7 @@ Every visible assessment carries `anomalySeverity`, `evidenceQuality`, `calibrat
 3. **Stage C — Causal personal outcome calibration:**
    * `HealthAnomalyService.assessAndPersist` loads prior user outcomes via `healthAnomalyOutcomeRepository.listForUser` and computes `summarizePersonalOutcomeCalibration(outcomes, date)` using strict `Europe/Warsaw` calendar-date causal boundaries (`< asOfDate` across `sourceAssessment.date`, `updatedAt`, `symptomOnset.date`, and `respiratoryTest.testedOn`).
    * Unlocks `calibrationEligible: true` (`calibrationStage: 'outcome_calibrated'`) once `priorEpisodesCount >= 3` and resolved outcomes `>= 3`.
-   * Immutable revision identity (`HealthAnomalySourceIdentity`) includes optional `previousAssessmentRevisionId`, `contaminatedDates`, and `personalCalibrationRevision` (validated by `isSourceIdentity` and `app/rules/07-health-anomalies.rules`) so upstream history or outcome edits generate fresh immutable revisions without `revisionId` collisions.
+   * Immutable revision identity (`HealthAnomalySourceIdentity`) includes optional `previousAssessmentRevisionId`, `contaminatedDates`, `personalCalibrationRevision`, and `supersedesRevisionId` (validated by `isSourceIdentity` and `app/rules/07-health-anomalies.rules`) so upstream history or outcome edits generate fresh immutable revisions without `revisionId` collisions. When an identity repeats an older same-date revision that is no longer latest, `HealthAnomalyService` sets `supersedesRevisionId` to the latest revision so a fresh immutable revision becomes latest; a repeat of the latest stays idempotent.
 
 ### 4. Multi-Domain Corroboration, RSA Guard, Persistence, and Confounders
 

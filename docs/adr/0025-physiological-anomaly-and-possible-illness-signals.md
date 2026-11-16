@@ -1,6 +1,6 @@
 # ADR-0025: Physiological anomaly and possible-illness signals
 
-* **Status:** Accepted (partially superseded by [ADR-0054](./0054-ha7-visible-early-warning-release-gate.md) for the HA7 two-tier release gate, Stage A–C calibration model, and `visible-v1` rollout defaults)
+* **Status:** Accepted (partially superseded by [ADR-0054](./0054-ha7-visible-early-warning-release-gate.md): the `shadow-v1 -> visible-v1` cutover gate — episode count, 60-day window, healthy-day noise bound and two-window stability as pre-cutover prerequisites, and the automatic rollback trigger — the rollout default, and the single-stage state contract. The `visible-v1 -> tighten-v1` gate is retained. ADR-0054's header lists each disposition.)
 * **Date:** 2026-08-21
 * **Deciders:** Core Engineering Team
 

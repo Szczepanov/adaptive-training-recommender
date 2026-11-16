@@ -331,6 +331,27 @@ describe('dated flag capture', () => {
         expect(store.size).toBe(count);
         for (const flag of store.values()) expect(flag.inputs.length).toBeLessThanOrEqual(16);
     });
+    it('defers revision selection when the prior history read fails, so a repeated older result still becomes latest', async () => {
+        const store = new Map<string, PersistedFlagEvaluation>();
+        reads.persist.mockImplementation(async (v: PersistedFlagEvaluation) => {
+            const existing = store.get(v.revisionId);
+            if (existing) return existing;
+            store.set(v.revisionId, v); saved.push(v); return v;
+        });
+        reads.priorFlags.mockImplementation(async () => ok([...store.values()]));
+        const anomaly = (at: string) => service.captureForDate('alice', date, date, at)
+            .then(() => [...store.values()].filter(f => f.id === 'illness_anomaly')
+                .sort((a, b) => a.evaluatedAt.localeCompare(b.evaluatedAt)).at(-1)!);
+        const first = await anomaly('2026-10-28T08:00:00.000Z');
+        reads.healthAnomaly.mockRejectedValueOnce(new Error('offline'));
+        expect((await anomaly('2026-10-28T09:00:00.000Z')).state).toBe('unavailable');
+        // A again, but the initial history read is unavailable; the deferred re-read succeeds.
+        reads.priorFlags.mockResolvedValueOnce({ status: 'UNAVAILABLE', operation: 'read', retryable: true });
+        const again = await anomaly('2026-10-28T10:00:00.000Z');
+        expect(again).toMatchObject({ state: 'missing', evaluatedAt: '2026-10-28T10:00:00.000Z' });
+        expect(again.revisionId).not.toBe(first.revisionId);
+        expect(again.inputs.find(i => i.name === 'supersedes_revision')).toBeDefined();
+    });
     it('keeps first-capture revision ids unchanged when no prior flags exist or the prior read fails', async () => {
         await capture();
         const ids = saved.map(f => f.revisionId);

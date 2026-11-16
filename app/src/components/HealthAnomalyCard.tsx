@@ -44,6 +44,8 @@ export interface HealthAnomalyCardViewProps {
   revision: HealthAnomalyAssessmentRevision | null;
   followupCandidate?: HealthAnomalyFollowupCandidate | null;
   unreadableCount?: number;
+  /** The persisted assessment read failed; render a read-failure notice instead of nothing. */
+  loadFailed?: boolean;
   onNavigate?: (screen: Screen) => void;
 }
 
@@ -233,6 +235,7 @@ export function HealthAnomalyCardView({
   revision,
   followupCandidate = null,
   unreadableCount = 0,
+  loadFailed = false,
   onNavigate,
 }: HealthAnomalyCardViewProps) {
   const latestUncertain = unreadableCount > 0;
@@ -240,6 +243,10 @@ export function HealthAnomalyCardView({
   const uncertaintyNotice = latestUncertain ? (
     <p className="ha-card-notice" role="status">
       {unreadableCount} stored assessment revision(s) for {currentDate} could not be read. This may not be the latest one, so follow-up is unavailable.
+    </p>
+  ) : loadFailed ? (
+    <p className="ha-card-notice" role="status">
+      Today's early-warning assessment could not be loaded, so the current signal state is unknown. Reload the app to try again.
     </p>
   ) : null;
 
@@ -613,6 +620,7 @@ export function HealthAnomalyCard({
       revision={cardState.revision}
       followupCandidate={cardState.followupCandidate}
       unreadableCount={cardState.unreadableCount}
+      loadFailed={cardState.loadFailed}
       onNavigate={onNavigate}
     />
   );

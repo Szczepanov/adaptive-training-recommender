@@ -141,6 +141,10 @@ export class FlagCaptureService {
             readState(() => this.reads.priorFlags(userId, date)),
         ]);
         const prior = latestPriorFlags(priorRead);
+        // An unavailable history is not an empty one: selection is deferred until it can be read.
+        let retriedPrior: Promise<ReturnType<typeof latestPriorFlags> | null> | null = null;
+        const deferredPrior = () => retriedPrior ??= readState(() => this.reads.priorFlags(userId, date))
+            .then(state => state.status === 'AVAILABLE' ? latestPriorFlags(state) : null);
         const save = async (evaluation: FlagEvaluation, source: unknown, sessionRef?: string, baselineWindow?: string) => {
             // A digest binds mutable inputs without copying private notes or account identifiers.
             const fingerprint = await flagEvidenceDigest(source);
@@ -151,7 +155,15 @@ export class FlagCaptureService {
                         value: { value: supersedes, source: 'flag_capture', state: 'measured' as const } }] : []),
                 ] },
                 ...(sessionRef ? { sessionRef } : {}), ...(baselineWindow ? { baselineWindow } : {}) });
-            await this.reads.persist(await chooseRevision(build, prior, flagKey(evaluation.id, sessionRef)));
+            const key = flagKey(evaluation.id, sessionRef);
+            const persisted = await this.reads.persist(await chooseRevision(build, prior, key));
+            // Without history, a repeated older result returns that older document (its earlier
+            // `evaluatedAt`) and cannot become latest. Re-read the history and chain it now.
+            if (priorRead.status === 'AVAILABLE' || persisted.evaluatedAt === evaluatedAt) return;
+            const history = await deferredPrior();
+            if (!history) return;
+            const chosen = await chooseRevision(build, history, key);
+            if (chosen.revisionId !== persisted.revisionId) await this.reads.persist(chosen);
         };
         const recoveryResult = evaluateRecoveryBeyondBaseline(data(recovery), date);
         const recoveryFlag = { ...recoveryResult.flag, inputs: [

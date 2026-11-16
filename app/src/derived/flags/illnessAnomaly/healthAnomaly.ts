@@ -760,10 +760,16 @@ export function evaluatePhysiologicalAnomaly(
             && input.recoverySnapshot?.source.timezone === 'Europe/Warsaw',
     });
 
+    // `resolving` is judged on the snapshot's unfiltered 7d/28d baselines. When symptomatic days
+    // were excluded from the respiration feature's clean baseline, the two populations differ:
+    // a reading can be adverse against the clean baseline yet "resolving" against the
+    // contaminated one, so the adverse evidence is kept rather than downgraded.
+    const respirationBaselinesAligned = (respirationQuality?.contaminatedDaysExcluded ?? 0) === 0;
     const coreSignals = rawCoreSignals.map((evidence) => {
         if (
             evidence.signal === 'respiration'
             && thresholds.downgradeResolvingRespiration === true
+            && respirationBaselinesAligned
             && respirationElevation.status === 'resolving'
             && isAdverseCoreSignalEvidence(evidence)
         ) {

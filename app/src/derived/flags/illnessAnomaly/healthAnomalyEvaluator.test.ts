@@ -610,6 +610,23 @@ describe('evaluatePhysiologicalAnomaly visible-v1 early warning calibration', ()
         expect(result.state).toBe('normal');
     });
 
+    it('keeps adverse respiration when the clean baseline excluded symptomatic days (populations differ)', () => {
+        const snap = snapshot({ respirationAvg: 15.0 });
+        snap.source.metricDates = { sleep: '2026-08-21' };
+        snap.derived.respiration7dAvg = 15.2;
+        snap.derived.respiration28dAvg = 14.0;
+        const features = featureSet(0, 2.0, 0);
+        const contaminated: HealthAnomalyFeatureSet = {
+            ...features,
+            coreSignals: features.coreSignals.map(item => item.signal === 'respiration'
+                ? { ...item, dataQuality: { ...item.dataQuality, contaminatedDaysExcluded: 3 } }
+                : item),
+        };
+        const result = evaluateVisible(contaminated, { recoverySnapshot: snap });
+        expect(result.respirationElevation?.status).toBe('resolving');
+        expect(result.coreSignals.find(s => s.signal === 'respiration')?.status).not.toBe('normal');
+    });
+
     it('issues Level 3 symptoms protocol with IOC red flags and 3-stage RTS guidance even with normal wearables', () => {
         const result = evaluateVisible(featureSet(), {
             subjectiveCheckin: checkin({

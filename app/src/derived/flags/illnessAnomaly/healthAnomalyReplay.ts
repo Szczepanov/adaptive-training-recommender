@@ -316,8 +316,10 @@ function summarizePolicy(
 
     for (const row of rows) {
         if (!row.symptomsReported) continue;
+        // An unknown previous day (replay starts mid-illness, or a gap inside one) cannot
+        // establish an onset; counting it would add an undetectable onset and bias detection low.
         const previousDay = rowByDate.get(addDaysToLocalDateString(row.date, -1));
-        if (previousDay?.symptomsReported) continue;
+        if (!previousDay || previousDay.symptomsReported) continue;
         symptomOnsetCount += 1;
 
         let earliestLeadDays: number | null = null;

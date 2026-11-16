@@ -123,6 +123,48 @@ describe('HealthAnomalyService composition', () => {
         expect(persisted[0].revisionId).not.toBe(persisted[1].revisionId);
     });
 
+    it('appends a fresh revision when corrected inputs return to an older result, and stays idempotent after', async () => {
+        const date = '2026-08-21';
+        const recovery = {
+            getRecoverySnapshotState: vi.fn().mockResolvedValue(available(day(date), 'snap-rev')),
+            getRecoverySnapshotsInRangeState: vi.fn().mockResolvedValue({ status: 'MISSING' }),
+        };
+        const checkins = { getCheckinState: vi.fn() };
+        const blocks = { getBlocksInRangeState: vi.fn().mockResolvedValue({ status: 'MISSING' }) };
+        const docs = new Map<string, HealthAnomalyAssessmentRevision>();
+        const latestFor = (target: string) => [...docs.values()].filter(item => item.date === target)
+            .sort((a, b) => b.computedAt.localeCompare(a.computedAt) || b.revisionId.localeCompare(a.revisionId))[0] ?? null;
+        const store = {
+            getLatestForDate: vi.fn().mockImplementation(async (_userId: string, target: string) => latestFor(target)),
+            persistImmutable: vi.fn().mockImplementation(async (value: HealthAnomalyAssessmentRevision) => {
+                const existing = docs.get(value.revisionId);
+                if (existing) return existing; // create-only: keeps the first document's computedAt
+                docs.set(value.revisionId, value);
+                return value;
+            }),
+        };
+        const service = new HealthAnomalyService(recovery as never, checkins as never, blocks as never, store as never);
+        const run = (checkinRev: string, at: string) => {
+            checkins.getCheckinState.mockResolvedValue(available(checkin(), checkinRev));
+            return service.assessAndPersist('u1', date, 'shadow-v1', undefined, at);
+        };
+
+        const a = await run('rev-a', '2026-08-21T06:00:00Z');
+        const b = await run('rev-b', '2026-08-21T07:00:00Z');
+        expect(latestFor(date)?.revisionId).toBe(b?.revision.revisionId);
+
+        const again = await run('rev-a', '2026-08-21T08:00:00Z');
+        expect(again?.revision.revisionId).not.toBe(a?.revision.revisionId);
+        expect(again?.revision.source.supersedesRevisionId).toBe(b?.revision.revisionId);
+        expect(again?.revision.source.checkinRevision).toBe(a?.revision.source.checkinRevision);
+        expect(latestFor(date)?.revisionId).toBe(again?.revision.revisionId);
+
+        const count = docs.size;
+        const repeat = await run('rev-a', '2026-08-21T09:00:00Z');
+        expect(repeat?.revision.revisionId).toBe(again?.revision.revisionId);
+        expect(docs.size).toBe(count);
+    });
+
     it('degrades missing optional history to a one-day assessment rather than failing composition', async () => {
         const recovery = {
             getRecoverySnapshotState: vi.fn().mockResolvedValue(available(day('2026-08-21'))),

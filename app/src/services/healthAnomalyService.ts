@@ -208,17 +208,39 @@ export class HealthAnomalyService {
                 ? { personalCalibrationRevision: stableHealthAnomalyHash(personalCalibration) }
                 : {}),
         };
-        const revision = buildHealthAnomalyAssessmentRevision({
+        const build = (supersedesRevisionId?: string) => buildHealthAnomalyAssessmentRevision({
             userId,
             date,
             computedAt,
             mode: policy,
             thresholdPolicy: thresholds,
-            source,
+            source: supersedesRevisionId ? { ...source, supersedesRevisionId } : source,
             assessment,
         });
-        const persisted = await this.assessments.persistImmutable(revision);
+        const persisted = await this.persistAsLatest(userId, date, computedAt, build);
         return { assessment: persisted.assessment, revision: persisted };
+    }
+
+    /**
+     * Revisions are content-addressed, so an identity that repeats an older same-date revision
+     * (A, corrected to B, then back to A) returns A's document with its old `computedAt`, and
+     * B would stay latest. A repeat of the latest revision stays idempotent; a repeat of a
+     * superseded one is chained to the latest so a fresh immutable revision is appended.
+     */
+    private async persistAsLatest(
+        userId: string,
+        date: string,
+        computedAt: string,
+        build: (supersedesRevisionId?: string) => HealthAnomalyAssessmentRevision,
+    ): Promise<HealthAnomalyAssessmentRevision> {
+        const persisted = await this.assessments.persistImmutable(build());
+        if (persisted.computedAt === computedAt) return persisted;
+        // The write succeeded; an unreadable same-date history leaves the repeat as-is (pre-chain behaviour).
+        const latest = await this.assessments.getLatestForDate(userId, date).catch(() => null);
+        if (!latest || latest.revisionId === persisted.revisionId) return persisted;
+        const latestLink = latest.source.supersedesRevisionId;
+        if (latestLink && build(latestLink).revisionId === latest.revisionId) return latest;
+        return this.assessments.persistImmutable(build(latest.revisionId));
     }
 }
 

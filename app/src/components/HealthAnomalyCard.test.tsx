@@ -499,4 +499,46 @@ describe('HealthAnomalyCard', () => {
     expect(readyCard.followupAllowed).toBe(true);
     expect(readyCard.followupCandidate).toEqual(candidate);
   });
+
+  it('renders a read-failure notice when the persisted load rejects, but nothing for an empty read', () => {
+    const failedCard = resolveHealthAnomalyCardState({
+      userId: 'u1',
+      currentDate: '2026-11-15',
+      liveRevision: null,
+      persistedState: { revision: null, loadResult: { userId: 'u1', date: '2026-11-15', status: 'error' } },
+      followupState: null,
+    });
+    expect(failedCard.loadFailed).toBe(true);
+    expect(failedCard.followupAllowed).toBe(false);
+    const failedHtml = renderToStaticMarkup(
+      <HealthAnomalyCardView userId="u1" currentDate="2026-11-15" revision={null} loadFailed={failedCard.loadFailed} />,
+    );
+    expect(failedHtml).toContain('could not be loaded');
+
+    const emptyCard = resolveHealthAnomalyCardState({
+      userId: 'u1',
+      currentDate: '2026-11-15',
+      liveRevision: null,
+      persistedState: {
+        revision: null,
+        loadResult: { userId: 'u1', date: '2026-11-15', status: 'missing', unreadableCount: 0 },
+      },
+      followupState: null,
+    });
+    expect(emptyCard.loadFailed).toBe(false);
+    expect(
+      renderToStaticMarkup(
+        <HealthAnomalyCardView userId="u1" currentDate="2026-11-15" revision={null} loadFailed={emptyCard.loadFailed} />,
+      ),
+    ).toBe('');
+
+    const liveDuringFailure = resolveHealthAnomalyCardState({
+      userId: 'u1',
+      currentDate: '2026-11-15',
+      liveRevision: makeRevision(),
+      persistedState: { revision: null, loadResult: { userId: 'u1', date: '2026-11-15', status: 'error' } },
+      followupState: null,
+    });
+    expect(liveDuringFailure.loadFailed).toBe(false);
+  });
 });
