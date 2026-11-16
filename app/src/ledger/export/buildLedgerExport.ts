@@ -104,21 +104,16 @@ function buildFlags(input: BuildLedgerExportInput, window: LedgerWindow): Ledger
                     if (seen.has(flag.revisionId)) continue;
                     seen.add(flag.revisionId);
                 }
-                const withheld = id === 'illness_anomaly';
                 result.push({
                     id, observedOn: date, evaluatedAt: flag.evaluatedAt,
                     definitionVersion: flag.definitionVersion,
                     ...(flag.sessionRef ? { sessionRef: flag.sessionRef } : {}),
-                    active: withheld ? null : flag.active,
-                    state: withheld ? 'not_yet_supported' : flag.state,
-                    ...(withheld ? { reasonCode: 'ha7_release_gate_unmet' }
-                        : flag.reasonCode ? { reasonCode: flag.reasonCode } : {}),
-                    inputs: withheld ? [{
-                        name: 'ha7_release_gate',
-                        value: { value: 'unmet', source: 'health_anomaly_assessment', state: 'not_yet_supported' },
-                    }] : structuredClone(flag.inputs),
-                    threshold: withheld ? null : flag.threshold,
-                    ...(!withheld && flag.baselineWindow ? { baselineWindow: flag.baselineWindow } : {}),
+                    active: flag.active,
+                    state: flag.state,
+                    ...(flag.reasonCode ? { reasonCode: flag.reasonCode } : {}),
+                    inputs: structuredClone(flag.inputs),
+                    threshold: flag.threshold,
+                    ...(flag.baselineWindow ? { baselineWindow: flag.baselineWindow } : {}),
                 });
             }
         }

@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import type { DataState } from '../engine/dataState';
 import type { DailyRecoverySnapshot, DailySubjectiveCheckin } from '../engine/models';
 import type { HealthAnomalyAssessmentRevision } from '../derived/flags/illnessAnomaly/healthAnomalyModels';
+import { VISIBLE_V1_HEALTH_ANOMALY_THRESHOLDS } from '../derived/flags/illnessAnomaly/healthAnomaly';
+import type { HealthAnomalyEpisodeOutcome } from '../derived/flags/illnessAnomaly/healthAnomalyOutcome';
 import { HealthAnomalyService } from './healthAnomalyService';
 import { addDaysToLocalDateString } from '../utils/localDate';
 
@@ -121,6 +123,48 @@ describe('HealthAnomalyService composition', () => {
         expect(persisted[0].revisionId).not.toBe(persisted[1].revisionId);
     });
 
+    it('appends a fresh revision when corrected inputs return to an older result, and stays idempotent after', async () => {
+        const date = '2026-08-21';
+        const recovery = {
+            getRecoverySnapshotState: vi.fn().mockResolvedValue(available(day(date), 'snap-rev')),
+            getRecoverySnapshotsInRangeState: vi.fn().mockResolvedValue({ status: 'MISSING' }),
+        };
+        const checkins = { getCheckinState: vi.fn() };
+        const blocks = { getBlocksInRangeState: vi.fn().mockResolvedValue({ status: 'MISSING' }) };
+        const docs = new Map<string, HealthAnomalyAssessmentRevision>();
+        const latestFor = (target: string) => [...docs.values()].filter(item => item.date === target)
+            .sort((a, b) => b.computedAt.localeCompare(a.computedAt) || b.revisionId.localeCompare(a.revisionId))[0] ?? null;
+        const store = {
+            getLatestForDate: vi.fn().mockImplementation(async (_userId: string, target: string) => latestFor(target)),
+            persistImmutable: vi.fn().mockImplementation(async (value: HealthAnomalyAssessmentRevision) => {
+                const existing = docs.get(value.revisionId);
+                if (existing) return existing; // create-only: keeps the first document's computedAt
+                docs.set(value.revisionId, value);
+                return value;
+            }),
+        };
+        const service = new HealthAnomalyService(recovery as never, checkins as never, blocks as never, store as never);
+        const run = (checkinRev: string, at: string) => {
+            checkins.getCheckinState.mockResolvedValue(available(checkin(), checkinRev));
+            return service.assessAndPersist('u1', date, 'shadow-v1', undefined, at);
+        };
+
+        const a = await run('rev-a', '2026-08-21T06:00:00Z');
+        const b = await run('rev-b', '2026-08-21T07:00:00Z');
+        expect(latestFor(date)?.revisionId).toBe(b?.revision.revisionId);
+
+        const again = await run('rev-a', '2026-08-21T08:00:00Z');
+        expect(again?.revision.revisionId).not.toBe(a?.revision.revisionId);
+        expect(again?.revision.source.supersedesRevisionId).toBe(b?.revision.revisionId);
+        expect(again?.revision.source.checkinRevision).toBe(a?.revision.source.checkinRevision);
+        expect(latestFor(date)?.revisionId).toBe(again?.revision.revisionId);
+
+        const count = docs.size;
+        const repeat = await run('rev-a', '2026-08-21T09:00:00Z');
+        expect(repeat?.revision.revisionId).toBe(again?.revision.revisionId);
+        expect(docs.size).toBe(count);
+    });
+
     it('degrades missing optional history to a one-day assessment rather than failing composition', async () => {
         const recovery = {
             getRecoverySnapshotState: vi.fn().mockResolvedValue(available(day('2026-08-21'))),
@@ -157,5 +201,186 @@ describe('HealthAnomalyService composition', () => {
         await expect(service.assessAndPersist('u1', '2026-08-21', 'shadow-v1'))
             .rejects.toThrow('previous assessment unavailable');
         expect(store.persistImmutable).not.toHaveBeenCalled();
+    });
+
+    it('uses visible-v1 thresholds by default and persists insufficient_evidence when history is missing', async () => {
+        const recovery = {
+            getRecoverySnapshotState: vi.fn().mockResolvedValue(available(day('2026-08-21', 50, 60, 14))),
+            getRecoverySnapshotsInRangeState: vi.fn().mockResolvedValue({ status: 'MISSING' }),
+        };
+        const checkins = { getCheckinState: vi.fn().mockResolvedValue(available(checkin())) };
+        const blocks = { getBlocksInRangeState: vi.fn().mockResolvedValue({ status: 'MISSING' }) };
+        const store = {
+            getLatestForDate: vi.fn().mockResolvedValue(null),
+            persistImmutable: vi.fn().mockImplementation(async (value: HealthAnomalyAssessmentRevision) => value),
+        };
+        const service = new HealthAnomalyService(recovery as never, checkins as never, blocks as never, store as never);
+
+        const result = await service.assessAndPersist('u1', '2026-08-21', 'visible-v1', undefined, '2026-08-21T06:30:00Z');
+        expect(result).not.toBeNull();
+        expect(result?.revision.mode).toBe('visible-v1');
+        expect(result?.revision.thresholdPolicy).toEqual(VISIBLE_V1_HEALTH_ANOMALY_THRESHOLDS);
+        expect(result?.assessment.state).toBe('insufficient_evidence');
+        expect(result?.assessment.earlyResponse).toBeDefined();
+    });
+
+    it('carries persistenceDays for physiological trace while keeping priorUnexplainedDays at zero after an explained strain day', async () => {
+        const current = day('2026-08-21', 56, 60, 14);
+        const history = Array.from({ length: 20 }, (_, index) => {
+            const date = addDaysToLocalDateString('2026-08-01', index);
+            return day(date, 49 + (index % 4), 56 + (index % 8), 13.8 + (index % 5) * 0.1);
+        });
+        const recovery = {
+            getRecoverySnapshotState: vi.fn().mockResolvedValue(available(current, 'current-rev')),
+            getRecoverySnapshotsInRangeState: vi.fn().mockResolvedValue(available(history, 'history-rev')),
+        };
+        const checkins = { getCheckinState: vi.fn().mockResolvedValue(available(checkin(), 'checkin-rev')) };
+        const blocks = { getBlocksInRangeState: vi.fn().mockResolvedValue(available([], 'travel-rev')) };
+        const priorExplained: HealthAnomalyAssessmentRevision = {
+            schemaVersion: 1,
+            userId: 'u1',
+            date: '2026-08-20',
+            revisionId: 'ha-0123456789abcdef',
+            idempotencyKey: '2026-08-20:0123456789abcdef',
+            computedAt: '2026-08-20T06:30:00Z',
+            policyVersion: 'health-anomaly/ha9-respiration-shadow-v1',
+            thresholdPolicy: VISIBLE_V1_HEALTH_ANOMALY_THRESHOLDS,
+            mode: 'visible-v1',
+            source: {
+                timezone: 'Europe/Warsaw',
+                recoverySnapshotRevision: 'r1',
+                checkinRevision: 'c1',
+                historyWindowStart: '2026-07-23',
+                historyWindowEndExclusive: '2026-08-20',
+                historySnapshotRevisions: [],
+                travelContextRevision: null,
+                persistenceLookbackStart: '2026-08-19',
+            },
+            assessment: {
+                state: 'explained_recovery_strain',
+                evidenceLevel: 'moderate',
+                coreSignals: [
+                    { signal: 'rhr', estimator: 'mean-stdev-28d', direction: 'high', status: 'moderate_anomaly', currentValue: 55, baselineValue: 50, scaleValue: 2.5, standardizedDeviation: 2.0, baselineVersion: 5 },
+                    { signal: 'respiration', estimator: 'median-mad-28d', direction: 'high', status: 'normal', currentValue: 14, baselineValue: 14, scaleValue: 0.5, standardizedDeviation: 0, baselineVersion: 5 },
+                    { signal: 'hrv', estimator: 'log-mean-stdev-28d', direction: 'low', status: 'normal', currentValue: 60, baselineValue: 60, scaleValue: 5, standardizedDeviation: 0, baselineVersion: 5 },
+                ],
+                supportingSignals: [],
+                explanations: [{ kind: 'hard_training', strength: 'strong', explainsSignals: ['rhr'], evidence: ['hard session yesterday'] }],
+                unexplainedEvidence: [],
+                persistenceDays: 1,
+                unexplainedPersistenceDays: 0,
+                episodeId: 'ep-1',
+                episodeDay: 1,
+                dataQuality: [],
+                rationale: { facts: [], explanations: [], cautions: [] },
+                policyVersion: 'health-anomaly/ha9-respiration-shadow-v1',
+                thresholdPolicyVersion: VISIBLE_V1_HEALTH_ANOMALY_THRESHOLDS.policyVersion,
+                mode: 'visible-v1',
+            },
+        };
+        const store = {
+            getLatestForDate: vi.fn().mockResolvedValue(priorExplained),
+            persistImmutable: vi.fn().mockImplementation(async (value: HealthAnomalyAssessmentRevision) => value),
+        };
+        const service = new HealthAnomalyService(recovery as never, checkins as never, blocks as never, store as never);
+
+        const result = await service.assessAndPersist('u1', '2026-08-21', 'visible-v1', undefined, '2026-08-21T06:30:00Z');
+        expect(result?.assessment.persistenceDays).toBe(2);
+        expect(result?.assessment.unexplainedPersistenceDays).toBe(1);
+        expect(result?.assessment.state).toBe('watch_unexplained');
+    });
+
+    it('excludes prior symptomatic dates from live baselines, applies causal personal calibration, and tracks previousAssessmentRevisionId', async () => {
+        const current = day('2026-08-21', 56, 40, 15.5);
+        const history = Array.from({ length: 20 }, (_, index) => {
+            const date = addDaysToLocalDateString('2026-08-01', index);
+            const snap = day(date, 49 + (index % 4), 56 + (index % 8), 13.8 + (index % 5) * 0.1);
+            return {
+                ...snap,
+                source: { ...snap.source, metricDates: { sleep: date } },
+            };
+        });
+        const symptomaticPriorDate = '2026-08-10';
+        const priorCheckin: DailySubjectiveCheckin = {
+            ...checkin(),
+            date: symptomaticPriorDate,
+            illnessSymptoms: true,
+        };
+        const priorOutcomes: HealthAnomalyEpisodeOutcome[] = [
+            {
+                userId: 'u1', episodeId: 'health-anomaly:2026-07-01',
+                sourceAssessment: { date: '2026-07-01', revisionId: 'ha-0000000000000001' },
+                explanation: 'illness_symptoms', symptomOnset: { date: '2026-07-02', precision: 'day' },
+                respiratoryTest: null, note: null,
+                createdAt: '2026-07-02T08:00:00Z', updatedAt: '2026-07-02T08:00:00Z', schemaVersion: 1,
+            },
+            {
+                userId: 'u1', episodeId: 'health-anomaly:2026-07-15',
+                sourceAssessment: { date: '2026-07-15', revisionId: 'ha-0000000000000002' },
+                explanation: 'hard_training_recovery', symptomOnset: null,
+                respiratoryTest: null, note: null,
+                createdAt: '2026-07-16T08:00:00Z', updatedAt: '2026-07-16T08:00:00Z', schemaVersion: 1,
+            },
+            {
+                userId: 'u1', episodeId: 'health-anomaly:2026-08-01',
+                sourceAssessment: { date: '2026-08-01', revisionId: 'ha-0000000000000003' },
+                explanation: 'nothing_obvious', symptomOnset: null,
+                respiratoryTest: null, note: null,
+                createdAt: '2026-08-04T08:00:00Z', updatedAt: '2026-08-04T08:00:00Z', schemaVersion: 1,
+            },
+        ];
+
+        const recovery = {
+            getRecoverySnapshotState: vi.fn().mockResolvedValue(available(current, 'current-rev')),
+            getRecoverySnapshotsInRangeState: vi.fn().mockResolvedValue(available(history, 'history-rev')),
+        };
+        const checkins = {
+            getCheckinState: vi.fn().mockResolvedValue(available(checkin(), 'checkin-rev')),
+            getCheckinsInRangeState: vi.fn().mockResolvedValue(available([priorCheckin], 'checkin-hist-rev')),
+        };
+        const blocks = { getBlocksInRangeState: vi.fn().mockResolvedValue(available([], 'travel-rev')) };
+        const priorA = {
+            schemaVersion: 1 as const, userId: 'u1', date: '2026-08-20',
+            revisionId: 'ha-aaaaaaaaaaaaaaaa', idempotencyKey: '2026-08-20:aaaaaaaaaaaaaaaa',
+            computedAt: '2026-08-20T06:30:00Z', policyVersion: 'health-anomaly/ha9-respiration-shadow-v1',
+            thresholdPolicy: VISIBLE_V1_HEALTH_ANOMALY_THRESHOLDS, mode: 'visible-v1' as const,
+            source: {
+                timezone: 'Europe/Warsaw' as const, recoverySnapshotRevision: 'r0', checkinRevision: null,
+                historyWindowStart: '2026-07-23', historyWindowEndExclusive: '2026-08-20',
+                historySnapshotRevisions: [], travelContextRevision: null, persistenceLookbackStart: '2026-08-19',
+            },
+            assessment: {
+                state: 'watch_unexplained' as const, evidenceLevel: 'moderate' as const,
+                coreSignals: [
+                    { signal: 'rhr' as const, estimator: 'mean-stdev-28d' as const, direction: 'high' as const, status: 'moderate_anomaly' as const, currentValue: 55, baselineValue: 50, scaleValue: 2, standardizedDeviation: 2.5, baselineVersion: 5 },
+                    { signal: 'respiration' as const, estimator: 'median-mad-28d' as const, direction: null, status: 'normal' as const, currentValue: 14, baselineValue: 14, scaleValue: 0.5, standardizedDeviation: 0, baselineVersion: 5 },
+                    { signal: 'hrv' as const, estimator: 'log-mean-stdev-28d' as const, direction: null, status: 'normal' as const, currentValue: 4, baselineValue: 4, scaleValue: 0.1, standardizedDeviation: 0, baselineVersion: 5 },
+                ],
+                supportingSignals: [], explanations: [], unexplainedEvidence: ['rhr:moderate_anomaly:high'],
+                persistenceDays: 1, unexplainedPersistenceDays: 1, episodeId: 'health-anomaly:2026-08-20', episodeDay: 1,
+                dataQuality: [], rationale: { facts: [], explanations: [], cautions: [] },
+                policyVersion: 'health-anomaly/ha9-respiration-shadow-v1',
+                thresholdPolicyVersion: VISIBLE_V1_HEALTH_ANOMALY_THRESHOLDS.policyVersion, mode: 'visible-v1' as const,
+            },
+        };
+        const priorB = { ...priorA, revisionId: 'ha-bbbbbbbbbbbbbbbb', idempotencyKey: '2026-08-20:bbbbbbbbbbbbbbbb' };
+        const store = {
+            getLatestForDate: vi.fn().mockResolvedValueOnce(priorA).mockResolvedValueOnce(priorB),
+            persistImmutable: vi.fn().mockImplementation(async (value: HealthAnomalyAssessmentRevision) => value),
+        };
+        const outcomes = { listForUser: vi.fn().mockResolvedValue(priorOutcomes) };
+        const service = new HealthAnomalyService(recovery as never, checkins as never, blocks as never, store as never, outcomes as never);
+
+        const first = await service.assessAndPersist('u1', '2026-08-21', 'visible-v1', undefined, '2026-08-21T06:30:00Z');
+        const second = await service.assessAndPersist('u1', '2026-08-21', 'visible-v1', undefined, '2026-08-21T06:31:00Z');
+
+        expect(first?.assessment.dataQuality.every(q => q.contaminatedDaysExcluded === 1)).toBe(true);
+        expect(first?.assessment.calibrationStage).toBe('outcome_calibrated');
+        expect(first?.assessment.personalCalibration?.calibrationEligible).toBe(true);
+        expect(first?.revision.source.contaminatedDates).toEqual([symptomaticPriorDate]);
+        expect(first?.revision.source.personalCalibrationRevision).toMatch(/^[0-9a-f]{16}$/);
+        expect(first?.revision.source.previousAssessmentRevisionId).toBe('ha-aaaaaaaaaaaaaaaa');
+        expect(second?.revision.source.previousAssessmentRevisionId).toBe('ha-bbbbbbbbbbbbbbbb');
+        expect(second?.revision.revisionId).not.toBe(first?.revision.revisionId);
     });
 });

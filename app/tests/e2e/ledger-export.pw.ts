@@ -26,9 +26,13 @@ test('structured ledger download preserves source states and legacy brief at 390
   });
   // Inspect as the owner through rules: the app, rather than a test seed, must write flags.
   await expect.poll(() => inspectAthlete(athlete, async db => {
-    const rows = await getDocs(collection(db, 'users', athlete.userId, 'flag_evaluations'));
-    return rows.docs.some(row => row.data().observedOn === date && row.data().id === 'illness_risk_symptom'
-      && row.data().state === 'measured');
+    const docs = (await getDocs(collection(db, 'users', athlete.userId, 'flag_evaluations'))).docs
+      .map(row => row.data());
+    const hasSymptom = docs.some(data => data.observedOn === date && data.id === 'illness_risk_symptom'
+      && data.state === 'measured');
+    const hasAnomaly = docs.some(data => data.observedOn === date && data.id === 'illness_anomaly'
+      && data.reasonCode === 'no_core_signals');
+    return hasSymptom && hasAnomaly;
   }), { timeout: 20_000 }).toBe(true);
   const originalBrief = await planningBrief(page, '(planning)');
   const button = page.getByRole('button', { name: 'Export ledger (JSON)', exact: true });
@@ -52,8 +56,12 @@ test('structured ledger download preserves source states and legacy brief at 390
   expect(ledger.flags.some(flag => flag.observedOn === date && flag.id === 'injury_constraint_touches_session'
     && flag.state === 'not_applicable' && flag.reasonCode === 'no_planned_session')).toBe(true);
   expect(ledger.flags.some(flag => flag.observedOn !== date && flag.state === 'not_recorded')).toBe(true);
-  expect(ledger.flags.filter(flag => flag.observedOn === date && flag.id === 'illness_anomaly')
-    .every(flag => flag.active === null && flag.state === 'not_yet_supported')).toBe(true);
+  const todayAnomalyFlags = ledger.flags.filter(flag => flag.observedOn === date && flag.id === 'illness_anomaly');
+  expect(todayAnomalyFlags.length).toBeGreaterThan(0);
+  expect(todayAnomalyFlags.every(flag =>
+    flag.active === null
+    && flag.state === 'missing'
+    && (flag.reasonCode === 'no_core_signals' || flag.reasonCode === 'no_assessment'))).toBe(true);
   expect(ledger.derived.find(metric => metric.id === 'biometric_baselines')?.metrics?.sleepScore7dAvg)
     .toMatchObject({ value: 80, state: 'measured' });
   expect(ledger.derived.find(metric => metric.id === 'subjective_baselines')?.metrics?.longRecordedDays)

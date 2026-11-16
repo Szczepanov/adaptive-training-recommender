@@ -1,4 +1,4 @@
-import { doc, getDoc, runTransaction } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, runTransaction } from 'firebase/firestore';
 import { getDb } from '../firebase';
 import {
     buildHealthAnomalyEpisodeOutcome,
@@ -78,6 +78,20 @@ export class HealthAnomalyOutcomeRepository {
         const snapshot = await getDoc(doc(getDb(), 'users', userId, 'health_anomaly_outcomes', episodeId));
         if (!snapshot.exists()) return null;
         return parseHealthAnomalyEpisodeOutcome(snapshot.data(), userId, episodeId);
+    }
+
+    /** Load all readable prospective outcome labels for a user, skipping unreadable documents. */
+    async listForUser(userId: string): Promise<HealthAnomalyEpisodeOutcome[]> {
+        const snapshot = await getDocs(collection(getDb(), 'users', userId, 'health_anomaly_outcomes'));
+        const outcomes: HealthAnomalyEpisodeOutcome[] = [];
+        for (const docSnap of snapshot.docs) {
+            try {
+                outcomes.push(parseHealthAnomalyEpisodeOutcome(docSnap.data(), userId, docSnap.id));
+            } catch {
+                // Skip unreadable or malformed outcome records rather than failing assessment composition.
+            }
+        }
+        return outcomes;
     }
 
     /**

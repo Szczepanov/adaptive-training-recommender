@@ -151,6 +151,113 @@ describe('health anomaly immutable persistence identity', () => {
         })).toThrow('Invalid respiration elevation evidence');
     });
 
+    it('accepts insufficient_evidence state and valid optional early-warning assessment fields', () => {
+        const earlyResponse = {
+            level: 'level_1_early_watch' as const,
+            headline: 'Early physiological shift noted',
+            summary: 'Resting signals shifted slightly from baseline.',
+            actions: ['Keep today easy aerobic'],
+            reassessTiming: 'Reassess tomorrow morning',
+            nonDiagnosticNotice: 'Not a medical assessment.',
+            redFlagWarnings: [],
+            returnToSportGuidance: [],
+            followupPromptEligible: true,
+        };
+        const activityMatchedExpectations = [{
+            signal: 'rhr' as const,
+            stratum: 'post_hard_or_high_cost' as const,
+            stratumSampleCount: 5,
+            unconditionalBaseline: 48,
+            shrunkExpectedValue: 50,
+            currentValue: 54,
+            residualFromExpected: 4,
+            residualStandardizedDeviation: 1.6,
+            withinExpectedTrainingResponse: false,
+        }];
+        const personalCalibration = {
+            asOfDate: '2026-08-21',
+            priorEpisodesCount: 3,
+            illnessConfirmedCount: 2,
+            confounderExplainedCount: 1,
+            noIllnessCount: 0,
+            unknownCount: 0,
+            positiveRespiratoryTestsCount: 1,
+            negativeRespiratoryTestsCount: 0,
+            medianLeadTimeDays: -1,
+            calibrationEligible: true,
+        };
+        const record = buildHealthAnomalyAssessmentRevision({
+            userId: 'u1',
+            date: '2026-08-21',
+            computedAt: '2026-08-21T06:30:00Z',
+            mode: 'visible-v1',
+            thresholdPolicy: SHADOW_V1_HEALTH_ANOMALY_THRESHOLDS,
+            source,
+            assessment: {
+                ...assessment,
+                state: 'insufficient_evidence',
+                mode: 'visible-v1',
+                unexplainedPersistenceDays: 0,
+                calibrationStage: 'outcome_calibrated',
+                anomalySeverity: 'mild',
+                evidenceQuality: 'single_channel',
+                earlyResponse,
+                activityMatchedExpectations,
+                personalCalibration,
+            },
+        });
+        const parsed = parseHealthAnomalyAssessmentRevision(record, 'u1', '2026-08-21');
+        expect(parsed.assessment.state).toBe('insufficient_evidence');
+        expect(parsed.assessment.earlyResponse).toEqual(earlyResponse);
+        expect(parsed.assessment.activityMatchedExpectations).toEqual(activityMatchedExpectations);
+        expect(parsed.assessment.personalCalibration).toEqual(personalCalibration);
+        expect(parseHealthAnomalyAssessmentRevision({
+            ...record,
+            assessment: { ...record.assessment, personalCalibration: null },
+        }).assessment.personalCalibration).toBeNull();
+    });
+
+    it('rejects malformed optional early-warning assessment fields', () => {
+        const record = revision();
+        expect(() => parseHealthAnomalyAssessmentRevision({
+            ...record,
+            assessment: { ...record.assessment, unexplainedPersistenceDays: -1 },
+        })).toThrow('Invalid health anomaly unexplainedPersistenceDays');
+        expect(() => parseHealthAnomalyAssessmentRevision({
+            ...record,
+            assessment: { ...record.assessment, calibrationStage: 'calibrated_magic' },
+        })).toThrow('Invalid health anomaly calibrationStage');
+        expect(() => parseHealthAnomalyAssessmentRevision({
+            ...record,
+            assessment: { ...record.assessment, anomalySeverity: 'critical' },
+        })).toThrow('Invalid health anomaly anomalySeverity');
+        expect(() => parseHealthAnomalyAssessmentRevision({
+            ...record,
+            assessment: { ...record.assessment, evidenceQuality: 'telepathic' },
+        })).toThrow('Invalid health anomaly evidenceQuality');
+        expect(() => parseHealthAnomalyAssessmentRevision({
+            ...record,
+            assessment: {
+                ...record.assessment,
+                earlyResponse: { level: 'level_1_early_watch', headline: '', summary: 's', actions: [], reassessTiming: 'r', nonDiagnosticNotice: 'n', redFlagWarnings: [], returnToSportGuidance: [], followupPromptEligible: false },
+            },
+        })).toThrow('Invalid health anomaly earlyResponse');
+        expect(() => parseHealthAnomalyAssessmentRevision({
+            ...record,
+            assessment: {
+                ...record.assessment,
+                activityMatchedExpectations: [{ signal: 'invalid_sig' }],
+            },
+        })).toThrow('Invalid health anomaly activityMatchedExpectations');
+        expect(() => parseHealthAnomalyAssessmentRevision({
+            ...record,
+            assessment: {
+                ...record.assessment,
+                personalCalibration: { asOfDate: 'bad-date' },
+            },
+        })).toThrow('Invalid health anomaly personalCalibration');
+    });
+
     it('returns the existing immutable revision on an exact idempotent retry', async () => {
         const record = revision();
         firestore.doc.mockReturnValue({ path: 'revision' });
@@ -232,5 +339,29 @@ describe('health anomaly immutable persistence identity', () => {
         firestore.getDocs.mockResolvedValue({ empty: true, docs: [] });
         await expect(new HealthAnomalyAssessmentRepository().getLatestForDateWithDiagnostics('u1', '2026-08-21'))
             .resolves.toEqual({ revision: null, unreadableCount: 0 });
+    });
+
+    it('includes previousAssessmentRevisionId, contaminatedDates, and personalCalibrationRevision in revision identity and parser validation', () => {
+        const enrichedSource = {
+            ...source,
+            previousAssessmentRevisionId: 'ha-aaaaaaaaaaaaaaaa',
+            contaminatedDates: ['2026-08-18'],
+            personalCalibrationRevision: '1234567890abcdef',
+        };
+        const record = buildHealthAnomalyAssessmentRevision({
+            userId: 'u1',
+            date: '2026-08-21',
+            computedAt: '2026-08-21T06:30:00Z',
+            mode: 'shadow-v1',
+            thresholdPolicy: SHADOW_V1_HEALTH_ANOMALY_THRESHOLDS,
+            source: enrichedSource,
+            assessment,
+        });
+        expect(record.revisionId).not.toBe(revision().revisionId);
+        expect(parseHealthAnomalyAssessmentRevision(record, 'u1', '2026-08-21')).toEqual(record);
+        expect(() => parseHealthAnomalyAssessmentRevision({
+            ...record,
+            source: { ...enrichedSource, contaminatedDates: '2026-08-18' as unknown as string[] },
+        }, 'u1', '2026-08-21')).toThrow('source identity');
     });
 });

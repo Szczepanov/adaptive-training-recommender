@@ -1,5 +1,8 @@
 import type { DailyRecoverySnapshot } from '../../../ledger/models';
 import type {
+    ActivityMatchedSignalExpectation,
+    ActivityStratum,
+    BaselineMaturity,
     CoreSignalDataQuality,
     HealthAnomalyFeatureSet,
     HealthAnomalyEstimator,
@@ -12,8 +15,18 @@ import type {
 export const HEALTH_ANOMALY_BASELINE_WINDOW_DAYS = 28;
 export const HEALTH_ANOMALY_RECENT_WINDOW_DAYS = 7;
 export const HEALTH_ANOMALY_MIN_BASELINE_OBSERVATIONS = 14;
+export const HEALTH_ANOMALY_EMERGING_BASELINE_OBSERVATIONS = 7;
+export const HEALTH_ANOMALY_ACTIVITY_SHRINKAGE_PRIOR_DAYS = 5;
 export const HEALTH_ANOMALY_NEAR_ZERO_SCALE_EPSILON = 1e-6;
 export const HEALTH_ANOMALY_TIE_FRACTION_THRESHOLD = 0.4;
+
+export interface HealthAnomalyFeatureMappingOptions {
+    /**
+     * Dates known to be contaminated by acute illness or systemic anomaly episodes prior to
+     * `currentDate`. Any date `>= currentDate` is ignored to prevent future-information leakage.
+     */
+    contaminatedDates?: ReadonlySet<string> | readonly string[];
+}
 
 const DAY_MS = 86_400_000;
 
@@ -62,7 +75,41 @@ export type ExtractedSignalObservations = {
     rhr: SignalObservation[];
     respiration: SignalObservation[];
     hrv: SignalObservation[];
+    contaminatedDaysExcluded?: Record<HealthCoreSignal, number>;
 };
+
+function normalizeCausalContaminatedDates(
+    currentDate: string,
+    contaminatedDates?: ReadonlySet<string> | readonly string[],
+): Set<string> {
+    const result = new Set<string>();
+    if (!contaminatedDates) return result;
+    for (const date of contaminatedDates) {
+        if (typeof date === 'string' && date < currentDate) {
+            result.add(date);
+        }
+    }
+    return result;
+}
+
+function filterContaminatedObservations(
+    observations: readonly SignalObservation[],
+    contaminated: ReadonlySet<string>,
+): { retained: SignalObservation[]; excludedCount: number } {
+    if (contaminated.size === 0) {
+        return { retained: [...observations], excludedCount: 0 };
+    }
+    const clean = observations.filter(obs => !contaminated.has(obs.date));
+    // Only exclude contaminated days when enough clean baseline observations remain so cold-start
+    // or sparse histories are not artificially blinded.
+    if (clean.length >= HEALTH_ANOMALY_EMERGING_BASELINE_OBSERVATIONS) {
+        return {
+            retained: clean,
+            excludedCount: observations.length - clean.length,
+        };
+    }
+    return { retained: [...observations], excludedCount: 0 };
+}
 
 /**
  * Extract deduplicated, date-sorted observations for all core signals in a single pass.
@@ -74,10 +121,16 @@ export type ExtractedSignalObservations = {
 export function extractSignalObservations(
     currentDate: string,
     history: readonly DailyRecoverySnapshot[],
+    options?: HealthAnomalyFeatureMappingOptions,
 ): ExtractedSignalObservations {
     const currentDay = parseEpochDay(currentDate);
     if (currentDay === null) {
-        return { rhr: [], respiration: [], hrv: [] };
+        return {
+            rhr: [],
+            respiration: [],
+            hrv: [],
+            contaminatedDaysExcluded: { rhr: 0, respiration: 0, hrv: 0 },
+        };
     }
     const startDay = currentDay - HEALTH_ANOMALY_BASELINE_WINDOW_DAYS;
     const byDateRhr = new Map<string, SignalObservation>();
@@ -116,11 +169,20 @@ export function extractSignalObservations(
     }
 
     const sortFn = (left: SignalObservation, right: SignalObservation) => left.day - right.day;
+    const contaminated = normalizeCausalContaminatedDates(currentDate, options?.contaminatedDates);
+    const rhrFiltered = filterContaminatedObservations([...byDateRhr.values()].sort(sortFn), contaminated);
+    const respFiltered = filterContaminatedObservations([...byDateResp.values()].sort(sortFn), contaminated);
+    const hrvFiltered = filterContaminatedObservations([...byDateHrv.values()].sort(sortFn), contaminated);
 
     return {
-        rhr: [...byDateRhr.values()].sort(sortFn),
-        respiration: [...byDateResp.values()].sort(sortFn),
-        hrv: [...byDateHrv.values()].sort(sortFn),
+        rhr: rhrFiltered.retained,
+        respiration: respFiltered.retained,
+        hrv: hrvFiltered.retained,
+        contaminatedDaysExcluded: {
+            rhr: rhrFiltered.excludedCount,
+            respiration: respFiltered.excludedCount,
+            hrv: hrvFiltered.excludedCount,
+        },
     };
 }
 
@@ -148,12 +210,19 @@ function suspectedTies(observations: readonly SignalObservation[]): boolean {
     return maxCount / observations.length >= HEALTH_ANOMALY_TIE_FRACTION_THRESHOLD;
 }
 
+function resolveBaselineMaturity(historyCount: number): BaselineMaturity {
+    if (historyCount >= HEALTH_ANOMALY_MIN_BASELINE_OBSERVATIONS) return 'reliable';
+    if (historyCount >= HEALTH_ANOMALY_EMERGING_BASELINE_OBSERVATIONS) return 'emerging';
+    return 'insufficient';
+}
+
 function buildDataQuality(
     currentDate: string,
     signal: HealthCoreSignal,
     currentValue: number | null,
     observations: readonly SignalObservation[],
     scales: readonly (number | null)[],
+    contaminatedDaysExcluded = 0,
 ): CoreSignalDataQuality {
     const currentDay = parseEpochDay(currentDate);
     const latest = observations.at(-1);
@@ -178,6 +247,8 @@ function buildDataQuality(
         ),
         currentValueMissing: currentValue === null,
         suspectedQuantizationOrTies: suspectedTies(observations),
+        baselineMaturity: resolveBaselineMaturity(observations.length),
+        contaminatedDaysExcluded,
     };
 }
 
@@ -254,6 +325,24 @@ function populationStdev(values: readonly number[]): number | null {
     return Math.sqrt(variance);
 }
 
+const MAD_CONSISTENCY_CONSTANT = 1.4826;
+
+function median(values: readonly number[]): number | null {
+    if (values.length === 0) return null;
+    const sorted = [...values].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2 === 1
+        ? sorted[mid]!
+        : (sorted[mid - 1]! + sorted[mid]!) / 2;
+}
+
+function scaledMad(values: readonly number[]): number | null {
+    const med = median(values);
+    if (med === null) return null;
+    const rawMad = median(values.map(value => Math.abs(value - med)));
+    return rawMad === null ? null : rawMad * MAD_CONSISTENCY_CONSTANT;
+}
+
 /**
  * Natural-log candidate for Garmin's exported `hrvOvernightAvg`. This deliberately does not
  * call the feature LnRMSSD: the repository has not established that Garmin's exported field
@@ -297,30 +386,67 @@ function buildLogHrvCandidate(
     });
 }
 
+function resolveSignalStats(
+    derivedBaseline: number | null,
+    derivedScale: number | null,
+    observations: readonly SignalObservation[],
+    contaminatedDaysExcluded: number,
+    mode: 'mean-stdev' | 'median-mad',
+    allowMatureFallback = false,
+): { baselineValue: number | null; scaleValue: number | null } {
+    const recomputeClean = contaminatedDaysExcluded > 0
+        && observations.length >= HEALTH_ANOMALY_EMERGING_BASELINE_OBSERVATIONS;
+    const emergingFallback = contaminatedDaysExcluded === 0
+        && observations.length >= HEALTH_ANOMALY_EMERGING_BASELINE_OBSERVATIONS
+        && (allowMatureFallback || observations.length < HEALTH_ANOMALY_MIN_BASELINE_OBSERVATIONS)
+        && derivedBaseline === null
+        && derivedScale === null;
+    if (!recomputeClean && !emergingFallback) {
+        return { baselineValue: derivedBaseline, scaleValue: derivedScale };
+    }
+    const values = observations.map(observation => observation.value);
+    return mode === 'median-mad'
+        ? { baselineValue: median(values), scaleValue: scaledMad(values) }
+        : { baselineValue: mean(values), scaleValue: populationStdev(values) };
+}
+
 function buildRhrFeatures(
     snapshot: DailyRecoverySnapshot,
     history: readonly DailyRecoverySnapshot[],
     baselineVersion: number | null,
     preExtractedObservations?: SignalObservation[],
+    contaminatedDaysExcluded = 0,
 ): HealthCoreSignalFeatures {
     const current = finiteNumber(snapshot.raw.restingHr);
     const observations = preExtractedObservations ?? historyForSignal(snapshot.date, history, 'rhr');
-    const meanScale = finiteNumber(snapshot.derived.restingHr28dStdev);
-    const medianScale = finiteNumber(snapshot.derived.restingHr28dMad);
+    const meanStats = resolveSignalStats(
+        finiteNumber(snapshot.derived.restingHr28dAvg),
+        finiteNumber(snapshot.derived.restingHr28dStdev),
+        observations,
+        contaminatedDaysExcluded,
+        'mean-stdev',
+    );
+    const medianStats = resolveSignalStats(
+        finiteNumber(snapshot.derived.restingHr28dMedian),
+        finiteNumber(snapshot.derived.restingHr28dMad),
+        observations,
+        contaminatedDaysExcluded,
+        'median-mad',
+    );
     const medianCompatible = baselineVersion !== null && baselineVersion >= 4;
     const candidates = [
         buildCandidate({
             estimator: 'mean-stdev-28d',
             currentValue: current,
-            baselineValue: finiteNumber(snapshot.derived.restingHr28dAvg),
-            scaleValue: meanScale,
+            baselineValue: meanStats.baselineValue,
+            scaleValue: meanStats.scaleValue,
             baselineVersion,
         }),
         buildCandidate({
             estimator: 'median-mad-28d',
             currentValue: current,
-            baselineValue: finiteNumber(snapshot.derived.restingHr28dMedian),
-            scaleValue: medianScale,
+            baselineValue: medianStats.baselineValue,
+            scaleValue: medianStats.scaleValue,
             baselineVersion,
             unavailableReason: medianCompatible ? null : 'incompatible_baseline_version',
         }),
@@ -335,7 +461,8 @@ function buildRhrFeatures(
             'rhr',
             current,
             observations,
-            [meanScale, medianScale],
+            [meanStats.scaleValue, medianStats.scaleValue],
+            contaminatedDaysExcluded,
         ),
         measurementProvenance: 'garmin:restingHr',
     };
@@ -346,19 +473,26 @@ function buildRespirationFeatures(
     history: readonly DailyRecoverySnapshot[],
     baselineVersion: number | null,
     preExtractedObservations?: SignalObservation[],
+    contaminatedDaysExcluded = 0,
 ): HealthCoreSignalFeatures {
     const measurementDate = snapshot.source.metricDates?.sleep ?? null;
     const current = measurementDate === snapshot.date
         ? finiteNumber(snapshot.raw.respirationAvg)
         : null;
     const observations = preExtractedObservations ?? historyForSignal(snapshot.date, history, 'respiration');
-    const scale = finiteNumber(snapshot.derived.respiration28dMad);
+    const stats = resolveSignalStats(
+        finiteNumber(snapshot.derived.respiration28dAvg),
+        finiteNumber(snapshot.derived.respiration28dMad),
+        observations,
+        contaminatedDaysExcluded,
+        'median-mad',
+    );
     const compatible = baselineVersion !== null && baselineVersion >= 3;
     const candidates = [buildCandidate({
         estimator: 'median-mad-28d',
         currentValue: current,
-        baselineValue: finiteNumber(snapshot.derived.respiration28dAvg),
-        scaleValue: scale,
+        baselineValue: stats.baselineValue,
+        scaleValue: stats.scaleValue,
         baselineVersion,
         unavailableReason: compatible ? null : 'incompatible_baseline_version',
     })];
@@ -372,7 +506,8 @@ function buildRespirationFeatures(
             'respiration',
             current,
             observations,
-            [scale],
+            [stats.scaleValue],
+            contaminatedDaysExcluded,
         ),
         // Garmin respirationAvg is selected from the same sleep record as sleepScore;
         // metricDates.sleep therefore supplies the bounded logical-date provenance needed
@@ -386,26 +521,39 @@ function buildHrvFeatures(
     history: readonly DailyRecoverySnapshot[],
     baselineVersion: number | null,
     preExtractedObservations?: SignalObservation[],
+    contaminatedDaysExcluded = 0,
 ): HealthCoreSignalFeatures {
     const current = finiteNumber(snapshot.raw.hrvOvernightAvg);
     const observations = preExtractedObservations ?? historyForSignal(snapshot.date, history, 'hrv');
-    const meanScale = finiteNumber(snapshot.derived.hrv28dStdev);
-    const medianScale = finiteNumber(snapshot.derived.hrv28dMad);
+    const meanStats = resolveSignalStats(
+        finiteNumber(snapshot.derived.hrv28dAvg),
+        finiteNumber(snapshot.derived.hrv28dStdev),
+        observations,
+        contaminatedDaysExcluded,
+        'mean-stdev',
+    );
+    const medianStats = resolveSignalStats(
+        finiteNumber(snapshot.derived.hrv28dMedian),
+        finiteNumber(snapshot.derived.hrv28dMad),
+        observations,
+        contaminatedDaysExcluded,
+        'median-mad',
+    );
     const medianCompatible = baselineVersion !== null && baselineVersion >= 4;
     const logCandidate = buildLogHrvCandidate(current, observations, baselineVersion);
     const candidates = [
         buildCandidate({
             estimator: 'mean-stdev-28d',
             currentValue: current,
-            baselineValue: finiteNumber(snapshot.derived.hrv28dAvg),
-            scaleValue: meanScale,
+            baselineValue: meanStats.baselineValue,
+            scaleValue: meanStats.scaleValue,
             baselineVersion,
         }),
         buildCandidate({
             estimator: 'median-mad-28d',
             currentValue: current,
-            baselineValue: finiteNumber(snapshot.derived.hrv28dMedian),
-            scaleValue: medianScale,
+            baselineValue: medianStats.baselineValue,
+            scaleValue: medianStats.scaleValue,
             baselineVersion,
             unavailableReason: medianCompatible ? null : 'incompatible_baseline_version',
         }),
@@ -421,10 +569,143 @@ function buildHrvFeatures(
             'hrv',
             current,
             observations,
-            [meanScale, medianScale, logCandidate.scaleValue],
+            [meanStats.scaleValue, medianStats.scaleValue, logCandidate.scaleValue],
+            contaminatedDaysExcluded,
         ),
         measurementProvenance: 'garmin:hrvOvernightAvg',
     };
+}
+
+function classifyActivityStratum(snapshot: DailyRecoverySnapshot): ActivityStratum {
+    const yt = snapshot.raw.yesterdayTraining;
+    if (!yt) return 'post_easy_or_rest';
+    if (
+        (yt.hardActivityCount ?? 0) > 0
+        || yt.primaryActivity?.intensityTag === 'hard'
+        || (yt.highCostActivityCount ?? 0) > 0
+        || yt.primaryActivity?.sessionCost === 'high'
+        || yt.primaryActivity?.sessionCost === 'very_high'
+    ) {
+        return 'post_hard_or_high_cost';
+    }
+    return 'post_easy_or_rest';
+}
+
+/**
+ * Compute activity-stratum-matched expectations for each core physiological signal using
+ * empirical-Bayes shrinkage toward the clean 28-day unconditional baseline.
+ */
+export function computeActivityMatchedExpectations(
+    snapshot: DailyRecoverySnapshot,
+    history: readonly DailyRecoverySnapshot[] = [],
+    options?: HealthAnomalyFeatureMappingOptions,
+    preExtracted?: ExtractedSignalObservations,
+): ActivityMatchedSignalExpectation[] {
+    const currentDay = parseEpochDay(snapshot.date);
+    const todayStratum = classifyActivityStratum(snapshot);
+    const extracted = preExtracted ?? extractSignalObservations(snapshot.date, history, options);
+    const stratumByDate = new Map<string, ActivityStratum>();
+
+    if (currentDay !== null) {
+        const startDay = currentDay - HEALTH_ANOMALY_BASELINE_WINDOW_DAYS;
+        for (const item of history) {
+            const day = parseEpochDay(item.date);
+            if (day === null || day < startDay || day >= currentDay) continue;
+            stratumByDate.set(item.date, classifyActivityStratum(item));
+        }
+    }
+
+    const respMeasurementDate = snapshot.source.metricDates?.sleep ?? null;
+    const signalSpecs: Array<{
+        signal: HealthCoreSignal;
+        mode: 'mean-stdev' | 'median-mad';
+        currentValue: number | null;
+        derivedBaseline: number | null;
+        derivedScale: number | null;
+    }> = [
+        {
+            signal: 'rhr',
+            mode: 'mean-stdev',
+            currentValue: finiteNumber(snapshot.raw.restingHr),
+            derivedBaseline: finiteNumber(snapshot.derived.restingHr28dAvg),
+            derivedScale: finiteNumber(snapshot.derived.restingHr28dStdev),
+        },
+        {
+            signal: 'respiration',
+            mode: 'median-mad',
+            currentValue: respMeasurementDate === snapshot.date
+                ? finiteNumber(snapshot.raw.respirationAvg)
+                : null,
+            derivedBaseline: finiteNumber(snapshot.derived.respiration28dAvg),
+            derivedScale: finiteNumber(snapshot.derived.respiration28dMad),
+        },
+        {
+            signal: 'hrv',
+            mode: 'mean-stdev',
+            currentValue: finiteNumber(snapshot.raw.hrvOvernightAvg),
+            derivedBaseline: finiteNumber(snapshot.derived.hrv28dAvg),
+            derivedScale: finiteNumber(snapshot.derived.hrv28dStdev),
+        },
+    ];
+
+    return signalSpecs.map((spec) => {
+        const observations = extracted[spec.signal];
+        const contaminatedExcluded = extracted.contaminatedDaysExcluded?.[spec.signal] ?? 0;
+        const stats = resolveSignalStats(
+            spec.derivedBaseline,
+            spec.derivedScale,
+            observations,
+            contaminatedExcluded,
+            spec.mode,
+            true,
+        );
+        const unconditionalBaseline = stats.baselineValue;
+        const scale = stats.scaleValue;
+
+        const stratumValues = observations
+            .filter(obs => (stratumByDate.get(obs.date) ?? 'post_easy_or_rest') === todayStratum)
+            .map(obs => obs.value);
+        const stratumSampleCount = stratumValues.length;
+        const stratumCenter = mean(stratumValues);
+
+        const shrunkExpectedValue = unconditionalBaseline === null
+            ? null
+            : stratumCenter === null || stratumSampleCount === 0
+                ? unconditionalBaseline
+                : (stratumSampleCount * stratumCenter
+                    + HEALTH_ANOMALY_ACTIVITY_SHRINKAGE_PRIOR_DAYS * unconditionalBaseline)
+                    / (stratumSampleCount + HEALTH_ANOMALY_ACTIVITY_SHRINKAGE_PRIOR_DAYS);
+
+        const residualFromExpected = spec.currentValue !== null && shrunkExpectedValue !== null
+            ? spec.currentValue - shrunkExpectedValue
+            : null;
+        const residualStandardizedDeviation = residualFromExpected !== null
+            && scale !== null
+            && Math.abs(scale) > HEALTH_ANOMALY_NEAR_ZERO_SCALE_EPSILON
+            ? residualFromExpected / scale
+            : null;
+
+        const adverseResidualZ = residualStandardizedDeviation === null
+            ? null
+            : spec.signal === 'hrv'
+                ? -residualStandardizedDeviation
+                : residualStandardizedDeviation;
+        const withinExpectedTrainingResponse = adverseResidualZ === null
+            ? true
+            : adverseResidualZ < 1.5;
+
+        return {
+            signal: spec.signal,
+            stratum: todayStratum,
+            stratumSampleCount,
+            unconditionalBaseline,
+            shrunkExpectedValue,
+            currentValue: spec.currentValue,
+            residualFromExpected,
+            residualStandardizedDeviation,
+            withinExpectedTrainingResponse,
+        };
+    });
 }
 
 /**
@@ -434,16 +715,41 @@ function buildHrvFeatures(
 export function mapRecoverySnapshotToHealthAnomalyFeatures(
     snapshot: DailyRecoverySnapshot,
     history: readonly DailyRecoverySnapshot[] = [],
+    options?: HealthAnomalyFeatureMappingOptions,
 ): HealthAnomalyFeatureSet {
     const baselineVersion = finiteNumber(snapshot.derived.baselineComputationVersion);
-    const extracted = extractSignalObservations(snapshot.date, history);
+    const extracted = extractSignalObservations(snapshot.date, history, options);
     return {
         date: snapshot.date,
         baselineVersion,
         coreSignals: [
-            buildRhrFeatures(snapshot, history, baselineVersion, extracted.rhr),
-            buildRespirationFeatures(snapshot, history, baselineVersion, extracted.respiration),
-            buildHrvFeatures(snapshot, history, baselineVersion, extracted.hrv),
+            buildRhrFeatures(
+                snapshot,
+                history,
+                baselineVersion,
+                extracted.rhr,
+                extracted.contaminatedDaysExcluded?.rhr ?? 0,
+            ),
+            buildRespirationFeatures(
+                snapshot,
+                history,
+                baselineVersion,
+                extracted.respiration,
+                extracted.contaminatedDaysExcluded?.respiration ?? 0,
+            ),
+            buildHrvFeatures(
+                snapshot,
+                history,
+                baselineVersion,
+                extracted.hrv,
+                extracted.contaminatedDaysExcluded?.hrv ?? 0,
+            ),
         ],
+        activityMatchedExpectations: computeActivityMatchedExpectations(
+            snapshot,
+            history,
+            options,
+            extracted,
+        ),
     };
 }

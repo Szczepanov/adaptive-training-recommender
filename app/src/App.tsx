@@ -20,7 +20,7 @@ import { strengthSessionService } from './services/strengthSessionService';
 import { sessionExecutionService } from './services/sessionExecutionService';
 import { assessmentAttemptService } from './services/assessmentAttemptService';
 import { runConfiguredHealthAnomalyShadow } from './services/healthAnomalyRuntime';
-import { FLAG_INPUTS_CHANGED } from './services/flagCaptureRuntime';
+import { FLAG_INPUTS_CHANGED, notifyFlagInputsChanged } from './services/flagCaptureRuntime';
 import { resolveSessionDefinition } from './sessions/sessionDefinitionResolver';
 import { OnboardingWizard } from './components/OnboardingWizard';
 
@@ -117,9 +117,9 @@ function App() {
         setInitialRouteUserId(requestUserId);
       }
 
-      // HA-D evidence collection is deliberately fire-and-forget relative to readiness.
-      // Only an explicit shadow-v1 runtime value reaches the HA service, and the result is
-      // retained solely so the Data trace can update after immutable persistence.
+      // Run configured health anomaly evaluation (`visible-v1` by default, or `shadow-v1`)
+      // off the critical readiness path and share the persisted revision with Home and DataView
+      // without changing decision-engine training recommendation selection (HA9).
       void runConfiguredHealthAnomalyShadow(requestUserId, input.date)
         .then(result => {
           if (
@@ -128,6 +128,7 @@ function App() {
             && decisionInputRequestRevision.current === requestRevision
           ) {
             setHealthAnomalyShadowRevision(result.revision);
+            notifyFlagInputsChanged(requestUserId);
           }
         })
         .catch(error => {
@@ -400,6 +401,7 @@ function App() {
               userId={userId!}
               onNavigate={handleNavigate}
               onCapabilityMaintenanceResolved={recordCapabilityMaintenance}
+              healthAnomalyRevision={healthAnomalyShadowRevision}
               onViewData={() => {
                 void loadDecisionInput();
                 handleNavigate('data');

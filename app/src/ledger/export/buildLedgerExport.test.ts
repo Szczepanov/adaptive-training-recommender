@@ -439,14 +439,47 @@ describe('buildLedgerExport absence is not "none" (M4)', () => {
 });
 
 describe('windowed flags and derived baselines', () => {
-    it('covers each date, withholding an injected illness anomaly', () => {
-        const flag: LedgerFlag = { id: 'illness_anomaly', observedOn: '2026-11-20', evaluatedAt: '2026-11-20T05:00:00Z', definitionVersion: 'v1', active: true, state: 'measured', inputs: [], threshold: 'secret' };
-        const output = buildLedgerExport(fullInput({ purpose: 'morning', flagEvaluations: [flag] }));
+    it('covers each date and exports evaluated illness_anomaly flags while preserving legacy withheld records', () => {
+        const flag: LedgerFlag = {
+            id: 'illness_anomaly',
+            observedOn: '2026-11-20',
+            evaluatedAt: '2026-11-20T05:00:00Z',
+            definitionVersion: 'illness_anomaly-v1+health-anomaly-thresholds/visible-early-warning-v1',
+            active: true,
+            state: 'measured',
+            reasonCode: 'possible_illness_or_systemic_stress',
+            inputs: [
+                { name: 'anomaly_state', value: { value: 'possible_illness_or_systemic_stress', source: 'health_anomaly_assessment', state: 'measured' } },
+                { name: 'assessment_mode', value: { value: 'visible-v1', source: 'health_anomaly_assessment', state: 'measured' } },
+            ],
+            threshold: 'Active on possible_illness_or_systemic_stress',
+        };
+        const legacyFlag: LedgerFlag = {
+            id: 'illness_anomaly',
+            observedOn: '2026-11-19',
+            evaluatedAt: '2026-11-19T05:00:00Z',
+            definitionVersion: 'v1',
+            active: null,
+            state: 'not_yet_supported',
+            reasonCode: 'ha7_release_gate_unmet',
+            inputs: [{ name: 'ha7_release_gate', value: { value: 'unmet', source: 'health_anomaly_assessment', state: 'not_yet_supported' } }],
+            threshold: null,
+        };
+        const output = buildLedgerExport(fullInput({ purpose: 'morning', flagEvaluations: [flag, legacyFlag] }));
         expect(output.flags).toHaveLength(8);
-        expect(output.flags.find(f => f.id === 'illness_anomaly' && f.observedOn === '2026-11-20')).toMatchObject({ active: null, state: 'not_yet_supported', reasonCode: 'ha7_release_gate_unmet', threshold: null });
-        expect(output.flags.find(f => f.id === 'illness_anomaly' && f.observedOn === '2026-11-20')?.inputs).toEqual([
-            { name: 'ha7_release_gate', value: { value: 'unmet', source: 'health_anomaly_assessment', state: 'not_yet_supported' } },
-        ]);
+        expect(output.flags.find(f => f.id === 'illness_anomaly' && f.observedOn === '2026-11-20')).toMatchObject({
+            active: true,
+            state: 'measured',
+            reasonCode: 'possible_illness_or_systemic_stress',
+            threshold: 'Active on possible_illness_or_systemic_stress',
+        });
+        expect(output.flags.find(f => f.id === 'illness_anomaly' && f.observedOn === '2026-11-20')?.inputs).toEqual(flag.inputs);
+        expect(output.flags.find(f => f.id === 'illness_anomaly' && f.observedOn === '2026-11-19')).toMatchObject({
+            active: null,
+            state: 'not_yet_supported',
+            reasonCode: 'ha7_release_gate_unmet',
+            threshold: null,
+        });
         expect(output.flags.find(f => f.id === 'recovery_beyond_baseline')).toMatchObject({ state: 'not_recorded' });
     });
 

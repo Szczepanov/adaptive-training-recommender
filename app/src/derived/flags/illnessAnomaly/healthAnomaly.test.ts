@@ -67,10 +67,44 @@ describe('evaluatePhysiologicalAnomaly rollout boundary', () => {
         const shadow = evaluatePhysiologicalAnomaly(EMPTY_INPUT, 'shadow-v1');
         expect(shadow).not.toBeNull();
         expect(shadow).toMatchObject({
-            state: 'normal',
+            state: 'insufficient_evidence',
             evidenceLevel: 'none',
+            episodeId: null,
+            episodeDay: null,
+            calibrationStage: 'insufficient_evidence',
+            anomalySeverity: 'none',
+            evidenceQuality: 'insufficient',
             mode: 'shadow-v1',
         });
+        expect(shadow?.rationale.cautions).toContain('INSUFFICIENT_WEARABLE_BASELINE_OR_SIGNALS');
+        expect(shadow?.rationale.cautions).toContain('NOT_A_DIAGNOSIS');
         expect(shadow?.coreSignals.every(signal => signal.status === 'unavailable')).toBe(true);
+    });
+
+    it('returns normal only when at least one core signal is measured and non-adverse', () => {
+        const measuredNormalInput: HealthAnomalyInput = {
+            ...EMPTY_INPUT,
+            coreSignals: [
+                {
+                    signal: 'rhr',
+                    status: 'normal',
+                    direction: null,
+                    currentValue: 50,
+                    baselineValue: 50,
+                    scaleValue: 2,
+                    standardizedDeviation: 0,
+                    estimator: 'mean-stdev-28d',
+                    baselineVersion: 5,
+                },
+            ],
+        };
+        const result = evaluatePhysiologicalAnomaly(measuredNormalInput, 'shadow-v1');
+        expect(result).toMatchObject({
+            state: 'normal',
+            evidenceLevel: 'none',
+            episodeId: null,
+            episodeDay: null,
+            anomalySeverity: 'none',
+        });
     });
 });

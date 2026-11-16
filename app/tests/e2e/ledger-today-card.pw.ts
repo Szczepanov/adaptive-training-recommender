@@ -112,7 +112,9 @@ test('ledger mode displays active injury_constraint_touches_session flag on Ledg
   await expect(flagStrip).toBeVisible();
   await expect(flagStrip).toContainText('Injury restrictions');
   await expect(flagStrip).toContainText('Restrictions match this session');
-  await expect(flagStrip).toContainText('Automatic illness detection isn’t available');
+  await expect(flagStrip).toContainText('Automatic illness detection');
+  await expect(flagStrip).toContainText('Not fully assessed');
+  await expect(flagStrip).not.toContainText('Automatic illness detection isn’t available');
   await expect(flagStrip).not.toContainText(/ADR-|HA7|active_constraint_families/);
 
   // D-FLAGS: active injury flag never blocks or re-doses the authored session.

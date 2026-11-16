@@ -3,8 +3,10 @@ import {
     evaluatePhysiologicalAnomaly,
     isAdverseCoreSignalEvidence,
     SHADOW_V1_HEALTH_ANOMALY_THRESHOLDS,
+    VISIBLE_V1_HEALTH_ANOMALY_THRESHOLDS,
 } from '../derived/flags/illnessAnomaly/healthAnomaly';
 import { HEALTH_ANOMALY_BASELINE_WINDOW_DAYS, mapRecoverySnapshotToHealthAnomalyFeatures } from '../derived/flags/illnessAnomaly/healthAnomalyFeatures';
+import { summarizePersonalOutcomeCalibration } from '../derived/flags/illnessAnomaly/healthAnomalyOutcome';
 import type {
     HealthAnomalyAssessmentRevision,
     HealthAnomalyInput,
@@ -17,6 +19,10 @@ import type { AuthoredPlanBlock, DailyRecoverySnapshot, DailySubjectiveCheckin }
 import { addDaysToLocalDateString } from '../utils/localDate';
 import { checkinService, type CheckinService } from './checkinService';
 import {
+    healthAnomalyOutcomeRepository,
+    type HealthAnomalyOutcomeRepository,
+} from './healthAnomalyOutcomeService';
+import {
     buildHealthAnomalyAssessmentRevision,
     healthAnomalyAssessmentRepository,
     stableHealthAnomalyHash,
@@ -28,9 +34,10 @@ import { recoverySnapshotService, type RecoverySnapshotService } from './recover
 type PlanBlockWithId = AuthoredPlanBlock & { id: string };
 
 type RecoverySource = Pick<RecoverySnapshotService, 'getRecoverySnapshotState' | 'getRecoverySnapshotsInRangeState'>;
-type CheckinSource = Pick<CheckinService, 'getCheckinState'>;
+type CheckinSource = Pick<CheckinService, 'getCheckinState'> & Partial<Pick<CheckinService, 'getCheckinsInRangeState'>>;
 type PlanBlockSource = Pick<PlanBlockService, 'getBlocksInRangeState'>;
 type AssessmentStore = Pick<HealthAnomalyAssessmentRepository, 'getLatestForDate' | 'persistImmutable'>;
+type OutcomeSource = Pick<HealthAnomalyOutcomeRepository, 'listForUser'>;
 
 export interface HealthAnomalyServiceResult {
     assessment: PhysiologicalAnomalyAssessment;
@@ -69,42 +76,73 @@ export class HealthAnomalyService {
     private readonly checkins: CheckinSource;
     private readonly planBlocks: PlanBlockSource;
     private readonly assessments: AssessmentStore;
+    private readonly outcomes: OutcomeSource;
 
     constructor(
         recovery: RecoverySource = recoverySnapshotService,
         checkins: CheckinSource = checkinService,
         planBlocks: PlanBlockSource = planBlockService,
         assessments: AssessmentStore = healthAnomalyAssessmentRepository,
+        outcomes?: OutcomeSource,
     ) {
         this.recovery = recovery;
         this.checkins = checkins;
         this.planBlocks = planBlocks;
         this.assessments = assessments;
+        this.outcomes = outcomes ?? (
+            recovery === recoverySnapshotService
+            && checkins === checkinService
+            && planBlocks === planBlockService
+            && assessments === healthAnomalyAssessmentRepository
+                ? healthAnomalyOutcomeRepository
+                : { listForUser: async () => [] }
+        );
     }
 
     async assessAndPersist(
         userId: string,
         date: string,
         policy: HealthAnomalyPolicy,
-        thresholds: HealthAnomalyThresholdPolicy = SHADOW_V1_HEALTH_ANOMALY_THRESHOLDS,
+        thresholds: HealthAnomalyThresholdPolicy = policy === 'visible-v1'
+            ? VISIBLE_V1_HEALTH_ANOMALY_THRESHOLDS
+            : SHADOW_V1_HEALTH_ANOMALY_THRESHOLDS,
         computedAt: string = new Date().toISOString(),
     ): Promise<HealthAnomalyServiceResult | null> {
         if (policy === 'off') return null;
 
         const historyStart = addDaysToLocalDateString(date, -HEALTH_ANOMALY_BASELINE_WINDOW_DAYS);
         const previousDate = addDaysToLocalDateString(date, -1);
-        const [snapshotState, checkinState, historyState, travelState, previousAssessment] = await Promise.all([
+        const [
+            snapshotState,
+            checkinState,
+            historyState,
+            checkinHistoryState,
+            travelState,
+            previousAssessment,
+            priorOutcomes,
+        ] = await Promise.all([
             this.recovery.getRecoverySnapshotState(userId, date),
             this.checkins.getCheckinState(userId, date),
             this.recovery.getRecoverySnapshotsInRangeState(userId, historyStart, date),
+            this.checkins.getCheckinsInRangeState
+                ? this.checkins.getCheckinsInRangeState(userId, historyStart, date)
+                : Promise.resolve<DataState<DailySubjectiveCheckin[]>>({ status: 'MISSING' }),
             this.planBlocks.getBlocksInRangeState(userId, date, date),
             this.assessments.getLatestForDate(userId, previousDate),
+            this.outcomes.listForUser(userId).catch(() => []),
         ]);
 
         const snapshot = availableData(snapshotState);
         const checkin = availableData(checkinState);
         const history = availableData(historyState) ?? [];
-        const features = snapshot ? mapRecoverySnapshotToHealthAnomalyFeatures(snapshot, history) : null;
+        const checkinHistory = availableData(checkinHistoryState) ?? [];
+        const contaminatedDates = Array.from(new Set(
+            checkinHistory
+                .filter(item => item.date < date && (item.healthContext?.symptoms?.present === true || item.illnessSymptoms === true))
+                .map(item => item.date),
+        )).sort();
+        const features = snapshot ? mapRecoverySnapshotToHealthAnomalyFeatures(snapshot, history, { contaminatedDates }) : null;
+        const personalCalibration = summarizePersonalOutcomeCalibration(priorOutcomes, date);
         const authoredTravelActive = travelState.status === 'AVAILABLE'
             ? activeTravelBlock(travelState.data, date)
             : travelState.status === 'MISSING' ? false : null;
@@ -136,7 +174,13 @@ export class HealthAnomalyService {
                     && previousAssessment.assessment.coreSignals.some(isAdverseCoreSignalEvidence)
                     ? previousAssessment.assessment.persistenceDays
                     : 0,
+                priorUnexplainedDays: previousAssessment
+                    && previousAssessment.assessment.unexplainedEvidence.length > 0
+                    ? (previousAssessment.assessment.unexplainedPersistenceDays
+                        ?? previousAssessment.assessment.persistenceDays)
+                    : 0,
             },
+            personalCalibration,
         };
 
         const assessment = evaluatePhysiologicalAnomaly(input, policy, thresholds);
@@ -158,18 +202,45 @@ export class HealthAnomalyService {
             })),
             travelContextRevision: travelState.status === 'AVAILABLE' ? travelState.revision ?? null : null,
             persistenceLookbackStart: previousDate,
+            ...(previousAssessment ? { previousAssessmentRevisionId: previousAssessment.revisionId } : {}),
+            ...(contaminatedDates.length > 0 ? { contaminatedDates } : {}),
+            ...(personalCalibration.priorEpisodesCount > 0
+                ? { personalCalibrationRevision: stableHealthAnomalyHash(personalCalibration) }
+                : {}),
         };
-        const revision = buildHealthAnomalyAssessmentRevision({
+        const build = (supersedesRevisionId?: string) => buildHealthAnomalyAssessmentRevision({
             userId,
             date,
             computedAt,
             mode: policy,
             thresholdPolicy: thresholds,
-            source,
+            source: supersedesRevisionId ? { ...source, supersedesRevisionId } : source,
             assessment,
         });
-        const persisted = await this.assessments.persistImmutable(revision);
+        const persisted = await this.persistAsLatest(userId, date, computedAt, build);
         return { assessment: persisted.assessment, revision: persisted };
+    }
+
+    /**
+     * Revisions are content-addressed, so an identity that repeats an older same-date revision
+     * (A, corrected to B, then back to A) returns A's document with its old `computedAt`, and
+     * B would stay latest. A repeat of the latest revision stays idempotent; a repeat of a
+     * superseded one is chained to the latest so a fresh immutable revision is appended.
+     */
+    private async persistAsLatest(
+        userId: string,
+        date: string,
+        computedAt: string,
+        build: (supersedesRevisionId?: string) => HealthAnomalyAssessmentRevision,
+    ): Promise<HealthAnomalyAssessmentRevision> {
+        const persisted = await this.assessments.persistImmutable(build());
+        if (persisted.computedAt === computedAt) return persisted;
+        // The write succeeded; an unreadable same-date history leaves the repeat as-is (pre-chain behaviour).
+        const latest = await this.assessments.getLatestForDate(userId, date).catch(() => null);
+        if (!latest || latest.revisionId === persisted.revisionId) return persisted;
+        const latestLink = latest.source.supersedesRevisionId;
+        if (latestLink && build(latestLink).revisionId === latest.revisionId) return latest;
+        return this.assessments.persistImmutable(build(latest.revisionId));
     }
 }
 

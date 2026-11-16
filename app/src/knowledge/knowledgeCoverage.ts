@@ -818,7 +818,7 @@ export function summarizeKnowledgeCoverage(
 export const REVIEWED_NON_AUTHORITY_SURFACES = [
     { ref: 'engine/sleepRecoveryEvidence.ts', reason: 'Shadow-only sleep evidence classification; explicitly not consumed by live rules/fatigue.' },
     { ref: 'engine/dataConfidence.ts', reason: 'Dashboard-facing observability only; does not change readiness, eligibility, dose or ranking.' },
-    { ref: 'derived/flags/illnessAnomaly/healthAnomaly.ts', reason: 'Candidate health-anomaly thresholds are shadow/replay evidence pending explicit policy activation.' },
+    { ref: 'derived/flags/illnessAnomaly/healthAnomaly.ts', reason: 'VISIBLE_V1_HEALTH_ANOMALY_THRESHOLDS enables non-diagnostic visible early warnings and the advisory illness_anomaly D-FLAG (backed by cardiorespiratory-illness-escalation); autonomous training restriction (tighten-v1) remains gated outside live decision authority.' },
     { ref: 'engine/activityHrFidelity.ts', reason: 'HR use-authority policy is shadow-only until a live consumer is activated.' },
     { ref: 'engine/identityAttribution.ts', reason: 'Automatic physiological identity classifier thresholds are shadow/replay candidates; effective eligibility itself is inventoried separately.' },
     { ref: 'derived/baselines/subjectiveBaseline.ts + engine/subjectiveDriftAudit.ts', reason: 'Subjective drift contribution is production-default off and evaluated through simulation/audit before activation.' },

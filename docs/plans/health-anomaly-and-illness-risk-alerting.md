@@ -1,12 +1,13 @@
 # Health anomaly and possible-illness alerting
 
 * **Capability:** HA
-* **Status:** In progress
-* **Implementation status:** HA0/HA1 are merged via #162 (with validation follow-up #168); HA2–HA4 are on `main` after #166/#165 and follow-up fixes. HA5 shadow observability/replay merged via #171, with the frontend-build secret-forwarding fix in #173; the full shadow foundation is on `main`. HA6.1–HA6.3 prospective outcome labels are implemented in PR #174 (`feat/health-anomaly-ha-e`), evidence-only and gated behind the same shadow surface.
-* **Blocked by:** none for the merged HA0–HA5 shadow foundation or for HA6.1–HA6.3. HA6.4 (personal expected-response modelling) remains blocked on accumulating enough labelled real episodes to evaluate without fitting sparse noise. HA7 evidence gates any user-visible `possible illness or systemic stress` wording; HA9 training gating requires a separate release decision after visible-mode evidence.
-* **Unlocks:** explainable pre-symptomatic physiological anomaly alerts; prospective athlete-specific calibration; later tighten-only health gating
-* **Decision:** [ADR-0025](../adr/0025-physiological-anomaly-and-possible-illness-signals.md)
-* **Research:** [2026-08-21 physiological anomaly and illness-risk review](../analysis/2026-08-21-physiological-anomaly-and-illness-risk-research.md)
+* **Status:** **Partially complete (`visible-v1` + `illness_anomaly` D-FLAG live; `tighten-v1` / HA9 gated)**
+* **Implementation status:** HA0/HA1 (`#162`, `#168`), HA2–HA4 (`#166`, `#165`), HA5 (`#171`, `#173`), and HA6.1–HA6.3 (`#174`) are merged on `main`. On 2026-11-15 (`feat/health-anomaly-visible-early-warnings`), the HA7 two-tier release decision unlocked Tier 1 **`visible-v1`** (default runtime policy, Stage A–C calibration scaffolding, 3-level early-response protocol, `HealthAnomalyCard` on `Home`, live `illness_anomaly` D-FLAG capture/strip/export, and HA6 follow-up prompt eligibility).
+* **Blocked by:** Tier 1 (`visible-v1`) is unblocked and shipped. Tier 2 **HA9** (`tighten-v1` automatic training-plan restriction) remains blocked on prospective labelled outcome evidence (`>= 90` observed days in `visible-v1` and `>= 3` outcome-labelled episodes) and [ADR-0052](../adr/0052-user-ledger-and-external-ai-planning-authority.md) authority review.
+* **Unlocks:** non-diagnostic pre-symptomatic physiological early warnings (`visible-v1`); live `illness_anomaly` D-FLAG telemetry; prospective athlete-specific calibration; later HA9 `tighten-v1` review
+* **Decision:** [ADR-0025](../adr/0025-physiological-anomaly-and-possible-illness-signals.md) (partially superseded by [ADR-0054](../adr/0054-ha7-visible-early-warning-release-gate.md))
+* **Release Decision:** [2026-11-15 HA7 visible early-warning release decision](../analysis/2026-11-15-ha7-visible-early-warning-release-decision.md)
+* **Research:** [2026-08-21 physiological anomaly and illness-risk review](../analysis/2026-08-21-physiological-anomaly-and-illness-risk-research.md) and [2026-11-15 literature & calibration evidence](../analysis/2026-11-15-physiological-anomaly-literature-and-calibration-evidence.md)
 
 ---
 
@@ -79,7 +80,7 @@ few overlapping wearable fields.
 
 ### Policy selector
 
-Implement:
+The pure contract defines four policies:
 
 ```ts
 export type HealthAnomalyPolicy =
@@ -89,24 +90,18 @@ export type HealthAnomalyPolicy =
   | 'tighten-v1';
 ```
 
-Normal production behavior stays `off` until the shadow implementation lands and the feature
-is intentionally enabled for evidence collection.
+Originally during HA0–HA6 development, production defaulted to `'off'` while shadow telemetry accumulated. Following the 2026-11-15 HA7 Tier-1 release decision, **runtime active resolution defaults omitted/empty configuration to `'visible-v1'`**, while Tier 2 (`'tighten-v1'`) remains clamped to `'visible-v1'`.
 
 #### Fail-closed policy resolution
 
-Runtime resolution of `HealthAnomalyPolicy` must be fail-closed:
+Policy parsing separates pure contract validation from active runtime defaults:
 
-* accept only the four exact enum string values (`'off' | 'shadow-v1' | 'visible-v1' |
-  'tighten-v1'`); reject anything else rather than coercing or guessing;
-* a missing configuration value resolves to `'off'`;
-* an invalid/unrecognized string value resolves to `'off'`;
-* a configuration read failure (feature-flag store unavailable, malformed remote config, etc.)
-  resolves to `'off'`;
-* every non-`'off'` mode requires an explicit, valid configured value — there is no implicit
-  upgrade path from missing/invalid configuration into a more visible mode.
-
-HA0.1 unit tests must cover all four valid values plus the missing/invalid/read-failure cases
-above, asserting each degrades to `'off'`.
+* **Pure evaluator parser (`resolveHealthAnomalyPolicy` / `readHealthAnomalyPolicy` in `healthAnomaly.ts`):** accepts only the four exact strings (`'off' | 'shadow-v1' | 'visible-v1' | 'tighten-v1'`); omitted, invalid, malformed, or thrown config reads resolve strictly to `'off'`.
+* **Runtime environment selector (`resolveConfiguredHealthAnomalyRuntimePolicy`, with alias `resolveConfiguredHealthAnomalyShadowPolicy` in `healthAnomalyRuntime.ts`):**
+  * omitted or empty `VITE_HEALTH_ANOMALY_POLICY` defaults to `'visible-v1'`;
+  * `'off'`, `'shadow-v1'`, and `'visible-v1'` resolve as configured;
+  * `'tighten-v1'` fails safe by clamping to `'visible-v1'` (keeping automatic training restriction inactive);
+  * any unrecognized or malformed string fails closed to `'off'`.
 
 ---
 
@@ -209,10 +204,11 @@ Do not reduce this structure to one opaque `confounderPenalty`.
 
 ### 4. Assessment
 
-Use ADR-0025's state vocabulary:
+Use ADR-0025's updated 6-state vocabulary (`insufficient_evidence` ensures missing/cold-start channels are never mislabelled as `normal`) and 3-concept model (`anomalySeverity`, `evidenceQuality`, `state`):
 
 ```ts
 export type PhysiologicalAnomalyState =
+  | 'insufficient_evidence'
   | 'normal'
   | 'explained_recovery_strain'
   | 'watch_unexplained'
@@ -220,16 +216,17 @@ export type PhysiologicalAnomalyState =
   | 'symptoms_reported';
 ```
 
-Assessment telemetry must also include:
+Assessment telemetry includes:
 
-* policy version;
-* data-quality/coverage flags;
-* core evidence;
+* policy version and calibration stage (`HealthAnomalyCalibrationStage`);
+* `anomalySeverity` and `evidenceQuality` (`HealthAnomalyEvidenceQuality`);
+* data-quality/coverage flags (including `baselineMaturity` and `contaminatedDaysExcluded`);
+* core evidence and `activityMatchedExpectations`;
 * supporting evidence;
-* explanations;
-* unexplained evidence;
-* persistence/episode metadata;
-* user-facing rationale tokens;
+* explanations and unexplained evidence;
+* dual persistence/episode metadata (`persistenceDays` and `unexplainedPersistenceDays`);
+* 3-level early-response protocol (`earlyResponse`);
+* user-facing rationale tokens and causal Stage C `personalCalibration`;
 * optional later outcome label.
 
 ---
@@ -242,10 +239,11 @@ Assessment telemetry must also include:
 
 ### HA0.1 Add types and policy selector
 
-Files:
+Initial historical scaffolding files (subsequently extracted from `engine/` to `app/src/derived/flags/illnessAnomaly/` under [ADR-0052](../adr/0052-user-ledger-and-external-ai-planning-authority.md)):
 
-* `app/src/engine/models.ts` or a dedicated `app/src/engine/healthAnomalyModels.ts`;
-* new `app/src/engine/healthAnomaly.ts`.
+* `app/src/derived/flags/illnessAnomaly/healthAnomalyModels.ts`
+* `app/src/derived/flags/illnessAnomaly/healthAnomaly.ts`
+* `app/src/services/healthAnomalyRuntime.ts` (`resolveConfiguredHealthAnomalyRuntimePolicy`)
 
 Steps:
 
@@ -751,7 +749,7 @@ Important: future symptoms are labels in the report, never live input to the day
 
 ## HA6 — prospective label loop and calibration
 
-**Status:** HA6.1–HA6.3 merged via #174 (`feat/health-anomaly-ha-e`), evidence-only, no Home surface. HA6.4 remains observation-only future work pending enough labelled real episodes; release evidence for HA7/HA9 necessarily accumulates over real use.
+**Status:** **HA6.1–HA6.4 implemented** (`#174` merged prospective outcome labels + Firestore persistence; `feat/health-anomaly-visible-early-warnings` added Stage B empirical-Bayes activity-matched expectations via `computeActivityMatchedExpectations`, causal Stage C `summarizePersonalOutcomeCalibration`, and eligible Home follow-up prompts via `HealthAnomalyFollowupCard`). Ongoing outcome collection continues in `visible-v1` to support future HA9 validation.
 
 ### HA6.1 Low-friction outcome capture
 
@@ -784,28 +782,26 @@ If symptoms later develop, capture approximate onset. This enables honest lead-t
 If the user voluntarily records a positive/negative respiratory test, store it as a distinct
 label source. Do not require a test and do not treat absence of a test as negative.
 
-### HA6.4 Personal expected-response model — observation only
+### HA6.4 Stage B activity-matched expectations & Stage C outcome calibration (implemented)
 
-Once enough history exists, compare unconditional baselines with context-matched residuals:
+Implemented deterministically without uncalibrated ML weights:
 
-* after hard vs non-hard days;
-* after short vs normal sleep;
-* alcohol vs none when enough examples exist;
-* travel vs non-travel when enough examples exist.
-
-Do not fit a high-dimensional classifier to sparse data. Start with stratified/regularized
-expected response or simple regression and report out-of-sample performance.
-
-This is inspired by activity-matched baseline research but must be calibrated to this
-repository's available data.
+* **Stage B (`computeActivityMatchedExpectations` & causal `contaminatedDates`):** separates `post_hard_or_high_cost` vs. `post_easy_or_rest` strata using clean prior observations (`extractSignalObservations`, excluding strictly prior symptomatic dates `< date`) and empirical-Bayes shrinkage (`HEALTH_ANOMALY_ACTIVITY_SHRINKAGE_PRIOR_DAYS`) toward the overall 28-day baseline, wired live in `HealthAnomalyService.assessAndPersist` (via `checkinService.getCheckinsInRangeState` + `mapRecoverySnapshotToHealthAnomalyFeatures`) and in `runHealthAnomalyReplay`.
+* **Stage C (`summarizePersonalOutcomeCalibration`):** aggregates strictly causal prior outcome records (`< asOfDate` in `Europe/Warsaw` across source assessment, update, onset, and test timestamps) and gates `calibrationEligible: true` (`calibrationStage: 'outcome_calibrated'`) on `priorEpisodesCount >= 3` and resolved outcomes `>= 3`; wired live in `HealthAnomalyService.assessAndPersist` via `healthAnomalyOutcomeRepository.listForUser`.
 
 ---
 
 ## HA7 — release report for visible alerts
 
-**Status:** evidence-gated
+**Status:** **Complete (2026-11-15 Two-Tier Gate Redesign)** — see [2026-11-15 HA7 visible early-warning release decision](../analysis/2026-11-15-ha7-visible-early-warning-release-decision.md) and [ADR-0054](../adr/0054-ha7-visible-early-warning-release-gate.md).
 
-Before enabling `visible-v1`, produce a dated analysis document with:
+### Summary of the HA7 decision
+
+* **Flaw resolved:** requiring `>= 60` observed days **and** `>= 5` distinct anomaly episodes locked healthy athletes behind `ha7_release_gate_unmet` indefinitely by conflating physiological baseline readiness (`7–28` nights) with illness incidence.
+* **Tier 1 unlocked (`visible-v1`):** approved on Stage A personal baseline readiness (`insufficient_evidence` `< 7` clean nights -> conservative `emerging_baseline` `7–13` nights -> `reliable_baseline` `>= 14` nights), explicit missingness semantics, non-diagnostic wellness language, IOC red-flag/RTS safety boundaries, and zero workout veto.
+* **Tier 2 remains gated (`tighten-v1` / HA9):** automatic training restriction stays clamped to `'visible-v1'` in `resolveConfiguredHealthAnomalyRuntimePolicy` until HA9 prospective outcome evidence (`>= 90` observed days, `>= 3` outcome-labelled episodes) authorizes a separate decision.
+
+The historical HA7 checklist items below remain tracked continuously in `runHealthAnomalyReplay` (`policySummaries`) and Stage C calibration rather than blocking visibility on healthy athletes:
 
 ### Data quality
 
@@ -856,22 +852,19 @@ Report:
 * candidate hard-session suppressions;
 * whether the anomaly capability changes a decision or merely explains it better.
 
-### Cutover decision
+### Cutover decision (Recorded 2026-11-15)
 
-The report must explicitly choose one of:
-
-* no ship — stay shadow;
-* ship `unusual physiology` information only;
-* ship `possible illness or systemic stress` wording;
-* recalibrate and rerun.
-
-Do not assume implementation completion implies release.
+* **Chosen option:** **ship Tier 1 `visible-v1`** (`insufficient_evidence`, `explained_recovery_strain`, `watch_unexplained`, `possible_illness_or_systemic_stress` with `EarlyResponseProtocol`, `symptoms_reported`, and live advisory `illness_anomaly` D-FLAG); **keep Tier 2 `tighten-v1` inactive** pending HA9 evidence.
 
 ---
 
 ## HA8 — user-facing alert surfaces
 
-**Status:** blocked by HA7 release decision
+**Status:** **Implemented (`visible-v1` active default)** — implemented on `feat/health-anomaly-visible-early-warnings`:
+
+* `HealthAnomalyCard` (`app/src/components/HealthAnomalyCard.tsx`) mounted in `Home.tsx`, surfacing non-diagnostic `anomalySeverity`, `evidenceQuality`, 3-level `EarlyResponseProtocol` (`level_1_early_watch`, `level_2_persistent_or_corroborated`, `level_3_symptoms_reported`), IOC red-flag warnings, 3-stage RTS guidance, explanations, and inline HA6 follow-up trigger when eligible;
+* `illness_anomaly` D-FLAG unlocked across `FlagCaptureService` (`flagCaptureService.ts`), `resolveTodayFlagStripItems` (`flagStripItems.ts`), `FlagStrip.tsx`, and `buildLedgerExport.ts` (replacing hardcoded `ha7_release_gate_unmet`; reporting `missing` / `no_core_signals` on `insufficient_evidence` or unmeasured nights);
+* `HealthAnomalyShadowPanel.tsx` renders the `insufficient_evidence` label alongside current episode (`episodeId` / `episodeDay`) and signal/explanation traces when `configuredHealthAnomalyShadowPolicy() !== 'off'`, while multi-policy replay summary tables (`policySummaries`) live in `healthAnomalyReplay.ts`.
 
 ### HA8.1 Home alert card
 
@@ -950,8 +943,7 @@ known.
 
 ## HA9 — tighten-only training integration
 
-**Status:** respiration shadow evidence implemented through HA9-R2; live tightening remains
-blocked by labelled prospective evidence and a recorded release decision
+**Status:** respiration shadow evidence implemented through HA9-R2; `visible-v1` Tier 1 ships zero workout veto; Tier 2 (`tighten-v1`) remains **inactive** (`resolveConfiguredHealthAnomalyRuntimePolicy` clamps `'tighten-v1'` -> `'visible-v1'`) and blocked by HA9 labelled prospective evidence (`>= 90` observed days in `visible-v1` + `>= 3` outcome-labelled episodes) and [ADR-0052](../adr/0052-user-ledger-and-external-ai-planning-authority.md) authority review.
 
 The scoped implementation decomposition and current personal-history replay findings are in
 [`respiration-elevation-training-tightening.md`](./respiration-elevation-training-tightening.md).
@@ -1101,16 +1093,17 @@ Keep implementation reviewable and protect production behavior.
 * no illness probability, no Home alert, no recommendation/training input;
 * HA6.4 deliberately deferred.
 
-### PR HA-F — visible anomaly UX — **blocked by HA7**
+### PR HA-F — visible anomaly UX & D-FLAG release — **implemented (`feat/health-anomaly-visible-early-warnings`)**
 
-Only after HA7 chooses ship semantics.
+* 2026-11-15 HA7 two-tier release decision (`2026-11-15-ha7-visible-early-warning-release-decision.md`) and [ADR-0054](../adr/0054-ha7-visible-early-warning-release-gate.md);
+* six defect fixes (`insufficient_evidence`, unified `unexplainedPersistenceDays`, Night-1 multi-domain corroboration + `EarlyResponseProtocol`, resolving respiration downgrade, causal clean-window baseline exclusion wired live + in replay, Day 3+ acute confounder cap) plus Stage B `computeActivityMatchedExpectations` and Stage C `summarizePersonalOutcomeCalibration` (wired live via `HealthAnomalyService.assessAndPersist`);
+* `visible-v1` default runtime policy, `HealthAnomalyCard` on `Home`, live `illness_anomaly` D-FLAG in capture/strip/export, and enhanced `runHealthAnomalyReplay` (`policySummaries`).
 
-### PR HA-G — training gate — **blocked by separate evidence/release decision**
+### PR HA-G — training gate — **blocked by HA9 Tier-2 release decision**
 
-Only after separate evidence authorizes `tighten-v1`.
+Remains inactive (`'tighten-v1'` clamps to `'visible-v1'`) until separate HA9 prospective outcome evidence authorizes training restriction.
 
-Do not combine HA-F and HA-G. User-visible information should be validated before it is allowed
-to alter training.
+Do not combine HA-F and HA-G. User-visible early warnings remain advisory until prospective outcome evidence justifies altering training recommendations.
 
 ---
 
@@ -1129,21 +1122,23 @@ For **shadow capability complete**:
 * real history can be replayed;
 * production recommendation behavior remains unchanged.
 
-All eight bullets are satisfied on `main` now that HA-D is merged (#171, #173).
+All eight bullets are satisfied on `main` (`#171`, `#173`).
 
 For **visible capability complete**:
 
-* HA7 evidence exists;
-* approved states/copy are rendered on Home;
-* alert burden is bounded and episode-aware;
-* the UI says `possible illness or systemic stress`, never a diagnosis;
-* outcome follow-up is available to continue calibration.
+* dated HA7 release decision exists (`2026-11-15-ha7-visible-early-warning-release-decision.md`);
+* `insufficient_evidence`, explained, unexplained watch, corroborated stress, and symptom states/early-response copy are rendered cleanly via `HealthAnomalyCard` and `illness_anomaly` D-FLAG;
+* alert burden is bounded, activity-conditioned, contamination-protected, and episode-aware;
+* all UI copy uses non-diagnostic wellness framing with explicit IOC red-flag and RTS boundaries;
+* HA6 outcome follow-up (`HealthAnomalyFollowupCard` + `summarizePersonalOutcomeCalibration`) captures prospective labels in live use.
 
-For **training integration complete**:
+All five bullets are satisfied on `feat/health-anomaly-visible-early-warnings`.
 
-* a second evidence review authorizes `tighten-v1`;
-* hard-session suppression is measured;
-* internal and external-plan decisions use the same gate;
+For **training integration complete** (Tier 2 / HA9 — **pending**):
+
+* a separate Tier-2 / HA9 evidence review authorizes un-clamping `tighten-v1`;
+* hard-session suppression is measured on prospective labelled outcomes;
+* internal and external-plan decisions use the same gate under ADR-0052;
 * health anomaly can only tighten;
 * audit telemetry identifies every changed recommendation.
 
@@ -1151,11 +1146,9 @@ For **training integration complete**:
 
 ## Current continuation checklist
 
-The next agent should continue from the shipped HA0–HA5 foundation and HA6.1–HA6.3 (PR #174) rather than recreating them:
+Continue from shipped Tier 1 (`visible-v1`) rather than reverting or re-gating it:
 
-1. Read ADR-0025, ADR-0024, ADR-0010, this plan, and `docs/architecture/health-anomaly-shadow.md`.
-2. Explicitly enable `shadow-v1` only for the intended evidence-collection user/environment, if not already enabled; the HA6.1–HA6.3 outcome-capture surface stays evidence-only under Detailed Data, and follow-up prompts only appear once `shadow-v1` assessments are being produced for that user.
-3. Accumulate enough real episodes/healthy periods to report alert burden, confounder overlap, false alerts, and lead time honestly; HA6 outcome labels are the source for the context-explained and symptom-follow-up fractions HA7 needs.
-4. Start HA6.4 personal expected-response modelling only once enough labelled episodes exist per athlete to evaluate without fitting sparse noise.
-5. Write the dated HA7 evidence review before any `visible-v1` cutover.
-6. Treat `tighten-v1` as a separate later release decision; health anomaly may only tighten, never relax, training decisions.
+1. Read [ADR-0025](../adr/0025-physiological-anomaly-and-possible-illness-signals.md), [ADR-0054](../adr/0054-ha7-visible-early-warning-release-gate.md), [ADR-0024](../adr/0024-biometric-baseline-estimator-policy.md), [ADR-0052](../adr/0052-user-ledger-and-external-ai-planning-authority.md), [the 2026-11-15 HA7 release decision](../analysis/2026-11-15-ha7-visible-early-warning-release-decision.md), [the 2026-11-15 literature & calibration evidence](../analysis/2026-11-15-physiological-anomaly-literature-and-calibration-evidence.md), this plan, and `docs/architecture/health-anomaly-shadow.md`.
+2. Keep `'visible-v1'` active as the default non-diagnostic early-warning policy; opt out only via explicit `VITE_HEALTH_ANOMALY_POLICY=off` or `shadow-v1`.
+3. Accumulate real prospective HA6 episode follow-ups (`HealthAnomalyOutcomeRecord`) and run `runHealthAnomalyReplay` (`policySummaries`) to monitor false-alert rate per 30 days, Night-1 multi-domain corroboration yield, and `calibrationEligible` readiness across athletes.
+4. Keep `'tighten-v1'` clamped to `'visible-v1'` until `>= 90` observed days in `visible-v1` and `>= 3` outcome-labelled episodes support a separate HA9 Tier-2 release decision.

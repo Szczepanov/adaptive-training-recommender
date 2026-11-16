@@ -156,6 +156,82 @@ emulatorDescribe('Health anomaly assessment revision rules (HA4)', () => {
         }));
     });
 
+    it('allows visible-v1 revisions carrying optional threshold policy and early-warning assessment fields', async () => {
+        const db = testEnvironment.authenticatedContext(ownerId).firestore();
+        const base = revision();
+        await assertSucceeds(setDoc(doc(db, revisionPath), {
+            ...base,
+            mode: 'visible-v1',
+            thresholdPolicy: {
+                ...base.thresholdPolicy,
+                policyVersion: 'health-anomaly-thresholds/visible-early-warning-v1',
+                emergingHistoryCount: 7,
+                allowFirstNightMultiDomainEscalation: true,
+                downgradeResolvingRespiration: true,
+            },
+            assessment: {
+                ...base.assessment,
+                mode: 'visible-v1',
+                state: 'insufficient_evidence',
+                thresholdPolicyVersion: 'health-anomaly-thresholds/visible-early-warning-v1',
+                unexplainedPersistenceDays: 0,
+                calibrationStage: 'emerging_baseline',
+                anomalySeverity: 'mild',
+                evidenceQuality: 'single_channel',
+                earlyResponse: {
+                    level: 'level_1_early_watch',
+                    headline: 'Early physiological shift noted',
+                    summary: 'Keep intensity controlled while tracking recovery.',
+                    actions: ['Swap intervals for easy aerobic work'],
+                    reassessTiming: 'Reassess tomorrow morning',
+                    nonDiagnosticNotice: 'Not a medical assessment.',
+                    redFlagWarnings: [],
+                    returnToSportGuidance: [],
+                    followupPromptEligible: true,
+                },
+                activityMatchedExpectations: [{
+                    signal: 'rhr',
+                    stratum: 'post_hard_or_high_cost',
+                    stratumSampleCount: 4,
+                    unconditionalBaseline: 48,
+                    shrunkExpectedValue: 50,
+                    currentValue: 55,
+                    residualFromExpected: 5,
+                    residualStandardizedDeviation: 1.9,
+                    withinExpectedTrainingResponse: false,
+                }],
+                personalCalibration: {
+                    asOfDate: '2026-08-21',
+                    priorEpisodesCount: 2,
+                    illnessConfirmedCount: 1,
+                    confounderExplainedCount: 1,
+                    noIllnessCount: 0,
+                    unknownCount: 0,
+                    positiveRespiratoryTestsCount: 0,
+                    negativeRespiratoryTestsCount: 0,
+                    medianLeadTimeDays: 1,
+                    calibrationEligible: false,
+                },
+            },
+        }));
+    });
+
+    it('rejects oversized optional early-warning fields and invalid emergingHistoryCount bounds', async () => {
+        const db = testEnvironment.authenticatedContext(ownerId).firestore();
+        const base = revision();
+        await assertFails(setDoc(doc(db, revisionPath), {
+            ...base,
+            thresholdPolicy: { ...base.thresholdPolicy, emergingHistoryCount: 29 },
+        }));
+        await assertFails(setDoc(doc(db, revisionPath), {
+            ...base,
+            assessment: {
+                ...base.assessment,
+                activityMatchedExpectations: [{}, {}, {}, {}],
+            },
+        }));
+    });
+
     // Issue #1201 rules scope: nested assessment enums, threshold lower bounds/ordering/enums and
     // version/mode equalities, the top-level mode enum and integer lower bounds are validated by
     // parseHealthAnomalyAssessmentRevision (isHealthAnomalyThresholdPolicy) in
@@ -170,5 +246,41 @@ emulatorDescribe('Health anomaly assessment revision rules (HA4)', () => {
     ])('accepts %s at the rules boundary (parseHealthAnomalyAssessmentRevision owns it)', async (_label, mutate) => {
         const db = testEnvironment.authenticatedContext(ownerId).firestore();
         await assertSucceeds(setDoc(doc(db, revisionPath), mutate(revision())));
+    });
+
+    it('accepts optional source lineage fields and rejects oversized contaminatedDates or a malformed supersedes link', async () => {
+        const db = testEnvironment.authenticatedContext(ownerId).firestore();
+        const base = revision();
+        await assertSucceeds(setDoc(doc(db, revisionPath), {
+            ...base,
+            source: {
+                ...base.source,
+                previousAssessmentRevisionId: 'ha-aaaaaaaaaaaaaaaa',
+                contaminatedDates: ['2026-08-18'],
+                personalCalibrationRevision: '1234567890abcdef',
+                supersedesRevisionId: 'ha-bbbbbbbbbbbbbbbb',
+            },
+        }));
+        // Fresh revision paths: revisions are create-only, so reusing revisionPath would be denied as
+        // an update and would not exercise the 28-entry cap.
+        const withContaminatedDates = (id: string, length: number) => ({
+            ...base,
+            revisionId: id,
+            source: {
+                ...base.source,
+                contaminatedDates: Array.from({ length }, (_, idx) => `2026-07-${String(idx + 1).padStart(2, '0')}`),
+            },
+        });
+        const pathFor = (id: string) => `users/${ownerId}/health_anomaly_assessments/${date}/revisions/${id}`;
+        const atCapId = 'ha-28282828282828aa';
+        const overCapId = 'ha-29292929292929bb';
+        const badLinkId = 'ha-cccccccccccccccc';
+        await assertFails(setDoc(doc(db, pathFor(badLinkId)), {
+            ...base,
+            revisionId: badLinkId,
+            source: { ...base.source, supersedesRevisionId: 'not-a-revision' },
+        }));
+        await assertSucceeds(setDoc(doc(db, pathFor(atCapId)), withContaminatedDates(atCapId, 28)));
+        await assertFails(setDoc(doc(db, pathFor(overCapId)), withContaminatedDates(overCapId, 29)));
     });
 });

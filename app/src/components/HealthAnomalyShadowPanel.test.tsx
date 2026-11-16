@@ -84,6 +84,24 @@ describe('HealthAnomalyShadowTrace', () => {
         expect(html).toContain('does not alter today');
     });
 
+    it('renders Insufficient wearable evidence label when assessment state is insufficient_evidence', () => {
+        const insufficientRevision: HealthAnomalyAssessmentRevision = {
+            ...revision,
+            mode: 'visible-v1',
+            assessment: {
+                ...revision.assessment,
+                state: 'insufficient_evidence',
+                evidenceLevel: 'none',
+                mode: 'visible-v1',
+            },
+        };
+        const html = renderToStaticMarkup(
+            <HealthAnomalyShadowTrace revision={insufficientRevision} decisionInput={decisionInput} />,
+        );
+        expect(html).toContain('Insufficient wearable evidence');
+        expect(html).toContain('insufficient_evidence');
+    });
+
     it('selects the newest matching user/date revision across live and persisted sources', () => {
         const newer = {
             ...revision,
