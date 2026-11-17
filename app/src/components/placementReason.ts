@@ -31,13 +31,18 @@ export function placementReasonFrom(code: PlacementReasonCode | '', note: string
     return { code: code || 'other', ...(trimmed ? { note: trimmed } : {}) };
 }
 
-/** Stamps the reason on the session's assignment when the write moved or dropped it. */
+/**
+ * Stamps the reason on the session's assignment when the write moved or dropped it, and on a move
+ * the date it moved from (the date the athlete saw it on just before the move).
+ */
 export function withPlacementReason(
     assignments: readonly ExternalPlacementAssignment[],
     sessionId: string,
     reason: PlacementReason | null,
+    movedFrom?: string,
 ): ExternalPlacementAssignment[] {
-    return assignments.map(item => (item.sessionId === sessionId && (item.status === 'moved' || item.status === 'dropped')
-        ? { ...item, reason }
-        : item));
+    return assignments.map(item => {
+        if (item.sessionId !== sessionId || (item.status !== 'moved' && item.status !== 'dropped')) return item;
+        return { ...item, reason, ...(item.status === 'moved' && movedFrom ? { movedFrom } : {}) };
+    });
 }

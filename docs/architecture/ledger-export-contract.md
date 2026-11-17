@@ -309,8 +309,10 @@ status `dropped` or `superseded` keeps that status; anything else is `missed`. E
 matched by plan id, revision, session id and verified content hash (`planExecutions`), never by
 title, and a moved session is judged on its as-of assigned date. Evidence is read only inside the
 export window, so a placement is also `unknown` when the reads cannot cover it: it is dated after
-the window end; it was moved (the first move never records the authored date, so an attempt on
-it may lie before the read); or the same plan session has a link or execution under another revision, or a newer
+the window end; any date the session sat on, including each date it was moved from (`movedFrom`), is
+before the window start; a move is not fully recorded (a moved snapshot without `movedFrom`, saved
+before it was recorded, a moved row with no history, or truncated history), so the authored date
+and any attempt on it are unknown; or the same plan session has a link or execution under another revision, or a newer
 revision of the plan was imported on or before its date. Nothing is written back.
 
 **In-session swaps and omissions (Phase 3B).** `coachingHistory.overrides` also carries one

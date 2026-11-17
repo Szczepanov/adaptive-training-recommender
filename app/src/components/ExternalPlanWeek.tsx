@@ -50,7 +50,7 @@ export interface ExternalPlanWeekProps {
      * drop/move reason (`null` when none was given). */
     onConfirmReplacement: (proposal: ReplacementProposal, reason: PlacementReason | null) => void | Promise<void>;
     /** Free days in the same week, offered when the athlete rejects the proposed date. */
-    onChooseDate: (sessionId: string, date: string, reason: PlacementReason | null) => void | Promise<void>;
+    onChooseDate: (sessionId: string, date: string, reason: PlacementReason | null, movedFrom: string) => void | Promise<void>;
     /** Set when the last write failed. The week below still shows the stored placement,
      * which is accurate — nothing was written. */
     writeError?: string | null;
@@ -145,10 +145,10 @@ export function ExternalPlanWeek({
         }
     };
 
-    const handleDateChoice = async (sessionId: string, date: string) => {
+    const handleDateChoice = async (sessionId: string, date: string, movedFrom: string) => {
         if (clinicalEscalationRequired) return;
         try {
-            await onChooseDate(sessionId, date, placementReasonFrom(reasonCode, reasonNote));
+            await onChooseDate(sessionId, date, placementReasonFrom(reasonCode, reasonNote), movedFrom);
             setProposal(null);
             setChoosingFor(null);
         } catch {
@@ -337,7 +337,7 @@ export function ExternalPlanWeek({
                                 <button
                                     key={date}
                                     type="button"
-                                    onClick={() => handleDateChoice(proposal.sessionId, date)}
+                                    onClick={() => handleDateChoice(proposal.sessionId, date, proposal.missedDate)}
                                 >
                                     {weekdayLabel(date)} {date}
                                 </button>

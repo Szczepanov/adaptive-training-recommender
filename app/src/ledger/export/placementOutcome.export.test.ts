@@ -102,6 +102,72 @@ describe('placement outcome in the ledger export (Phase 3)', () => {
         expect(outcomes(bare)['no-history'].value).toBe('unknown');
     });
 
+    it('classifies a moved session once every move records the date it moved from (authored date included)', () => {
+        const event = (changedOn: string, assignments: Record<string, unknown>[], previous: Record<string, unknown>[] = []) => ({
+            userId: 'u', planId: 'plan-1', revision: 2, changedOn, recordedAt: `${changedOn}T08:00:00Z`, successors: {},
+            previous, assignments,
+        }) as unknown as NonNullable<LedgerExportRecords['placementHistory']>[number];
+        const placed = (sessionId: string, movedFrom?: string) =>
+            ({ sessionId, date: '2026-11-18', status: 'moved' as const, ...(movedFrom ? { movedFrom } : {}) });
+
+        // First move from the authored 11-16 (inside the window): absence is provable, so missed.
+        const recorded = withPlacements([placed('s', '2026-11-16')], { placementHistory: [event('2026-11-15', [placed('s', '2026-11-16')])] });
+        expect(outcomes(recorded).s.value).toBe('missed');
+
+        // Authored date before the window start: an attempt could lie outside the read.
+        const early = withPlacements([placed('s', '2026-11-01')], { placementHistory: [event('2026-11-01', [placed('s', '2026-11-01')])] });
+        expect(outcomes(early).s.value).toBe('unknown');
+
+        // A second move records the first move's date; the first move's own from-date must also exist.
+        const twoMoves = withPlacements([placed('s', '2026-11-17')], { placementHistory: [
+            event('2026-11-15', [{ ...placed('s', '2026-11-16'), date: '2026-11-17' }]),
+            event('2026-11-17', [placed('s', '2026-11-17')], [{ ...placed('s', '2026-11-16'), date: '2026-11-17' }]),
+        ] });
+        expect(outcomes(twoMoves).s.value).toBe('missed');
+        const legacyFirst = withPlacements([placed('s', '2026-11-17')], { placementHistory: [
+            event('2026-11-15', [{ sessionId: 's', date: '2026-11-17', status: 'moved' }]),
+            event('2026-11-17', [placed('s', '2026-11-17')], [{ sessionId: 's', date: '2026-11-17', status: 'moved' }]),
+        ] });
+        expect(outcomes(legacyFirst).s.value).toBe('unknown');
+
+        // From-date on the row but no history, or truncated history: the move chain cannot be checked.
+        expect(outcomes(withPlacements([placed('s', '2026-11-16')], { placementHistory: [] })).s.value).toBe('unknown');
+        // Truncated history exports only an overlay written on or before the as-of date; its move chain is unverifiable.
+        const truncated = withPlacements([placed('s', '2026-11-16')], {
+            placements: [{ planId: 'plan-1', revision: 2, updatedAt: '2026-11-15T08:00:00Z', assignments: [placed('s', '2026-11-16')] }],
+            placementHistory: [],
+            placementHistoryUnavailable: [{ planId: 'plan-1', revision: 2 }],
+        });
+        expect(outcomes(truncated).s.value).toBe('unknown');
+
+        // A save over a corrupt overlay hides the prior state, so a move before it is unverifiable.
+        const overCorrupt = withPlacements([placed('s', '2026-11-16')], { placementHistory: [
+            { ...event('2026-11-15', [placed('s', '2026-11-16')]), previousState: 'invalid' } as NonNullable<LedgerExportRecords['placementHistory']>[number],
+        ] });
+        expect(outcomes(overCorrupt).s.value).toBe('unknown');
+
+        // A repair after the as-of date does not change this export's outcome.
+        const laterRepair = withPlacements([placed('s', '2026-11-16')], { placementHistory: [
+            event('2026-11-15', [placed('s', '2026-11-16')]),
+            { ...event('2026-11-22', [placed('s', '2026-11-16')]), previousState: 'invalid' } as NonNullable<LedgerExportRecords['placementHistory']>[number],
+        ] });
+        expect(outcomes(laterRepair).s.value).toBe('missed');
+
+        // A date the session sat on after the window end is outside the evidence read.
+        const pastWindowEnd = withPlacements([placed('s', '2026-11-25')], { placementHistory: [
+            event('2026-11-15', [{ ...placed('s', '2026-11-16'), date: '2026-11-25' }]),
+            event('2026-11-16', [placed('s', '2026-11-25')], [{ ...placed('s', '2026-11-16'), date: '2026-11-25' }]),
+        ] });
+        expect(outcomes(pastWindowEnd).s.value).toBe('unknown');
+
+        // A dropped session that was moved earlier without a from-date stays unknown too.
+        const droppedAfterLegacyMove = withPlacements([{ sessionId: 's', date: '2026-11-18', status: 'dropped' }], { placementHistory: [
+            event('2026-11-15', [{ sessionId: 's', date: '2026-11-18', status: 'moved' }]),
+            event('2026-11-18', [{ sessionId: 's', date: '2026-11-18', status: 'dropped' }], [{ sessionId: 's', date: '2026-11-18', status: 'moved' }]),
+        ] });
+        expect(outcomes(droppedAfterLegacyMove).s.value).toBe('unknown');
+    });
+
     it('is unknown for a past placement after the end of a window that ends before the as-of date', () => {
         const records = withPlacements([
             { sessionId: 'inside', date: '2026-11-15', status: 'planned' },

@@ -447,7 +447,9 @@ fatigue, pain, equipment, travel, other) plus a short note. **Drop it**, **Move 
 **Choose another day** all save it on the moved or dropped assignment, so the overlay and its
 placement-history event carry it in the same write. Leaving it empty saves `reason: null` (asked,
 left blank). A note typed with no code is filed under `other`. The ledger export reports it
-(ledger export Phase 3C).
+(ledger export Phase 3C). A move also records `movedFrom`, the date the session was shown on just
+before the move (on a first move, its plan date as placed), so the export can tell a missed moved
+session from one attempted on that earlier date.
 
 When only the stored placement overlay (the athlete's moves) is unreadable, `PlanView` still
 shows the coach plan, at the plan's own dates. `PlacementOverlayRecoveryCard` warns that

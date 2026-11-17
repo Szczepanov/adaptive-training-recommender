@@ -37,6 +37,8 @@ test('a reschedule records the chosen reason on the placement and its history ev
   const reason = { code: 'fatigue', note: 'Legs heavy after the ride' };
   await expect.poll(async () => (await readDocument<ExternalPlanPlacement>(athlete, `${base}/placement/current`))
     ?.assignments.find(item => item.sessionId === plan.sessions[0].id)?.reason).toEqual(reason);
+  // The first move records the authored date it moved from (today), so the export can classify it.
   const events = await readCollection<PlacementEvent>(athlete, `${base}/placement_history`);
-  expect(events.at(-1)?.assignments.find(item => item.sessionId === plan.sessions[0].id)).toMatchObject({ status: 'moved', reason });
+  expect(events.at(-1)?.assignments.find(item => item.sessionId === plan.sessions[0].id))
+    .toMatchObject({ status: 'moved', reason, movedFrom: today });
 });

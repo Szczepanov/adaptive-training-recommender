@@ -592,6 +592,11 @@ export interface ExternalPlacementAssignment {
     /** Only on `moved`/`dropped`. Absent: written before reasons were asked (legacy). `null`: asked,
      * left blank. Copied into the immutable placement event with the overlay write. */
     reason?: PlacementReason | null;
+    /** Only on `moved`: the date the session was shown on just before this move (on a first move,
+     * its plan date as placed, which can differ from the authored date when a fixed activity or rest
+     * date shifted it). Absent on moves saved before it was recorded. Lets the ledger export tell
+     * where an earlier attempt could have happened. */
+    movedFrom?: string;
 }
 
 /** The mutable overlay. Rescheduling writes here, never to the stored revision. */
