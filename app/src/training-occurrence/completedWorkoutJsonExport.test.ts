@@ -216,7 +216,7 @@ describe('exportCompletedWorkoutToJson', () => {
                 ...structuredView.structured!,
                 steps: [{
                     stepId: 'gate', title: 'Gate', isOptional: false, choiceOnly: true, prescribed: { sets: 0 },
-                    choices: [{ choiceId: 'c', optionId: 'o', completedAt: '2026-08-26T07:00:00.000Z' }], sets: [],
+                    choices: [{ choiceEntryId: 'ce-c', effective: true, choiceId: 'c', optionId: 'o', completedAt: '2026-08-26T07:00:00.000Z' }], sets: [],
                 }],
             },
         };
@@ -255,7 +255,7 @@ describe('exportCompletedWorkoutToJson', () => {
     });
 
     it('exports step choices', () => {
-        const choices = [{ choiceId: 'c1', optionId: 'o1', optionLabel: 'Heavy', reason: 'Felt strong', completedAt: '2026-08-26T07:00:00.000Z' }];
+        const choices = [{ choiceEntryId: 'ce-c1', effective: true, choiceId: 'c1', optionId: 'o1', optionLabel: 'Heavy', reason: 'Felt strong', completedAt: '2026-08-26T07:00:00.000Z' }];
         const [first, second] = exportCompletedWorkoutToJson(withFirstStep({ choices }), EXPORTED_AT).exercises;
         expect(first.choices).toEqual(choices);
         expect('choices' in second).toBe(false);
@@ -269,17 +269,97 @@ describe('exportCompletedWorkoutToJson', () => {
             response({ responseId: 'c', window: 'immediate', sessionRpe: 7, completedFraction: 0.8, unexpectedFatigue: true, techniqueNote: 'knees' }),
             response({ responseId: 'd', window: 'later_day', createdAt: '2026-08-26T10:00:00.000Z', note: 'earlier' }),
         ]);
+        const dates = { date: '2026-08-26', sourceSessionDate: '2026-08-26' };
         expect(result.responses).toEqual([
-            { window: 'immediate', sessionRpe: 7, completedFraction: 0.8, unexpectedFatigue: true, techniqueNote: 'knees' },
-            { window: 'later_day', note: 'earlier' },
-            { window: 'later_day', note: 'later' },
-            { window: 'next_morning', sessionRpe: 5 },
+            { window: 'immediate', ...dates, sessionRpe: 7, completedFraction: 0.8, unexpectedFatigue: true, techniqueNote: 'knees' },
+            { window: 'later_day', ...dates, note: 'earlier' },
+            { window: 'later_day', ...dates, note: 'later' },
+            { window: 'next_morning', ...dates, sessionRpe: 5 },
         ]);
+        expect(result.responseRead).toEqual({ status: 'complete' });
+        expect(result.responseWindows).toEqual({ immediate: 'recorded', later_day: 'recorded', next_morning: 'recorded' });
         expect(JSON.stringify(result.responses)).not.toContain('responseId');
     });
 
+    it('keeps the response date separate from the source-session date', () => {
+        const [next] = exportCompletedWorkoutToJson(structuredView, EXPORTED_AT, [
+            response({ responseId: 'n', window: 'next_morning', date: '2026-08-27' }),
+        ]).responses as Exclude<ReturnType<typeof exportCompletedWorkoutToJson>['responses'], 'unavailable' | undefined>;
+        expect(next).toMatchObject({ window: 'next_morning', date: '2026-08-27', sourceSessionDate: '2026-08-26' });
+    });
+
+    it('marks missing windows not_recorded only after a complete read', () => {
+        const complete = exportCompletedWorkoutToJson(structuredView, EXPORTED_AT, [response({ responseId: 'a', window: 'immediate' })]);
+        expect(complete.responseWindows).toEqual({ immediate: 'recorded', later_day: 'not_recorded', next_morning: 'not_recorded' });
+        const partial = exportCompletedWorkoutToJson(structuredView, EXPORTED_AT, {
+            status: 'read', responses: [response({ responseId: 'a', window: 'immediate' })], invalidRecords: 2,
+        });
+        expect(partial.responseRead).toEqual({ status: 'partial', invalidRecords: 2 });
+        expect(partial.responseWindows).toEqual({ immediate: 'recorded', later_day: 'unknown', next_morning: 'unknown' });
+    });
+
     it('marks responses unavailable', () => {
-        expect(exportCompletedWorkoutToJson(structuredView, EXPORTED_AT, 'unavailable').responses).toBe('unavailable');
+        const failed = exportCompletedWorkoutToJson(structuredView, EXPORTED_AT, 'unavailable');
+        expect(failed.responses).toBe('unavailable');
+        expect(failed.responseRead).toEqual({ status: 'failed' });
+        expect(failed.responseWindows).toEqual({ immediate: 'unknown', later_day: 'unknown', next_morning: 'unknown' });
+        expect(exportCompletedWorkoutToJson(structuredView, EXPORTED_AT, { status: 'failed' }).responses).toBe('unavailable');
         expect(JSON.parse(formatCompletedWorkoutJson(structuredView, EXPORTED_AT, 'unavailable')).responses).toBe('unavailable');
+    });
+
+    it('reports set-log completeness and per-exercise performed status', () => {
+        const step = (stepId: string, sets: NonNullable<CompletedWorkoutView['structured']>['steps'][number]['sets']) => ({
+            stepId, title: stepId, isOptional: false, prescribed: { sets: 1, reps: 5 }, sets,
+        });
+        const set = { entryId: 'e', setNumber: 1, isWarmup: false, completedAt: '2026-08-26T07:00:00.000Z' };
+        const view = (entryInvalidRecords: number | undefined): CompletedWorkoutView => ({
+            ...structuredView,
+            structured: {
+                ...structuredView.structured!,
+                entryInvalidRecords,
+                steps: [
+                    step('done', [{ ...set, payload: { kind: 'checkoff', completed: true } }]),
+                    step('failed', [{ ...set, payload: { kind: 'checkoff', completed: false } }]),
+                    step('empty', []),
+                ],
+            },
+        });
+        const complete = exportCompletedWorkoutToJson(view(0), EXPORTED_AT);
+        expect(complete.structuredEntries).toEqual({ status: 'complete' });
+        expect(complete.exercises.map(e => e.performedStatus)).toEqual(['performed', 'not_performed', 'not_performed']);
+        const partial = exportCompletedWorkoutToJson(view(3), EXPORTED_AT);
+        expect(partial.structuredEntries).toEqual({ status: 'partial', invalidRecords: 3 });
+        expect(partial.exercises.map(e => e.performedStatus)).toEqual(['performed', 'unknown', 'unknown']);
+        expect(exportCompletedWorkoutToJson(view(undefined), EXPORTED_AT).structuredEntries).toEqual({ status: 'unknown', reason: 'not_hydrated' });
+
+        const failedWrites = { ...view(0), sourceReads: { ...view(0).sourceReads, outbox: { status: 'read' as const, queued: 0, failed: 2 } } };
+        const withFailed = exportCompletedWorkoutToJson(failedWrites, EXPORTED_AT);
+        expect(withFailed.structuredEntries).toEqual({ status: 'unknown', reason: 'diary_writes_failed', failedWrites: 2 });
+        expect(withFailed.exercises.map(e => e.performedStatus)).toEqual(['performed', 'unknown', 'unknown']);
+        const unreadableOutbox = { ...view(0), sourceReads: { ...view(0).sourceReads, outbox: { status: 'unreadable' as const } } };
+        expect(exportCompletedWorkoutToJson(unreadableOutbox, EXPORTED_AT).structuredEntries)
+            .toEqual({ status: 'unknown', reason: 'diary_outbox_unreadable' });
+    });
+
+    it('exports governing-choice refs on sets and session-level choices', () => {
+        const choice = { choiceEntryId: 'ch-9', effective: true, choiceId: 'route', optionId: 'indoor', completedAt: '2026-08-26T07:00:00.000Z' };
+        const view: CompletedWorkoutView = {
+            ...structuredView,
+            structured: {
+                ...structuredView.structured!,
+                sessionChoices: [choice],
+                steps: [{
+                    stepId: 'sq', title: 'Squat', isOptional: false, prescribed: { sets: 1, reps: 5 },
+                    sets: [{
+                        entryId: 'e1', setNumber: 1, isWarmup: false, completedAt: '2026-08-26T07:00:00.000Z',
+                        payload: { kind: 'repetition', setIndex: 1, reps: 5 }, governingChoiceEntryId: 'ch-1', selectedOptionId: 'heavy',
+                    }],
+                }],
+            },
+        };
+        const result = exportCompletedWorkoutToJson(view, EXPORTED_AT);
+        expect(result.sessionChoices).toEqual([choice]);
+        expect(result.exercises[0].performed.sets[0]).toMatchObject({ governingChoiceEntryId: 'ch-1', selectedOptionId: 'heavy' });
+        expect('sessionChoices' in exportCompletedWorkoutToJson(structuredView, EXPORTED_AT)).toBe(false);
     });
 });

@@ -8,7 +8,7 @@ vi.mock('./repository', async () => {
 });
 vi.mock('../services/activityService', () => ({ activityService: { getActivitiesInRange: vi.fn() } }));
 vi.mock('../services/sessionExecutionService', () => ({
-    sessionExecutionService: { getExecution: vi.fn(), getEntries: vi.fn(), getRestEvents: vi.fn(), getDiaryReceipts: vi.fn() },
+    sessionExecutionService: { getExecution: vi.fn(), getEntriesReadState: vi.fn(), getRestEvents: vi.fn(), getDiaryReceipts: vi.fn() },
 }));
 vi.mock('../sessions/sessionDefinitionResolver', () => ({ resolveSessionDefinition: vi.fn() }));
 
@@ -53,7 +53,7 @@ function availableExecution() {
     vi.mocked(repo.queryActiveInDateWindow).mockResolvedValue([occurrence()]);
     vi.mocked(sessionExecutionService.getExecution).mockResolvedValue({ status: 'AVAILABLE', data: execution, revision: null });
     vi.mocked(resolveSessionDefinition).mockResolvedValue({ status: 'AVAILABLE', data: definition, revision: null });
-    vi.mocked(sessionExecutionService.getEntries).mockResolvedValue([]);
+    vi.mocked(sessionExecutionService.getEntriesReadState).mockResolvedValue({ entries: [], invalidRecords: 0 });
 }
 
 beforeEach(() => {
@@ -112,7 +112,7 @@ describe('getCompletedWorkoutsInRange sourceReads (#895 WP5)', () => {
         ]);
         vi.mocked(sessionExecutionService.getExecution).mockResolvedValue({ status: 'AVAILABLE', data: execution, revision: null });
         vi.mocked(resolveSessionDefinition).mockResolvedValue({ status: 'AVAILABLE', data: definition, revision: null });
-        vi.mocked(sessionExecutionService.getEntries).mockRejectedValue(Object.assign(new Error('unavailable'), { code: 'unavailable' }));
+        vi.mocked(sessionExecutionService.getEntriesReadState).mockRejectedValue(Object.assign(new Error('unavailable'), { code: 'unavailable' }));
 
         const views = await getCompletedWorkoutsInRange('user-1', '2026-08-20', '2026-08-27');
 
@@ -123,7 +123,7 @@ describe('getCompletedWorkoutsInRange sourceReads (#895 WP5)', () => {
 
     it('lets a permission-denied failure fail the whole window rather than being swallowed per row', async () => {
         availableExecution();
-        vi.mocked(sessionExecutionService.getEntries).mockRejectedValue(Object.assign(new Error('denied'), { code: 'permission-denied' }));
+        vi.mocked(sessionExecutionService.getEntriesReadState).mockRejectedValue(Object.assign(new Error('denied'), { code: 'permission-denied' }));
         await expect(read()).rejects.toThrow('denied');
     });
 

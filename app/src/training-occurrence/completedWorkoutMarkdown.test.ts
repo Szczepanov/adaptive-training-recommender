@@ -30,7 +30,7 @@ const structuredView: CompletedWorkoutView = {
                     sets: 3, reps: { min: 4, max: 6 }, load: { kind: 'mass', kg: 120 }, effort: { rir: 2 },
                     restSeconds: 180, tempo: '3-1-1-0', notes: 'Pause at the bottom',
                 },
-                choices: [{ choiceId: 'c1', optionId: 'heavy', optionLabel: 'Heavy top set', reason: 'Felt strong', completedAt: '2026-11-14T06:50:00.000Z' }],
+                choices: [{ choiceEntryId: 'ce-c1', effective: true, choiceId: 'c1', optionId: 'heavy', optionLabel: 'Heavy top set', reason: 'Felt strong', completedAt: '2026-11-14T06:50:00.000Z' }],
                 sets: [
                     { entryId: 'w1', setNumber: 1, isWarmup: true, completedAt: '2026-11-14T06:55:00.000Z', payload: rep(0, 5, 60, { isWarmup: true }) },
                     { entryId: 'w2', setNumber: 2, isWarmup: true, completedAt: '2026-11-14T06:57:00.000Z', payload: rep(0, 3, 90, { isWarmup: true }) },
@@ -64,6 +64,7 @@ const structuredView: CompletedWorkoutView = {
             },
         ],
         performedRest: 'recorded',
+        entryInvalidRecords: 0,
         execution: {
             executionId: 'exec-1', state: 'completed', executedDefinition: 'reduced',
             startedAt: '2026-11-14T06:50:00.000Z', completedAt: '2026-11-14T07:32:30.000Z',
@@ -145,7 +146,7 @@ describe('formatCompletedWorkoutMarkdown', () => {
         const md = formatCompletedWorkoutMarkdown(withSteps([{
             stepId: 'x', title: 'Curls', isOptional: true,
             prescribed: { sets: 3, reps: 12, notes: 'Slow' },
-            choices: [{ choiceId: 'c', optionId: 'skip', optionLabel: 'Skip step', reason: 'Elbow pain', completedAt: stamp }],
+            choices: [{ choiceEntryId: 'ce-c', effective: true, choiceId: 'c', optionId: 'skip', optionLabel: 'Skip step', reason: 'Elbow pain', completedAt: stamp }],
             sets: [],
         }]), EXPORTED_AT);
         expect(md).toContain('## Not performed: Curls (planned 3×12) (optional)');
@@ -202,7 +203,7 @@ describe('formatCompletedWorkoutMarkdown', () => {
     it('renders a choice-only step as a Choice heading with no prescription or Not performed', () => {
         const md = formatCompletedWorkoutMarkdown(withSteps([{
             stepId: 'gate', title: 'Gate', isOptional: false, choiceOnly: true, prescribed: { sets: 0 },
-            choices: [{ choiceId: 'c', optionId: 'reduced', optionLabel: 'Reduced version', reason: 'Tired', completedAt: stamp }],
+            choices: [{ choiceEntryId: 'ce-c', effective: true, choiceId: 'c', optionId: 'reduced', optionLabel: 'Reduced version', reason: 'Tired', completedAt: stamp }],
             sets: [],
         }]), EXPORTED_AT);
         expect(md).toContain('## Choice: Gate');
@@ -211,8 +212,108 @@ describe('formatCompletedWorkoutMarkdown', () => {
         expect(md).not.toContain('planned');
     });
 
-    it('prints responses: none recorded for an empty list', () => {
-        expect(formatCompletedWorkoutMarkdown(structuredView, EXPORTED_AT, [])).toContain('responses: none recorded');
+    it('names every window as not recorded after a complete read with no responses', () => {
+        const md = formatCompletedWorkoutMarkdown(structuredView, EXPORTED_AT, []);
+        expect(md).toContain('responses:\n- immediate: not recorded\n- later_day: not recorded\n- next_morning: not recorded');
+    });
+
+    it('reports a partial response read and leaves absent windows unknown', () => {
+        const md = formatCompletedWorkoutMarkdown(structuredView, EXPORTED_AT, {
+            status: 'read', responses: [response({ sessionRpe: 7 })], invalidRecords: 1,
+        });
+        expect(md).toContain('responses (partially unreadable: 1 records):');
+        expect(md).toContain('- immediate: sRPE 7');
+        expect(md).toContain('- later_day: unknown');
+        expect(md).toContain('- next_morning: unknown');
+        expect(md).not.toContain('not recorded\n- next_morning');
+    });
+
+    it('prints the response date only when it differs from the session date', () => {
+        const md = formatCompletedWorkoutMarkdown(structuredView, EXPORTED_AT, [
+            response({ responseId: 'a', sessionRpe: 7 }),
+            response({ responseId: 'b', window: 'next_morning', date: '2026-11-15', note: 'Sore quads' }),
+        ]);
+        expect(md).toContain('- immediate: sRPE 7');
+        expect(md).toContain('- next_morning (recorded 2026-11-15): note: Sore quads');
+    });
+
+    it('prints Unknown, not Not performed, when the set log was only partly read', () => {
+        const view: CompletedWorkoutView = {
+            ...structuredView,
+            structured: { ...structuredView.structured!, entryInvalidRecords: 2 },
+        };
+        const md = formatCompletedWorkoutMarkdown(view, EXPORTED_AT);
+        expect(md).toContain('set log: partially unreadable (2 unreadable records)');
+        expect(md).toContain('## Unknown: Plank (planned 2×45 s) — set log not fully readable');
+        expect(md).not.toContain('Not performed');
+    });
+
+    it('prints Unknown when this device has diary writes that failed to save', () => {
+        const view: CompletedWorkoutView = {
+            ...structuredView,
+            sourceReads: { ...structuredView.sourceReads, outbox: { status: 'read', queued: 0, failed: 1 } },
+        };
+        const md = formatCompletedWorkoutMarkdown(view, EXPORTED_AT);
+        expect(md).toContain('set log: may be incomplete (1 logged changes failed to save on this device)');
+        expect(md).toContain('## Unknown: Plank');
+    });
+
+    it('prints Unknown when the view does not say whether the set log was complete', () => {
+        const view: CompletedWorkoutView = {
+            ...structuredView,
+            structured: { ...structuredView.structured!, entryInvalidRecords: undefined },
+        };
+        expect(formatCompletedWorkoutMarkdown(view, EXPORTED_AT)).toContain('## Unknown: Plank');
+    });
+
+    it('counts a completed checkoff or a timed entry as performed, and a failed checkoff as not', () => {
+        const md = formatCompletedWorkoutMarkdown(withSteps([
+            {
+                stepId: 'mob', title: 'Hip mobility', isOptional: false, prescribed: { sets: 1 },
+                sets: [{ entryId: 'k1', setNumber: 1, isWarmup: false, completedAt: stamp, payload: { kind: 'checkoff', completed: true } }],
+            },
+            {
+                stepId: 'hold', title: 'Plank', isOptional: false, prescribed: { sets: 1, seconds: 45 },
+                sets: [{ entryId: 'd1', setNumber: 1, isWarmup: false, completedAt: stamp, payload: { kind: 'duration', seconds: 40 } }],
+            },
+            {
+                stepId: 'drill', title: 'Skips', isOptional: false, prescribed: { sets: 1 },
+                sets: [{ entryId: 'k2', setNumber: 1, isWarmup: false, completedAt: stamp, payload: { kind: 'checkoff', completed: false } }],
+            },
+        ]), EXPORTED_AT);
+        expect(md).toContain('## Hip mobility — planned 1 sets');
+        expect(md).toContain('## Plank — planned 1×45 s');
+        expect(md).toContain('## Not performed: Skips (planned 1 sets)');
+    });
+
+    it('keeps the earlier choice on sets done before a correction and lists session-level choices', () => {
+        const earlier = {
+            choiceEntryId: 'ch-1', effective: false, choiceId: 'c', optionId: 'heavy', optionLabel: 'Heavy', supersededByChoiceEntryId: 'ch-2', completedAt: stamp,
+        };
+        const stray = { choiceEntryId: 'ch-7', effective: false, choiceId: 'c', optionId: 'skip', optionLabel: 'Skip', completedAt: stamp };
+        const later = { choiceEntryId: 'ch-2', effective: true, choiceId: 'c', optionId: 'light', optionLabel: 'Light', supersedesChoiceEntryId: 'ch-1', completedAt: stamp };
+        const view = withSteps([{
+            stepId: 'sq', title: 'Squat', isOptional: false, prescribed: { sets: 2, reps: 5 },
+            choices: [earlier, later, stray],
+            sets: [
+                { entryId: 'e1', setNumber: 1, isWarmup: false, completedAt: stamp, payload: rep(1, 5, 120), governingChoiceEntryId: 'ch-1', selectedOptionId: 'heavy' },
+                { entryId: 'e2', setNumber: 2, isWarmup: false, completedAt: stamp, payload: rep(2, 5, 90), governingChoiceEntryId: 'ch-2', selectedOptionId: 'light' },
+            ],
+        }]);
+        const withSession: CompletedWorkoutView = {
+            ...view,
+            structured: {
+                ...view.structured!,
+                sessionChoices: [{ choiceEntryId: 'ch-9', effective: true, choiceId: 'route', optionId: 'indoor', optionLabel: 'Indoor', reason: 'Rain', completedAt: stamp }],
+            },
+        };
+        const md = formatCompletedWorkoutMarkdown(withSession, EXPORTED_AT);
+        expect(md).toContain('choice (later corrected): Heavy');
+        expect(md).toContain('choice (not applied): Skip');
+        expect(md).toContain('choice: Light');
+        expect(md).toContain('1: 5 @ 120 kg · under earlier choice: Heavy');
+        expect(md).toMatch(/2: 5 @ 90 kg\n/);
+        expect(md).toContain('## Session choices\nchoice: Indoor (reason: Rain)');
     });
 
     it('names absent sections on the missing line', () => {
@@ -224,7 +325,8 @@ describe('formatCompletedWorkoutMarkdown', () => {
     });
 
     it('prints responses: unavailable', () => {
-        expect(formatCompletedWorkoutMarkdown(structuredView, EXPORTED_AT, 'unavailable')).toContain('responses: unavailable');
+        expect(formatCompletedWorkoutMarkdown(structuredView, EXPORTED_AT, 'unavailable')).toContain('responses: unavailable (read failed)');
+        expect(formatCompletedWorkoutMarkdown(structuredView, EXPORTED_AT, { status: 'failed' })).toContain('responses: unavailable (read failed)');
     });
 
     it('never prints zero for missing sRPE', () => {

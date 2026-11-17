@@ -694,6 +694,13 @@ export class SessionExecutionService {
         return (await this.readEntries(userId, executionId)).entries;
     }
 
+    /** Like `getEntries`, plus how many entry documents could not be parsed. A non-zero
+     * `invalidRecords` means the log was only partly read, so "no sets logged" for a step
+     * cannot be asserted (#1261). */
+    async getEntriesReadState(userId: string, executionId: string): Promise<{ entries: SessionEntry[]; invalidRecords: number }> {
+        return this.readEntries(userId, executionId);
+    }
+
     /** PR 3 (training-occurrence plan): persists one durable performed-rest record. Uses
      * the caller-supplied `restEventId` (not an auto-generated one) so a duplicate client
      * call for the same rest instance -- e.g. a retried write after a transient failure --

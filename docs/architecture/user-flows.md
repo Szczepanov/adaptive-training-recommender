@@ -557,6 +557,14 @@ same `completed_workout_v1` export. Right after a session is finished, Home's `L
 that completed session row (`LedgerSessionAiCopyButton`); it copies the same report, or says it is not ready yet if the workout
 has not been saved to History.
 
+The report states what it could not read rather than guessing (#1261). A prescribed step with no performed evidence reads
+**Not performed** only when every logged entry was read and this device has no failed or unreadable diary saves; otherwise it
+reads **Unknown** and a `set log:` line says why. Corrected choices stay listed (`choice (later corrected)`), a choice event
+that never gained authority reads `choice (not applied)`, and a set done before a correction keeps its own choice
+(`under earlier choice`). Choices that apply to no step get a `## Session choices` section. Responses are joined
+through the workout's structured-execution source refs, never `SessionResponse.occurrenceId`; every window is listed as
+recorded, `not recorded` (complete read) or `unknown` (failed or partial read), and a response recorded on a later date says so.
+
 ### 10. Protocol testing
 
 `TestingWorkflow` owns the assessment lifecycle and longitudinal history across two top-level tabs:

@@ -148,6 +148,20 @@ describe('SessionResponseService (M5.1)', () => {
         expect(result.map(r => r.responseId)).toEqual(['r1', 'r3']);
     });
 
+    it('getResponsesForSourceReadState counts unparseable documents instead of dropping them silently', async () => {
+        firestore.getDocs.mockResolvedValue({
+            docs: [
+                { data: () => responseDoc({ responseId: 'r1', window: 'immediate' }), ref: { path: 'x' } },
+                { data: () => ({ responseId: 'broken', window: 'not-a-window' }), ref: { path: 'y' } },
+                { data: () => responseDoc({ responseId: 'r2', sourceSession: { kind: 'strength', id: 'exec-1', date: '2026-08-18' } }), ref: { path: 'z' } },
+            ],
+        });
+        const service = new SessionResponseService();
+        const result = await service.getResponsesForSourceReadState('u1', { kind: 'execution', id: 'exec-1' });
+        expect(result.responses.map(r => r.responseId)).toEqual(['r1']);
+        expect(result.invalidRecords).toBe(1);
+    });
+
     it('getResponseForWindow returns null (never fabricated) when that window was never answered', async () => {
         firestore.getDocs.mockResolvedValue({
             docs: [{ data: () => responseDoc({ window: 'immediate' }), ref: { path: 'x' } }],

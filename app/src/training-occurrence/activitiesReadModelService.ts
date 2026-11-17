@@ -23,7 +23,7 @@ import type {
 } from './completedWorkoutView';
 import type { SessionExecution } from '../sessions/models';
 import { sourceBadgeFor } from './completedWorkoutView';
-import { buildStructuredStepDetails } from './structuredSetDetail';
+import { buildSessionLevelChoices, buildStructuredStepDetails } from './structuredSetDetail';
 import { compareActivitiesReadModels, recordActivitiesReadModelComparison } from './activitiesReadModelDiagnostics';
 import { isProviderActivityRef, isStructuredExecutionRef, type PerformedTrainingOccurrence, type ProviderActivitySourceRef } from './models';
 import { sourceKeyForRef } from './sourceIdentity';
@@ -76,13 +76,15 @@ async function resolveStructuredDetail(
     // Performed rest is enrichment: a failed read still renders the sets, just without
     // actual rest -- and is reported as `unavailable`, never as "not recorded".
     const restEventsRead = sessionExecutionService.getRestEvents(userId, executionId).catch(() => null);
-    let entries: Awaited<ReturnType<typeof sessionExecutionService.getEntries>>;
+    let entryRead: Awaited<ReturnType<typeof sessionExecutionService.getEntriesReadState>>;
     try {
-        entries = await sessionExecutionService.getEntries(userId, executionId);
+        entryRead = await sessionExecutionService.getEntriesReadState(userId, executionId);
     } catch (error) {
         if (isPermissionDenied(error)) throw error;
         return { read: { status: 'entries_unavailable' }, ...fit };
     }
+    const { entries, invalidRecords: entryInvalidRecords } = entryRead;
+    const sessionChoices = buildSessionLevelChoices(definitionState.data, entries);
     const restEvents = await restEventsRead;
     const performedRest: PerformedRestAvailability = restEvents === null
         ? 'unavailable'
@@ -94,6 +96,8 @@ async function resolveStructuredDetail(
             comparison: comparePlannedVsPerformed(definitionState.data, entries),
             steps: buildStructuredStepDetails(definitionState.data, entries, restEvents ?? []),
             performedRest,
+            entryInvalidRecords,
+            ...(sessionChoices.length > 0 ? { sessionChoices } : {}),
             execution: summarizeExecution(execution),
         },
         ...fit,

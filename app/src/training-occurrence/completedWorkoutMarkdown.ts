@@ -9,11 +9,13 @@
  * Pure: the caller supplies the hydrated view, `exportedAt` and any responses.
  */
 import type { ExerciseRef, RangeOrNumber, SessionLoad } from '../sessions/models';
-import type { SessionResponse } from '../responses/models';
+import type { ResponseWindow } from '../responses/models';
 import type { CompletedWorkoutView } from './completedWorkoutView';
+import type { StepChoiceDetail } from './structuredSetDetail';
 import {
     exportCompletedWorkoutToJson,
     type CompletedWorkoutExport,
+    type CompletedWorkoutResponsesInput,
     type ExportedExercise,
     type ExportedPerformedSet,
     type ExportedPrescription,
@@ -96,20 +98,40 @@ function effortText(set: ExportedPerformedSet): string {
     return parts.length > 0 ? `, ${parts.join(', ')}` : '';
 }
 
-function workSetLine(set: ExportedPerformedSet): string {
+type ChoiceIndex = ReadonlyMap<string, StepChoiceDetail>;
+
+function choiceLabel(choice: StepChoiceDetail): string {
+    return oneLine(choice.optionLabel ?? choice.optionId);
+}
+
+/** Names the choice a set was done under, but only when it is no longer the effective one:
+ * a later correction must not relabel work performed before it. */
+function governingChoiceText(set: ExportedPerformedSet, choices: ChoiceIndex): string {
+    if (!set.governingChoiceEntryId) return '';
+    const governing = choices.get(set.governingChoiceEntryId);
+    // Deleted entries are not in the log, so a tombstoned governing choice cannot be named.
+    if (!governing) return ' · under a choice no longer in the log';
+    return governing.effective ? '' : ` · under earlier choice: ${choiceLabel(governing)}`;
+}
+
+function workSetLine(set: ExportedPerformedSet, choices: ChoiceIndex): string {
     // A trailing rest that ran until the session ended is not a rest the athlete took.
     const rest = set.rest && set.rest.endReason !== 'session_ended' ? ` · rest ${set.rest.actualSeconds} s` : '';
     const swap = set.performedExercise ? ` · performed as ${exerciseRefLabel(set.performedExercise)}` : '';
-    return `${set.setNumber}: ${setBody(set)}${effortText(set)}${rest}${swap}`;
+    return `${set.setNumber}: ${setBody(set)}${effortText(set)}${rest}${swap}${governingChoiceText(set, choices)}`;
 }
 
 function exerciseHeading(exercise: ExportedExercise): string {
     const planned = prescriptionText(exercise.prescribed);
     if (exercise.choiceOnly) return `## Choice: ${oneLine(exercise.name)}`;
     if (exercise.unplanned) return `## Added: ${oneLine(exercise.name)} (unplanned)`;
-    if (exercise.performed.workSets === 0) {
+    if (exercise.performedStatus !== 'performed') {
         const optional = exercise.optional ? ' (optional)' : '';
-        return `## Not performed: ${oneLine(exercise.plannedName ?? exercise.name)} (planned ${planned})${optional}`;
+        const name = oneLine(exercise.plannedName ?? exercise.name);
+        // "Not performed" is a claim about the whole set log; without a complete read it is unknown.
+        return exercise.performedStatus === 'not_performed'
+            ? `## Not performed: ${name} (planned ${planned})${optional}`
+            : `## Unknown: ${name} (planned ${planned})${optional} — set log not fully readable`;
     }
     if (exercise.plannedName) {
         return `## ${oneLine(exercise.plannedName)} — swapped to ${oneLine(exercise.name)}`;
@@ -117,11 +139,16 @@ function exerciseHeading(exercise: ExportedExercise): string {
     return `## ${oneLine(exercise.name)} — planned ${planned}`;
 }
 
-function choiceLines(exercise: ExportedExercise): string[] {
-    return (exercise.choices ?? []).map(choice => {
-        const reason = choice.reason ? ` (reason: ${oneLine(choice.reason)})` : '';
-        return `choice: ${oneLine(choice.optionLabel ?? choice.optionId)}${reason}`;
-    });
+function choiceLine(choice: StepChoiceDetail): string {
+    const reason = choice.reason ? ` (reason: ${oneLine(choice.reason)})` : '';
+    const prefix = choice.effective ? 'choice'
+        : choice.supersededByChoiceEntryId ? 'choice (later corrected)'
+            : 'choice (not applied)';
+    return `${prefix}: ${choiceLabel(choice)}${reason}`;
+}
+
+function choiceLines(choices: readonly StepChoiceDetail[] | undefined): string[] {
+    return (choices ?? []).map(choiceLine);
 }
 
 function structuredLogLine(view: CompletedWorkoutView, report: CompletedWorkoutExport): string {
@@ -140,17 +167,34 @@ function structuredLogLine(view: CompletedWorkoutView, report: CompletedWorkoutE
     }
 }
 
-function exerciseLines(exercise: ExportedExercise): string[] {
+function exerciseLines(exercise: ExportedExercise, choices: ChoiceIndex): string[] {
     const lines = [exerciseHeading(exercise)];
-    if (exercise.choiceOnly) return [...lines, ...choiceLines(exercise)];
-    const swappedWithSets = Boolean(exercise.plannedName) && !exercise.unplanned && exercise.performed.workSets > 0;
+    if (exercise.choiceOnly) return [...lines, ...choiceLines(exercise.choices)];
+    const swappedWithSets = Boolean(exercise.plannedName) && !exercise.unplanned && exercise.performedStatus === 'performed';
     if (swappedWithSets) lines.push(`planned: ${prescriptionText(exercise.prescribed)}`);
     if (exercise.prescribed.notes) lines.push(`notes: ${oneLine(exercise.prescribed.notes)}`);
-    lines.push(...choiceLines(exercise));
+    lines.push(...choiceLines(exercise.choices));
     const warmups = exercise.performed.sets.filter(set => set.isWarmup);
     if (warmups.length > 0) lines.push(`warm-up: ${warmups.map(setBody).join(', ')}`);
-    for (const set of exercise.performed.sets.filter(item => !item.isWarmup)) lines.push(workSetLine(set));
+    for (const set of exercise.performed.sets.filter(item => !item.isWarmup)) lines.push(workSetLine(set, choices));
     return lines;
+}
+
+function choiceIndexOf(report: CompletedWorkoutExport): ChoiceIndex {
+    const all = [...report.exercises.flatMap(exercise => exercise.choices ?? []), ...(report.sessionChoices ?? [])];
+    return new Map(all.map(choice => [choice.choiceEntryId, choice]));
+}
+
+function setLogLine(report: CompletedWorkoutExport): string | undefined {
+    const read = report.structuredEntries;
+    if (read?.status === 'partial') return `set log: partially unreadable (${read.invalidRecords} unreadable records)`;
+    if (read?.status === 'unknown' && read.reason === 'diary_writes_failed') {
+        return `set log: may be incomplete (${read.failedWrites} logged changes failed to save on this device)`;
+    }
+    if (read?.status === 'unknown' && read.reason === 'diary_outbox_unreadable') {
+        return 'set log: may be incomplete (this device\'s save queue could not be read)';
+    }
+    return undefined;
 }
 
 function headerLine(report: CompletedWorkoutExport): string {
@@ -188,21 +232,38 @@ function garminLine(activity: NonNullable<CompletedWorkoutExport['providerActivi
     return `Garmin: ${parts.length > 0 ? parts.join(' · ') : 'no metrics recorded'}`;
 }
 
-function responseLine(response: ExportedSessionResponse): string {
+function responseValues(response: ExportedSessionResponse): string {
     const parts: string[] = [];
     if (response.sessionRpe !== undefined) parts.push(`sRPE ${response.sessionRpe}`);
     if (response.completedFraction !== undefined) parts.push(`completed ${Math.round(response.completedFraction * 100)}%`);
     if (response.unexpectedFatigue !== undefined) parts.push(`fatigue ${response.unexpectedFatigue ? 'yes' : 'no'}`);
     if (response.techniqueNote) parts.push(`technique: ${oneLine(response.techniqueNote)}`);
     if (response.note) parts.push(`note: ${oneLine(response.note)}`);
-    return `- ${response.window}: ${parts.length > 0 ? parts.join(', ') : 'no values recorded'}`;
+    return parts.length > 0 ? parts.join(', ') : 'no values recorded';
 }
 
-function responseLines(responses: CompletedWorkoutExport['responses']): string[] {
-    if (responses === undefined) return [];
-    if (responses === 'unavailable') return ['responses: unavailable'];
-    if (responses.length === 0) return ['responses: none recorded'];
-    return ['responses:', ...responses.map(responseLine)];
+function responseLine(response: ExportedSessionResponse): string {
+    // The response date is printed only when it differs from the session's own date.
+    const recordedOn = response.date !== response.sourceSessionDate ? ` (recorded ${response.date})` : '';
+    return `- ${response.window}${recordedOn}: ${responseValues(response)}`;
+}
+
+const RESPONSE_WINDOWS: readonly ResponseWindow[] = ['immediate', 'later_day', 'next_morning'];
+
+function responseLines(report: CompletedWorkoutExport): string[] {
+    const { responses, responseRead, responseWindows } = report;
+    if (responses === undefined || !responseRead || !responseWindows) return [];
+    if (responseRead.status === 'failed' || responses === 'unavailable') return ['responses: unavailable (read failed)'];
+    const heading = responseRead.status === 'partial'
+        ? `responses (partially unreadable: ${responseRead.invalidRecords} records):`
+        : 'responses:';
+    const lines = [heading];
+    for (const window of RESPONSE_WINDOWS) {
+        const recorded = responses.filter(response => response.window === window);
+        if (recorded.length > 0) lines.push(...recorded.map(responseLine));
+        else lines.push(`- ${window}: ${responseWindows[window] === 'unknown' ? 'unknown' : NOT_RECORDED}`);
+    }
+    return lines;
 }
 
 function missingLine(report: CompletedWorkoutExport): string | undefined {
@@ -216,16 +277,22 @@ function missingLine(report: CompletedWorkoutExport): string | undefined {
 export function formatCompletedWorkoutMarkdown(
     view: CompletedWorkoutView,
     exportedAt: string,
-    responses?: readonly SessionResponse[] | 'unavailable',
+    responses?: CompletedWorkoutResponsesInput,
 ): string {
     const report = exportCompletedWorkoutToJson(view, exportedAt, responses);
+    const choices = choiceIndexOf(report);
     const lines = [headerLine(report), summaryLine(report)];
     if (report.session?.note) lines.push(`note: ${oneLine(report.session.note)}`);
-    for (const exercise of report.exercises) lines.push('', ...exerciseLines(exercise));
+    const setLog = setLogLine(report);
+    if (setLog) lines.push(setLog);
+    if (report.sessionChoices && report.sessionChoices.length > 0) {
+        lines.push('', '## Session choices', ...choiceLines(report.sessionChoices));
+    }
+    for (const exercise of report.exercises) lines.push('', ...exerciseLines(exercise, choices));
     if (report.providerActivity || report.exercises.length === 0) lines.push('');
     if (report.providerActivity) lines.push(garminLine(report.providerActivity));
     if (report.exercises.length === 0) lines.push(structuredLogLine(view, report));
-    const responseBlock = responseLines(report.responses);
+    const responseBlock = responseLines(report);
     if (responseBlock.length > 0) lines.push('', ...responseBlock);
     const missing = missingLine(report);
     if (missing) lines.push('', missing);

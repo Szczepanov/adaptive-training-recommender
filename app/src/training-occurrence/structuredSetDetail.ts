@@ -35,13 +35,25 @@ export interface PrescribedStepTarget {
     notes?: string;
 }
 
-/** An athlete's recorded choice (e.g. an exercise substitution) attached to the step it applies to. */
+/** An athlete's recorded choice (e.g. an exercise substitution) attached to the step it applies to.
+ * Every live choice event is kept, not only the effective one: work performed under an earlier
+ * choice keeps its `governingChoiceEntryId`, and a later correction must not relabel it (#1261). */
 export interface StepChoiceDetail {
+    /** The choice event's own entry id, which performed sets reference as their governing choice. */
+    choiceEntryId: string;
     choiceId: string;
     optionId: string;
     optionLabel?: string;
     reason?: string;
     completedAt: string;
+    /** The earlier choice event this one corrects (an explicit append-only D-MCHOICE edge). */
+    supersedesChoiceEntryId?: string;
+    /** The later live choice event that explicitly corrects this one. A non-effective event
+     * without it was never corrected: it is history that did not gain authority (an unlinked
+     * second event or a losing fork), not a superseded choice. */
+    supersededByChoiceEntryId?: string;
+    /** True for the event that governs the choice now (`resolveEffectiveChoiceEntries`). */
+    effective: boolean;
 }
 
 export interface PerformedRestDetail {
@@ -61,6 +73,11 @@ export interface PerformedSetRow {
     exerciseRef?: ExerciseRef;
     /** The performed rest that started when this set was completed, when one was recorded. */
     rest?: PerformedRestDetail;
+    /** The choice event that governed this set when it was performed. It stays pointed at that
+     * event even after a later correction. */
+    governingChoiceEntryId?: string;
+    /** The option that governing choice selected, as stamped on the set. */
+    selectedOptionId?: string;
 }
 
 export interface StructuredStepDetail {
@@ -130,7 +147,7 @@ export function buildStructuredStepDetails(
         });
     }
 
-    const choicesByStepId = collectChoices(definition, entries);
+    const choicesByStepId = collectChoices(definition, entries).byStepId;
     const entriesByStepId = new Map<string, SessionEntry[]>();
     for (const entry of entries) {
         // A recorded athlete choice is not performed work (mirrors comparePlannedVsPerformed).
@@ -172,32 +189,66 @@ function choicesField(choices: readonly StepChoiceDetail[] | undefined): { choic
     return choices && choices.length > 0 ? { choices: [...choices] } : {};
 }
 
-/** Choice entries keyed by the step they apply to: the entry's own step, else the step the
- * matching option set is anchored at. Choices that resolve to no step are dropped. */
+/** Choices with no step: the entry carries no `stepId` and its option set is not anchored at a
+ * step. They are reported at session level rather than attached to an invented step. */
+export function buildSessionLevelChoices(
+    definition: SessionDefinition,
+    entries: readonly SessionEntry[],
+): StepChoiceDetail[] {
+    return collectChoices(definition, entries).sessionLevel;
+}
+
+/** Live choice entries keyed by the step they apply to: the entry's own step, else the step the
+ * matching option set is anchored at. Choices that resolve to no step are session-level. */
 function collectChoices(
     definition: SessionDefinition,
     entries: readonly SessionEntry[],
-): Map<string, StepChoiceDetail[]> {
+): { byStepId: Map<string, StepChoiceDetail[]>; sessionLevel: StepChoiceDetail[] } {
     const optionSets = definition.blocks.flatMap(block => block.optionSets ?? []);
     const byStepId = new Map<string, StepChoiceDetail[]>();
-    // Only the effective entry of each correction chain governed the session.
+    const sessionLevel: StepChoiceDetail[] = [];
     const live = entries.filter(entry => !entry.deletedAt);
-    for (const entry of resolveEffectiveChoiceEntries(live)) {
+    // Only the effective entry of each correction chain governs the session now; the others
+    // stay as history so earlier performed work keeps the choice it was done under.
+    const effectiveIds = new Set(resolveEffectiveChoiceEntries(live).map(entry => entry.id));
+    const choiceEntries = sortedByCompletion(live.filter(entry => entry.payload.kind === 'choice'));
+    const supersededBy = supersessionEdges(choiceEntries);
+    for (const entry of choiceEntries) {
+        if (entry.payload.kind !== 'choice') continue;
         const payload = entry.payload;
         const optionSet = optionSets.find(set => set.id === payload.choiceId);
-        const stepId = entry.stepId ?? optionSet?.appliesAtStepId;
-        if (!stepId) continue;
         const optionLabel = optionSet?.options.find(option => option.id === payload.optionId)?.label;
         const detail: StepChoiceDetail = {
+            choiceEntryId: entry.id,
             choiceId: payload.choiceId,
             optionId: payload.optionId,
             ...(optionLabel !== undefined ? { optionLabel } : {}),
             ...(payload.reason !== undefined ? { reason: payload.reason } : {}),
             completedAt: entry.completedAt,
+            ...(entry.supersedesChoiceEntryId ? { supersedesChoiceEntryId: entry.supersedesChoiceEntryId } : {}),
+            ...(supersededBy.has(entry.id) ? { supersededByChoiceEntryId: supersededBy.get(entry.id) } : {}),
+            effective: effectiveIds.has(entry.id),
         };
-        byStepId.set(stepId, [...(byStepId.get(stepId) ?? []), detail]);
+        const stepId = entry.stepId ?? optionSet?.appliesAtStepId;
+        if (stepId) byStepId.set(stepId, [...(byStepId.get(stepId) ?? []), detail]);
+        else sessionLevel.push(detail);
     }
-    return byStepId;
+    return { byStepId, sessionLevel };
+}
+
+/** Corrected entry id -> the first (by completion) live entry whose valid edge corrects it. The
+ * edge must point at a different entry of the same `choiceId`, as `resolveEffectiveChoiceEntries` requires. */
+function supersessionEdges(choiceEntries: readonly SessionEntry[]): Map<string, string> {
+    const byId = new Map(choiceEntries.map(entry => [entry.id, entry]));
+    const edges = new Map<string, string>();
+    for (const entry of choiceEntries) {
+        const parent = entry.supersedesChoiceEntryId ? byId.get(entry.supersedesChoiceEntryId) : undefined;
+        if (!parent || parent.id === entry.id || edges.has(parent.id)) continue;
+        if (parent.payload.kind !== 'choice' || entry.payload.kind !== 'choice') continue;
+        if (parent.payload.choiceId !== entry.payload.choiceId) continue;
+        edges.set(parent.id, entry.id);
+    }
+    return edges;
 }
 
 function sortedByCompletion(entries: readonly SessionEntry[]): SessionEntry[] {
@@ -219,6 +270,8 @@ function toSetRows(entries: readonly SessionEntry[], restByEntryId: ReadonlyMap<
             payload: entry.payload,
             ...(entry.exerciseRef ? { exerciseRef: entry.exerciseRef } : {}),
             ...(rest ? { rest } : {}),
+            ...(entry.governingChoiceEntryId ? { governingChoiceEntryId: entry.governingChoiceEntryId } : {}),
+            ...(entry.selectedOptionId ? { selectedOptionId: entry.selectedOptionId } : {}),
         };
     });
 }

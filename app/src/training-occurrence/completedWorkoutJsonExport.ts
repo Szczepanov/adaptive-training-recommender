@@ -12,7 +12,7 @@
 import type { IntensityGauge, NormalizedGarminActivity } from '../engine/models';
 import type { ExerciseRef, RangeOrNumber, RestEndReason, SessionEntryPayload, SessionLoad } from '../sessions/models';
 import type { CompletedWorkoutView, PerformedRestAvailability, StructuredExecutionSummary } from './completedWorkoutView';
-import type { SessionResponse } from '../responses/models';
+import type { ResponseWindow, SessionResponse } from '../responses/models';
 import type { PerformedSetRow, PrescribedStepTarget, StepChoiceDetail, StructuredStepDetail } from './structuredSetDetail';
 
 export const COMPLETED_WORKOUT_EXPORT_SCHEMA = 'completed_workout_v1' as const;
@@ -49,6 +49,9 @@ export interface ExportedPerformedSet {
     effort?: ExportedSetEffort;
     /** Set when the athlete swapped to a different exercise for this set. */
     performedExercise?: ExerciseRef;
+    /** The choice event in force when this set was performed; a later correction never moves it. */
+    governingChoiceEntryId?: string;
+    selectedOptionId?: string;
     rest?: {
         actualSeconds: number;
         prescribedSeconds?: number;
@@ -85,8 +88,12 @@ export interface ExportedExercise {
     choiceOnly?: true;
     optional: boolean;
     prescribed: ExportedPrescription;
-    /** Authored choices the athlete resolved during the step. */
+    /** Authored choices the athlete resolved during the step, corrected ones included. */
     choices?: StepChoiceDetail[];
+    /** `not_performed` only when the whole set log was read; `unknown` when it was not.
+     * A failed checkoff is not performed evidence; a completed checkoff or a timed or
+     * distance entry is. Absent for a choice-only step. */
+    performedStatus?: ExercisePerformedStatus;
     performed: {
         workSets: number;
         warmupSets: number;
@@ -100,9 +107,44 @@ export interface ExportedExercise {
     };
 }
 
+export type ExercisePerformedStatus = 'performed' | 'not_performed' | 'unknown';
+
+/** How completely the structured set log was read. `unknown`: completeness cannot be shown --
+ * the view predates the field, or this device's diary outbox holds failed (never saved) writes
+ * or could not be read, so the stored log may be missing work. */
+export type StructuredEntriesRead =
+    | { status: 'complete' }
+    | { status: 'partial'; invalidRecords: number }
+    | { status: 'unknown'; reason: 'not_hydrated' }
+    | { status: 'unknown'; reason: 'diary_writes_failed'; failedWrites: number }
+    | { status: 'unknown'; reason: 'diary_outbox_unreadable' };
+
+/**
+ * The result of reading a workout's post-session responses (#1261). `read` with
+ * `invalidRecords > 0` is a partial read: some response documents could not be parsed.
+ */
+export type SessionResponseRead =
+    | { status: 'read'; responses: readonly SessionResponse[]; invalidRecords: number }
+    | { status: 'failed' };
+
+/** Accepted response input. A bare array is a complete read; `'unavailable'` is a failed one. */
+export type CompletedWorkoutResponsesInput = readonly SessionResponse[] | 'unavailable' | SessionResponseRead;
+
+export type ResponseReadStatus =
+    | { status: 'complete' }
+    | { status: 'partial'; invalidRecords: number }
+    | { status: 'failed' };
+
+/** Per window: `not_recorded` only after a complete read; `unknown` when the read failed or was partial. */
+export type ResponseWindowState = 'recorded' | 'not_recorded' | 'unknown';
+
 /** A post-session response, projected to the facts an AI reader needs (no ids or check-in linkage). */
 export interface ExportedSessionResponse {
     window: SessionResponse['window'];
+    /** The Warsaw date the response was recorded for (later than the session for `next_morning`). */
+    date: string;
+    /** The source session's own date, kept separate from the response date. */
+    sourceSessionDate: string;
     sessionRpe?: number;
     completedFraction?: number;
     unexpectedFatigue?: boolean;
@@ -142,9 +184,17 @@ export interface CompletedWorkoutExport {
     };
     /** `not_recorded` means no rest events exist, not zero rest; `unavailable` means unknown. */
     performedRest?: PerformedRestAvailability;
+    /** Present for a structured workout: whether every logged entry could be read. */
+    structuredEntries?: StructuredEntriesRead;
     exercises: ExportedExercise[];
+    /** Recorded choices that apply to no step. */
+    sessionChoices?: StepChoiceDetail[];
     /** Omitted when responses were not requested; `unavailable` when they could not be read. */
     responses?: ExportedSessionResponse[] | 'unavailable';
+    /** Present whenever `responses` is: complete, partial or failed. */
+    responseRead?: ResponseReadStatus;
+    /** Present whenever `responses` is: which windows have a recorded response. */
+    responseWindows?: Record<ResponseWindow, ResponseWindowState>;
     /** Raw provider telemetry, enrichment only. */
     providerActivity?: NormalizedGarminActivity;
 }
@@ -236,6 +286,8 @@ function exportSet(row: PerformedSetRow): ExportedPerformedSet {
         kind: row.payload.kind,
         ...payloadFields(row.payload),
         ...(row.exerciseRef ? { performedExercise: row.exerciseRef } : {}),
+        ...(row.governingChoiceEntryId ? { governingChoiceEntryId: row.governingChoiceEntryId } : {}),
+        ...(row.selectedOptionId ? { selectedOptionId: row.selectedOptionId } : {}),
         ...(row.rest
             ? {
                 rest: {
@@ -263,8 +315,31 @@ function exportPrescription(target: PrescribedStepTarget): ExportedPrescription 
     };
 }
 
+/** A failed checkoff is the only logged work set that is not evidence of performance. */
+function isPerformedEvidence(set: ExportedPerformedSet): boolean {
+    return !set.isWarmup && !(set.kind === 'checkoff' && set.completed === false);
+}
+
+function performedStatusOf(sets: readonly ExportedPerformedSet[], entries: StructuredEntriesRead): ExercisePerformedStatus {
+    if (sets.some(isPerformedEvidence)) return 'performed';
+    return entries.status === 'complete' ? 'not_performed' : 'unknown';
+}
+
+export function structuredEntriesReadOf(view: CompletedWorkoutView): StructuredEntriesRead {
+    const invalid = view.structured?.entryInvalidRecords;
+    if (invalid === undefined) return { status: 'unknown', reason: 'not_hydrated' };
+    if (invalid > 0) return { status: 'partial', invalidRecords: invalid };
+    // A rejected diary write never reached the stored log, so a clean read can still miss work.
+    const outbox = view.sourceReads.outbox;
+    if (outbox.status === 'unreadable') return { status: 'unknown', reason: 'diary_outbox_unreadable' };
+    if (outbox.status === 'read' && outbox.failed > 0) {
+        return { status: 'unknown', reason: 'diary_writes_failed', failedWrites: outbox.failed };
+    }
+    return { status: 'complete' };
+}
+
 /** Projects a structured session step and its logged sets into the exported exercise summary. */
-function exportExercise(step: StructuredStepDetail): ExportedExercise {
+function exportExercise(step: StructuredStepDetail, entries: StructuredEntriesRead): ExportedExercise {
     const sets = step.sets.map(exportSet);
     const work = sets.filter(set => !set.isWarmup);
     const warmup = sets.filter(set => set.isWarmup);
@@ -282,6 +357,7 @@ function exportExercise(step: StructuredStepDetail): ExportedExercise {
         optional: step.isOptional,
         prescribed: exportPrescription(step.prescribed),
         ...(step.choices && step.choices.length > 0 ? { choices: step.choices.map(choice => ({ ...choice })) } : {}),
+        ...(step.choiceOnly ? {} : { performedStatus: performedStatusOf(sets, entries) }),
         performed: {
             workSets: work.length,
             warmupSets: warmup.length,
@@ -314,12 +390,47 @@ function exportResponses(responses: readonly SessionResponse[]): ExportedSession
         .sort((a, b) => WINDOW_ORDER[a.window] - WINDOW_ORDER[b.window] || a.createdAt.localeCompare(b.createdAt))
         .map(response => ({
             window: response.window,
+            date: response.date,
+            sourceSessionDate: response.sourceSession.date,
             ...(response.sessionRpe !== undefined ? { sessionRpe: response.sessionRpe } : {}),
             ...(response.completedFraction !== undefined ? { completedFraction: response.completedFraction } : {}),
             ...(response.unexpectedFatigue !== undefined ? { unexpectedFatigue: response.unexpectedFatigue } : {}),
             ...(response.techniqueNote ? { techniqueNote: response.techniqueNote } : {}),
             ...(response.note ? { note: response.note } : {}),
         }));
+}
+
+function normalizeResponseRead(input: CompletedWorkoutResponsesInput): SessionResponseRead {
+    if (input === 'unavailable') return { status: 'failed' };
+    if ('status' in input) return input;
+    return { status: 'read', responses: input, invalidRecords: 0 };
+}
+
+/** `responses`, `responseRead` and `responseWindows` together, so a failed or partial read
+ * never looks like a complete read that found nothing. */
+function exportResponseFields(
+    input: CompletedWorkoutResponsesInput,
+): Pick<CompletedWorkoutExport, 'responses' | 'responseRead' | 'responseWindows'> {
+    const read = normalizeResponseRead(input);
+    if (read.status === 'failed') {
+        return {
+            responses: 'unavailable',
+            responseRead: { status: 'failed' },
+            responseWindows: { immediate: 'unknown', later_day: 'unknown', next_morning: 'unknown' },
+        };
+    }
+    const recorded = new Set(read.responses.map(response => response.window));
+    const absent: ResponseWindowState = read.invalidRecords > 0 ? 'unknown' : 'not_recorded';
+    const stateOf = (window: ResponseWindow): ResponseWindowState => (recorded.has(window) ? 'recorded' : absent);
+    return {
+        responses: exportResponses(read.responses),
+        responseRead: read.invalidRecords > 0 ? { status: 'partial', invalidRecords: read.invalidRecords } : { status: 'complete' },
+        responseWindows: {
+            immediate: stateOf('immediate'),
+            later_day: stateOf('later_day'),
+            next_morning: stateOf('next_morning'),
+        },
+    };
 }
 
 function workoutTitle(view: CompletedWorkoutView): string {
@@ -330,9 +441,11 @@ function workoutTitle(view: CompletedWorkoutView): string {
 export function exportCompletedWorkoutToJson(
     view: CompletedWorkoutView,
     exportedAt: string,
-    responses?: readonly SessionResponse[] | 'unavailable',
+    responses?: CompletedWorkoutResponsesInput,
 ): CompletedWorkoutExport {
-    const exercises = view.structured ? view.structured.steps.map(exportExercise) : [];
+    const entries = structuredEntriesReadOf(view);
+    const exercises = view.structured ? view.structured.steps.map(step => exportExercise(step, entries)) : [];
+    const sessionChoices = view.structured?.sessionChoices ?? [];
     const duration = resolveCompletedWorkoutDuration(view);
     const execution = view.structured?.execution;
     const allSets = exercises.flatMap(exercise => exercise.performed.sets);
@@ -366,11 +479,13 @@ export function exportCompletedWorkoutToJson(
                         ),
                     },
                     performedRest: view.structured.performedRest,
+                    structuredEntries: entries,
                 };
             })()
             : {}),
         exercises,
-        ...(responses !== undefined ? { responses: responses === 'unavailable' ? responses : exportResponses(responses) } : {}),
+        ...(sessionChoices.length > 0 ? { sessionChoices: sessionChoices.map(choice => ({ ...choice })) } : {}),
+        ...(responses !== undefined ? exportResponseFields(responses) : {}),
         ...(view.garmin ? { providerActivity: view.garmin } : {}),
     };
 }
@@ -378,7 +493,7 @@ export function exportCompletedWorkoutToJson(
 export function formatCompletedWorkoutJson(
     view: CompletedWorkoutView,
     exportedAt: string,
-    responses?: readonly SessionResponse[] | 'unavailable',
+    responses?: CompletedWorkoutResponsesInput,
 ): string {
     return JSON.stringify(exportCompletedWorkoutToJson(view, exportedAt, responses), null, 2);
 }

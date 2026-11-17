@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { SessionDefinition, SessionEntry, SessionRestEvent } from '../sessions/models';
-import { buildStructuredStepDetails } from './structuredSetDetail';
+import { buildSessionLevelChoices, buildStructuredStepDetails } from './structuredSetDetail';
 
 const definition: SessionDefinition = {
     schemaVersion: 1,
@@ -218,11 +218,13 @@ describe('buildStructuredStepDetails', () => {
             payload: { kind: 'choice', choiceId: 'c1', optionId: 'o2', reason: 'knee' },
         } as SessionEntry;
         const squat = buildStructuredStepDetails(def, [choice], []).find(step => step.stepId === 'squat');
-        expect(squat?.choices).toEqual([{ choiceId: 'c1', optionId: 'o2', optionLabel: 'Goblet squat', reason: 'knee', completedAt }]);
+        expect(squat?.choices).toEqual([{
+            choiceEntryId: 'ch-1', choiceId: 'c1', optionId: 'o2', optionLabel: 'Goblet squat', reason: 'knee', completedAt, effective: true,
+        }]);
         expect(squat?.sets).toEqual([]);
     });
 
-    it('exports only the effective choice of a supersession chain', () => {
+    it('keeps every event of a supersession chain and marks only the last one effective', () => {
         const def = {
             ...definition,
             blocks: [{ ...definition.blocks[0], optionSets: [{
@@ -244,7 +246,52 @@ describe('buildStructuredStepDetails', () => {
             mk('ch-2', '2026-08-26T07:02:00.000Z', 'o2', { supersedesChoiceEntryId: 'ch-1' }),
         ];
         const squat = buildStructuredStepDetails(def, entries, []).find(step => step.stepId === 'squat');
-        expect(squat?.choices).toEqual([{ choiceId: 'c1', optionId: 'o2', optionLabel: 'Goblet squat', completedAt: '2026-08-26T07:02:00.000Z' }]);
+        expect(squat?.choices).toEqual([
+            {
+                choiceEntryId: 'ch-1', choiceId: 'c1', optionId: 'o1', optionLabel: 'Skip', completedAt: '2026-08-26T07:01:00.000Z',
+                supersededByChoiceEntryId: 'ch-2', effective: false,
+            },
+            {
+                choiceEntryId: 'ch-2', choiceId: 'c1', optionId: 'o2', optionLabel: 'Goblet squat', completedAt: '2026-08-26T07:02:00.000Z',
+                supersedesChoiceEntryId: 'ch-1', effective: true,
+            },
+        ]);
+
+        // A second event with no supersession edge is history only: it cannot take over the choice.
+        const unlinked = buildStructuredStepDetails(def, [entries[0], mk('ch-3', '2026-08-26T07:03:00.000Z', 'o2')], [])
+            .find(step => step.stepId === 'squat');
+        expect(unlinked?.choices?.map(choice => [choice.choiceEntryId, choice.effective, choice.supersededByChoiceEntryId]))
+            .toEqual([['ch-1', true, undefined], ['ch-3', false, undefined]]);
+    });
+
+    it('keeps the governing choice on sets performed before a correction', () => {
+        const at = '2026-08-26T07:05:00.000Z';
+        const set = {
+            id: 'set-1', executionId: 'exec-1', stepId: 'squat', completedAt: at, createdAt: at, updatedAt: at,
+            governingChoiceEntryId: 'ch-1', selectedOptionId: 'o1',
+            payload: { kind: 'repetition', setIndex: 1, reps: 5 },
+        } as SessionEntry;
+        const [row] = buildStructuredStepDetails(definition, [set], []).find(step => step.stepId === 'squat')!.sets;
+        expect(row).toMatchObject({ governingChoiceEntryId: 'ch-1', selectedOptionId: 'o1' });
+    });
+
+    it('reports a choice that applies to no step at session level', () => {
+        const def = {
+            ...definition,
+            blocks: [{ ...definition.blocks[0], optionSets: [{
+                id: 'route', trigger: { kind: 'athlete_observed', description: 'weather' },
+                options: [{ id: 'indoor', label: 'Indoor', actions: [] }],
+            }] }],
+        } as unknown as SessionDefinition;
+        const at = '2026-08-26T06:59:00.000Z';
+        const choice = {
+            id: 'ch-r', executionId: 'exec-1', completedAt: at, createdAt: at, updatedAt: at,
+            payload: { kind: 'choice', choiceId: 'route', optionId: 'indoor', reason: 'rain' },
+        } as SessionEntry;
+        expect(buildSessionLevelChoices(def, [choice])).toEqual([{
+            choiceEntryId: 'ch-r', choiceId: 'route', optionId: 'indoor', optionLabel: 'Indoor', reason: 'rain', completedAt: at, effective: true,
+        }]);
+        expect(buildStructuredStepDetails(def, [choice], []).some(step => step.choices)).toBe(false);
     });
 
     it('keeps a choice anchored at a non-exercise step', () => {

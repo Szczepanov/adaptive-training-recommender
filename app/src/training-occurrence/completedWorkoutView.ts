@@ -14,7 +14,7 @@
 import type { NormalizedGarminActivity } from '../engine/models';
 import type { PerformedSessionComparison } from '../sessions/performedComparison';
 import type { SessionExecutionState } from '../sessions/models';
-import type { StructuredStepDetail } from './structuredSetDetail';
+import type { StepChoiceDetail, StructuredStepDetail } from './structuredSetDetail';
 import type { FitWorkoutIdentityObservation, SingleSourceFitEvidence } from './fitWorkoutIdentityDiagnostics';
 import { isProviderActivityRef, isStructuredExecutionRef, type PerformedTrainingOccurrence, type ReconciliationProvenance } from './models';
 
@@ -36,6 +36,12 @@ export interface CompletedWorkoutStructuredDetail {
      * says so rather than implying zero rest. `unavailable`: the read itself failed, so
      * nothing may be inferred about whether rest was recorded. */
     performedRest: PerformedRestAvailability;
+    /** How many logged entry documents could not be parsed (#1261). `0` means the log was
+     * read completely, so a prescribed step with no sets can be reported as not performed.
+     * Absent on views built before it was hydrated: completeness is then unknown. */
+    entryInvalidRecords?: number;
+    /** Recorded choices that apply to no step (#1261). Absent when there are none. */
+    sessionChoices?: StepChoiceDetail[];
     /** What the app itself recorded about the execution: actual start/finish and the
      * athlete's session RPE. Absent on views built before it was hydrated. */
     execution?: StructuredExecutionSummary;
