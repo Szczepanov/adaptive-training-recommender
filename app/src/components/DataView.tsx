@@ -993,12 +993,13 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery', onNav
                   window={{ startDate: brief.startDate, endDate: brief.asOfDate }}
                 />}
               </ContextBriefExportActions>
-              <BriefConfirmChat
+              {/* The new-chat refresh export never reads a checkpoint, so confirming it would save nothing useful. */}
+              {!briefFullContextLocked && <BriefConfirmChat
                 canConfirm={!briefStale && checkpoint.canConfirm(brief)}
                 blocked={checkpoint.confirmBlock(brief, briefStale)}
                 status={checkpoint.confirmStatus(brief)}
                 onConfirm={checkpoint.confirm}
-              />
+              />}
               <span className="brief-range">{brief.startDate} → {brief.asOfDate}</span>
               <span className="brief-size">
                 {brief.text.length.toLocaleString()} chars · ~{approxTokens?.toLocaleString()} tokens

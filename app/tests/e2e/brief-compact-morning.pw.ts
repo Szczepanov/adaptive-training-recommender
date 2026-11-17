@@ -117,4 +117,11 @@ test('compact morning brief: sections, unchanged-context abbreviation and full-c
   expect(full).toContain(`## Upcoming (`);
   await fullContext.uncheck();
   await expect.poll(() => brief.inputValue()).toContain('unchanged since');
+
+  // The new-chat refresh export is always full and has nothing to confirm.
+  await page.getByRole('button', { name: /Block Planning · new chat/ }).click();
+  await expect.poll(() => brief.inputValue()).toContain('use: refresh export for starting a new chat');
+  expect(await brief.inputValue()).not.toContain('unchanged since');
+  await expect(page.getByLabel('Include full context (always, for a new chat)')).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Added to this chat', exact: true })).toHaveCount(0);
 });
