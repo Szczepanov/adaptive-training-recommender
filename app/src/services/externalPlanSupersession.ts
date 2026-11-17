@@ -99,7 +99,12 @@ export function supersedeDeclaredSessions(
     const previousAssignments = previousOverlay?.assignments ?? [];
     const assigned = new Set(previousAssignments.map(item => item.sessionId));
     const replaced = new Set(declarations.map(item => item.replacesSessionId));
-    const kept = previousAssignments.map(item => replaced.has(item.sessionId) ? { ...item, status: 'superseded' as const } : item);
+    // A drop/move reason belongs to a moved or dropped row; the superseded row drops it, and the
+    // earlier immutable placement event still records it (ledger export Phase 3C).
+    const kept = previousAssignments.map(item => {
+        if (!replaced.has(item.sessionId)) return item;
+        return { sessionId: item.sessionId, date: item.date, status: 'superseded' as const };
+    });
     const added = declarations.filter(item => !assigned.has(item.replacesSessionId)).flatMap(item => {
         const date = dates.get(item.replacesSessionId);
         return date ? [{ sessionId: item.replacesSessionId, date, status: 'superseded' as const }] : [];

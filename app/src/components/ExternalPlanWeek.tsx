@@ -1,3 +1,6 @@
+import type { PlacementReason, PlacementReasonCode } from '../ledger/models';
+import { PlacementReasonPicker } from './PlacementReasonPicker';
+import { placementReasonFrom } from './placementReason';
 import { useMemo, useRef, useState } from 'react';
 import type { ExternalCritiqueFinding, ExternalWeekCritique } from '../engine/externalCritique';
 import type { PlacedSession, ReplacementProposal } from '../engine/externalPlacement';
@@ -43,10 +46,11 @@ export interface ExternalPlanWeekProps {
     /** Produces a proposal for a session that was not done. Never writes. May resolve
      * asynchronously when the target date's governing plan must be read. */
     onProposeReplacement: (sessionId: string, missedDate: string) => ReplacementProposal | Promise<ReplacementProposal>;
-    /** Called only after the athlete confirms; `date` is null for a drop. */
-    onConfirmReplacement: (proposal: ReplacementProposal) => void | Promise<void>;
+    /** Called only after the athlete confirms; `date` is null for a drop. `reason` is the optional
+     * drop/move reason (`null` when none was given). */
+    onConfirmReplacement: (proposal: ReplacementProposal, reason: PlacementReason | null) => void | Promise<void>;
     /** Free days in the same week, offered when the athlete rejects the proposed date. */
-    onChooseDate: (sessionId: string, date: string) => void | Promise<void>;
+    onChooseDate: (sessionId: string, date: string, reason: PlacementReason | null) => void | Promise<void>;
     /** Set when the last write failed. The week below still shows the stored placement,
      * which is accurate — nothing was written. */
     writeError?: string | null;
@@ -79,6 +83,8 @@ export function ExternalPlanWeek({
     clinicalEscalationRequired = false,
 }: ExternalPlanWeekProps) {
     const [proposal, setProposal] = useState<ReplacementProposal | null>(null);
+    const [reasonCode, setReasonCode] = useState<PlacementReasonCode | ''>('');
+    const [reasonNote, setReasonNote] = useState('');
     // A proposal may resolve asynchronously; only the latest request may fill the panel, and a
     // cancel invalidates any request still pending.
     const proposalRequest = useRef(0);
@@ -123,13 +129,16 @@ export function ExternalPlanWeek({
         setChoosingFor(null);
         const request = ++proposalRequest.current;
         const next = await onProposeReplacement(sessionId, missedDate);
-        if (request === proposalRequest.current) setProposal(next);
+        if (request !== proposalRequest.current) return;
+        setProposal(next);
+        setReasonCode('');
+        setReasonNote('');
     };
 
     const handleConfirm = async (proposalToConfirm: ReplacementProposal) => {
         if (clinicalEscalationRequired) return;
         try {
-            await onConfirmReplacement(proposalToConfirm);
+            await onConfirmReplacement(proposalToConfirm, placementReasonFrom(reasonCode, reasonNote));
             setProposal(null);
         } catch {
             // Keep proposal open on error so athlete can retry or choose another option
@@ -139,7 +148,7 @@ export function ExternalPlanWeek({
     const handleDateChoice = async (sessionId: string, date: string) => {
         if (clinicalEscalationRequired) return;
         try {
-            await onChooseDate(sessionId, date);
+            await onChooseDate(sessionId, date, placementReasonFrom(reasonCode, reasonNote));
             setProposal(null);
             setChoosingFor(null);
         } catch {
@@ -300,6 +309,7 @@ export function ExternalPlanWeek({
                 <section className="external-week-proposal" aria-label="Missed session proposal">
                     <h4>{proposal.missedDate === today ? 'Reschedule session' : 'Missed session'}</h4>
                     <p>{proposal.rationale}</p>
+                    <PlacementReasonPicker code={reasonCode} note={reasonNote} onCodeChange={setReasonCode} onNoteChange={setReasonNote} />
                     <div className="external-week-proposal-actions">
                         {proposal.outcome !== 'unresolved' && (
                             <button

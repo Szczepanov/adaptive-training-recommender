@@ -1,3 +1,5 @@
+import type { PlacementReason } from '../ledger/models';
+import { withPlacementReason } from './placementReason';
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   activeExternalPlanService,
@@ -494,7 +496,7 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
   );
 
   const handleConfirmReplacement = useCallback(
-    async (proposal: ReplacementProposal) => {
+    async (proposal: ReplacementProposal, reason: PlacementReason | null) => {
       if (!activePlan) return;
       const overlay: ExternalPlanPlacement = activePlan.placement ?? {
         userId,
@@ -503,18 +505,19 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
         assignments: [],
         updatedAt: '',
       };
-      await persistAssignments(applyConfirmedProposal(overlay, proposal).assignments);
+      // The engine's proposal logic is unchanged; the reason is stamped on the result (Phase 3C).
+      await persistAssignments(withPlacementReason(applyConfirmedProposal(overlay, proposal).assignments, proposal.sessionId, reason));
     },
     [activePlan, userId, persistAssignments],
   );
 
   const handleChooseDate = useCallback(
-    async (sessionId: string, date: string) => {
+    async (sessionId: string, date: string, reason: PlacementReason | null) => {
       if (!activePlan) return;
       const existing = activePlan.placement?.assignments ?? [];
       await persistAssignments([
         ...existing.filter((item) => item.sessionId !== sessionId),
-        { sessionId, date, status: 'moved' },
+        { sessionId, date, status: 'moved', reason },
       ]);
     },
     [activePlan, persistAssignments],

@@ -339,6 +339,10 @@ would need new change tracking in Firestore._
   Historical exports read the reason as of the event, never a later overlay value.
   - It touches the external-plans rules (`03-external-plans`), write validators, event
     readers and export projection. Check the current compiled-rules budget (ADR-0053).
+    _Implementation note (Phase 3C): no rules change was needed. The overlay and
+    `placement_history` rules bound `assignments` only as a list of at most 120, so the new
+    optional `reason` key is validated client-side in `validateExternalPlanPlacement`, and the
+    compiled-rules budget is unchanged._
   - Legacy records stay `not_yet_supported`; a supported optional reason left blank is
     `not_recorded`. Preserve this distinction in the JSON and Markdown.
 - Session-level plan text is covered by 2b.

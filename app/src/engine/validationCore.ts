@@ -8,6 +8,7 @@
  * `any` this way outside of a validation/parsing boundary like this one.
  */
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { PLACEMENT_REASON_CODES, PLACEMENT_REASON_NOTE_MAX } from '../ledger/models';
 import { isValidDevelopmentTrace } from './developmentAuthority';
 import { isValidSeasonTrace } from './seasonSupport';
 import type {
@@ -2193,6 +2194,22 @@ export function validateExternalTrainingPlan(raw: any): ValidationResult<Externa
 
 const PLACEMENT_STATUSES: ExternalPlacementStatus[] = ['planned', 'completed', 'moved', 'dropped', 'superseded'];
 
+/** A drop/move reason (ledger export Phase 3C): `null` (asked, left blank) or a known code with an
+ * optional short note, and only on a `moved` or `dropped` assignment. */
+function placementReasonError(reason: unknown, status: unknown): string | null {
+    if (status !== 'moved' && status !== 'dropped') return 'A reason is only recorded on a moved or dropped session';
+    if (reason === null) return null;
+    if (!reason || typeof reason !== 'object' || Array.isArray(reason)) return 'reason must be an object or null';
+    const value = reason as Record<string, unknown>;
+    if (unknownKeys(value, ['code', 'note']).length) return 'reason has unrecognized field(s)';
+    if (!(PLACEMENT_REASON_CODES as readonly unknown[]).includes(value.code)) return 'Unsupported reason code';
+    if (value.note !== undefined && (typeof value.note !== 'string' || value.note.trim() === ''
+        || value.note.length > PLACEMENT_REASON_NOTE_MAX)) {
+        return `note must be non-empty text of at most ${PLACEMENT_REASON_NOTE_MAX} characters`;
+    }
+    return null;
+}
+
 /** Strict boundary for the mutable half of an imported plan. `firestore.rules` can bound
  * the assignment list's size but cannot iterate it, so without this the overlay -- which
  * decides which session the athlete is shown on which day -- would be the one part of the
@@ -2221,7 +2238,7 @@ export function validateExternalPlanPlacement(raw: any): ValidationResult<Extern
                 errors.push({ field: path, message: 'Assignment must be an object' });
                 return;
             }
-            const assignmentExtra = unknownKeys(assignment, ['sessionId', 'date', 'status']);
+            const assignmentExtra = unknownKeys(assignment, ['sessionId', 'date', 'status', 'reason']);
             if (assignmentExtra.length) errors.push({ field: path, message: `Unrecognized field(s): ${assignmentExtra.join(', ')}` });
             if (typeof assignment.sessionId !== 'string' || !assignment.sessionId) {
                 errors.push({ field: `${path}.sessionId`, message: 'sessionId is required' });
@@ -2232,6 +2249,10 @@ export function validateExternalPlanPlacement(raw: any): ValidationResult<Extern
             }
             if (!isValidDate(assignment.date)) errors.push({ field: `${path}.date`, message: 'date must be YYYY-MM-DD' });
             if (!PLACEMENT_STATUSES.includes(assignment.status)) errors.push({ field: `${path}.status`, message: 'Unsupported status' });
+            if (assignment.reason !== undefined) {
+                const reasonError = placementReasonError(assignment.reason, assignment.status);
+                if (reasonError) errors.push({ field: `${path}.reason`, message: reasonError });
+            }
         });
     }
 

@@ -25,6 +25,7 @@ interface FlatAssignment {
     sessionId: string;
     date: string;
     status: PlacementInput['assignments'][number]['status'];
+    reason?: PlacementInput['assignments'][number]['reason'];
     removed?: boolean;
 }
 
@@ -214,7 +215,11 @@ function buildPlacementOverrides(flat: FlatAssignment[] | undefined, context: Bu
                 sessionId: fact(row.sessionId, base),
                 kind: fact(row.status, base),
                 date: fact(row.date, base),
-                reason: notYetSupported(SOURCE),
+                // Recorded with the placement change (and its immutable event) since Phase 3C;
+                // older writes never asked, which is not the same as a blank answer.
+                reason: row.reason === undefined ? notYetSupported(SOURCE)
+                    : fact(row.reason ? { code: row.reason.code, ...(row.reason.note ? { note: row.reason.note } : {}) } : null,
+                        { ...base, absent: 'not_recorded' }),
                 step: fact(null, { ...base, absent: 'not_applicable' }),
                 replacement: fact(null, { ...base, absent: 'not_applicable' }),
                 executionState: fact(null, { ...base, absent: 'not_applicable' }),
