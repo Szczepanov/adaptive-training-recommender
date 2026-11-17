@@ -146,6 +146,32 @@ describe('LedgerExportService', () => {
         expect(partial.facts.performedTraining.state).toBe('invalid');
         expect(partial.facts.performedTraining.items[0].fields.structuredEntries.state).toBe('not_yet_supported');
     });
+    it('exports in-session swaps resolved against each run\'s pinned definition, reading it once', async () => {
+        const definition = {
+            schemaVersion: 1, id: 'w', revision: 1, title: 'Strength', intent: 'training',
+            blocks: [{ id: 'b1', role: 'main',
+                steps: [{ id: 'squat', kind: 'exercise', title: 'Back Squat', exerciseRef: { kind: 'catalog', exerciseId: 'back_squat' },
+                    alternatives: [{ id: 'alt', title: 'Goblet Squat', exerciseRef: { kind: 'catalog', exerciseId: 'goblet_squat' } }] }],
+                optionSets: [{ id: 'knee', appliesAtStepId: 'squat', trigger: { kind: 'athlete_observed', description: 'knee?' },
+                    options: [{ id: 'swap', label: 'Swap', actions: [{ kind: 'select_alternative', targetStepId: 'squat', alternativeId: 'alt' }] }] }] }],
+        };
+        reads.definition.mockResolvedValue({ status: 'AVAILABLE', data: definition, revision: null });
+        reads.performed.mockResolvedValue([{ performedOccurrenceId: 'pto-1', status: 'active', localDate: '2026-11-19',
+            sourceRefs: [{ kind: 'structured_execution', executionId: 'exec-1' }] }]);
+        reads.executions.mockResolvedValue({ invalidRecords: 0, executions: [{
+            execution: { executionId: 'exec-1', date: '2026-11-19', state: 'completed', prescriptionHash: 'p',
+                sessionSource: { kind: 'manual', definitionId: 'w', revision: 1, contentHash: 'h' } },
+            entries: [{ id: 'ch-1', executionId: 'exec-1', completedAt: '2026-11-19T07:00:00Z', createdAt: '2026-11-19T07:00:00Z', updatedAt: '2026-11-19T07:00:00Z',
+                payload: { kind: 'choice', choiceId: 'knee', optionId: 'swap', reason: 'Knee tight' } }],
+        }] });
+        reads.definition.mockClear();
+        const result = await new LedgerExportService().build('owner', request);
+        const swaps = result.coachingHistory.overrides.items.filter(item => item.fields.kind.value === 'swapped');
+        expect(swaps).toHaveLength(1);
+        expect(swaps[0].fields).toMatchObject({ step: { value: 'Back Squat' }, replacement: { value: 'Goblet Squat' }, reason: { value: 'Knee tight' } });
+        expect(reads.definition).toHaveBeenCalledTimes(1);
+    });
+
     it('derives placement outcomes from hash-verified executions and never misses an unverifiable one', async () => {
         const plan = { schema: 'external-plan@6', sessions: [{ id: 'session-1' }, { id: 'session-2' }] };
         const contentHash = await computeContentHash(plan);

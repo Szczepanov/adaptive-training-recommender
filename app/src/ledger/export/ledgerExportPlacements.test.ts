@@ -55,7 +55,7 @@ describe('upcoming placements (forward window)', () => {
                 assignments: [{ sessionId: 'future', date: '2026-11-25', status: 'moved' }] }] },
         }));
         expect(ids(result)).toEqual(['future']);
-        expect(result.coachingHistory.overrides.items).toEqual([]);
+        expect(result.coachingHistory.overrides.items.filter(item => !item.id.startsWith('choice:'))).toEqual([]);
     });
 
     it('counts out-of-window placements in droppedOutOfWindow', () => {

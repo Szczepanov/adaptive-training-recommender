@@ -16,7 +16,7 @@ type Resolved = { definition: SessionDefinition } | { state: LedgerState };
 const absentCount = (state: LedgerState): SetCountInput => ({ value: null, state });
 
 /** The pinned definition (prescription hash, else the source's own definition), or why it is unreadable. */
-async function resolvePinned(userId: string, row: NormalizedExecutionRecord): Promise<Resolved> {
+export async function resolvePinned(userId: string, row: NormalizedExecutionRecord): Promise<Resolved> {
     // A reduced run without its pinned prescription would fall back to the authored definition,
     // which is not what was prescribed.
     if (row.execution.executedDefinition === 'reduced' && !row.execution.prescriptionHash) return { state: 'unavailable' };
@@ -46,11 +46,25 @@ function plannedFor(resolved: readonly Resolved[]): SetCountInput {
     return 'definition' in only ? { value: plannedSetCount(only.definition) } : absentCount(only.state);
 }
 
+/** One pinned-definition read per execution, shared by set counts and choice overrides. */
+export function pinnedResolver(userId: string): (row: NormalizedExecutionRecord) => Promise<Resolved> {
+    const cache = new Map<string, Promise<Resolved>>();
+    return row => {
+        const key = row.execution.executionId;
+        const cached = cache.get(key);
+        if (cached) return cached;
+        const pending = resolvePinned(userId, row);
+        cache.set(key, pending);
+        return pending;
+    };
+}
+
 export async function projectStructuredWork(
     userId: string,
     sourceRefs: readonly { kind: string; executionId?: string }[],
     executions: ReadonlyMap<string, NormalizedExecutionRecord>,
     executionsReadable: boolean,
+    resolve: (row: NormalizedExecutionRecord) => Promise<Resolved> = row => resolvePinned(userId, row),
 ): Promise<StructuredWork> {
     const ids = sourceRefs.flatMap(ref => (ref.kind === 'structured_execution' && ref.executionId ? [ref.executionId] : []));
     if (ids.length === 0) return { structuredExecutionIds: [] };
@@ -60,7 +74,7 @@ export async function projectStructuredWork(
         return { structuredExecutionIds: ids, setCounts: { planned: unavailable, work: unavailable, warmup: unavailable } };
     }
     const rows = linked as NormalizedExecutionRecord[];
-    const resolved = await Promise.all(rows.map(row => resolvePinned(userId, row)));
+    const resolved = await Promise.all(rows.map(resolve));
     const definitions = resolved.map(item => ('definition' in item ? item.definition : null));
     const counts = performedSetCounts(rows.map((row, i) => ({ entries: row.entries, definition: definitions[i] })));
     return {

@@ -1,7 +1,7 @@
 /** Layer 5: bounded coaching records and recorded placement history. */
 import { hasRecordedPrevious, placementAsOf, placementBeforeHistory, type PlacementAssignment } from '../placementHistory.ts';
-import { collect, sourceState, type BuildContext } from './buildContext.ts';
-import type { LedgerExportRecords, PlacementInput, PlanSessionContentInput } from './inputs.ts';
+import { byDateThenId, collect, sourceState, type BuildContext } from './buildContext.ts';
+import type { ChoiceOverrideInput, LedgerExportRecords, PlacementInput, PlanSessionContentInput } from './inputs.ts';
 import { fact, notYetSupported, record, worstState } from './ledgerValue.ts';
 import type { LedgerState } from './schema.ts';
 import type {
@@ -161,7 +161,47 @@ function buildPlacements(flat: FlatAssignment[] | undefined, records: LedgerExpo
     return { ...result, droppedOutOfWindow: dated - result.items.length };
 }
 
-function buildOverrides(flat: FlatAssignment[] | undefined, context: BuildContext) {
+function buildChoiceOverrides(records: LedgerExportRecords, context: BuildContext) {
+    return collect(context, {
+        key: 'performed_training_occurrences',
+        records: records.choiceOverrides,
+        dateOf: row => row.date,
+        toItem: (row: ChoiceOverrideInput) => {
+            const base = { source: SOURCE, observedOn: row.date };
+            const values: Record<typeof OVERRIDE_FIELDS[number], LedgerValue<unknown>> = {
+                planId: fact(row.planId, { ...base, absent: 'not_applicable' }),
+                sessionId: fact(row.sessionId, { ...base, absent: 'not_applicable' }),
+                kind: fact(row.kind, { ...base, absent: row.kindState ?? 'missing' }),
+                date: fact(row.date, base),
+                reason: fact(row.reason, { ...base, absent: 'not_recorded' }),
+                step: fact(row.step, { ...base, absent: row.stepState ?? (row.kind === null ? row.kindState ?? 'missing' : 'missing') }),
+                replacement: fact(row.replacement, {
+                    ...base,
+                    absent: row.kind === 'swapped' ? row.replacementState ?? 'missing' : row.kind === null ? row.kindState ?? 'missing' : 'not_applicable',
+                }),
+                executionState: fact(row.executionState, base),
+            };
+            return record(`choice:${row.id}`, row.date, values);
+        },
+    });
+}
+
+/** Placement drops/moves plus in-session swaps/omissions. The collection's state is the worse of
+ * the placement read and the execution read, so a failed read of either is never a clean list. */
+function buildOverrides(flat: FlatAssignment[] | undefined, records: LedgerExportRecords, context: BuildContext) {
+    const placements = buildPlacementOverrides(flat, context);
+    const choices = buildChoiceOverrides(records, context);
+    return {
+        ...placements,
+        // Both reads feed this collection; naming only one would blame the wrong read on failure.
+        source: `${placements.source} + ${choices.source}`,
+        state: worstState([placements.state, choices.state]),
+        items: byDateThenId([...placements.items, ...choices.items]),
+        droppedUndated: placements.droppedUndated + choices.droppedUndated,
+    };
+}
+
+function buildPlacementOverrides(flat: FlatAssignment[] | undefined, context: BuildContext) {
     return collect(context, {
         key: 'external_plan_placements',
         records: flat,
@@ -175,6 +215,9 @@ function buildOverrides(flat: FlatAssignment[] | undefined, context: BuildContex
                 kind: fact(row.status, base),
                 date: fact(row.date, base),
                 reason: notYetSupported(SOURCE),
+                step: fact(null, { ...base, absent: 'not_applicable' }),
+                replacement: fact(null, { ...base, absent: 'not_applicable' }),
+                executionState: fact(null, { ...base, absent: 'not_applicable' }),
             };
             return record(assignmentId(row), row.date, values);
         },
@@ -298,7 +341,7 @@ export function buildCoachingHistory(records: LedgerExportRecords, context: Buil
     return {
         planRevisions: buildPlanRevisions(records, flat, context),
         placements: buildPlacements(flat, records, placementContext),
-        overrides: buildOverrides(flat, placementContext),
+        overrides: buildOverrides(flat, records, placementContext),
         plannedToPerformed: buildPlannedToPerformed(records, context),
     };
 }

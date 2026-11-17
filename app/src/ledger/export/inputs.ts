@@ -181,6 +181,28 @@ export interface UnverifiedPlanEvidenceInput {
     sessionId: string;
 }
 
+/**
+ * A swap or omission the athlete chose during a session (Phase 3B), already resolved against the
+ * definition pinned for that run. `kind: null` with `kindState` means the choice could not be
+ * resolved; `stepState`/`replacementState` say why a resolved row lacks its step or replacement.
+ */
+export interface ChoiceOverrideInput {
+    /** Stable: execution id, choice entry id and action index. */
+    id: string;
+    date: string;
+    planId?: string;
+    sessionId?: string;
+    kind: 'swapped' | 'omitted' | null;
+    kindState?: LedgerState;
+    step?: string;
+    stepState?: LedgerState;
+    replacement?: string;
+    replacementState?: LedgerState;
+    reason?: string;
+    /** The run the choice was made in, so an abandoned run or a rerun is not mistaken for the completed one. */
+    executionState: 'in_progress' | 'completed' | 'abandoned';
+}
+
 /** One record per source read. Absent = not read, reported `unavailable`. */
 export interface SourceReadInput {
     state?: LedgerState;
@@ -248,6 +270,8 @@ export interface LedgerExportRecords {
     planExecutions?: readonly PlanExecutionInput[];
     /** Links and executions that could not be verified; their placements' outcomes are `unknown`. */
     unverifiedPlanEvidence?: readonly UnverifiedPlanEvidenceInput[];
+    /** Swaps and omissions from in-session choices. Absent = executions not read. */
+    choiceOverrides?: readonly ChoiceOverrideInput[];
 }
 
 export interface BuildLedgerExportInput {

@@ -182,7 +182,7 @@ export const PLAN_REVISION_FIELDS = [
 ] as const;
 export const PLACEMENT_FIELDS = ['planId', 'revision', 'sessionId', 'status', 'date', 'statusHistory',
     'title', 'priority', 'summary', 'stepNotes', 'fallback', 'outcome'] as const;
-export const OVERRIDE_FIELDS = ['planId', 'sessionId', 'kind', 'date', 'reason'] as const;
+export const OVERRIDE_FIELDS = ['planId', 'sessionId', 'kind', 'date', 'reason', 'step', 'replacement', 'executionState'] as const;
 export const PLANNED_TO_PERFORMED_FIELDS = ['planId', 'revision', 'sessionId', 'date', 'performedOccurrenceRef'] as const;
 
 type Rec<F extends readonly string[]> = LedgerRecord<F[number]>;

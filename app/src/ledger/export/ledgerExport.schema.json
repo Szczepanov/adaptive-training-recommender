@@ -2358,7 +2358,10 @@
         "sessionId",
         "kind",
         "date",
-        "reason"
+        "reason",
+        "step",
+        "replacement",
+        "executionState"
       ],
       "properties": {
         "planId": {
@@ -2374,6 +2377,15 @@
           "$ref": "#/$defs/ledgerValue"
         },
         "reason": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "step": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "replacement": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "executionState": {
           "$ref": "#/$defs/ledgerValue"
         }
       }
