@@ -283,6 +283,29 @@
   line-height: 1.5;
 }
 
+.external-week-reason {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin: 0.4rem 0 0.6rem;
+}
+
+.external-week-reason label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  flex: 1 1 12rem;
+  min-width: 0;
+  font-size: 0.85rem;
+}
+
+.external-week-reason select,
+.external-week-reason input {
+  min-height: 44px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
 .external-week-proposal-actions,
 .external-week-daypicker {
   display: flex;

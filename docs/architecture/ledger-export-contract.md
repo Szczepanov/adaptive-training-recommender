@@ -220,7 +220,7 @@ toggle describe, so a copy can never carry the wrong variant.
 | `derived` | Biometric and subjective baseline metrics with units, readiness and source states | D−1 step normalization and performed-load slots remain `not_yet_supported` pending #1166; no engine derivations are called |
 | `flags` | The closed four D-FLAGS ids with immutable evaluation metadata and inputs | Persisted versions pass through in deterministic date/session/time order; uncaptured dates remain `not_recorded`; illness/anomaly remains withheld by HA7 |
 | `userContext` | Current active goals/constraints, settings/equipment, active injuries and resolved injury periods overlapping the window, preferences, travel, venue restrictions, availability and intent-block events | Injury `since` and `resolvedAt` use recorded dates; legacy onset stays unknown. Other unsupported effective dates and revision history stay explicit; `updatedAt` does not establish field-level history |
-| `coachingHistory` | Immutable external-plan revision headers/rationale, as-of placements with a derived past `outcome`, immutable placement events, moved/dropped placement overrides plus in-session swaps/omissions (with the athlete's choice reason), canonical planned→performed links | Drop/move override reasons and unrecorded legacy history remain `not_yet_supported` |
+| `coachingHistory` | Immutable external-plan revision headers/rationale, as-of placements with a derived past `outcome`, immutable placement events, moved/dropped placement overrides plus in-session swaps/omissions (with the athlete's choice reason), canonical planned→performed links | Drop/move reasons on changes saved before Phase 3C, and unrecorded legacy history, remain `not_yet_supported` |
 
 `legacyEngine` is null in the user-facing export. The pure builder supports an explicitly
 supplied legacy layer; the production service never supplies it. No engine opinion belongs
@@ -324,7 +324,10 @@ counts): `select_alternative` → `swapped` with `step` and `replacement`; `omit
 set or rep reductions are not overrides. A choice the
 pinned definition cannot resolve keeps `kind: null` with the reason as its state (`invalid`, or the
 definition read's state). `reason` is the athlete's choice reason, `not_recorded` when blank. Plan
-drop/move rows carry `step`/`replacement`/`executionState` as `not_applicable`. Each choice row carries the
+drop/move rows carry `step`/`replacement`/`executionState` as `not_applicable`; their `reason` is
+`{ code, note? }` as recorded on the assignment as of the export date (from the immutable placement
+event, never a later overlay value), `not_recorded` when the athlete was asked and left it blank,
+and `not_yet_supported` for a change written before reasons were asked (Phase 3C). Each choice row carries the
 run's `executionState`, so an abandoned run or a rerun is not mistaken for the completed one. The
 collection's `source` names both reads (`external_plan_placements + performed_training_occurrences`)
 and its state is the worse of the two.

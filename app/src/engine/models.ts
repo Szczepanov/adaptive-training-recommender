@@ -29,6 +29,7 @@ import type {
     UserConstraint,
     UserPreferences,
     WorkoutStimulusProfile,
+    PlacementReason,
 } from '../ledger/models';
 
 // ADR-0052 Phase 1 (#1144): ledger record types moved to ledger/models.ts; re-exported so
@@ -588,6 +589,9 @@ export interface ExternalPlacementAssignment {
     sessionId: string;
     date: string;
     status: ExternalPlacementStatus;
+    /** Only on `moved`/`dropped`. Absent: written before reasons were asked (legacy). `null`: asked,
+     * left blank. Copied into the immutable placement event with the overlay write. */
+    reason?: PlacementReason | null;
 }
 
 /** The mutable overlay. Rescheduling writes here, never to the stored revision. */

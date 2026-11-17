@@ -182,6 +182,19 @@ describe('ExternalPlanService import records declared session replacements (#117
         });
     });
 
+    it('supersedes a session moved with a drop/move reason, dropping the reason from the superseded row (Phase 3C)', async () => {
+        await service.savePlacement('u1', { planId: 'v6-block', revision: 1, assignments: [
+            { sessionId: 'old-a', date: '2026-11-16', status: 'moved', reason: { code: 'travel', note: 'Away' } },
+            { sessionId: 'old-b', date: '2026-11-12', status: 'dropped', reason: null },
+        ] });
+        await expect(service.import('u1', revision2(), '2026-11-16')).resolves.toMatchObject({ status: 'AVAILABLE' });
+        const assignments = (firestore.committedDocs.get(REV1_PLACEMENT) as { assignments: Record<string, unknown>[] }).assignments;
+        const superseded = assignments.find(item => item.sessionId === 'old-a')!;
+        expect(superseded).toMatchObject({ date: '2026-11-16', status: 'superseded' });
+        expect('reason' in superseded).toBe(false);
+        expect(assignments.find(item => item.sessionId === 'old-b')).toMatchObject({ status: 'dropped', reason: null });
+    });
+
     it('supersedes on the moved date', async () => {
         await service.savePlacement('u1', { planId: 'v6-block', revision: 1, assignments: [
             { sessionId: 'old-a', date: '2026-11-16', status: 'moved' },

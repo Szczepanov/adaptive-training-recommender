@@ -1,8 +1,11 @@
+import type { PlacementReason } from './models.ts';
 /** Immutable snapshots of a placement change. Dates are Warsaw calendar dates. */
 export interface PlacementAssignment {
     sessionId: string;
     date: string;
     status: 'planned' | 'completed' | 'moved' | 'dropped' | 'superseded';
+    /** Drop/move reason as recorded with this snapshot (see `ExternalPlacementAssignment.reason`). */
+    reason?: PlacementReason | null;
 }
 
 /**

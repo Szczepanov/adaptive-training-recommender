@@ -7,6 +7,16 @@
  */
 import type { AthletePerformanceProfile } from '../workouts/models.ts';
 
+/** Why the athlete dropped or moved an imported plan session (ledger export Phase 3C, Q2 default):
+ * a fixed list the external AI can aggregate across weeks, plus optional free text. */
+export const PLACEMENT_REASON_CODES = ['time', 'fatigue', 'pain', 'equipment', 'travel', 'other'] as const;
+export type PlacementReasonCode = typeof PLACEMENT_REASON_CODES[number];
+export const PLACEMENT_REASON_NOTE_MAX = 200;
+export interface PlacementReason {
+    code: PlacementReasonCode;
+    note?: string;
+}
+
 export type PhysicalWorkDuration = 'short' | 'medium' | 'extended'; // <1h, 1-3h, 3h+
 export type PhysicalWorkIntensity = 'moderate' | 'hard' | 'exhausting';
 export type PhysicalWorkLoadArea =

@@ -150,6 +150,8 @@ export interface PlacementInput {
         sessionId: string;
         date: string;
         status: 'planned' | 'completed' | 'moved' | 'dropped' | 'superseded';
+        /** Drop/move reason. Absent: written before reasons were asked; `null`: asked, left blank. */
+        reason?: { code: string; note?: string } | null;
     }[];
 }
 

@@ -441,6 +441,14 @@ athlete acknowledges it (#1189).
 On import, each replaced session is marked as replaced on its existing date in the previous
 revision, with a link to its successor (#1172).
 
+When the athlete marks a session missed or reschedules it, the proposal panel in
+`ExternalPlanWeek` offers an optional reason (`PlacementReasonPicker`): a fixed list (time,
+fatigue, pain, equipment, travel, other) plus a short note. **Drop it**, **Move to …** and
+**Choose another day** all save it on the moved or dropped assignment, so the overlay and its
+placement-history event carry it in the same write. Leaving it empty saves `reason: null` (asked,
+left blank). A note typed with no code is filed under `other`. The ledger export reports it
+(ledger export Phase 3C).
+
 When only the stored placement overlay (the athlete's moves) is unreadable, `PlanView` still
 shows the coach plan, at the plan's own dates. `PlacementOverlayRecoveryCard` warns that
 earlier moves could not be read and that saving a move or resetting replaces them. **Reset
