@@ -146,6 +146,20 @@ describe('placement outcome in the ledger export (Phase 3)', () => {
         ] });
         expect(outcomes(overCorrupt).s.value).toBe('unknown');
 
+        // A repair after the as-of date does not change this export's outcome.
+        const laterRepair = withPlacements([placed('s', '2026-11-16')], { placementHistory: [
+            event('2026-11-15', [placed('s', '2026-11-16')]),
+            { ...event('2026-11-22', [placed('s', '2026-11-16')]), previousState: 'invalid' } as NonNullable<LedgerExportRecords['placementHistory']>[number],
+        ] });
+        expect(outcomes(laterRepair).s.value).toBe('missed');
+
+        // A date the session sat on after the window end is outside the evidence read.
+        const pastWindowEnd = withPlacements([placed('s', '2026-11-25')], { placementHistory: [
+            event('2026-11-15', [{ ...placed('s', '2026-11-16'), date: '2026-11-25' }]),
+            event('2026-11-16', [placed('s', '2026-11-25')], [{ ...placed('s', '2026-11-16'), date: '2026-11-25' }]),
+        ] });
+        expect(outcomes(pastWindowEnd).s.value).toBe('unknown');
+
         // A dropped session that was moved earlier without a from-date stays unknown too.
         const droppedAfterLegacyMove = withPlacements([{ sessionId: 's', date: '2026-11-18', status: 'dropped' }], { placementHistory: [
             event('2026-11-15', [{ sessionId: 's', date: '2026-11-18', status: 'moved' }]),

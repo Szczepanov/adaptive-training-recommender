@@ -2251,7 +2251,9 @@ export function validateExternalPlanPlacement(raw: any): ValidationResult<Extern
             if (!PLACEMENT_STATUSES.includes(assignment.status)) errors.push({ field: `${path}.status`, message: 'Unsupported status' });
             if (assignment.movedFrom !== undefined) {
                 if (assignment.status !== 'moved') errors.push({ field: `${path}.movedFrom`, message: 'movedFrom is only recorded on a moved session' });
-                else if (!isValidDate(assignment.movedFrom)) errors.push({ field: `${path}.movedFrom`, message: 'movedFrom must be YYYY-MM-DD' });
+                else if (typeof assignment.movedFrom !== 'string' || !isValidDate(assignment.movedFrom)) {
+                    errors.push({ field: `${path}.movedFrom`, message: 'movedFrom must be YYYY-MM-DD' });
+                }
             }
             if (assignment.reason !== undefined) {
                 const reasonError = placementReasonError(assignment.reason, assignment.status);

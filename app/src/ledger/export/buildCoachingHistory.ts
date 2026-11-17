@@ -71,9 +71,15 @@ function outcomeEvidenceComplete(records: LedgerExportRecords, context: BuildCon
 }
 
 /** Every snapshot of this session in this revision's recorded history. */
-function recordedSnapshots(row: FlatAssignment, records: LedgerExportRecords) {
+/** This revision's history events recorded on or before the export's as-of date. */
+function asOfEvents(row: FlatAssignment, records: LedgerExportRecords, asOfDate: string) {
     return (records.placementHistory ?? [])
-        .filter(event => event.planId === row.planId && event.revision === row.revision)
+        .filter(event => event.planId === row.planId && event.revision === row.revision && event.changedOn <= asOfDate);
+}
+
+/** Every snapshot of this session in the as-of history (later changes cannot affect this export). */
+function recordedSnapshots(row: FlatAssignment, records: LedgerExportRecords, asOfDate: string) {
+    return asOfEvents(row, records, asOfDate)
         .flatMap(event => [...event.previous, ...event.assignments])
         .filter(item => item.sessionId === row.sessionId);
 }
@@ -85,12 +91,11 @@ function recordedSnapshots(row: FlatAssignment, records: LedgerExportRecords) {
  * truncated, or a save over a corrupt overlay hid the prior state -- the date the session was shown
  * on before it moved, where an attempt could have happened, is then unknown.
  */
-function sessionDates(row: FlatAssignment, records: LedgerExportRecords): string[] | null {
-    const snapshots = recordedSnapshots(row, records);
+function sessionDates(row: FlatAssignment, records: LedgerExportRecords, asOfDate: string): string[] | null {
+    const snapshots = recordedSnapshots(row, records, asOfDate);
     const truncated = (records.placementHistoryUnavailable ?? []).some(item => item.planId === row.planId && item.revision === row.revision);
     // A save over a corrupt overlay records its prior state as unknown, so a move may be hidden there.
-    const unknownPrior = (records.placementHistory ?? []).some(event => event.planId === row.planId && event.revision === row.revision
-        && !hasRecordedPrevious(event));
+    const unknownPrior = asOfEvents(row, records, asOfDate).some(event => !hasRecordedPrevious(event));
     const moves = [...snapshots, row].filter(item => item.status === 'moved');
     if (moves.length > 0 && (truncated || unknownPrior || snapshots.length === 0 || moves.some(item => !item.movedFrom))) return null;
     return [...snapshots, row].flatMap(item => [item.date, ...(item.movedFrom ? [item.movedFrom] : [])]);
@@ -108,8 +113,10 @@ function sessionDates(row: FlatAssignment, records: LedgerExportRecords): string
  */
 function evidenceCoversPlacement(row: FlatAssignment, records: LedgerExportRecords, context: BuildContext): boolean {
     if (row.date > context.window.endDate) return false;
-    const dates = sessionDates(row, records);
-    if (dates === null || dates.some(date => date < context.window.startDate)) return false;
+    // Executions and links are read only inside the window, so every date the session sat on
+    // (and each date it moved from) must be inside it.
+    const dates = sessionDates(row, records, context.asOfDate);
+    if (dates === null || dates.some(date => date < context.window.startDate || date > context.window.endDate)) return false;
     const otherRevision = (item: { planId: string; revision: number; sessionId: string }) =>
         item.planId === row.planId && item.sessionId === row.sessionId && item.revision !== row.revision;
     if ([...(records.plannedToPerformed ?? []), ...(records.planExecutions ?? []), ...(records.unverifiedPlanEvidence ?? [])]
