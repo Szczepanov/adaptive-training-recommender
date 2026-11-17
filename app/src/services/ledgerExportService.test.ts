@@ -146,6 +146,30 @@ describe('LedgerExportService', () => {
         expect(partial.facts.performedTraining.state).toBe('invalid');
         expect(partial.facts.performedTraining.items[0].fields.structuredEntries.state).toBe('not_yet_supported');
     });
+    it('derives placement outcomes from hash-verified executions and never misses an unverifiable one', async () => {
+        const plan = { schema: 'external-plan@6', sessions: [{ id: 'session-1' }, { id: 'session-2' }] };
+        const contentHash = await computeContentHash(plan);
+        reads.plans.mockResolvedValue(available(['plan-1']));
+        reads.header.mockResolvedValue(available({ revision: 2, contentHash, importedAt: '2026-11-10T08:00:00Z' }));
+        reads.activations.mockResolvedValue(available([]));
+        reads.revision.mockResolvedValue(available(plan));
+        reads.placement.mockResolvedValue(available({ planId: 'plan-1', revision: 2, assignments: [
+            { sessionId: 'session-1', date: '2026-11-18', status: 'planned' },
+            { sessionId: 'session-2', date: '2026-11-18', status: 'planned' },
+        ] }));
+        reads.performed.mockResolvedValue([]);
+        const source = (sessionId: string, hash: string) => ({ kind: 'external_plan', planId: 'plan-1', revision: 2, sessionId, contentHash: hash });
+        reads.executions.mockResolvedValue({ invalidRecords: 0, executions: [
+            { execution: { executionId: 'e1', sessionSource: source('session-1', contentHash), date: '2026-11-18', state: 'abandoned' }, entries: [] },
+            { execution: { executionId: 'e2', sessionSource: source('session-2', 'sha256:other'), date: '2026-11-18', state: 'completed' }, entries: [] },
+        ] });
+        const result = await new LedgerExportService().build('owner', request);
+        const outcome = (sessionId: string) => result.coachingHistory.placements.items
+            .find(item => item.fields.sessionId.value === sessionId)?.fields.outcome.value;
+        expect(outcome('session-1')).toBe('started_not_completed');
+        expect(outcome('session-2')).toBe('unknown');
+    });
+
     it('verifies immutable revisions and preserves recorded rationale and mutable placement gaps', async () => {
         const plan = { planId: 'plan-1', revision: 2, schema: 'external-plan@6', notes: 'Aerobic block', sessions: [] };
         const hash = await computeContentHash(plan);

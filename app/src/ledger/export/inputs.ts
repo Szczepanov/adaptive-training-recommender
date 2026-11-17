@@ -164,6 +164,23 @@ export interface PlannedToPerformedInput {
     performedOccurrenceId: string;
 }
 
+/** An execution of a plan session whose content hash matched the verified stored revision.
+ * Placement outcomes use it to tell a started or unlinked session from a missed one. */
+export interface PlanExecutionInput {
+    planId: string;
+    revision: number;
+    sessionId: string;
+    state: 'in_progress' | 'completed' | 'abandoned';
+}
+
+/** Evidence about a plan session that could not be verified: a planned-to-performed link or an
+ * execution whose revision or content hash did not verify. Its placement's outcome is `unknown`. */
+export interface UnverifiedPlanEvidenceInput {
+    planId: string;
+    revision: number;
+    sessionId: string;
+}
+
 /** One record per source read. Absent = not read, reported `unavailable`. */
 export interface SourceReadInput {
     state?: LedgerState;
@@ -226,6 +243,11 @@ export interface LedgerExportRecords {
     /** Revisions whose history exceeded the bounded scan; only their statusHistory is unavailable. */
     placementHistoryUnavailable?: readonly { planId: string; revision: number }[];
     plannedToPerformed?: readonly PlannedToPerformedInput[];
+    /** Hash-verified executions of plan sessions in the window. Absent = not read, so no past
+     * placement can be shown as missed. */
+    planExecutions?: readonly PlanExecutionInput[];
+    /** Links and executions that could not be verified; their placements' outcomes are `unknown`. */
+    unverifiedPlanEvidence?: readonly UnverifiedPlanEvidenceInput[];
 }
 
 export interface BuildLedgerExportInput {

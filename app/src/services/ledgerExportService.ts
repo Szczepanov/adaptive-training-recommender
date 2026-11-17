@@ -162,11 +162,13 @@ export class LedgerExportService {
         }, []);
         const placementBounds = { from: window.startDate, to: addDaysToLocalDateString(window.endDate, PLACEMENT_FORWARD_DAYS[request.purpose]) };
         const verifiedPlans = await this.readPlans(userId, records, sources, exportedAt, placementBounds);
+        const discarded: { planId: string; revision: number; sessionId: string }[] = [];
         records.plannedToPerformed = (records.plannedToPerformed ?? []).filter(link => {
             const verified = verifiedPlans.get(`${link.planId}@${link.revision}`);
             if (!verified) {
                 sources.planned_to_performed!.state = worstState([sources.planned_to_performed!.state ?? 'measured',
                     sources.external_plan_revisions?.state === 'invalid' ? 'invalid' : 'unavailable']);
+                discarded.push({ planId: link.planId, revision: link.revision, sessionId: link.sessionId });
                 return false;
             }
             const occurrence = performed.status === 'fulfilled'
@@ -179,8 +181,25 @@ export class LedgerExportService {
             });
             if (matching && verified.sessionIds.has(link.sessionId)) return true;
             sources.planned_to_performed!.state = worstState([sources.planned_to_performed!.state ?? 'measured', 'invalid']);
+            discarded.push({ planId: link.planId, revision: link.revision, sessionId: link.sessionId });
             return false;
         });
+        // Placement outcomes (Phase 3) need every execution of a plan session, matched by plan id,
+        // revision, session id and the verified content hash -- never by title. An execution that
+        // does not verify is evidence of unknown weight, so its placement cannot be called missed.
+        if (executions.status === 'fulfilled') {
+            records.planExecutions = executionRows.flatMap(({ execution }) => {
+                const source = execution.sessionSource;
+                if (source.kind !== 'external_plan') return [];
+                const verified = verifiedPlans.get(`${source.planId}@${source.revision}`);
+                if (!verified || verified.contentHash !== source.contentHash) {
+                    discarded.push({ planId: source.planId, revision: source.revision, sessionId: source.sessionId });
+                    return [];
+                }
+                return [{ planId: source.planId, revision: source.revision, sessionId: source.sessionId, state: execution.state }];
+            });
+        }
+        records.unverifiedPlanEvidence = discarded;
         // Include the current identity only as redaction input, never as an exported field.
         const scopedRecords = { ...records, userId };
         return buildLedgerExport({ ...request, exportedAt, records: scopedRecords, sources });
