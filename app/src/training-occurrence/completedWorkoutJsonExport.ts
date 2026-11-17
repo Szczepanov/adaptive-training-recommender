@@ -116,6 +116,8 @@ export type StructuredEntriesRead =
     | { status: 'complete' }
     | { status: 'partial'; invalidRecords: number }
     | { status: 'unknown'; reason: 'not_hydrated' }
+    /** The set log read itself failed, so no step detail exists at all. */
+    | { status: 'unknown'; reason: 'entries_unavailable' }
     | { status: 'unknown'; reason: 'diary_writes_failed'; failedWrites: number }
     | { status: 'unknown'; reason: 'diary_outbox_unreadable' };
 
@@ -326,6 +328,9 @@ function performedStatusOf(sets: readonly ExportedPerformedSet[], entries: Struc
 }
 
 export function structuredEntriesReadOf(view: CompletedWorkoutView): StructuredEntriesRead {
+    if (!view.structured && view.sourceReads.structured.status === 'entries_unavailable') {
+        return { status: 'unknown', reason: 'entries_unavailable' };
+    }
     const invalid = view.structured?.entryInvalidRecords;
     if (invalid === undefined) return { status: 'unknown', reason: 'not_hydrated' };
     if (invalid > 0) return { status: 'partial', invalidRecords: invalid };
@@ -479,9 +484,11 @@ export function exportCompletedWorkoutToJson(
                         ),
                     },
                     performedRest: view.structured.performedRest,
-                    structuredEntries: entries,
                 };
             })()
+            : {}),
+        ...(view.structured || entries.status === 'unknown' && entries.reason === 'entries_unavailable'
+            ? { structuredEntries: entries }
             : {}),
         exercises,
         ...(sessionChoices.length > 0 ? { sessionChoices: sessionChoices.map(choice => ({ ...choice })) } : {}),

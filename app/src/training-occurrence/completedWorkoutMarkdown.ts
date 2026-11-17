@@ -106,19 +106,20 @@ function choiceLabel(choice: StepChoiceDetail): string {
 
 /** Names the choice a set was done under, but only when it is no longer the effective one:
  * a later correction must not relabel work performed before it. */
-function governingChoiceText(set: ExportedPerformedSet, choices: ChoiceIndex): string {
+function governingChoiceText(set: ExportedPerformedSet, choices: ChoiceIndex, logComplete: boolean): string {
     if (!set.governingChoiceEntryId) return '';
     const governing = choices.get(set.governingChoiceEntryId);
-    // Deleted entries are not in the log, so a tombstoned governing choice cannot be named.
-    if (!governing) return ' · under a choice no longer in the log';
+    // Only a complete read shows the choice is gone (deleted entries are not in the log);
+    // after a partial or unknown read it may simply be one of the unreadable records.
+    if (!governing) return logComplete ? ' · under a choice no longer in the log' : ' · under a choice that could not be read';
     return governing.effective ? '' : ` · under earlier choice: ${choiceLabel(governing)}`;
 }
 
-function workSetLine(set: ExportedPerformedSet, choices: ChoiceIndex): string {
+function workSetLine(set: ExportedPerformedSet, choices: ChoiceIndex, logComplete: boolean): string {
     // A trailing rest that ran until the session ended is not a rest the athlete took.
     const rest = set.rest && set.rest.endReason !== 'session_ended' ? ` · rest ${set.rest.actualSeconds} s` : '';
     const swap = set.performedExercise ? ` · performed as ${exerciseRefLabel(set.performedExercise)}` : '';
-    return `${set.setNumber}: ${setBody(set)}${effortText(set)}${rest}${swap}${governingChoiceText(set, choices)}`;
+    return `${set.setNumber}: ${setBody(set)}${effortText(set)}${rest}${swap}${governingChoiceText(set, choices, logComplete)}`;
 }
 
 function exerciseHeading(exercise: ExportedExercise): string {
@@ -167,7 +168,7 @@ function structuredLogLine(view: CompletedWorkoutView, report: CompletedWorkoutE
     }
 }
 
-function exerciseLines(exercise: ExportedExercise, choices: ChoiceIndex): string[] {
+function exerciseLines(exercise: ExportedExercise, choices: ChoiceIndex, logComplete: boolean): string[] {
     const lines = [exerciseHeading(exercise)];
     if (exercise.choiceOnly) return [...lines, ...choiceLines(exercise.choices)];
     const swappedWithSets = Boolean(exercise.plannedName) && !exercise.unplanned && exercise.performedStatus === 'performed';
@@ -175,8 +176,10 @@ function exerciseLines(exercise: ExportedExercise, choices: ChoiceIndex): string
     if (exercise.prescribed.notes) lines.push(`notes: ${oneLine(exercise.prescribed.notes)}`);
     lines.push(...choiceLines(exercise.choices));
     const warmups = exercise.performed.sets.filter(set => set.isWarmup);
-    if (warmups.length > 0) lines.push(`warm-up: ${warmups.map(setBody).join(', ')}`);
-    for (const set of exercise.performed.sets.filter(item => !item.isWarmup)) lines.push(workSetLine(set, choices));
+    if (warmups.length > 0) {
+        lines.push(`warm-up: ${warmups.map(set => `${setBody(set)}${governingChoiceText(set, choices, logComplete)}`).join(', ')}`);
+    }
+    for (const set of exercise.performed.sets.filter(item => !item.isWarmup)) lines.push(workSetLine(set, choices, logComplete));
     return lines;
 }
 
@@ -288,7 +291,8 @@ export function formatCompletedWorkoutMarkdown(
     if (report.sessionChoices && report.sessionChoices.length > 0) {
         lines.push('', '## Session choices', ...choiceLines(report.sessionChoices));
     }
-    for (const exercise of report.exercises) lines.push('', ...exerciseLines(exercise, choices));
+    const logComplete = report.structuredEntries?.status === 'complete';
+    for (const exercise of report.exercises) lines.push('', ...exerciseLines(exercise, choices, logComplete));
     if (report.providerActivity || report.exercises.length === 0) lines.push('');
     if (report.providerActivity) lines.push(garminLine(report.providerActivity));
     if (report.exercises.length === 0) lines.push(structuredLogLine(view, report));

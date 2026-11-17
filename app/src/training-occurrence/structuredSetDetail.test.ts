@@ -275,6 +275,26 @@ describe('buildStructuredStepDetails', () => {
         expect(row).toMatchObject({ governingChoiceEntryId: 'ch-1', selectedOptionId: 'o1' });
     });
 
+    it('keeps choices recorded against an added step and against an unknown step', () => {
+        const at = '2026-08-26T07:10:00.000Z';
+        const mkEntry = (id: string, stepId: string, payload: SessionEntry['payload'], extra: object = {}) => ({
+            id, executionId: 'exec-1', stepId, completedAt: at, createdAt: at, updatedAt: at, payload, ...extra,
+        }) as SessionEntry;
+        const entries = [
+            mkEntry('ch-a', 'added-1', { kind: 'choice', choiceId: 'x', optionId: 'o' }),
+            mkEntry('set-a', 'added-1', { kind: 'repetition', setIndex: 1, reps: 10 }, { governingChoiceEntryId: 'ch-a' }),
+            mkEntry('ch-b', 'ghost', { kind: 'choice', choiceId: 'y', optionId: 'p' }),
+        ];
+        const details = buildStructuredStepDetails(definition, entries, []);
+        const added = details.find(step => step.stepId === 'added-1');
+        expect(added?.unplanned).toBe(true);
+        expect(added?.choices?.map(choice => choice.choiceEntryId)).toEqual(['ch-a']);
+        expect(added?.sets[0].governingChoiceEntryId).toBe('ch-a');
+        const ghost = details.find(step => step.stepId === 'ghost');
+        expect(ghost).toMatchObject({ choiceOnly: true, prescribed: { sets: 0 }, sets: [] });
+        expect(ghost?.choices?.map(choice => choice.choiceEntryId)).toEqual(['ch-b']);
+    });
+
     it('reports a choice that applies to no step at session level', () => {
         const def = {
             ...definition,

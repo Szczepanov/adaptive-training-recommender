@@ -248,6 +248,29 @@ describe('formatCompletedWorkoutMarkdown', () => {
         expect(md).not.toContain('Not performed');
     });
 
+    it('names the governing choice on warm-ups and says when a missing one could not be read', () => {
+        const earlier = {
+            choiceEntryId: 'ch-1', effective: false, choiceId: 'c', optionId: 'heavy', optionLabel: 'Heavy', supersededByChoiceEntryId: 'ch-2', completedAt: stamp,
+        };
+        const steps = [{
+            stepId: 'sq', title: 'Squat', isOptional: false, prescribed: { sets: 1, reps: 5 },
+            choices: [earlier],
+            sets: [
+                { entryId: 'w1', setNumber: 1, isWarmup: true, completedAt: stamp, payload: rep(0, 5, 60, { isWarmup: true }), governingChoiceEntryId: 'ch-1' },
+                { entryId: 'e1', setNumber: 1, isWarmup: false, completedAt: stamp, payload: rep(1, 5, 120), governingChoiceEntryId: 'ch-missing' },
+            ],
+        }];
+        const complete = formatCompletedWorkoutMarkdown(withSteps(steps), EXPORTED_AT);
+        expect(complete).toContain('warm-up: 5 @ 60 kg · under earlier choice: Heavy');
+        expect(complete).toContain('1: 5 @ 120 kg · under a choice no longer in the log');
+        const partialView = withSteps(steps);
+        const partial = formatCompletedWorkoutMarkdown(
+            { ...partialView, structured: { ...partialView.structured!, entryInvalidRecords: 1 } },
+            EXPORTED_AT,
+        );
+        expect(partial).toContain('1: 5 @ 120 kg · under a choice that could not be read');
+    });
+
     it('prints Unknown when this device has diary writes that failed to save', () => {
         const view: CompletedWorkoutView = {
             ...structuredView,

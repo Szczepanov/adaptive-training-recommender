@@ -180,7 +180,19 @@ export function buildStructuredStepDetails(
     }
     for (const [stepId, stepEntries] of entriesByStepId) {
         if (definedStepIds.has(stepId)) continue;
-        details.push(unplannedStepDetail(stepId, sortedByCompletion(stepEntries), restByEntryId));
+        details.push({
+            ...unplannedStepDetail(stepId, sortedByCompletion(stepEntries), restByEntryId),
+            ...choicesField(choicesByStepId.get(stepId)),
+        });
+    }
+    // A choice recorded against a step that is neither defined nor logged is still a recorded
+    // fact; it is kept as a choice-only row rather than dropped.
+    for (const [stepId, choices] of choicesByStepId) {
+        if (definedStepIds.has(stepId) || entriesByStepId.has(stepId)) continue;
+        details.push({
+            stepId, title: 'Added step', isOptional: true, choiceOnly: true, prescribed: { sets: 0 }, sets: [],
+            ...choicesField(choices),
+        });
     }
     return details;
 }

@@ -341,6 +341,22 @@ describe('exportCompletedWorkoutToJson', () => {
             .toEqual({ status: 'unknown', reason: 'diary_outbox_unreadable' });
     });
 
+    it('reports structuredEntries as unknown when the set log read itself failed', () => {
+        const failed: CompletedWorkoutView = {
+            ...structuredView,
+            structured: undefined,
+            sourceReads: { ...structuredView.sourceReads, structured: { status: 'entries_unavailable' } },
+        };
+        expect(exportCompletedWorkoutToJson(failed, EXPORTED_AT).structuredEntries)
+            .toEqual({ status: 'unknown', reason: 'entries_unavailable' });
+        const notLinked: CompletedWorkoutView = {
+            ...structuredView,
+            structured: undefined,
+            sourceReads: { ...structuredView.sourceReads, structured: { status: 'not_linked' } },
+        };
+        expect('structuredEntries' in exportCompletedWorkoutToJson(notLinked, EXPORTED_AT)).toBe(false);
+    });
+
     it('exports governing-choice refs on sets and session-level choices', () => {
         const choice = { choiceEntryId: 'ch-9', effective: true, choiceId: 'route', optionId: 'indoor', completedAt: '2026-08-26T07:00:00.000Z' };
         const view: CompletedWorkoutView = {
