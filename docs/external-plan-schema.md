@@ -335,7 +335,7 @@ RPE overrides them, which prior block this plan follows on from.
 | `users/{userId}/external_plans/{planId}` | Header, `revision`, `contentHash`, `importedAt`, `supersededFrom`. |
 | `users/{userId}/external_plans/{planId}/revisions/{revision}` | The immutable validated and normalized imported document. |
 | `users/{userId}/external_plans/{planId}/activations/{revision}` | Immutable revision/content-hash binding and `effectiveFrom` date; the date-to-revision authority. |
-| `users/{userId}/external_plans/{planId}/revisions/{revision}/placement/current` | The live mutable placement overlay for this revision: `{ assignments: [{ sessionId, date, status, reason? }], updatedAt }` plus ownership and revision fields. `reason` (moved or dropped rows only) is `{ code: time|fatigue|pain|equipment|travel|other, note? }`, or `null` when the athlete left it blank; it is absent on changes saved before reasons were asked. Bounded by `weekCount ≤ 26` and `sessions ≤ 120`. |
+| `users/{userId}/external_plans/{planId}/revisions/{revision}/placement/current` | The live mutable placement overlay for this revision: `{ assignments: [{ sessionId, date, status, reason? }], updatedAt }` plus ownership and revision fields. `reason` (moved or dropped rows only) is `{ code, note? }` with `code` one of `time`, `fatigue`, `pain`, `equipment`, `travel` or `other`, or `null` when the athlete left it blank; it is absent on changes saved before reasons were asked. Bounded by `weekCount ≤ 26` and `sessions ≤ 120`. |
 | `users/{userId}/external_plans/{planId}/placement/current` | Legacy read-only fallback, accepted only when its embedded revision matches the requested revision. |
 
 `status` is one of `planned` `completed` `moved` `dropped` `superseded`. All paths are
