@@ -6,6 +6,7 @@ import { activityOverrideService } from '../services/activityOverrideService';
 import { recommendationService } from '../services/recommendationService';
 import { type ContextBriefResult } from '../services/contextBriefService';
 import { briefPurposeFor, briefWindowDaysFor, type BriefWindowPreset } from '../engine/contextBrief';
+import { purposeAlwaysRendersFullContext } from '../ledger/export/compact/renderLedgerExportCompact';
 import { BriefPresetToggle } from './BriefPresetToggle';
 import { BriefFullContextToggle } from './BriefFullContextToggle';
 import { BriefChatInput, BriefConfirmChat } from './BriefChatCheckpoint';
@@ -106,7 +107,10 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery', onNav
   const [briefFullContext, setBriefFullContext] = useState(false);
   // What the brief on screen was built with; a mismatch means it is stale and must not be copied.
   const [builtVariant, setBuiltVariant] = useState({ fullContext: false, chat: '' });
-  const checkpoint = useBriefCheckpoint(userId, briefPurposeFor(briefPreset), briefFullContext);
+  // The planning export starts a new chat, so it is always rendered in full (Phase 4).
+  const briefFullContextLocked = purposeAlwaysRendersFullContext(briefPurposeFor(briefPreset));
+  const effectiveBriefFullContext = briefFullContext || briefFullContextLocked;
+  const checkpoint = useBriefCheckpoint(userId, briefPurposeFor(briefPreset), effectiveBriefFullContext);
   // null doubles as "not loaded yet" -- once getAdherenceStats resolves it's always a
   // real (possibly all-zero) stats object, so this alone distinguishes loading from an
   // answer of "nothing recorded yet" without a separate loading flag.
@@ -213,7 +217,7 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery', onNav
     if (onNavigateToBrief || activeTab !== 'brief' || !briefDate
       || (brief?.asOfDate === briefDate && brief.preset === briefPreset
         && briefCapabilityMaintenanceKey === capabilityMaintenanceKey
-        && builtVariant.fullContext === briefFullContext && builtVariant.chat === checkpoint.chat)) return;
+        && builtVariant.fullContext === effectiveBriefFullContext && builtVariant.chat === checkpoint.chat)) return;
     let cancelled = false;
     buildBriefForPreset(
       userId,
@@ -221,13 +225,13 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery', onNav
       briefPreset,
       undefined,
       decisionInput?.date === briefDate ? capabilityMaintenance : undefined,
-      { previousContext: checkpoint.previousContext, fullContext: briefFullContext },
+      { previousContext: checkpoint.previousContext, fullContext: effectiveBriefFullContext },
     )
       .then(result => {
         if (!cancelled) {
           setBrief(result);
           setBriefCapabilityMaintenanceKey(capabilityMaintenanceKey);
-          setBuiltVariant({ fullContext: briefFullContext, chat: checkpoint.chat });
+          setBuiltVariant({ fullContext: effectiveBriefFullContext, chat: checkpoint.chat });
           setBriefError(null);
         }
       })
@@ -241,7 +245,7 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery', onNav
         setBriefError({ date: briefDate, message: 'Could not assemble the brief. Retry the dashboard refresh.' });
       });
     return () => { cancelled = true; };
-  }, [onNavigateToBrief, activeTab, userId, brief?.asOfDate, brief?.preset, briefDate, briefPreset, briefFullContext, builtVariant, checkpoint.chat, checkpoint.previousContext, briefCapabilityMaintenanceKey, capabilityMaintenanceKey, capabilityMaintenance, decisionInput?.date]);
+  }, [onNavigateToBrief, activeTab, userId, brief?.asOfDate, brief?.preset, briefDate, briefPreset, effectiveBriefFullContext, builtVariant, checkpoint.chat, checkpoint.previousContext, briefCapabilityMaintenanceKey, capabilityMaintenanceKey, capabilityMaintenance, decisionInput?.date]);
 
   const selectBriefPreset = (preset: BriefWindowPreset) => {
     setBriefPreset(preset);
@@ -250,7 +254,7 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery', onNav
 
   const briefStale = isBriefStale({
     brief, briefDate, briefPreset, builtVariant,
-    fullContext: briefFullContext, chat: checkpoint.chat, checkpointPending: checkpoint.pending,
+    fullContext: effectiveBriefFullContext, chat: checkpoint.chat, checkpointPending: checkpoint.pending,
     builtCapabilityKey: briefCapabilityMaintenanceKey, capabilityKey: capabilityMaintenanceKey,
   });
 
@@ -957,12 +961,12 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery', onNav
           {briefPreset === 'daily'
             ? "High-signal briefing for your daily chat with an external AI coach — includes yesterday's closed loop, today's recovery, and today's full session prescription."
             : briefPreset === 'full'
-              ? `Compact ${briefWindowDaysFor('full')}-day planning context, ordered by decision authority — constraints, current intent, recovery trend, load summary, upcoming commitments and the 1-click plan import schema.`
+              ? `Use this export when starting a new chat. Compact ${briefWindowDaysFor('full')}-day planning context with the full user context (never shortened against an earlier chat) and the sessions planned for the next 14 days.`
               : `Full ${briefWindowDaysFor('diagnostic')}-day forensic export — per-lap and per-zone activity telemetry plus observation-only candidate baselines, for debugging ingestion or analysing a workout. Not needed for planning.`}
           {' '}Read-only: generating it changes nothing.
         </p>
         <BriefPresetToggle preset={briefPreset} onSelect={selectBriefPreset} />
-        <BriefFullContextToggle checked={briefFullContext} onChange={setBriefFullContext} />
+        <BriefFullContextToggle checked={briefFullContext} onChange={setBriefFullContext} locked={briefFullContextLocked} />
         <BriefChatInput value={checkpoint.chatInput} onChange={checkpoint.setChatInput} onCommit={checkpoint.commitChat} />
         {visibleBriefError && <p className="data-state-notice">{visibleBriefError}</p>}
         {(!brief || briefStale) && !visibleBriefError && <p role="status">Assembling...</p>}

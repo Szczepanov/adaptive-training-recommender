@@ -2,7 +2,7 @@ import { briefWindowDaysFor, type BriefWindowPreset } from '../engine/contextBri
 
 const PRESET_OPTIONS: ReadonlyArray<{ preset: BriefWindowPreset; label: string }> = [
   { preset: 'daily', label: '☀️ Morning Coach (Daily)' },
-  { preset: 'full', label: `📋 Block Planning (${briefWindowDaysFor('full')} days)` },
+  { preset: 'full', label: `📋 Block Planning · new chat (${briefWindowDaysFor('full')} days)` },
   { preset: 'diagnostic', label: `🔬 Diagnostic (${briefWindowDaysFor('diagnostic')} days)` },
 ];
 

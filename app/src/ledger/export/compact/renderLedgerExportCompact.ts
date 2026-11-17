@@ -14,11 +14,20 @@ import {
     userContextStates,
 } from './previousContext.ts';
 import { renderTodaySections } from './todaySections.ts';
+import { PLACEMENT_FORWARD_DAYS } from '../window.ts';
 
 export { flagsSection };
 
 export interface CompactRenderOptions {
     previousContext?: PreviousContext;
+}
+
+/**
+ * Phase 4 refresh export: the `planning` export is the one used to start a new chat, so it
+ * never abbreviates user context against a chat checkpoint. A new chat has seen nothing.
+ */
+export function purposeAlwaysRendersFullContext(purpose: LedgerExport['purpose']): boolean {
+    return purpose === 'planning';
 }
 
 /** Ids already rendered by an earlier section; later sections skip them. */
@@ -137,6 +146,9 @@ function header(ledger: LedgerExport): string[] {
         `schema: ${text(ledger.schemaVersion)} · exportedAt ${text(ledger.exportedAt)}`,
         'states: measured unless noted; source shown per group',
         `window: ${text(ledger.window.startDate)}…${text(ledger.window.endDate)}`,
+        ...(purposeAlwaysRendersFullContext(ledger.purpose)
+            ? [`use: refresh export for starting a new chat — full user context, upcoming sessions for the next ${PLACEMENT_FORWARD_DAYS[ledger.purpose]} days`]
+            : []),
         '',
     ];
 }
@@ -152,7 +164,7 @@ export function renderLedgerExportCompact(ledger: LedgerExport, options?: Compac
         ...flagsSection(ledger),
         ...factsSection(ledger, consumed),
         ...derivedSection(ledger),
-        ...userContextSection(ledger, options?.previousContext),
+        ...userContextSection(ledger, purposeAlwaysRendersFullContext(ledger.purpose) ? undefined : options?.previousContext),
         ...coachingHistorySection(ledger, consumed),
     ];
     if (ledger.legacyEngine !== null) lines.push('', '## Legacy engine (opt-in opinions)', text(ledger.legacyEngine));

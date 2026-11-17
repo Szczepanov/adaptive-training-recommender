@@ -147,6 +147,12 @@ comparison metadata, never context text.
   `from`, which decide removal on a moved window. Both the renderer and the store reader
   treat another or no `formatVersion` (a legacy stored value) as no checkpoint: full context.
 
+**Refresh export (Phase 4).** The `planning` purpose is the export used to start a new chat, so
+`renderLedgerExportCompact` ignores any `PreviousContext` for it (`purposeAlwaysRendersFullContext`) and
+its header carries a `use: refresh export for starting a new chat` line. Its placements already reach
+`asOfDate + 14` (`PLACEMENT_FORWARD_DAYS`). The Data view labels the preset **Block Planning · new chat**
+and shows **Include full context** fixed on for it. No schema change.
+
 Given a `PreviousContext` (a checkpoint plus `exportedOn`, which is the confirmed export's
 `asOfDate`, so `unchanged since` names that as-of date), the renderer collapses items whose key and
 hash both match into `unchanged since <exportedOn>: <n> items (<keys>)`, except items of a collection

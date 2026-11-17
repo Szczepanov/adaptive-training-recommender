@@ -123,13 +123,13 @@ describe('ContextBriefService ledger mode (#1167 P2-6, OD4, OD5)', () => {
 });
 
 describe('ContextBriefService ledger mode compact export (Phase 2 Task 5)', () => {
-    async function buildWith(options: Record<string, unknown>) {
+    async function buildWith(options: Record<string, unknown>, preset: 'daily' | 'full' = 'full') {
         mocks.getPreferencesState.mockResolvedValue({ status: 'AVAILABLE', data: { engineRecommendationsEnabled: false } });
         const ledgerExporter = {
             build: vi.fn(async (_u: string, request: { asOfDate: string; purpose: 'morning' | 'planning' | 'diagnostic'; exportedAt?: string }) =>
                 buildLedgerExport(fullInput({ asOfDate: request.asOfDate, purpose: request.purpose, exportedAt: '2026-11-20T06:12:03Z' }))),
         };
-        return new ContextBriefService(ledgerExporter).build('u1', '2026-11-20', 14, 'full', undefined, { exportedAt: '2026-11-20T06:12:03Z', ...options });
+        return new ContextBriefService(ledgerExporter).build('u1', '2026-11-20', 14, preset, undefined, { exportedAt: '2026-11-20T06:12:03Z', ...options });
     }
 
     it('ledger mode returns compact text, the context checkpoint and exportedAt', async () => {
@@ -141,15 +141,23 @@ describe('ContextBriefService ledger mode compact export (Phase 2 Task 5)', () =
         expect(result.exportedAt).toBe('2026-11-20T06:12:03Z');
     });
 
-    it('abbreviates against previousContext, and fullContext ignores previousContext', async () => {
-        const ledger = buildLedgerExport(fullInput({ asOfDate: '2026-11-20', purpose: 'planning', exportedAt: '2026-11-20T06:12:03Z' }));
+    it('abbreviates the morning export against previousContext, and fullContext ignores previousContext', async () => {
+        const ledger = buildLedgerExport(fullInput({ asOfDate: '2026-11-20', purpose: 'morning', exportedAt: '2026-11-20T06:12:03Z' }));
         const previousContext = mergeCheckpoint(undefined, userContextCheckpoint(ledger), '2026-11-19');
-        const abbreviated = await buildWith({ previousContext });
-        const full = await buildWith({ previousContext, fullContext: true });
-        const plain = await buildWith({});
+        const abbreviated = await buildWith({ previousContext }, 'daily');
+        const full = await buildWith({ previousContext, fullContext: true }, 'daily');
+        const plain = await buildWith({}, 'daily');
         expect(abbreviated.text).toBe(renderLedgerExportCompact(ledger, { previousContext }));
         expect(abbreviated.text).not.toBe(plain.text);
         expect(full.text).toBe(plain.text);
         expect(full.contextCheckpoint).toEqual(plain.contextCheckpoint);
+    });
+
+    it('the planning (new-chat refresh) export ignores previousContext even without fullContext', async () => {
+        const ledger = buildLedgerExport(fullInput({ asOfDate: '2026-11-20', purpose: 'planning', exportedAt: '2026-11-20T06:12:03Z' }));
+        const previousContext = mergeCheckpoint(undefined, userContextCheckpoint(ledger), '2026-11-19');
+        const withCheckpoint = await buildWith({ previousContext });
+        expect(withCheckpoint.text).toBe((await buildWith({})).text);
+        expect(withCheckpoint.text).not.toContain('unchanged since');
     });
 });
