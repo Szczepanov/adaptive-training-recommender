@@ -4,9 +4,10 @@
  *
  * Pure. Only the effective event of each choice's correction chain counts, so a corrected choice
  * is never a second override. Each choice is resolved against the definition pinned for that run
- * (`resolvePinned`): `select_alternative` is a swap and `omit_step` an omission. Other actions
- * (load, sets or reps reductions, ending a block or the session) are not overrides. A choice that
- * cannot be resolved keeps explicit missingness instead of being guessed or dropped.
+ * (`resolvePinned`): `select_alternative` is a swap, and `omit_step`, `end_block` and `end_session`
+ * are omissions, because the runner applies all three by making the affected steps optional. Load,
+ * set or rep reductions are not overrides. A choice that cannot be resolved keeps explicit
+ * missingness instead of being guessed or dropped.
  */
 import type { ChoiceOverrideInput } from '../ledger/export/inputs';
 import type { LedgerState } from '../ledger/export/schema';
@@ -29,6 +30,12 @@ function actionRow(
     action: SessionChoiceAction,
     definition: SessionDefinition,
 ): ChoiceOverrideInput | null {
+    if (action.kind === 'end_session') return { ...base, id, kind: 'omitted', step: 'rest of session' };
+    if (action.kind === 'end_block') {
+        const block = definition.blocks.find(item => item.id === action.targetBlockId);
+        const step = block ? { step: `rest of block: ${block.title?.trim() || block.id}` } : { stepState: 'invalid' as const };
+        return { ...base, id, kind: 'omitted', ...step };
+    }
     if (action.kind !== 'select_alternative' && action.kind !== 'omit_step') return null;
     const step = findStep(definition, action.targetStepId);
     const stepField = step ? { step: stepName(step) } : { stepState: 'invalid' as const };

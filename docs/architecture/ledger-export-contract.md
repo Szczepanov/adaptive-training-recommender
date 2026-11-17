@@ -318,8 +318,10 @@ revision of the plan was imported on or before its date. Nothing is written back
 (`services/ledgerChoiceOverrides.ts` `choiceOverridesForExecution`). Only the effective event of each
 choice's correction chain counts, so a correction is never a second override. Each choice is
 resolved against the definition pinned for that run (one read per execution, shared with set
-counts): `select_alternative` → `swapped` with `step` and `replacement`, `omit_step` → `omitted` with
-`step`. Load, set or rep reductions and ending a block or session are not overrides. A choice the
+counts): `select_alternative` → `swapped` with `step` and `replacement`; `omit_step` → `omitted` with
+`step`; `end_block` → `omitted` with `step: rest of block: <title>`; `end_session` → `omitted` with
+`step: rest of session` (the runner applies all three by making the affected steps optional). Load,
+set or rep reductions are not overrides. A choice the
 pinned definition cannot resolve keeps `kind: null` with the reason as its state (`invalid`, or the
 definition read's state). `reason` is the athlete's choice reason, `not_recorded` when blank. Plan
 drop/move rows carry `step`/`replacement`/`executionState` as `not_applicable`. Each choice row carries the

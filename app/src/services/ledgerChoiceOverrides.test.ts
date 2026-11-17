@@ -8,7 +8,7 @@ const AT = '2026-11-19T07:00:00.000Z';
 const definition = {
     schemaVersion: 1, id: 'w', revision: 1, title: 'Strength', intent: 'training',
     blocks: [{
-        id: 'b1', role: 'main',
+        id: 'b1', title: 'Main lifts', role: 'main',
         steps: [
             {
                 id: 'squat', kind: 'exercise', title: 'Back Squat', exerciseRef: { kind: 'catalog', exerciseId: 'back_squat' },
@@ -24,6 +24,9 @@ const definition = {
                     { id: 'lighter', label: 'Lighter', actions: [{ kind: 'reduce_load_percent', targetStepId: 'squat', percent: 10 }] },
                     { id: 'skip-both', label: 'Skip', actions: [{ kind: 'omit_step', targetStepId: 'squat' }, { kind: 'omit_step', targetStepId: 'curl' }] },
                     { id: 'bad-alt', label: 'Bad', actions: [{ kind: 'select_alternative', targetStepId: 'squat', alternativeId: 'nope' }] },
+                    { id: 'end-block', label: 'End block', actions: [{ kind: 'end_block', targetBlockId: 'b1' }] },
+                    { id: 'end-missing', label: 'End other', actions: [{ kind: 'end_block', targetBlockId: 'gone' }] },
+                    { id: 'end-session', label: 'Stop', actions: [{ kind: 'end_session' }] },
                 ],
             },
         ],
@@ -53,6 +56,16 @@ describe('choiceOverridesForExecution', () => {
         const rows = choiceOverridesForExecution(run([choice('c1', 'skip-both')]), { definition });
         expect(rows.map(row => [row.id, row.kind, row.step])).toEqual([['exec-1:c1:0', 'omitted', 'Back Squat'], ['exec-1:c1:1', 'omitted', 'Curl']]);
         expect(choiceOverridesForExecution(run([choice('c2', 'lighter')]), { definition })).toEqual([]);
+    });
+
+    it('reports ending a block or the session as an omission of the rest', () => {
+        const [block] = choiceOverridesForExecution(run([choice('c1', 'end-block', {}, 'Knee pain')]), { definition });
+        expect(block).toMatchObject({ kind: 'omitted', step: 'rest of block: Main lifts', reason: 'Knee pain' });
+        const [session] = choiceOverridesForExecution(run([choice('c2', 'end-session')]), { definition });
+        expect(session).toMatchObject({ kind: 'omitted', step: 'rest of session' });
+        const [missing] = choiceOverridesForExecution(run([choice('c3', 'end-missing')]), { definition });
+        expect(missing).toMatchObject({ kind: 'omitted', stepState: 'invalid' });
+        expect(missing.step).toBeUndefined();
     });
 
     it('keeps explicit missingness for an unresolvable choice instead of guessing', () => {
