@@ -7,7 +7,7 @@ vi.mock('./repository', async () => {
 });
 vi.mock('../services/activityService', () => ({ activityService: { getActivitiesInRange: vi.fn() } }));
 vi.mock('../services/sessionExecutionService', () => ({
-    sessionExecutionService: { getExecution: vi.fn(), getEntries: vi.fn(), getRestEvents: vi.fn(), getDiaryReceipts: vi.fn() },
+    sessionExecutionService: { getExecution: vi.fn(), getEntriesReadState: vi.fn(), getRestEvents: vi.fn(), getDiaryReceipts: vi.fn() },
 }));
 vi.mock('../sessions/sessionDefinitionResolver', () => ({ resolveSessionDefinition: vi.fn() }));
 
@@ -55,7 +55,7 @@ describe('getCompletedWorkoutsInRange', () => {
             data: { schemaVersion: 1, id: 'w', revision: 1, title: 'Heavy Squat Day', intent: 'training', blocks: [] },
             revision: null,
         });
-        vi.mocked(sessionExecutionService.getEntries).mockResolvedValue([]);
+        vi.mocked(sessionExecutionService.getEntriesReadState).mockResolvedValue({ entries: [], invalidRecords: 0 });
 
         const [view] = await getCompletedWorkoutsInRange('user-1', '2026-08-20', '2026-08-27');
 
@@ -104,7 +104,7 @@ describe('getCompletedWorkoutsInRange', () => {
             data: { schemaVersion: 1, id: 'w', revision: 1, title: 'Heavy Squat Day', intent: 'training', blocks: [] },
             revision: null,
         });
-        vi.mocked(sessionExecutionService.getEntries).mockResolvedValue([]);
+        vi.mocked(sessionExecutionService.getEntriesReadState).mockResolvedValue({ entries: [], invalidRecords: 0 });
 
         const [view] = await getCompletedWorkoutsInRange('user-1', '2026-08-20', '2026-08-27');
 
@@ -138,7 +138,7 @@ describe('getCompletedWorkoutsInRange', () => {
             data: { schemaVersion: 1, id: 'w', revision: 1, title: 'Heavy Squat Day', intent: 'training', blocks: [] },
             revision: null,
         });
-        vi.mocked(sessionExecutionService.getEntries).mockResolvedValue([]);
+        vi.mocked(sessionExecutionService.getEntriesReadState).mockResolvedValue({ entries: [], invalidRecords: 0 });
         vi.mocked(activityService.getActivitiesInRange).mockResolvedValue({
             status: 'AVAILABLE',
             data: [{ activityId: 'act-1', date: '2026-08-26', type: 'strength_training', durationMin: 40, trainingEffectAerobic: null, trainingEffectAnaerobic: null, averageHr: null, activityTrainingLoad: null, intensityTag: 'moderate' }],
@@ -225,7 +225,7 @@ describe('getCompletedWorkoutsInRange', () => {
             data: { schemaVersion: 1, id: 'w', revision: 1, title: 'Ride', intent: 'training', blocks: [] },
             revision: null,
         });
-        vi.mocked(sessionExecutionService.getEntries).mockRejectedValue(new Error('unavailable'));
+        vi.mocked(sessionExecutionService.getEntriesReadState).mockRejectedValue(new Error('unavailable'));
         vi.mocked(activityService.getActivitiesInRange).mockResolvedValue({ status: 'AVAILABLE', data: [{ activityId: 'act-1', date: '2026-08-26', type: 'cycling', durationMin: 40, trainingEffectAerobic: null, trainingEffectAnaerobic: null, averageHr: null, activityTrainingLoad: null, intensityTag: 'moderate', fitWorkoutFingerprint: fingerprint, fitWorkoutFingerprintKind: 'semantic_definition' }], revision: null });
 
         const [view] = await getCompletedWorkoutsInRange('user-1', '2026-08-20', '2026-08-27');
@@ -274,13 +274,13 @@ describe('getCompletedWorkoutsInRange', () => {
             data: { schemaVersion: 1, id: 'w', revision: 1, title: 'Heavy Squat Day', intent: 'training', blocks: [{ id: 'b1', role: 'main', steps: [{ id: 'squat', kind: 'exercise', title: 'Back Squat', exerciseRef: { kind: 'catalog', exerciseId: 'back_squat' }, dose: { kind: 'repetition', sets: 3, reps: 5 }, rest: 180 }] }] } as never,
             revision: null,
         });
-        vi.mocked(sessionExecutionService.getEntries).mockResolvedValue([{
+        vi.mocked(sessionExecutionService.getEntriesReadState).mockResolvedValue({ invalidRecords: 2, entries: [{
             id: 'warmup', executionId: 'exec-1', stepId: 'squat', completedAt: '2026-08-26T06:55:00.000Z', createdAt: '2026-08-26T06:55:00.000Z', updatedAt: '2026-08-26T06:55:00.000Z',
             payload: { kind: 'repetition', setIndex: 0, reps: 8, weightKg: 40, isWarmup: true },
         }, {
             id: 'e1', executionId: 'exec-1', stepId: 'squat', completedAt: '2026-08-26T07:00:00.000Z', createdAt: '2026-08-26T07:00:00.000Z', updatedAt: '2026-08-26T07:00:00.000Z',
             payload: { kind: 'repetition', setIndex: 1, reps: 5, weightKg: 100, isWarmup: false, gauge: { scale: 'rir', value: 2 } },
-        }]);
+        }] });
         vi.mocked(sessionExecutionService.getRestEvents).mockResolvedValue([{
             id: 'rest-1', executionId: 'exec-1', afterEntryId: 'e1', prescribedSeconds: 180, startedAt: '2026-08-26T07:00:00.000Z', endedAt: '2026-08-26T07:03:20.000Z', actualSeconds: 200, endReason: 'next_set_started', createdAt: '2026-08-26T07:03:20.000Z', updatedAt: '2026-08-26T07:03:20.000Z',
         }]);
@@ -288,6 +288,7 @@ describe('getCompletedWorkoutsInRange', () => {
         const [view] = await getCompletedWorkoutsInRange('user-1', '2026-08-20', '2026-08-27');
 
         expect(view.structured?.performedRest).toBe('recorded');
+        expect(view.structured?.entryInvalidRecords).toBe(2);
         expect(view.structured?.steps[0].sets[1].rest).toEqual({ prescribedSeconds: 180, actualSeconds: 200, endReason: 'next_set_started' });
         expect(view.structured?.steps[0].sets.map(set => ({ entryId: set.entryId, isWarmup: set.isWarmup, payload: set.payload }))).toEqual([
             { entryId: 'warmup', isWarmup: true, payload: { kind: 'repetition', setIndex: 0, reps: 8, weightKg: 40, isWarmup: true } },
@@ -342,7 +343,7 @@ describe('getCompletedWorkoutsInRange', () => {
             data: { schemaVersion: 1, id: 'w', revision: 1, title: 'Heavy Squat Day', intent: 'training', blocks: [] },
             revision: null,
         });
-        vi.mocked(sessionExecutionService.getEntries).mockResolvedValue([]);
+        vi.mocked(sessionExecutionService.getEntriesReadState).mockResolvedValue({ entries: [], invalidRecords: 0 });
         vi.mocked(sessionExecutionService.getRestEvents).mockRejectedValue(new Error('permission-denied'));
 
         const [view] = await getCompletedWorkoutsInRange('user-1', '2026-08-20', '2026-08-27');

@@ -31,6 +31,7 @@ vi.mock('../services/sessionExecutionService', () => ({
             return data ? { status: 'AVAILABLE', data, revision: null } : { status: 'MISSING' };
         },
         getEntries: async () => [],
+        getEntriesReadState: async () => ({ entries: [], invalidRecords: 0 }),
         getRestEvents: async () => [],
         getDiaryReceipts: () => [],
     },

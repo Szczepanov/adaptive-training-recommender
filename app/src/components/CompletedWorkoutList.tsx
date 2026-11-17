@@ -364,7 +364,7 @@ export function CompletedWorkoutList({ workouts, exportWindow, windowSweep, onRe
   }
 
   const responseLoader: ResponseLoader | undefined = userId
-    ? executionId => sessionResponseService.getResponsesForSource(userId, { kind: 'execution', id: executionId })
+    ? executionId => sessionResponseService.getResponsesForSourceReadState(userId, { kind: 'execution', id: executionId })
     : undefined;
 
   const flash = (key: string) => {

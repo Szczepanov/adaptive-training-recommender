@@ -22,6 +22,7 @@ Garmin: 44 min · avg HR 118 · max HR 156 · load 85 · TE 2.1/1.4
 
 responses:
 - immediate: sRPE 7, fatigue no, technique: Knees caved on rep 4
+- later_day: not recorded
 - next_morning: sRPE 6, note: Slept well
 
 ref: pto-1

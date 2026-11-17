@@ -131,17 +131,33 @@ export class SessionResponseService {
      * (`sourceSession.id`) plus a client-side `kind` filter avoids requiring a composite
      * index for what is, per user, a small bounded collection. */
     async getResponsesForSource(userId: string, source: Pick<SessionResponseSourceRef, 'kind' | 'id'>): Promise<SessionResponse[]> {
+        return (await this.getResponsesForSourceReadState(userId, source)).responses;
+    }
+
+    /** `getResponsesForSource` plus the number of matching documents that could not be
+     * parsed, so a caller can tell a complete read from a partial one (#1261). A document
+     * of the other `kind` is not counted: it belongs to a different source. */
+    async getResponsesForSourceReadState(
+        userId: string,
+        source: Pick<SessionResponseSourceRef, 'kind' | 'id'>,
+    ): Promise<{ responses: SessionResponse[]; invalidRecords: number }> {
         const coll = collection(this.db, 'users', userId, 'session_responses');
         const q = query(coll, where('sourceSession.id', '==', source.id));
         const snap = await getDocs(q);
         const responses: SessionResponse[] = [];
+        let invalidRecords = 0;
         for (const docSnap of snap.docs) {
             const parsed = parseSessionResponseDocument(docSnap.data(), docSnap.ref.path);
-            if (parsed.status === 'AVAILABLE' && parsed.data.sourceSession.kind === source.kind) {
+            if (parsed.status !== 'AVAILABLE') {
+                invalidRecords += 1;
+            } else if (parsed.data.sourceSession.kind === source.kind) {
                 responses.push(parsed.data);
             }
         }
-        return responses.sort((a, b) => RESPONSE_WINDOW_ORDER[a.window] - RESPONSE_WINDOW_ORDER[b.window]);
+        return {
+            responses: responses.sort((a, b) => RESPONSE_WINDOW_ORDER[a.window] - RESPONSE_WINDOW_ORDER[b.window]),
+            invalidRecords,
+        };
     }
 
     /** The response for one specific window, if the athlete ever answered it -- `null`
