@@ -32,7 +32,8 @@ import { sessionExecutionService } from './sessionExecutionService';
 import { externalPlanService } from './externalPlanService';
 import { computeContentHash } from '../engine/externalPlanHash';
 import { PLACEMENT_HISTORY_TRUNCATED_OPERATION } from '../ledger/placementHistory';
-import { projectStructuredWork } from './ledgerStructuredWork';
+import { pinnedResolver, projectStructuredWork } from './ledgerStructuredWork';
+import { choiceOverridesForExecution, hasLiveChoice } from './ledgerChoiceOverrides';
 
 interface Read<T> { data: T; state: LedgerState; reason?: string }
 function fromState<T>(result: DataState<T>, empty: T): Read<T> {
@@ -142,9 +143,15 @@ export class LedgerExportService {
         const executionRows = executions.status === 'fulfilled' ? executions.value.executions : [];
         const executionMap = new Map(executionRows.map(row => [row.execution.executionId, row]));
         const executionsReadable = executions.status === 'fulfilled' && executions.value.invalidRecords === 0;
+        const resolvePinned = pinnedResolver(userId);
         records.performedOccurrences = performed.status === 'fulfilled' ? await Promise.all(performed.value.map(async occurrence => ({
-            ...occurrence, ...await projectStructuredWork(userId, occurrence.sourceRefs, executionMap, executionsReadable),
+            ...occurrence, ...await projectStructuredWork(userId, occurrence.sourceRefs, executionMap, executionsReadable, resolvePinned),
         }))) : [];
+        // Phase 3B: in-session swaps and omissions, resolved against each run's pinned definition.
+        if (executions.status === 'fulfilled') {
+            records.choiceOverrides = (await Promise.all(executionRows.filter(hasLiveChoice).map(async row =>
+                choiceOverridesForExecution(row, await resolvePinned(row))))).flat();
+        }
         sources.performed_training_occurrences = { state: performed.status === 'rejected' || executions.status === 'rejected' ? 'unavailable'
             : executions.value.invalidRecords > 0 ? 'invalid' : 'measured', readAt: exportedAt };
         await read('planned_to_performed', 'plannedToPerformed', async () => {

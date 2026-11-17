@@ -1452,7 +1452,7 @@ observedOn: 2026-11-22
 
 ### overrides
 
-state: measured; source: external_plan_placements; droppedUndated: 0
+state: measured; source: external_plan_placements + performed_training_occurrences; droppedUndated: 0
 
 #### plan-1@2:s2
 
@@ -1465,6 +1465,24 @@ observedOn: 2026-11-18
 | kind | dropped | Not specified | adaptive | measured | 2026-11-18 |
 | date | 2026-11-18 | Not specified | adaptive | measured | 2026-11-18 |
 | reason | Not recorded | Not specified | adaptive | not_yet_supported | Not recorded |
+| step | Not recorded | Not specified | adaptive | not_applicable | 2026-11-18 |
+| replacement | Not recorded | Not specified | adaptive | not_applicable | 2026-11-18 |
+| executionState | Not recorded | Not specified | adaptive | not_applicable | 2026-11-18 |
+
+#### choice:exec-1:choice-1:0
+
+observedOn: 2026-11-19
+
+| Field | Value | Unit | Source | State | Observed on |
+| --- | --- | --- | --- | --- | --- |
+| planId | plan-1 | Not specified | adaptive | measured | 2026-11-19 |
+| sessionId | s1 | Not specified | adaptive | measured | 2026-11-19 |
+| kind | swapped | Not specified | adaptive | measured | 2026-11-19 |
+| date | 2026-11-19 | Not specified | adaptive | measured | 2026-11-19 |
+| reason | Knee felt tight | Not specified | adaptive | measured | 2026-11-19 |
+| step | Back Squat | Not specified | adaptive | measured | 2026-11-19 |
+| replacement | Goblet Squat | Not specified | adaptive | measured | 2026-11-19 |
+| executionState | completed | Not specified | adaptive | measured | 2026-11-19 |
 
 ### plannedToPerformed
 

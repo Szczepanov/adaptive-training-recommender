@@ -220,7 +220,7 @@ toggle describe, so a copy can never carry the wrong variant.
 | `derived` | Biometric and subjective baseline metrics with units, readiness and source states | D−1 step normalization and performed-load slots remain `not_yet_supported` pending #1166; no engine derivations are called |
 | `flags` | The closed four D-FLAGS ids with immutable evaluation metadata and inputs | Persisted versions pass through in deterministic date/session/time order; uncaptured dates remain `not_recorded`; illness/anomaly remains withheld by HA7 |
 | `userContext` | Current active goals/constraints, settings/equipment, active injuries and resolved injury periods overlapping the window, preferences, travel, venue restrictions, availability and intent-block events | Injury `since` and `resolvedAt` use recorded dates; legacy onset stays unknown. Other unsupported effective dates and revision history stay explicit; `updatedAt` does not establish field-level history |
-| `coachingHistory` | Immutable external-plan revision headers/rationale, as-of placements, immutable placement events, moved/dropped overrides, canonical planned→performed links | Missing override reasons and unrecorded legacy history remain `not_yet_supported` |
+| `coachingHistory` | Immutable external-plan revision headers/rationale, as-of placements with a derived past `outcome`, immutable placement events, moved/dropped placement overrides plus in-session swaps/omissions (with the athlete's choice reason), canonical planned→performed links | Drop/move override reasons and unrecorded legacy history remain `not_yet_supported` |
 
 `legacyEngine` is null in the user-facing export. The pure builder supports an explicitly
 supplied legacy layer; the production service never supplies it. No engine opinion belongs
@@ -312,6 +312,23 @@ export window, so a placement is also `unknown` when the reads cannot cover it: 
 the window end; it was moved (the first move never records the authored date, so an attempt on
 it may lie before the read); or the same plan session has a link or execution under another revision, or a newer
 revision of the plan was imported on or before its date. Nothing is written back.
+
+**In-session swaps and omissions (Phase 3B).** `coachingHistory.overrides` also carries one
+`choice:<executionId>:<choiceEntryId>:<actionIndex>` row per swap or omission the athlete chose
+(`services/ledgerChoiceOverrides.ts` `choiceOverridesForExecution`). Only the effective event of each
+choice's correction chain counts, so a correction is never a second override. Each choice is
+resolved against the definition pinned for that run (one read per execution, shared with set
+counts): `select_alternative` → `swapped` with `step` and `replacement`; `omit_step` → `omitted` with
+`step`; `end_block` → `omitted` with `step: rest of block: <title>`; `end_session` → `omitted` with
+`step: rest of session` (the runner applies all three by making the affected steps optional). Load,
+set or rep reductions are not overrides. A choice the
+pinned definition cannot resolve keeps `kind: null` with the reason as its state (`invalid`, or the
+definition read's state). `reason` is the athlete's choice reason, `not_recorded` when blank. Plan
+drop/move rows carry `step`/`replacement`/`executionState` as `not_applicable`. Each choice row carries the
+run's `executionState`, so an abandoned run or a rerun is not mistaken for the completed one. The
+collection's `source` names both reads (`external_plan_placements + performed_training_occurrences`)
+and its state is the worse of the two.
+
 A save over a corrupt current overlay, or a corrupt legacy fallback, still writes the new overlay.
 Its event records `previous: []` with `previousState: 'invalid'` and a `previousStateReason`
 code (`current-schema-invalid`, `current-identity-mismatch`, `legacy-schema-invalid` or

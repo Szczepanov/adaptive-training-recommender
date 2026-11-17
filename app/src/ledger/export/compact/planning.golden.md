@@ -323,12 +323,21 @@ summary: Steady Z2 for 60 min
 outcome: performed
 missing: statusHistory (not_yet_supported); stepNotes, fallback (not_recorded)
 
-### overrides (external_plan_placements; adaptive)
+### overrides (external_plan_placements + performed_training_occurrences; adaptive)
 #### plan-1@2:s2 (2026-11-18)
 planId: plan-1
 sessionId: s2
 kind: dropped
 date: 2026-11-18
-missing: reason (not_yet_supported)
+missing: reason (not_yet_supported); step, replacement, executionState (not_applicable)
+#### choice:exec-1:choice-1:0 (2026-11-19)
+planId: plan-1
+sessionId: s1
+kind: swapped
+date: 2026-11-19
+reason: Knee felt tight
+step: Back Squat
+replacement: Goblet Squat
+executionState: completed
 
 plannedToPerformed: 1 shown above

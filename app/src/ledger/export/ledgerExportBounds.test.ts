@@ -148,7 +148,7 @@ describe('coaching history bounds (M6)', () => {
             },
         }));
         expect(result.coachingHistory.placements.items.map(item => item.fields.sessionId.value)).toEqual(['now']);
-        expect(result.coachingHistory.overrides.items.map(item => item.fields.sessionId.value)).toEqual(['now']);
+        expect(result.coachingHistory.overrides.items.filter(item => !item.id.startsWith('choice:')).map(item => item.fields.sessionId.value)).toEqual(['now']);
         expect(result.coachingHistory.plannedToPerformed.items.map(item => item.fields.sessionId.value)).toEqual(['now']);
     });
 });

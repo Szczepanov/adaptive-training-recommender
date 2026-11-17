@@ -391,8 +391,11 @@ describe('buildLedgerExport states', () => {
         expect(output.userContext.venueRestrictions.items[0].fields.environment.value).toBe('indoor');
     });
 
-    it('exports dropped placements as overrides without a reason', () => {
-        expect(output.coachingHistory.overrides.items.map(item => item.fields.kind.value)).toEqual(['dropped']);
+    it('exports dropped placements and in-session swaps as overrides', () => {
+        expect(output.coachingHistory.overrides.items.map(item => item.fields.kind.value)).toEqual(['dropped', 'swapped']);
+        const [dropped, swapped] = output.coachingHistory.overrides.items;
+        expect(dropped.fields.reason.state).toBe('not_yet_supported');
+        expect(swapped.fields).toMatchObject({ step: { value: 'Back Squat' }, replacement: { value: 'Goblet Squat' }, reason: { value: 'Knee felt tight' } });
         expect(output.coachingHistory.planRevisions.items.at(-1)!.fields.authorRationale.value).toBe('Build aerobic base first.');
     });
 });
