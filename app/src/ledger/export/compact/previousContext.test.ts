@@ -38,6 +38,16 @@ describe('previousContext', () => {
         expect(out).not.toContain('### equipment');
     });
 
+    it('the planning (new-chat refresh) export ignores a checkpoint and prints full context', () => {
+        const ledger = build('planning');
+        const out = renderLedgerExportCompact(ledger, { previousContext: previousOf(ledger) });
+        expect(out).toContain('use: refresh export for starting a new chat');
+        expect(userContext(out)).not.toContain('unchanged since');
+        expect(userContext(out)).toContain('#### injury-001');
+        expect(out).toBe(renderLedgerExportCompact(ledger));
+        expect(renderLedgerExportCompact(build())).not.toContain('use: refresh export');
+    });
+
     it('a changed field prints the item in full', () => {
         const ledger = build();
         const previous = previousOf(ledger);

@@ -2,6 +2,7 @@
 schema: ledger-export-v1 · exportedAt 2026-11-20T06:12:03Z
 states: measured unless noted; source shown per group
 window: 2026-11-07…2026-11-20
+use: refresh export for starting a new chat — full user context, upcoming sessions for the next 14 days
 
 ## Today (2026-11-20)
 check-in (daily_subjective_checkins; athlete):
