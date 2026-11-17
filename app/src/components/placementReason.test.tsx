@@ -34,6 +34,15 @@ describe('withPlacementReason', () => {
     });
 });
 
+describe('withPlacementReason movedFrom', () => {
+    it('records the date moved from on a move only', () => {
+        expect(withPlacementReason([{ sessionId: 's1', date: '2026-11-19', status: 'moved' }], 's1', null, '2026-11-17'))
+            .toEqual([{ sessionId: 's1', date: '2026-11-19', status: 'moved', reason: null, movedFrom: '2026-11-17' }]);
+        expect(withPlacementReason([{ sessionId: 's1', date: '2026-11-17', status: 'dropped' }], 's1', null, '2026-11-17'))
+            .toEqual([{ sessionId: 's1', date: '2026-11-17', status: 'dropped', reason: null }]);
+    });
+});
+
 describe('PlacementReasonPicker', () => {
     it('offers the fixed list with a blank default and a bounded note, both labelled', () => {
         const html = renderToStaticMarkup(<PlacementReasonPicker code="" note="" onCodeChange={() => {}} onNoteChange={() => {}} />);

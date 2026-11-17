@@ -506,18 +506,20 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
         updatedAt: '',
       };
       // The engine's proposal logic is unchanged; the reason is stamped on the result (Phase 3C).
-      await persistAssignments(withPlacementReason(applyConfirmedProposal(overlay, proposal).assignments, proposal.sessionId, reason));
+      await persistAssignments(withPlacementReason(
+        applyConfirmedProposal(overlay, proposal).assignments, proposal.sessionId, reason, proposal.missedDate,
+      ));
     },
     [activePlan, userId, persistAssignments],
   );
 
   const handleChooseDate = useCallback(
-    async (sessionId: string, date: string, reason: PlacementReason | null) => {
+    async (sessionId: string, date: string, reason: PlacementReason | null, movedFrom: string) => {
       if (!activePlan) return;
       const existing = activePlan.placement?.assignments ?? [];
       await persistAssignments([
         ...existing.filter((item) => item.sessionId !== sessionId),
-        { sessionId, date, status: 'moved', reason },
+        { sessionId, date, status: 'moved', reason, movedFrom },
       ]);
     },
     [activePlan, persistAssignments],

@@ -6,6 +6,8 @@ export interface PlacementAssignment {
     status: 'planned' | 'completed' | 'moved' | 'dropped' | 'superseded';
     /** Drop/move reason as recorded with this snapshot (see `ExternalPlacementAssignment.reason`). */
     reason?: PlacementReason | null;
+    /** The date the session was shown on just before this move (see `ExternalPlacementAssignment.movedFrom`). */
+    movedFrom?: string;
 }
 
 /**

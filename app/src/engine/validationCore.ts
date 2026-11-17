@@ -2238,7 +2238,7 @@ export function validateExternalPlanPlacement(raw: any): ValidationResult<Extern
                 errors.push({ field: path, message: 'Assignment must be an object' });
                 return;
             }
-            const assignmentExtra = unknownKeys(assignment, ['sessionId', 'date', 'status', 'reason']);
+            const assignmentExtra = unknownKeys(assignment, ['sessionId', 'date', 'status', 'reason', 'movedFrom']);
             if (assignmentExtra.length) errors.push({ field: path, message: `Unrecognized field(s): ${assignmentExtra.join(', ')}` });
             if (typeof assignment.sessionId !== 'string' || !assignment.sessionId) {
                 errors.push({ field: `${path}.sessionId`, message: 'sessionId is required' });
@@ -2249,6 +2249,10 @@ export function validateExternalPlanPlacement(raw: any): ValidationResult<Extern
             }
             if (!isValidDate(assignment.date)) errors.push({ field: `${path}.date`, message: 'date must be YYYY-MM-DD' });
             if (!PLACEMENT_STATUSES.includes(assignment.status)) errors.push({ field: `${path}.status`, message: 'Unsupported status' });
+            if (assignment.movedFrom !== undefined) {
+                if (assignment.status !== 'moved') errors.push({ field: `${path}.movedFrom`, message: 'movedFrom is only recorded on a moved session' });
+                else if (!isValidDate(assignment.movedFrom)) errors.push({ field: `${path}.movedFrom`, message: 'movedFrom must be YYYY-MM-DD' });
+            }
             if (assignment.reason !== undefined) {
                 const reasonError = placementReasonError(assignment.reason, assignment.status);
                 if (reasonError) errors.push({ field: `${path}.reason`, message: reasonError });

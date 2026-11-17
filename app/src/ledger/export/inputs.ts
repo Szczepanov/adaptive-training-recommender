@@ -152,6 +152,8 @@ export interface PlacementInput {
         status: 'planned' | 'completed' | 'moved' | 'dropped' | 'superseded';
         /** Drop/move reason. Absent: written before reasons were asked; `null`: asked, left blank. */
         reason?: { code: string; note?: string } | null;
+        /** Moved rows: the date the session sat on just before this move. */
+        movedFrom?: string;
     }[];
 }
 

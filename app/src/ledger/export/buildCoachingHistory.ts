@@ -26,6 +26,7 @@ interface FlatAssignment {
     date: string;
     status: PlacementInput['assignments'][number]['status'];
     reason?: PlacementInput['assignments'][number]['reason'];
+    movedFrom?: string;
     removed?: boolean;
 }
 
@@ -69,29 +70,46 @@ function outcomeEvidenceComplete(records: LedgerExportRecords, context: BuildCon
         && sourceState(context, 'performed_training_occurrences', records.performedOccurrences !== undefined) === 'measured';
 }
 
-/** Every date this session was ever assigned in this revision, from its recorded history. */
-function recordedDates(row: FlatAssignment, records: LedgerExportRecords): string[] {
+/** Every snapshot of this session in this revision's recorded history. */
+function recordedSnapshots(row: FlatAssignment, records: LedgerExportRecords) {
     return (records.placementHistory ?? [])
         .filter(event => event.planId === row.planId && event.revision === row.revision)
         .flatMap(event => [...event.previous, ...event.assignments])
-        .filter(item => item.sessionId === row.sessionId)
-        .map(item => item.date);
+        .filter(item => item.sessionId === row.sessionId);
+}
+
+/**
+ * Every date this session was ever assigned, including each date it was moved from. `null` when a
+ * move is not fully recorded: a moved snapshot (or this row) without `movedFrom` was saved before
+ * the from-date was recorded, a moved row has no history at all, the revision's history was
+ * truncated, or a save over a corrupt overlay hid the prior state -- the date the session was shown
+ * on before it moved, where an attempt could have happened, is then unknown.
+ */
+function sessionDates(row: FlatAssignment, records: LedgerExportRecords): string[] | null {
+    const snapshots = recordedSnapshots(row, records);
+    const truncated = (records.placementHistoryUnavailable ?? []).some(item => item.planId === row.planId && item.revision === row.revision);
+    // A save over a corrupt overlay records its prior state as unknown, so a move may be hidden there.
+    const unknownPrior = (records.placementHistory ?? []).some(event => event.planId === row.planId && event.revision === row.revision
+        && !hasRecordedPrevious(event));
+    const moves = [...snapshots, row].filter(item => item.status === 'moved');
+    if (moves.length > 0 && (truncated || unknownPrior || snapshots.length === 0 || moves.some(item => !item.movedFrom))) return null;
+    return [...snapshots, row].flatMap(item => [item.date, ...(item.movedFrom ? [item.movedFrom] : [])]);
 }
 
 /**
  * Whether the export's evidence reads can establish absence for this one placement. Executions
  * and links are read only inside the export window, so absence is unproven when:
  * - the placement is dated after the window end (a window that ends before the as-of date);
- * - the session was moved: the first move never records the authored date, so an attempt on that
- *   earlier date may lie outside the read (a recorded date before the window start says the same);
+ * - any date the session sat on, including each date it was moved from, is before the window
+ *   start, or a move is not fully recorded (`sessionDates`), so an earlier attempt may lie outside
+ *   the read;
  * - the same plan session has a link or execution under another revision, or a newer revision of
  *   the plan was imported on or before the placement date, so the work may belong to that revision.
  */
 function evidenceCoversPlacement(row: FlatAssignment, records: LedgerExportRecords, context: BuildContext): boolean {
     if (row.date > context.window.endDate) return false;
-    const dates = recordedDates(row, records);
-    if (dates.some(date => date < context.window.startDate)) return false;
-    if (row.status === 'moved') return false;
+    const dates = sessionDates(row, records);
+    if (dates === null || dates.some(date => date < context.window.startDate)) return false;
     const otherRevision = (item: { planId: string; revision: number; sessionId: string }) =>
         item.planId === row.planId && item.sessionId === row.sessionId && item.revision !== row.revision;
     if ([...(records.plannedToPerformed ?? []), ...(records.planExecutions ?? []), ...(records.unverifiedPlanEvidence ?? [])]
