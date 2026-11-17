@@ -331,6 +331,7 @@ export function fullRecords(): LedgerExportRecords {
             ],
         }],
         plannedToPerformed: [{ planId: 'plan-1', revision: 2, sessionId: 's1', date: '2026-11-19', performedOccurrenceId: 'occ-1' }],
+        planExecutions: [{ planId: 'plan-1', revision: 2, sessionId: 's1', state: 'completed' }],
     };
 }
 

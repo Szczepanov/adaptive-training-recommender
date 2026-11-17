@@ -309,6 +309,7 @@ revision: 2
 sessionId: s2
 status: dropped
 date: 2026-11-18
+outcome: dropped
 missing: statusHistory (not_yet_supported); title, priority, summary, stepNotes, fallback (not_recorded)
 #### plan-1@2:s1 (2026-11-19)
 planId: plan-1
@@ -319,6 +320,7 @@ date: 2026-11-19
 title: Endurance ride
 priority: key
 summary: Steady Z2 for 60 min
+outcome: performed
 missing: statusHistory (not_yet_supported); stepNotes, fallback (not_recorded)
 
 ### overrides (external_plan_placements; adaptive)

@@ -282,6 +282,7 @@ date: 2026-11-19
 title: Endurance ride
 priority: key
 summary: Steady Z2 for 60 min
+outcome: performed
 missing: statusHistory (not_yet_supported); stepNotes, fallback (not_recorded)
 
 overrides: measured, no rows

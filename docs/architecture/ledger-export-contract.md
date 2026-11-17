@@ -297,6 +297,21 @@ session's placement in the previous revision becomes `superseded`, and its event
 replacing revision and session (`docs/external-plan-schema.md`, #1172). An export
 date before the first recorded event uses that event's previous snapshot, with `statusHistory`
 left `not_yet_supported`.
+
+**Placement outcome (Phase 3).** Each placement dated before `asOfDate` carries a derived,
+export-only `outcome` from `derived/placements/placementOutcome.ts` `classifyPlacementOutcome`;
+today and later are `not_applicable`. First match wins: a valid hash-verified planned-to-performed
+link is `performed`; incomplete reads (placements, plan revisions, links, performed training or
+plan executions), a removed placement, or a link or execution whose revision or content hash did
+not verify (`unverifiedPlanEvidence`) is `unknown`; status `completed` or a completed execution
+without a link is `done_unlinked`; a started or abandoned execution is `started_not_completed`;
+status `dropped` or `superseded` keeps that status; anything else is `missed`. Executions are
+matched by plan id, revision, session id and verified content hash (`planExecutions`), never by
+title, and a moved session is judged on its as-of assigned date. Evidence is read only inside the
+export window, so a placement is also `unknown` when the reads cannot cover it: it is dated after
+the window end; it was moved (the first move never records the authored date, so an attempt on
+it may lie before the read); or the same plan session has a link or execution under another revision, or a newer
+revision of the plan was imported on or before its date. Nothing is written back.
 A save over a corrupt current overlay, or a corrupt legacy fallback, still writes the new overlay.
 Its event records `previous: []` with `previousState: 'invalid'` and a `previousStateReason`
 code (`current-schema-invalid`, `current-identity-mismatch`, `legacy-schema-invalid` or

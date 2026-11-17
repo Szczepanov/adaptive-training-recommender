@@ -181,7 +181,7 @@ export const PLAN_REVISION_FIELDS = [
     'planId', 'revision', 'contentHash', 'importedAt', 'schema', 'authorRationale',
 ] as const;
 export const PLACEMENT_FIELDS = ['planId', 'revision', 'sessionId', 'status', 'date', 'statusHistory',
-    'title', 'priority', 'summary', 'stepNotes', 'fallback'] as const;
+    'title', 'priority', 'summary', 'stepNotes', 'fallback', 'outcome'] as const;
 export const OVERRIDE_FIELDS = ['planId', 'sessionId', 'kind', 'date', 'reason'] as const;
 export const PLANNED_TO_PERFORMED_FIELDS = ['planId', 'revision', 'sessionId', 'date', 'performedOccurrenceRef'] as const;
 

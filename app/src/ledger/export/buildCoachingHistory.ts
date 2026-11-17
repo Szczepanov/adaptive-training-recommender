@@ -13,6 +13,7 @@ import type {
     PLANNED_TO_PERFORMED_FIELDS,
 } from './schema.ts';
 import { addDaysToLocalDateString } from '../../utils/localDate.ts';
+import { classifyPlacementOutcome } from '../../derived/placements/placementOutcome.ts';
 import { inBounds, isLocalDate, PLACEMENT_FORWARD_DAYS, warsawDateOf, windowBounds, type DateBounds } from './window.ts';
 
 const SOURCE = 'adaptive';
@@ -54,7 +55,66 @@ function placementBounds(context: BuildContext): DateBounds {
     return { from: context.window.startDate, to: addDaysToLocalDateString(context.window.endDate, PLACEMENT_FORWARD_DAYS[context.purpose]) };
 }
 
+const sameSession = (row: FlatAssignment) => (item: { planId: string; revision: number; sessionId: string }) =>
+    item.planId === row.planId && item.revision === row.revision && item.sessionId === row.sessionId;
+
+/** Placements, executions and links were all read completely, so absence can be asserted. */
+function outcomeEvidenceComplete(records: LedgerExportRecords, context: BuildContext): boolean {
+    return records.planExecutions !== undefined
+        && sourceState(context, 'external_plan_placements', records.placements !== undefined || records.placementHistory !== undefined) === 'measured'
+        && sourceState(context, 'planned_to_performed', records.plannedToPerformed !== undefined) === 'measured'
+        // An unverified revision's executions cannot be matched by content hash.
+        && sourceState(context, 'external_plan_revisions', records.planRevisions !== undefined) === 'measured'
+        && sourceState(context, 'performed_training_occurrences', records.performedOccurrences !== undefined) === 'measured';
+}
+
+/** Every date this session was ever assigned in this revision, from its recorded history. */
+function recordedDates(row: FlatAssignment, records: LedgerExportRecords): string[] {
+    return (records.placementHistory ?? [])
+        .filter(event => event.planId === row.planId && event.revision === row.revision)
+        .flatMap(event => [...event.previous, ...event.assignments])
+        .filter(item => item.sessionId === row.sessionId)
+        .map(item => item.date);
+}
+
+/**
+ * Whether the export's evidence reads can establish absence for this one placement. Executions
+ * and links are read only inside the export window, so absence is unproven when:
+ * - the placement is dated after the window end (a window that ends before the as-of date);
+ * - the session was moved: the first move never records the authored date, so an attempt on that
+ *   earlier date may lie outside the read (a recorded date before the window start says the same);
+ * - the same plan session has a link or execution under another revision, or a newer revision of
+ *   the plan was imported on or before the placement date, so the work may belong to that revision.
+ */
+function evidenceCoversPlacement(row: FlatAssignment, records: LedgerExportRecords, context: BuildContext): boolean {
+    if (row.date > context.window.endDate) return false;
+    const dates = recordedDates(row, records);
+    if (dates.some(date => date < context.window.startDate)) return false;
+    if (row.status === 'moved') return false;
+    const otherRevision = (item: { planId: string; revision: number; sessionId: string }) =>
+        item.planId === row.planId && item.sessionId === row.sessionId && item.revision !== row.revision;
+    if ([...(records.plannedToPerformed ?? []), ...(records.planExecutions ?? []), ...(records.unverifiedPlanEvidence ?? [])]
+        .some(otherRevision)) return false;
+    return !(records.planRevisions ?? []).some(revision => revision.planId === row.planId && revision.revision > row.revision
+        && (warsawDateOf(revision.importedAt) ?? '') <= row.date);
+}
+
+/** Export-only derived outcome of a past placement; today and later are `not_applicable`. */
+function placementOutcome(row: FlatAssignment, records: LedgerExportRecords, context: BuildContext, evidenceComplete: boolean) {
+    const outcome = classifyPlacementOutcome({
+        assignedDate: row.date,
+        asOfDate: context.asOfDate,
+        status: row.removed ? null : row.status,
+        evidenceComplete: evidenceComplete && evidenceCoversPlacement(row, records, context),
+        linked: (records.plannedToPerformed ?? []).some(sameSession(row)),
+        unverifiedEvidence: (records.unverifiedPlanEvidence ?? []).some(sameSession(row)),
+        executions: (records.planExecutions ?? []).filter(sameSession(row)),
+    });
+    return fact(outcome, { source: SOURCE, observedOn: row.date, absent: 'not_applicable' });
+}
+
 function buildPlacements(flat: FlatAssignment[] | undefined, records: LedgerExportRecords, context: BuildContext) {
+    const evidenceComplete = outcomeEvidenceComplete(records, context);
     const result = collect(context, {
         key: 'external_plan_placements',
         records: flat,
@@ -92,6 +152,7 @@ function buildPlacements(flat: FlatAssignment[] | undefined, records: LedgerExpo
                 summary: fact(session?.summary, content),
                 stepNotes: fact(notes?.length ? [...notes] : null, content),
                 fallback: fact(session?.fallback, content),
+                outcome: placementOutcome(row, records, context, evidenceComplete),
             };
             return record(assignmentId(row), row.date, values);
         },
