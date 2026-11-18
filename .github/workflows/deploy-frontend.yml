@@ -189,6 +189,44 @@ jobs:
       # app ID still produces a successful static build whose Firebase client silently fails at
       # runtime, and neither the Hosting nor the rewrite smoke check below would catch that
       # (they only exercise static assets and the Cloud Run rewrite, not Firebase client init).
+      # Rules deploy BEFORE Hosting. Rules changes here only add allowed keys (old bundles keep
+      # working against new rules), but a new bundle against old rules has its new writes
+      # rejected. With deploy_hosting and deploy_rules both true, a fail-closed drift stop must
+      # therefore happen before the new bundle goes live, not after. This matches the order
+      # deploy-production.yml already uses (rules job, then Hosting job).
+      # Default path remains fail-closed: unexpected drift stops the run before any rules
+      # deployment. This is the safe choice for ordinary frontend/rules deploys.
+      - name: Check Firestore rules drift (fail closed)
+        if: ${{ inputs.deploy_rules && !inputs.confirm_rules_drift }}
+        run: npm run firestore:rules:drift
+
+      # An intentional repository rules change necessarily means local != deployed before
+      # deployment. The operator must explicitly acknowledge that mismatch in workflow_dispatch.
+      # --allow-drift only changes this pre-deploy gate; the deployment script still saves the
+      # active ruleset for rollback, runs the emulator suite, deploys only Firestore rules, and
+      # verifies the deployed source hash matches app/firestore.rules afterwards.
+      - name: Acknowledge reviewed Firestore rules drift
+        if: ${{ inputs.deploy_rules && inputs.confirm_rules_drift }}
+        run: npm run firestore:rules:drift -- --allow-drift
+
+      - name: Deploy Firestore security rules
+        if: ${{ inputs.deploy_rules }}
+        run: npm run firestore:rules:deploy -- --confirm
+
+      # The deploy script writes a rollback JSON to app/artifacts/firestore-rules-rollbacks/
+      # (gitignored, and the runner is thrown away after this job) -- upload it so a rollback
+      # is still possible after the fact. Download it and run
+      # `npm run firestore:rules:rollback -- --backup <file> --confirm` locally per
+      # docs/ops/firestore-rules-deployment.md#rollback (rollback itself stays a local,
+      # deliberate operation, same as before this workflow existed).
+      - name: Upload Firestore rules rollback backup
+        if: always() && inputs.deploy_rules
+        uses: actions/upload-artifact@v7
+        with:
+          name: firestore-rules-rollback-backup
+          path: app/artifacts/firestore-rules-rollbacks/
+          if-no-files-found: ignore
+
       - name: Validate Firebase build configuration is complete
         if: ${{ inputs.deploy_hosting }}
         env:
@@ -303,36 +341,3 @@ jobs:
             cat "${BODY_FILE}" >&2
             exit 1
           fi
-
-      # Default path remains fail-closed: unexpected drift stops the run before any rules
-      # deployment. This is the safe choice for ordinary frontend/rules deploys.
-      - name: Check Firestore rules drift (fail closed)
-        if: ${{ inputs.deploy_rules && !inputs.confirm_rules_drift }}
-        run: npm run firestore:rules:drift
-
-      # An intentional repository rules change necessarily means local != deployed before
-      # deployment. The operator must explicitly acknowledge that mismatch in workflow_dispatch.
-      # --allow-drift only changes this pre-deploy gate; the deployment script still saves the
-      # active ruleset for rollback, runs the emulator suite, deploys only Firestore rules, and
-      # verifies the deployed source hash matches app/firestore.rules afterwards.
-      - name: Acknowledge reviewed Firestore rules drift
-        if: ${{ inputs.deploy_rules && inputs.confirm_rules_drift }}
-        run: npm run firestore:rules:drift -- --allow-drift
-
-      - name: Deploy Firestore security rules
-        if: ${{ inputs.deploy_rules }}
-        run: npm run firestore:rules:deploy -- --confirm
-
-      # The deploy script writes a rollback JSON to app/artifacts/firestore-rules-rollbacks/
-      # (gitignored, and the runner is thrown away after this job) -- upload it so a rollback
-      # is still possible after the fact. Download it and run
-      # `npm run firestore:rules:rollback -- --backup <file> --confirm` locally per
-      # docs/ops/firestore-rules-deployment.md#rollback (rollback itself stays a local,
-      # deliberate operation, same as before this workflow existed).
-      - name: Upload Firestore rules rollback backup
-        if: always() && inputs.deploy_rules
-        uses: actions/upload-artifact@v7
-        with:
-          name: firestore-rules-rollback-backup
-          path: app/artifacts/firestore-rules-rollbacks/
-          if-no-files-found: ignore

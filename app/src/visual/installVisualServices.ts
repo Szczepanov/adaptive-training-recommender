@@ -72,6 +72,12 @@ export function installVisualServices(fixture: VisualFixture): void {
   });
 
   checkinService.getCheckin = async () => fixture.checkin;
+  // SessionRunner's red-flag launch gate (#1167) reads the state form and holds every start
+  // control while it is pending. Left unstubbed it reached the real Firestore SDK and could
+  // stay pending past the capture timeout, hiding "Start Session" in the runner captures.
+  checkinService.getCheckinState = async () => (fixture.checkin
+    ? { status: 'AVAILABLE', data: fixture.checkin, revision: null }
+    : { status: 'MISSING' });
   checkinService.getCheckinsInRangeState = async () => ({ status: 'AVAILABLE', data: [], revision: null });
   checkinService.upsertTodayCheckin = async (_userId, update) => ({
     ...(fixture.checkin ?? { userId: fixture.input.userId, date: fixture.input.date }),
