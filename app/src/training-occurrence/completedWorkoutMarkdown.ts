@@ -64,12 +64,18 @@ function prescriptionText(p: ExportedPrescription): string {
     return parts.join(', ');
 }
 
+/** `, best 42 cm` for a logged set of jumps; empty otherwise. */
+function jumpSuffix(set: ExportedPerformedSet): string {
+    if (set.jumpHeightCm !== undefined) return `, best ${set.jumpHeightCm} cm`;
+    return set.jumpDistanceMeters !== undefined ? `, best ${set.jumpDistanceMeters} m` : '';
+}
+
 function setBody(set: ExportedPerformedSet): string {
     const kg = set.weightKg !== undefined ? ` @ ${set.weightKg} kg` : '';
     switch (set.kind) {
         case 'repetition':
             if (set.reps === undefined) return `reps: ${NOT_RECORDED}${kg}`;
-            return set.weightKg !== undefined ? `${set.reps} @ ${set.weightKg} kg` : `${set.reps} reps`;
+            return `${set.weightKg !== undefined ? `${set.reps} @ ${set.weightKg} kg` : `${set.reps} reps`}${jumpSuffix(set)}`;
         case 'duration':
             return `${set.durationSeconds !== undefined ? `${set.durationSeconds} s` : `duration: ${NOT_RECORDED}`}${kg}`;
         case 'distance':
@@ -119,7 +125,7 @@ function workSetLine(set: ExportedPerformedSet, choices: ChoiceIndex, logComplet
     // A trailing rest that ran until the session ended is not a rest the athlete took.
     const rest = set.rest && set.rest.endReason !== 'session_ended' ? ` · rest ${set.rest.actualSeconds} s` : '';
     const swap = set.performedExercise ? ` · performed as ${exerciseRefLabel(set.performedExercise)}` : '';
-    return `${set.setNumber}: ${setBody(set)}${effortText(set)}${rest}${swap}${governingChoiceText(set, choices, logComplete)}`;
+    return `${set.setNumber}: ${set.side ? `${set.side} ` : ''}${setBody(set)}${effortText(set)}${rest}${swap}${governingChoiceText(set, choices, logComplete)}`;
 }
 
 function exerciseHeading(exercise: ExportedExercise): string {

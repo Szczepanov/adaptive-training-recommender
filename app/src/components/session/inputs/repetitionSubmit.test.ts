@@ -139,3 +139,25 @@ describe('refocusIfStillOwned', () => {
         expect(() => refocusIfStillOwned(null, form)).not.toThrow();
     });
 });
+
+describe('buildRepetitionPayload jump result', () => {
+    it('records the best jump height in centimetres for a height jump', () => {
+        expect(buildRepetitionPayload(draft({ weight: '', jumpMeasure: 'height', jumpVal: '42.5' })))
+            .toMatchObject({ reps: 8, jumpHeightCm: 42.5 });
+    });
+
+    it('records the best jump distance in metres for a distance jump', () => {
+        const payload = buildRepetitionPayload(draft({ weight: '', jumpMeasure: 'distance', jumpVal: '2.45' }));
+        expect(payload).toMatchObject({ jumpDistanceMeters: 2.45 });
+        expect(payload).not.toHaveProperty('jumpHeightCm');
+    });
+
+    it.each(['', 'abc', '0', '-5', '500'])('omits an empty or out-of-range jump value %j', jumpVal => {
+        const payload = buildRepetitionPayload(draft({ jumpMeasure: 'height', jumpVal }));
+        expect(payload).not.toHaveProperty('jumpHeightCm');
+    });
+
+    it('ignores a jump value when the exercise is not a jump', () => {
+        expect(buildRepetitionPayload(draft({ jumpMeasure: null, jumpVal: '40' }))).not.toHaveProperty('jumpHeightCm');
+    });
+});

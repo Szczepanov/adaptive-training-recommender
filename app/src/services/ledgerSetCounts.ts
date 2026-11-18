@@ -16,12 +16,17 @@ export function plannedSetCount(definition: SessionDefinition): number {
         .reduce((blockSum, step) => blockSum + targetEntriesForGroupStep(block, step), 0), 0);
 }
 
-/** Without the definition, logged left/right holds still pair into one set. */
+/** Without the definition, logged left/right holds and carries still pair into one set. */
 function inferredStep(stepId: string, entries: readonly SessionEntry[]): SessionStep {
-    const sided = entries.some(entry => entry.payload.kind === 'duration' && (entry.side === 'left' || entry.side === 'right'));
-    return sided
-        ? { id: stepId, kind: 'exercise', laterality: 'per_side', dose: { kind: 'duration', seconds: 0 } }
-        : { id: stepId, kind: 'exercise' };
+    const sided = entries.find(entry => (entry.payload.kind === 'duration' || entry.payload.kind === 'distance')
+        && (entry.side === 'left' || entry.side === 'right'));
+    if (sided?.payload.kind === 'duration') {
+        return { id: stepId, kind: 'exercise', laterality: 'per_side', dose: { kind: 'duration', seconds: 0 } };
+    }
+    if (sided?.payload.kind === 'distance') {
+        return { id: stepId, kind: 'exercise', laterality: 'per_side', dose: { kind: 'distance', meters: 0 } };
+    }
+    return { id: stepId, kind: 'exercise' };
 }
 
 function workSetCount(entries: readonly SessionEntry[], definition: SessionDefinition | null): number {

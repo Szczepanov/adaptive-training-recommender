@@ -7,6 +7,11 @@ export const ADDED_EXERCISES_BLOCK_ID = 'added-during-session';
 /** Prefix of every added step id; the summary reports such work as unplanned. */
 const ADDED_STEP_ID_PREFIX = 'added-';
 
+/** Whether a step was added by the athlete during the session (wherever it has since been moved). */
+export function isAddedStep(step: Pick<SessionStep, 'id'> | undefined): boolean {
+    return step?.id.startsWith(ADDED_STEP_ID_PREFIX) ?? false;
+}
+
 /** Exercises added during the session are open-ended: the athlete decides how many sets they
  * do, so the runner must not auto-advance away after the first logged set. */
 export function isAddedExercisesBlock(block: SessionBlock | undefined): boolean {

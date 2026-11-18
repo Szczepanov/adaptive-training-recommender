@@ -3,6 +3,7 @@ import { useOverlayDialog } from '../useOverlayDialog';
 import '../overlayContract.css';
 import type { SessionStep } from '../../sessions/models';
 import { EXERCISES, EXERCISES_BY_ID } from '../../workouts/exercises';
+import { matchesExerciseQuery } from '../../workouts/exerciseSearch';
 import { stepName } from '../../sessions/stepDisplay';
 import { buildCatalogReplacement, type StepExerciseReplacement } from '../../sessions/swapAdaptation';
 import './ExerciseSwapModal.css';
@@ -44,13 +45,7 @@ export const ExerciseSwapModal: React.FC<ExerciseSwapModalProps> = ({
     const filteredExercises = useMemo(() => {
         const query = searchQuery.trim().toLowerCase();
         if (!query) return EXERCISES.slice(0, 30);
-        return EXERCISES.filter(ex =>
-            ex.name.toLowerCase().includes(query) ||
-            ex.id.toLowerCase().includes(query) ||
-            ex.modality.toLowerCase().includes(query) ||
-            ex.primaryMuscles.some(m => m.toLowerCase().includes(query)) ||
-            (ex.equipment && ex.equipment.some(eq => eq.toLowerCase().includes(query))),
-        );
+        return EXERCISES.filter(ex => matchesExerciseQuery(ex, query));
     }, [searchQuery]);
 
     const handleConfirm = () => {

@@ -118,12 +118,19 @@ function formatPerformed(payload: SessionEntryPayload): string {
       const work = payload.weightKg !== undefined && payload.weightKg > 0
         ? `${payload.reps} × ${payload.weightKg} kg`
         : `${payload.reps} reps`;
-      return payload.gauge ? `${work} · ${formatGauge(payload.gauge)}` : work;
+      const jump = payload.jumpHeightCm !== undefined
+        ? ` · best ${payload.jumpHeightCm} cm`
+        : payload.jumpDistanceMeters !== undefined ? ` · best ${payload.jumpDistanceMeters} m` : '';
+      return payload.gauge ? `${work}${jump} · ${formatGauge(payload.gauge)}` : `${work}${jump}`;
     }
-    case 'duration':
-      return `${formatClock(payload.seconds)}${payload.loadKg ? ` @ ${payload.loadKg} kg` : ''}`;
-    case 'distance':
-      return `${payload.meters} m${payload.durationSeconds !== undefined ? ` in ${formatClock(payload.durationSeconds)}` : ''}${payload.loadKg ? ` @ ${payload.loadKg} kg` : ''}`;
+    case 'duration': {
+      const hold = `${formatClock(payload.seconds)}${payload.loadKg ? ` @ ${payload.loadKg} kg` : ''}`;
+      return payload.gauge ? `${hold} · ${formatGauge(payload.gauge)}` : hold;
+    }
+    case 'distance': {
+      const carry = `${payload.meters} m${payload.durationSeconds !== undefined ? ` in ${formatClock(payload.durationSeconds)}` : ''}${payload.loadKg ? ` @ ${payload.loadKg} kg` : ''}`;
+      return payload.gauge ? `${carry} · ${formatGauge(payload.gauge)}` : carry;
+    }
     case 'sprint':
       return `${payload.meters} m in ${payload.splitSeconds.toFixed(2)} s`;
     case 'jump_attempt':

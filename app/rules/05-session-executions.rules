@@ -257,17 +257,19 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
           && payload is map
           && (
             (payload.kind == 'repetition'
-              && payload.keys().hasOnly(['kind', 'setIndex', 'reps', 'weightKg', 'isWarmup', 'gauge'])
+              && payload.keys().hasOnly(['kind', 'setIndex', 'reps', 'weightKg', 'isWarmup', 'gauge', 'jumpHeightCm', 'jumpDistanceMeters'])
               && isPositiveInt(payload.setIndex)
               && isPositiveInt(payload.reps)
               && (!('weightKg' in payload) || (payload.weightKg is number && payload.weightKg >= 0))
-              && (!('isWarmup' in payload) || payload.isWarmup is bool))
+              && (!('isWarmup' in payload) || payload.isWarmup is bool)
+              && (!('jumpHeightCm' in payload) || (payload.jumpHeightCm is number && payload.jumpHeightCm > 0))
+              && (!('jumpDistanceMeters' in payload) || (payload.jumpDistanceMeters is number && payload.jumpDistanceMeters > 0)))
             || (payload.kind == 'duration'
-              && payload.keys().hasOnly(['kind', 'seconds', 'loadKg', 'position'])
+              && payload.keys().hasOnly(['kind', 'seconds', 'loadKg', 'position', 'gauge'])
               && payload.seconds is number && payload.seconds > 0
               && (!('loadKg' in payload) || (payload.loadKg is number && payload.loadKg >= 0)))
             || (payload.kind == 'distance'
-              && payload.keys().hasOnly(['kind', 'meters', 'durationSeconds', 'loadKg'])
+              && payload.keys().hasOnly(['kind', 'meters', 'durationSeconds', 'loadKg', 'gauge'])
               && payload.meters is number && payload.meters > 0
               && (!('durationSeconds' in payload) || (payload.durationSeconds is number && payload.durationSeconds > 0))
               && (!('loadKg' in payload) || (payload.loadKg is number && payload.loadKg >= 0)))

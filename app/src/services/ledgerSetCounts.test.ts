@@ -52,6 +52,12 @@ describe('performedSetCounts', () => {
         expect(performedSetCounts([{ entries, definition: null }])).toEqual({ work: 1, warmup: 0 });
     });
 
+    it('pairs a left/right carry on an added step the definition does not know', () => {
+        const carry = (side: 'left' | 'right') => entry('added-carry', { kind: 'distance', meters: 20, loadKg: 24 }, { side });
+        const entries = [carry('left'), carry('right'), carry('left'), carry('right')];
+        expect(performedSetCounts([{ entries, definition }])).toEqual({ work: 2, warmup: 0 });
+    });
+
     it('counts work on an added, unplanned step and sums performed work across executions', () => {
         const first = { entries: [rep('added'), rep('added')], definition };
         const second = { entries: [rep('squat')], definition: null };

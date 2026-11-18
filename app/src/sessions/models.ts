@@ -419,6 +419,10 @@ export type RepetitionEntryPayload = {
     weightKg?: number;
     isWarmup?: boolean;
     gauge?: IntensityGauge;
+    /** Best jump height of the set (vertical jumps such as a countermovement jump), in centimetres. */
+    jumpHeightCm?: number;
+    /** Best jump distance of the set (horizontal or lateral jumps such as a broad jump), in metres. */
+    jumpDistanceMeters?: number;
 };
 
 export type DurationEntryPayload = {
@@ -426,6 +430,8 @@ export type DurationEntryPayload = {
     seconds: number;
     loadKg?: number;
     position?: string;
+    /** Effort of the hold; holds record RPE only (RIR and velocity loss do not apply). */
+    gauge?: IntensityGauge;
 };
 
 export type DistanceEntryPayload = {
@@ -434,6 +440,8 @@ export type DistanceEntryPayload = {
     durationSeconds?: number;
     /** Carried/pushed load (e.g. farmer carry dumbbells, sled), when the athlete logged one. */
     loadKg?: number;
+    /** Effort of the carry/split; RPE only. */
+    gauge?: IntensityGauge;
 };
 
 export type SprintEntryPayload = {

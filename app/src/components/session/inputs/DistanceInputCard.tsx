@@ -1,19 +1,28 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import type { SessionStep, DistanceEntryPayload } from '../../../sessions/models';
 import { stepAcceptsMassLoad } from '../../../sessions/stepLoadCapability';
+import { RpeField } from './RpeField';
+import { buildRpeGauge } from './rpeGauge';
 
 interface DistanceInputCardProps {
     step: SessionStep;
     /** Last logged load for this step, else the prescribed fixed mass. */
     suggestedLoadKg?: number;
-    onSubmit: (payload: DistanceEntryPayload) => void;
+    /** Side due next for a per-side carry (fewer logged entries, left first). */
+    nextSide?: 'left' | 'right';
+    /** Changes whenever a distance entry for this step is added/removed, even if nextSide is unchanged. */
+    performedEntryCount?: number;
+    onSubmit: (payload: DistanceEntryPayload, side?: 'left' | 'right') => void | Promise<void>;
 }
 
 export const DistanceInputCard: React.FC<DistanceInputCardProps> = ({
     step,
     suggestedLoadKg,
+    nextSide,
+    performedEntryCount = 0,
     onSubmit,
 }) => {
+    const perSide = step.laterality === 'per_side';
     const dose = step.dose;
     const defaultMeters = dose?.kind === 'distance'
         ? (typeof dose.meters === 'number' ? dose.meters : (typeof dose.meters === 'object' ? dose.meters.min : (typeof dose.metres === 'number' ? dose.metres : (typeof dose.metres === 'object' ? dose.metres.min : 100))))
@@ -23,6 +32,12 @@ export const DistanceInputCard: React.FC<DistanceInputCardProps> = ({
     const [seconds, setSeconds] = useState<string>('');
     const showLoad = stepAcceptsMassLoad(step);
     const [loadKg, setLoadKg] = useState<string>(suggestedLoadKg !== undefined ? String(suggestedLoadKg) : '');
+    const [rpe, setRpe] = useState<string>('');
+    const [selectedSide, setSelectedSide] = useState<'left' | 'right'>(nextSide ?? 'left');
+
+    useEffect(() => {
+        if (nextSide) setSelectedSide(nextSide);
+    }, [nextSide, performedEntryCount, step.id]);
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
@@ -32,19 +47,42 @@ export const DistanceInputCard: React.FC<DistanceInputCardProps> = ({
         const parsedSec = seconds.trim().length > 0 ? parseFloat(seconds) : undefined;
         const parsedLoad = showLoad && loadKg.trim().length > 0 ? parseFloat(loadKg) : undefined;
         if (parsedLoad !== undefined && (isNaN(parsedLoad) || parsedLoad < 0)) return;
-        onSubmit({
+        const gauge = buildRpeGauge(rpe);
+        void onSubmit({
             kind: 'distance',
             meters: parsedMeters,
             ...(parsedSec !== undefined ? { durationSeconds: parsedSec } : {}),
             ...(parsedLoad !== undefined ? { loadKg: parsedLoad } : {}),
-        });
+            ...(gauge ? { gauge } : {}),
+        }, perSide ? selectedSide : undefined);
+        setRpe('');
     };
 
     return (
         <form className="distance-input-card" onSubmit={handleSubmit}>
+            {perSide && (
+                <>
+                    <div className="hold-side-selector" role="group" aria-label="Carry side">
+                        {(['left', 'right'] as const).map(side => (
+                            <button
+                                key={side}
+                                type="button"
+                                className={`hold-side-btn${selectedSide === side ? ' active' : ''}`}
+                                aria-pressed={selectedSide === side}
+                                onClick={() => setSelectedSide(side)}
+                            >
+                                {side === 'left' ? 'Left' : 'Right'} side
+                            </button>
+                        ))}
+                    </div>
+                    <div className="unilateral-cue-banner">
+                        <span>Complete both sides for one set.</span>
+                    </div>
+                </>
+            )}
             <div className="input-row">
                 <label className="input-group">
-                    <span className="input-label">Distance (meters)</span>
+                    <span className="input-label">Distance (meters{perSide ? ' / side' : ''})</span>
                     <input
                         type="number"
                         step="1"
@@ -84,9 +122,10 @@ export const DistanceInputCard: React.FC<DistanceInputCardProps> = ({
                         />
                     </label>
                 )}
+                <RpeField step={step} value={rpe} onChange={setRpe} />
             </div>
 
-            <button type="submit" className="log-set-btn" aria-label="Log distance split">
+            <button type="submit" className="log-set-btn" aria-label={perSide ? `Log ${selectedSide} side distance` : 'Log distance split'}>
                 Log
             </button>
         </form>

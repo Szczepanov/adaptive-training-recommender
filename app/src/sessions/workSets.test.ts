@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { SessionEntry, SessionStep } from './models';
-import { completedPrescribedSets, completesPrescribedSet, nextHoldSide } from './workSets';
+import { completedPrescribedSets, completesPrescribedSet, hasUnpairedHoldSide, nextHoldSide } from './workSets';
 
 const step: SessionStep = {
     id: 'hold', kind: 'exercise', laterality: 'per_side',
@@ -41,5 +41,32 @@ describe('per-side prescribed holds', () => {
         expect(completedPrescribedSets(step, [left, second])).toBe(0);
         expect(completedPrescribedSets(step, [left, { ...second, side: 'right' }])).toBe(1);
         expect(completedPrescribedSets(step, [left, second])).toBe(0);
+    });
+});
+
+describe('per-side distance carries', () => {
+    const carry: SessionStep = {
+        id: 'carry', kind: 'exercise', laterality: 'per_side',
+        exerciseRef: { kind: 'catalog', exerciseId: 'suitcase_carry' },
+        dose: { kind: 'distance', sets: 2, meters: 20 },
+    };
+    const leg = (id: string, side?: 'left' | 'right'): SessionEntry => ({
+        id, executionId: 'exec', stepId: 'carry',
+        completedAt: '2026-09-01T12:00:00Z', createdAt: '2026-09-01T12:00:00Z', updatedAt: '2026-09-01T12:00:00Z',
+        ...(side ? { side } : {}), payload: { kind: 'distance', meters: 20, loadKg: 24 },
+    });
+
+    it('treats a left/right carry pair as one set, so rest starts only after the second side', () => {
+        const left = leg('l1', 'left');
+        expect(completesPrescribedSet(carry, [], left)).toBe(false);
+        expect(nextHoldSide(carry, [left])).toBe('right');
+        expect(hasUnpairedHoldSide(carry, [left])).toBe(true);
+        expect(completesPrescribedSet(carry, [left], leg('r1', 'right'))).toBe(true);
+    });
+
+    it('leaves a two-hand (bilateral) carry counting every entry as a set', () => {
+        const bilateral: SessionStep = { ...carry, laterality: 'bilateral' };
+        expect(completesPrescribedSet(bilateral, [], leg('b1'))).toBe(true);
+        expect(hasUnpairedHoldSide(bilateral, [leg('b1')])).toBe(false);
     });
 });

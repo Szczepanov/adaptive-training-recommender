@@ -1,6 +1,9 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import type { StepExerciseReplacement } from '../sessions/swapAdaptation';
-import { appendAddedExerciseStep, restoreAddedExerciseSteps } from '../sessions/addedExerciseStep';
+import { appendAddedExerciseStep } from '../sessions/addedExerciseStep';
+import { applyStepMove, locateStep, type StepMove } from '../sessions/stepReorder';
+import { clearStepMoves, saveStepMoves } from '../sessions/stepOrderStorage';
+import { restoreWorkingDefinition } from '../sessions/workingDefinition';
 import { entryCompositionStamp, relaxUnevidencedRequirements, swappedStepComposition } from '../sessions/compositionStamping';
 import type {
     SessionDefinition,
@@ -89,10 +92,17 @@ export interface UseSessionRunnerResult {
     undo: () => Promise<boolean>;
     startRestTimer: (seconds: number) => void;
     skipRestTimer: () => void;
+    /** The athlete started timed work (e.g. a hold's lead-in) while a rest was still running:
+     * end that rest now as `next_set_started`, without the rest-complete cue. */
+    endRestForStartedWork: () => void;
     addRestSeconds: (seconds: number) => void;
     substituteStepExercise: (blockIndex: number, stepIndex: number, replacement: StepExerciseReplacement) => void;
-    /** Appends an exercise the athlete is doing beyond the plan and makes it the active step. */
+    /** Adds an exercise the athlete is doing beyond the plan right after the current step
+     * (or at the end when the current step is in a superset/circuit) and makes it active. */
     addExerciseStep: (exercise: StepExerciseReplacement) => void;
+    /** Moves a step in this session's working order (see `sessions/stepReorder.ts`); the
+     * current step stays current. Remembered on this device across reloads. */
+    moveStep: (move: StepMove) => void;
     saveAsNewTemplate: (title: string, summary?: string) => Promise<string>;
     completeSession: (payload?: SessionCompletionPayload) => Promise<void>;
     abandonSession: (notes?: string) => Promise<void>;
@@ -206,6 +216,8 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
     // across a reload rather than resumed or fabricated, satisfying "app
     // interruption/resume does not fabricate duration".
     const activeRestRef = useRef<ActiveRestState | null>(null);
+    /** The athlete's step moves for the current execution, replayed after a reload. */
+    const stepMovesRef = useRef<StepMove[]>([]);
 
     // Local-only manual countdown started via `startRestTimer` (no durable rest
     // event to attribute it to). Stored as a wall-clock deadline so a throttled
@@ -292,7 +304,9 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
                     setSyncStatus('unavailable');
                     return;
                 }
-                const restored = restoreAddedExerciseSteps(resolved.data, diary.entries);
+                const working = restoreWorkingDefinition(resolved.data, diary.entries, existing.executionId);
+                stepMovesRef.current = working.moves;
+                const restored = working.definition;
                 const cursor = resolveResumeCursor(restored, diary.entries);
                 setRawDefinition(restored);
                 setActiveBlockIndex(cursor.blockIndex);
@@ -460,6 +474,7 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
         startInFlightRef.current = true;
         activeRestRef.current = null;
         manualRestDeadlineRef.current = null;
+        stepMovesRef.current = [];
         setRawDefinition(nextDefinition);
         setActiveBlockIndex(0);
         setActiveStepIndex(0);
@@ -511,7 +526,9 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
                     setSyncStatus('unavailable');
                     return;
                 }
-                const restored = restoreAddedExerciseSteps(resolved.data, diary.entries);
+                const working = restoreWorkingDefinition(resolved.data, diary.entries, exec.executionId);
+                stepMovesRef.current = working.moves;
+                const restored = working.definition;
                 setRawDefinition(restored);
                 const cursor = resolveResumeCursor(restored, diary.entries);
                 setActiveBlockIndex(cursor.blockIndex);
@@ -806,6 +823,14 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
         closeActiveRest('skipped')?.catch(err => console.warn('[useSessionRunner] Failed to persist rest event:', err));
     }, [closeActiveRest]);
 
+    const endRestForStartedWork = useCallback(() => {
+        if (activeRestRef.current === null && manualRestDeadlineRef.current === null) return;
+        manualRestDeadlineRef.current = null;
+        setRestSecondsRemaining(0);
+        setIsRestRunning(false);
+        closeActiveRest('next_set_started')?.catch(err => console.warn('[useSessionRunner] Failed to persist rest event:', err));
+    }, [closeActiveRest]);
+
     const addRestSeconds = useCallback((seconds: number) => {
         const active = activeRestRef.current;
         if (active) {
@@ -871,14 +896,49 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
         });
     }, []);
 
+    // A finished or abandoned execution is never resumed, so its remembered order is dead weight.
+    const executionIdForCleanup = execution && execution.state !== 'in_progress' ? execution.executionId : null;
+    useEffect(() => {
+        if (executionIdForCleanup) clearStepMoves(executionIdForCleanup);
+    }, [executionIdForCleanup]);
+
+    const recordStepMove = useCallback((move: StepMove) => {
+        stepMovesRef.current = [...stepMovesRef.current, move];
+        if (execution) saveStepMoves(execution.executionId, stepMovesRef.current);
+    }, [execution]);
+
     const addExerciseStep = useCallback((exercise: StepExerciseReplacement) => {
         if (!rawDefinition) return;
         // Dialogs are modal, so no other definition edit can interleave with this one.
-        const { blocks, blockIndex, stepIndex } = appendAddedExerciseStep(rawDefinition.blocks, exercise, crypto.randomUUID());
+        const appended = appendAddedExerciseStep(rawDefinition.blocks, exercise, crypto.randomUUID());
+        const addedStep = appended.blocks[appended.blockIndex].steps[appended.stepIndex];
+        const currentStep = rawDefinition.blocks[activeBlockIndex]?.steps[activeStepIndex];
+        // The athlete usually adds the exercise they are about to do next, so place it right
+        // after the current step rather than at the end of the session.
+        const move: StepMove | null = currentStep
+            ? { stepId: addedStep.id, targetStepId: currentStep.id, position: 'after' }
+            : null;
+        const placed = move ? applyStepMove(appended.blocks, move) : appended.blocks;
+        if (move && placed !== appended.blocks) recordStepMove(move);
+        const location = locateStep(placed, addedStep.id) ?? appended;
+        setRawDefinition({ ...rawDefinition, blocks: placed });
+        setActiveBlockIndex(location.blockIndex);
+        setActiveStepIndex(location.stepIndex);
+    }, [rawDefinition, activeBlockIndex, activeStepIndex, recordStepMove]);
+
+    const moveStep = useCallback((move: StepMove) => {
+        if (!rawDefinition) return;
+        const blocks = applyStepMove(rawDefinition.blocks, move);
+        if (blocks === rawDefinition.blocks) return;
+        const currentStep = rawDefinition.blocks[activeBlockIndex]?.steps[activeStepIndex];
+        recordStepMove(move);
         setRawDefinition({ ...rawDefinition, blocks });
-        setActiveBlockIndex(blockIndex);
-        setActiveStepIndex(stepIndex);
-    }, [rawDefinition]);
+        const location = currentStep ? locateStep(blocks, currentStep.id) : null;
+        if (location) {
+            setActiveBlockIndex(location.blockIndex);
+            setActiveStepIndex(location.stepIndex);
+        }
+    }, [rawDefinition, activeBlockIndex, activeStepIndex, recordStepMove]);
 
     const saveAsNewTemplate = useCallback(async (title: string, summary?: string): Promise<string> => {
         if (!rawDefinition) throw new Error('No active session definition to save.');
@@ -1062,9 +1122,11 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
         undo,
         startRestTimer,
         skipRestTimer,
+        endRestForStartedWork,
         addRestSeconds,
         substituteStepExercise,
         addExerciseStep,
+        moveStep,
         saveAsNewTemplate,
         completeSession,
         abandonSession,

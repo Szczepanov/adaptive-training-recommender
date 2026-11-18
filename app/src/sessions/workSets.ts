@@ -20,26 +20,43 @@ export function countsTowardPrescribedSets(entry: Pick<SessionEntry, 'payload'>)
     return entry.payload.kind !== 'choice' && !isWarmupEntry(entry);
 }
 
-/** A left/right hold is one set only once both sides have been logged. */
+/**
+ * Timed holds and distance carries prescribed per side are logged one side at a time, and a
+ * left/right pair is one set. (A per-side rep step is logged as one entry per set.)
+ */
+function sidedPayloadKind(step: SessionStep): 'duration' | 'distance' | null {
+    if (step.laterality !== 'per_side') return null;
+    return step.dose?.kind === 'duration' || step.dose?.kind === 'distance' ? step.dose.kind : null;
+}
+
+function sidedEntries(step: SessionStep, entries: readonly SessionEntry[], kind: 'duration' | 'distance'): SessionEntry[] {
+    return entries.filter(entry => entry.stepId === step.id && entry.payload.kind === kind);
+}
+
+/** A left/right hold or carry is one set only once both sides have been logged. */
 export function completedPrescribedSets(step: SessionStep, entries: readonly SessionEntry[]): number {
     const work = entries.filter(entry => entry.stepId === step.id && countsTowardPrescribedSets(entry));
-    if (step.dose?.kind !== 'duration' || step.laterality !== 'per_side') return work.length;
-    const holds = work.filter(entry => entry.payload.kind === 'duration');
-    const left = holds.filter(entry => entry.side === 'left').length;
-    const right = holds.filter(entry => entry.side === 'right').length;
+    const kind = sidedPayloadKind(step);
+    if (!kind) return work.length;
+    const sided = work.filter(entry => entry.payload.kind === kind);
+    const left = sided.filter(entry => entry.side === 'left').length;
+    const right = sided.filter(entry => entry.side === 'right').length;
     return work.length - left - right + Math.min(left, right);
 }
 
+/** The side to log next for a per-side hold or carry: whichever side has fewer entries, left first. */
 export function nextHoldSide(step: SessionStep, entries: readonly SessionEntry[]): 'left' | 'right' {
-    const holds = entries.filter(entry => entry.stepId === step.id && entry.payload.kind === 'duration');
-    return holds.filter(entry => entry.side === 'left').length <= holds.filter(entry => entry.side === 'right').length
+    const kind = step.dose?.kind === 'distance' ? 'distance' : 'duration';
+    const sided = sidedEntries(step, entries, kind);
+    return sided.filter(entry => entry.side === 'left').length <= sided.filter(entry => entry.side === 'right').length
         ? 'left' : 'right';
 }
 
 export function hasUnpairedHoldSide(step: SessionStep, entries: readonly SessionEntry[]): boolean {
-    if (step.dose?.kind !== 'duration' || step.laterality !== 'per_side') return false;
-    const holds = entries.filter(entry => entry.stepId === step.id && entry.payload.kind === 'duration');
-    return holds.filter(entry => entry.side === 'left').length !== holds.filter(entry => entry.side === 'right').length;
+    const kind = sidedPayloadKind(step);
+    if (!kind) return false;
+    const sided = sidedEntries(step, entries, kind);
+    return sided.filter(entry => entry.side === 'left').length !== sided.filter(entry => entry.side === 'right').length;
 }
 
 export function completesPrescribedSet(step: SessionStep, entries: readonly SessionEntry[], entry: SessionEntry): boolean {

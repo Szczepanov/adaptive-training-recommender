@@ -14,10 +14,12 @@ vi.mock('react', async importOriginal => {
     return {
         ...actual,
         useState: (initial: unknown) => [typeof initial === 'function' ? (initial as () => unknown)() : initial, vi.fn()],
+        useEffect: vi.fn(),
     };
 });
 
 import { DistanceInputCard } from './DistanceInputCard';
+import { RpeField } from './RpeField';
 
 interface Props {
     children?: ReactNode;
@@ -64,18 +66,47 @@ describe('DistanceInputCard load', () => {
 
         findElement(tree, el => el.type === 'form')!.props.onSubmit!({ preventDefault: vi.fn() });
 
-        expect(onSubmit).toHaveBeenCalledWith({ kind: 'distance', meters: 40, loadKg: 48 });
+        expect(onSubmit).toHaveBeenCalledWith({ kind: 'distance', meters: 40, loadKg: 48 }, undefined);
     });
 
     it('omits the load when the athlete leaves it empty', () => {
         const onSubmit = vi.fn();
         const tree = DistanceInputCard({ step: farmerCarry, onSubmit }) as ReactNode;
         findElement(tree, el => el.type === 'form')!.props.onSubmit!({ preventDefault: vi.fn() });
-        expect(onSubmit).toHaveBeenCalledWith({ kind: 'distance', meters: 40 });
+        expect(onSubmit).toHaveBeenCalledWith({ kind: 'distance', meters: 40 }, undefined);
     });
 
     it('hides the load field for an unloaded sprint drill', () => {
         const tree = DistanceInputCard({ step: sprint, onSubmit: vi.fn() }) as ReactNode;
         expect(loadField(tree)).toBeNull();
+    });
+});
+
+describe('DistanceInputCard per-side carry', () => {
+    const suitcaseCarry: SessionStep = {
+        ...farmerCarry,
+        id: 'suitcase',
+        exerciseRef: { kind: 'catalog', exerciseId: 'suitcase_carry' },
+        laterality: 'per_side',
+    };
+
+    it('offers a left/right selector and logs the carry against the side due next', () => {
+        const onSubmit = vi.fn();
+        const tree = DistanceInputCard({ step: suitcaseCarry, suggestedLoadKg: 24, nextSide: 'right', onSubmit }) as ReactNode;
+        expect(findElement(tree, el => el.props['aria-label'] === 'Carry side')).not.toBeNull();
+
+        findElement(tree, el => el.type === 'form')!.props.onSubmit!({ preventDefault: vi.fn() });
+
+        expect(onSubmit).toHaveBeenCalledWith({ kind: 'distance', meters: 40, loadKg: 24 }, 'right');
+    });
+
+    it('has no side selector for a two-hand farmer carry', () => {
+        const tree = DistanceInputCard({ step: farmerCarry, onSubmit: vi.fn() }) as ReactNode;
+        expect(findElement(tree, el => el.props['aria-label'] === 'Carry side')).toBeNull();
+    });
+
+    it('offers an RPE field', () => {
+        const tree = DistanceInputCard({ step: farmerCarry, onSubmit: vi.fn() }) as ReactNode;
+        expect(findElement(tree, el => el.type === RpeField)).not.toBeNull();
     });
 });

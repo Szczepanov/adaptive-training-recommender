@@ -78,6 +78,8 @@ export interface PerformedSetRow {
     governingChoiceEntryId?: string;
     /** The option that governing choice selected, as stamped on the set. */
     selectedOptionId?: string;
+    /** Left or right for a per-side hold, carry or set; absent for bilateral work. */
+    side?: 'left' | 'right';
 }
 
 export interface StructuredStepDetail {
@@ -284,6 +286,7 @@ function toSetRows(entries: readonly SessionEntry[], restByEntryId: ReadonlyMap<
             ...(rest ? { rest } : {}),
             ...(entry.governingChoiceEntryId ? { governingChoiceEntryId: entry.governingChoiceEntryId } : {}),
             ...(entry.selectedOptionId ? { selectedOptionId: entry.selectedOptionId } : {}),
+            ...(entry.side === 'left' || entry.side === 'right' ? { side: entry.side } : {}),
         };
     });
 }

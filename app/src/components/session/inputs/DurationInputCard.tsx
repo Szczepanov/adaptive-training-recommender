@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import type { SessionStep, DurationEntryPayload } from '../../../sessions/models';
 import { playCountdownBeep } from '../../../utils/audioFeedback';
+import { RpeField } from './RpeField';
+import { buildRpeGauge } from './rpeGauge';
 
 interface DurationInputCardProps {
     step: SessionStep;
@@ -10,6 +12,10 @@ interface DurationInputCardProps {
     /** Changes whenever a duration entry for this step is added/removed, even if nextSide is unchanged. */
     performedEntryCount?: number;
     onSubmit: (payload: DurationEntryPayload, side?: 'left' | 'right') => void | Promise<void>;
+    /** Fired when the hold itself starts (after the lead-in, or on "Start Now"), so a
+     * still-running rest countdown ends instead of elapsing -- and beeping -- in the middle of
+     * the hold. A cancelled lead-in leaves the rest running. */
+    onWorkStarted?: () => void;
 }
 
 export const DurationInputCard: React.FC<DurationInputCardProps> = ({
@@ -19,6 +25,7 @@ export const DurationInputCard: React.FC<DurationInputCardProps> = ({
     nextSide,
     performedEntryCount = 0,
     onSubmit,
+    onWorkStarted,
 }) => {
     const dose = step.dose;
     const targetSeconds = suggestedSeconds ?? (dose?.kind === 'duration'
@@ -34,6 +41,7 @@ export const DurationInputCard: React.FC<DurationInputCardProps> = ({
         right: suggestedLoadKg !== undefined ? String(suggestedLoadKg) : '',
         bilateral: suggestedLoadKg !== undefined ? String(suggestedLoadKg) : '',
     });
+    const [rpe, setRpe] = useState<string>('');
     const [isPrepCountdown, setIsPrepCountdown] = useState<boolean>(false);
     const [prepSeconds, setPrepSeconds] = useState<number>(5);
     const [isTimerRunning, setIsTimerRunning] = useState<boolean>(false);
@@ -69,6 +77,7 @@ export const DurationInputCard: React.FC<DurationInputCardProps> = ({
                 }, 1000);
             } else {
                 // Prep finished: play GO sound and start main timer
+                onWorkStarted?.();
                 playCountdownBeep(true);
                 setIsPrepCountdown(false);
                 setElapsed(0);
@@ -78,7 +87,7 @@ export const DurationInputCard: React.FC<DurationInputCardProps> = ({
         return () => {
             if (interval) clearInterval(interval);
         };
-    }, [isPrepCountdown, prepSeconds, setElapsed]);
+    }, [isPrepCountdown, prepSeconds, setElapsed, onWorkStarted]);
 
     // Main hold stopwatch
     useEffect(() => {
@@ -100,6 +109,7 @@ export const DurationInputCard: React.FC<DurationInputCardProps> = ({
     };
 
     const handleSkipPrepAndStart = () => {
+        onWorkStarted?.();
         playCountdownBeep(true);
         setIsPrepCountdown(false);
         setElapsed(0);
@@ -124,11 +134,14 @@ export const DurationInputCard: React.FC<DurationInputCardProps> = ({
         if (isNaN(parsedSec) || parsedSec <= 0) return;
 
         const parsedLoad = loadKg.trim().length > 0 ? parseFloat(loadKg) : undefined;
+        const gauge = buildRpeGauge(rpe);
         void onSubmit({
             kind: 'duration',
             seconds: parsedSec,
             ...(parsedLoad !== undefined ? { loadKg: parsedLoad } : {}),
+            ...(gauge ? { gauge } : {}),
         }, step.laterality === 'per_side' ? selectedSide : undefined);
+        setRpe('');
         setElapsed(0);
         setIsTimerRunning(false);
         setIsPrepCountdown(false);
@@ -238,6 +251,7 @@ export const DurationInputCard: React.FC<DurationInputCardProps> = ({
                         aria-label="Extra load in kilograms"
                     />
                 </label>
+                <RpeField step={step} value={rpe} onChange={setRpe} />
             </div>
 
             <button type="submit" className="log-set-btn" aria-label={step.laterality === 'per_side' ? `Log ${selectedSide} hold` : 'Log hold'}>

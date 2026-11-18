@@ -11,6 +11,10 @@ export interface RepetitionDraft {
     gaugeVal: string;
     technicalMet: boolean;
     technicalNote: string;
+    /** Set for jump exercises: which result the optional `jumpVal` holds. */
+    jumpMeasure?: 'height' | 'distance' | null;
+    /** Best jump of the set -- centimetres for height, metres for distance. */
+    jumpVal?: string;
 }
 
 function parseBounded(raw: string, min: number, max: number): number | undefined {
@@ -51,6 +55,7 @@ export function buildRepetitionPayload(draft: RepetitionDraft): RepetitionEntryP
     if (isNaN(reps) || reps <= 0) return null;
     const weightKg = draft.weight.trim().length > 0 ? parseFloat(draft.weight) : undefined;
     const gauge = buildIntensityGauge(draft);
+    const jump = draft.jumpMeasure ? parseBounded(draft.jumpVal ?? '', Number.MIN_VALUE, draft.jumpMeasure === 'height' ? 200 : 50) : undefined;
     return {
         kind: 'repetition',
         setIndex: 1, // dynamically indexed by caller
@@ -58,6 +63,8 @@ export function buildRepetitionPayload(draft: RepetitionDraft): RepetitionEntryP
         ...(weightKg !== undefined ? { weightKg } : {}),
         isWarmup: draft.isWarmup,
         ...(gauge ? { gauge } : {}),
+        ...(jump !== undefined && draft.jumpMeasure === 'height' ? { jumpHeightCm: jump } : {}),
+        ...(jump !== undefined && draft.jumpMeasure === 'distance' ? { jumpDistanceMeters: jump } : {}),
     };
 }
 

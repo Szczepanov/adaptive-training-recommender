@@ -73,6 +73,10 @@ export const SESSION_DEFINITION_KEYS = [
     'prohibitedAdditions', 'importWarnings', 'companionSessions', 'movementComposition', 'blocks',
 ];
 
+function isFinitePositive(val: unknown): boolean {
+    return typeof val === 'number' && Number.isFinite(val) && val > 0;
+}
+
 function isObject(val: unknown): val is Record<string, unknown> {
     return typeof val === 'object' && val !== null && !Array.isArray(val);
 }
@@ -738,11 +742,15 @@ export function validateSessionEntry(raw: unknown): ValidationResult<SessionEntr
             if (typeof payload.setIndex !== 'number' || !Number.isInteger(payload.setIndex) || payload.setIndex < 1) issues.push({ path: 'payload.setIndex', message: 'setIndex must be an integer >= 1' });
             if (typeof payload.reps !== 'number' || !Number.isInteger(payload.reps) || payload.reps < 1) issues.push({ path: 'payload.reps', message: 'reps must be an integer >= 1' });
             if (payload.weightKg !== undefined && (typeof payload.weightKg !== 'number' || !Number.isFinite(payload.weightKg) || payload.weightKg < 0)) issues.push({ path: 'payload.weightKg', message: 'weightKg must be a finite non-negative number' });
+            if (payload.jumpHeightCm !== undefined && !isFinitePositive(payload.jumpHeightCm)) issues.push({ path: 'payload.jumpHeightCm', message: 'jumpHeightCm must be a finite positive number' });
+            if (payload.jumpDistanceMeters !== undefined && !isFinitePositive(payload.jumpDistanceMeters)) issues.push({ path: 'payload.jumpDistanceMeters', message: 'jumpDistanceMeters must be a finite positive number' });
         } else if (kind === 'duration') {
             if (typeof payload.seconds !== 'number' || !Number.isFinite(payload.seconds) || payload.seconds <= 0) issues.push({ path: 'payload.seconds', message: 'seconds must be a finite positive number' });
+            if (payload.gauge !== undefined && !isObject(payload.gauge)) issues.push({ path: 'payload.gauge', message: 'gauge must be an object' });
         } else if (kind === 'distance') {
             if (typeof payload.meters !== 'number' || !Number.isFinite(payload.meters) || payload.meters <= 0) issues.push({ path: 'payload.meters', message: 'meters must be a finite positive number' });
             if (payload.loadKg !== undefined && (typeof payload.loadKg !== 'number' || !Number.isFinite(payload.loadKg) || payload.loadKg < 0)) issues.push({ path: 'payload.loadKg', message: 'loadKg must be a finite non-negative number' });
+            if (payload.gauge !== undefined && !isObject(payload.gauge)) issues.push({ path: 'payload.gauge', message: 'gauge must be an object' });
         } else if (kind === 'sprint') {
             if (typeof payload.meters !== 'number' || payload.meters <= 0) issues.push({ path: 'payload.meters', message: 'meters must be positive' });
             if (typeof payload.splitSeconds !== 'number' || payload.splitSeconds <= 0) issues.push({ path: 'payload.splitSeconds', message: 'splitSeconds must be positive' });

@@ -379,3 +379,38 @@ describe('exportCompletedWorkoutToJson', () => {
         expect('sessionChoices' in exportCompletedWorkoutToJson(structuredView, EXPORTED_AT)).toBe(false);
     });
 });
+
+describe('exportCompletedWorkoutToJson — new set detail', () => {
+    it('exports RPE and side for a per-side carry and the best jump of a jump set', () => {
+        const base = structuredView.structured!;
+        const view: CompletedWorkoutView = {
+            ...structuredView,
+            structured: {
+                ...base,
+                steps: [
+                    {
+                        stepId: 'carry', exerciseRef: { kind: 'catalog', exerciseId: 'suitcase_carry' }, title: 'Suitcase Carry',
+                        isOptional: false, prescribed: { sets: 1, meters: 20 },
+                        sets: [{
+                            entryId: 'c1', setNumber: 1, isWarmup: false, completedAt: '2026-08-26T07:20:00.000Z', side: 'left',
+                            payload: { kind: 'distance', meters: 20, loadKg: 24, gauge: { scale: 'rpe_rts', value: 7 } },
+                        }],
+                    },
+                    {
+                        stepId: 'cmj', exerciseRef: { kind: 'catalog', exerciseId: 'countermovement_jump' }, title: 'Countermovement Jump',
+                        isOptional: false, prescribed: { sets: 1, reps: 3 },
+                        sets: [{
+                            entryId: 'j1', setNumber: 1, isWarmup: false, completedAt: '2026-08-26T07:25:00.000Z',
+                            payload: { kind: 'repetition', setIndex: 1, reps: 3, jumpHeightCm: 41.5 },
+                        }],
+                    },
+                ],
+            },
+        };
+
+        const [carry, cmj] = exportCompletedWorkoutToJson(view, EXPORTED_AT).exercises;
+
+        expect(carry.performed.sets[0]).toMatchObject({ kind: 'distance', side: 'left', weightKg: 24, effort: { rpe: 7 } });
+        expect(cmj.performed.sets[0]).toMatchObject({ kind: 'repetition', reps: 3, jumpHeightCm: 41.5 });
+    });
+});

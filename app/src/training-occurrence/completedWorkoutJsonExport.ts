@@ -45,7 +45,13 @@ export interface ExportedPerformedSet {
     durationSeconds?: number;
     distanceMeters?: number;
     heightInches?: number;
+    /** Best jump height of a repetition set of jumps. */
+    jumpHeightCm?: number;
+    /** Best jump distance of a repetition set of jumps. */
+    jumpDistanceMeters?: number;
     completed?: boolean;
+    /** Left or right for a per-side hold, carry or set. */
+    side?: 'left' | 'right';
     effort?: ExportedSetEffort;
     /** Set when the athlete swapped to a different exercise for this set. */
     performedExercise?: ExerciseRef;
@@ -255,17 +261,28 @@ function payloadFields(payload: SessionEntryPayload): Partial<ExportedPerformedS
             return {
                 reps: payload.reps,
                 ...(payload.weightKg !== undefined ? { weightKg: payload.weightKg } : {}),
+                ...(payload.jumpHeightCm !== undefined ? { jumpHeightCm: payload.jumpHeightCm } : {}),
+                ...(payload.jumpDistanceMeters !== undefined ? { jumpDistanceMeters: payload.jumpDistanceMeters } : {}),
                 ...(effort ? { effort } : {}),
             };
         }
-        case 'duration':
-            return { durationSeconds: payload.seconds, ...(payload.loadKg !== undefined ? { weightKg: payload.loadKg } : {}) };
-        case 'distance':
+        case 'duration': {
+            const effort = effortOf(payload.gauge);
+            return {
+                durationSeconds: payload.seconds,
+                ...(payload.loadKg !== undefined ? { weightKg: payload.loadKg } : {}),
+                ...(effort ? { effort } : {}),
+            };
+        }
+        case 'distance': {
+            const effort = effortOf(payload.gauge);
             return {
                 distanceMeters: payload.meters,
                 ...(payload.durationSeconds !== undefined ? { durationSeconds: payload.durationSeconds } : {}),
                 ...(payload.loadKg !== undefined ? { weightKg: payload.loadKg } : {}),
+                ...(effort ? { effort } : {}),
             };
+        }
         case 'sprint':
             return { distanceMeters: payload.meters, durationSeconds: payload.splitSeconds };
         case 'jump_attempt':
@@ -287,6 +304,7 @@ function exportSet(row: PerformedSetRow): ExportedPerformedSet {
         completedAt: row.completedAt,
         kind: row.payload.kind,
         ...payloadFields(row.payload),
+        ...(row.side ? { side: row.side } : {}),
         ...(row.exerciseRef ? { performedExercise: row.exerciseRef } : {}),
         ...(row.governingChoiceEntryId ? { governingChoiceEntryId: row.governingChoiceEntryId } : {}),
         ...(row.selectedOptionId ? { selectedOptionId: row.selectedOptionId } : {}),

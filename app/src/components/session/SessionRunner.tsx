@@ -32,7 +32,8 @@ import { GroupProgress } from './GroupProgress';
 import { ChoiceCard } from './ChoiceCard';
 import { SessionEntryActions } from './SessionEntryActions';
 import { ExerciseSwapModal } from './ExerciseSwapModal';
-import { isAddedExercisesBlock } from '../../sessions/addedExerciseStep';
+import { isAddedExercisesBlock, isAddedStep } from '../../sessions/addedExerciseStep';
+import { adjacentStepMove, isReorderableBlock } from '../../sessions/stepReorder';
 import { SessionDefinitionPreview } from './SessionDefinitionPreview';
 import { FlagStrip } from '../FlagStrip';
 import { resolveTodayFlagStripItems, type FlagStripItem } from '../../derived/flags/flagStripItems';
@@ -65,6 +66,8 @@ import { LoggedSetUndoBanner } from './LoggedSetUndoBanner';
 
 /** Blank exercise the add-exercise dialog fills in from the chosen exercise's catalog facets. */
 const ADD_EXERCISE_BASE_STEP: SessionStep = { id: 'new-added-exercise', kind: 'exercise' };
+/** Private drag payload type, so only a dragged step pill is accepted as a drop. */
+const STEP_DRAG_MIME = 'application/x-session-step-id';
 
 const AVAILABLE_FIXTURES: SessionDefinition[] = [
     fixture01 as unknown as SessionDefinition,
@@ -385,6 +388,8 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
     const [soundMuted, setSoundMuted] = useState<boolean>(() => !isSoundEnabled());
     const [showSwapModal, setShowSwapModal] = useState<boolean>(false);
     const [showAddExerciseModal, setShowAddExerciseModal] = useState<boolean>(false);
+    const [dropTargetStepId, setDropTargetStepId] = useState<string | null>(null);
+    const [moveNotice, setMoveNotice] = useState<string>('');
     const [showSaveTemplateModal, setShowSaveTemplateModal] = useState<boolean>(false);
     const [customTemplateTitle, setCustomTemplateTitle] = useState<string>('');
     const [saveTemplateSuccess, setSaveTemplateSuccess] = useState<string | null>(null);
@@ -684,7 +689,7 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
         if (runner.activeBlockIndex !== pendingAdvance.blockIndex || runner.activeStepIndex !== pendingAdvance.stepIndex) return;
         const block = runner.definition.blocks[pendingAdvance.blockIndex];
         const step = block?.steps[pendingAdvance.stepIndex];
-        if (!step || isAddedExercisesBlock(block)) return;
+        if (!step || isAddedExercisesBlock(block) || isAddedStep(step)) return;
         const before = completedPrescribedSets(step, runner.entries.slice(0, pendingAdvance.entryCountBefore));
         const after = completedPrescribedSets(step, runner.entries);
         if (after <= before) return;
@@ -1138,6 +1143,9 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
     };
 
     const inputProfile = activeStep ? resolveStepInputProfile(activeStep) : 'repetition_mass';
+    // Single-pointer alternative to dragging a step pill (WCAG 2.2 SC 2.5.7).
+    const moveEarlier = activeStep ? adjacentStepMove(definition.blocks, activeStep.id, 'earlier') : null;
+    const moveLater = activeStep ? adjacentStepMove(definition.blocks, activeStep.id, 'later') : null;
     const activeEffort = activeStep ? formatEffort(activeStep) : null;
 
     return (
@@ -1181,6 +1189,7 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                 </div>
             )}
 
+            <div className="sr-only" role="status" aria-live="polite">{moveNotice}</div>
             <div className="undo-live-region" role="status" aria-live="polite">{showCompletionSheet ? null : runner.restoreNotice}</div>
 
             {runner.undoableLoggedEntry && !showCompletionSheet && (
@@ -1206,6 +1215,26 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                                 >
                                     🔄 Swap Exercise
                                 </button>
+                                {(['earlier', 'later'] as const).map(direction => {
+                                    const move = direction === 'earlier' ? moveEarlier : moveLater;
+                                    return (
+                                        <button
+                                            key={direction}
+                                            type="button"
+                                            className="move-step-btn"
+                                            // aria-disabled (not disabled) keeps focus on the button at either end.
+                                            aria-disabled={move ? undefined : true}
+                                            onClick={() => {
+                                                if (!move) return;
+                                                runner.moveStep(move);
+                                                setMoveNotice(`Moved ${stepName(activeStep)} ${direction}.`);
+                                            }}
+                                            aria-label={`Move ${stepName(activeStep)} ${direction} in the session`}
+                                        >
+                                            {direction === 'earlier' ? '↑ Earlier' : '↓ Later'}
+                                        </button>
+                                    );
+                                })}
                             </div>
                             <h3 className="step-name" ref={activeHeadingRef} tabIndex={-1}>
                                 {stepName(activeStep)}
@@ -1307,12 +1336,15 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                                     nextSide={nextHoldSide(activeStep, entries)}
                                     performedEntryCount={activeStepEntries.filter(entry => entry.payload.kind === 'duration').length}
                                     onSubmit={handleEntrySubmit}
+                                    onWorkStarted={runner.endRestForStartedWork}
                                 />
                             ) : inputProfile === 'distance_split' ? (
                                 <DistanceInputCard
                                     key={activeStep.id}
                                     step={activeStep}
                                     suggestedLoadKg={suggestedLoadKg}
+                                    nextSide={activeStep.laterality === 'per_side' ? nextHoldSide(activeStep, entries) : undefined}
+                                    performedEntryCount={activeStepEntries.filter(entry => entry.payload.kind === 'distance').length}
                                     onSubmit={handleEntrySubmit}
                                 />
                             ) : (
@@ -1443,11 +1475,35 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                                 const navProgress = describeStepNavigatorProgress(block, step, stepCompletedSets);
                                 const isStepComplete = navProgress.complete;
                                 const isCurrent = runner.activeBlockIndex === bIdx && runner.activeStepIndex === sIdx;
+                                const canDrag = isReorderableBlock(block);
                                 return (
                                     <button
                                         key={step.id}
                                         type="button"
-                                        className={`step-nav-pill ${isCurrent ? 'active' : ''} ${isStepComplete ? 'completed' : ''}`}
+                                        className={`step-nav-pill ${isCurrent ? 'active' : ''} ${isStepComplete ? 'completed' : ''} ${dropTargetStepId === step.id ? 'drop-target' : ''}`}
+                                        draggable={canDrag}
+                                        onDragStart={canDrag ? event => {
+                                            event.dataTransfer.setData(STEP_DRAG_MIME, step.id);
+                                            event.dataTransfer.effectAllowed = 'move';
+                                        } : undefined}
+                                        onDragOver={canDrag ? event => {
+                                            if (!event.dataTransfer.types.includes(STEP_DRAG_MIME)) return;
+                                            event.preventDefault();
+                                            event.dataTransfer.dropEffect = 'move';
+                                            setDropTargetStepId(step.id);
+                                        } : undefined}
+                                        onDragLeave={canDrag ? () => setDropTargetStepId(current => (current === step.id ? null : current)) : undefined}
+                                        onDragEnd={() => setDropTargetStepId(null)}
+                                        onDrop={canDrag ? event => {
+                                            event.preventDefault();
+                                            setDropTargetStepId(null);
+                                            const draggedId = event.dataTransfer.getData(STEP_DRAG_MIME);
+                                            if (!draggedId) return;
+                                            const rect = event.currentTarget.getBoundingClientRect();
+                                            const position = event.clientX < rect.left + rect.width / 2 ? 'before' : 'after';
+                                            runner.moveStep({ stepId: draggedId, targetStepId: step.id, position });
+                                            setMoveNotice(`Moved step ${position} ${stepName(step)}.`);
+                                        } : undefined}
                                         aria-current={isCurrent ? 'step' : undefined}
                                         onClick={() => selectStepAndFocus(bIdx, sIdx)}
                                     >

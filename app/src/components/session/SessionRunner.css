@@ -1262,3 +1262,35 @@
     background: #334155;
     border-color: #38bdf8;
 }
+
+.move-step-btn {
+    background: #1e293b;
+    border: 1px solid #475569;
+    color: #cbd5e1;
+    border-radius: 4px;
+    padding: 0.2rem 0.6rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    min-height: var(--touch-target-min, 44px);
+    min-width: var(--touch-target-min, 44px);
+}
+
+.move-step-btn[aria-disabled='true'] {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.move-step-btn:not([aria-disabled='true']):hover {
+    background: #334155;
+    border-color: #38bdf8;
+}
+
+.step-nav-pill[draggable='true'] {
+    cursor: grab;
+}
+
+.step-nav-pill.drop-target {
+    border-color: #38bdf8;
+    box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.35);
+}

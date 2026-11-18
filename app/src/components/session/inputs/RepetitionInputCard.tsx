@@ -7,6 +7,7 @@ import {
     runSingleFlight,
     type GaugeScaleType,
 } from './repetitionSubmit';
+import { jumpMeasureFor } from '../../../sessions/jumpMeasure';
 
 interface RepetitionInputCardProps {
     step: SessionStep;
@@ -35,6 +36,8 @@ export const RepetitionInputCard: React.FC<RepetitionInputCardProps> = ({
     const [gaugeVal, setGaugeVal] = useState<string>('');
     const [technicalMet, setTechnicalMet] = useState<boolean>(true);
     const [technicalNote, setTechnicalNote] = useState<string>('');
+    const jumpMeasure = jumpMeasureFor(step);
+    const [jumpVal, setJumpVal] = useState<string>('');
 
     const prescribedRpe = step.effort?.kind === 'rpe'
         ? step.effort.target
@@ -64,7 +67,7 @@ export const RepetitionInputCard: React.FC<RepetitionInputCardProps> = ({
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
 
-        const payload = buildRepetitionPayload({ reps, weight, isWarmup, gaugeScale, gaugeVal, technicalMet, technicalNote });
+        const payload = buildRepetitionPayload({ reps, weight, isWarmup, gaugeScale, gaugeVal, technicalMet, technicalNote, jumpMeasure, jumpVal });
         if (!payload) return;
 
         await runSingleFlight(submitInFlightRef, async () => {
@@ -75,6 +78,7 @@ export const RepetitionInputCard: React.FC<RepetitionInputCardProps> = ({
                 // Reset gauge value for next set only after the write lifecycle has completed.
                 setGaugeVal('');
                 setTechnicalNote('');
+                setJumpVal('');
 
                 // Refocus weight input for next set, unless the user moved focus elsewhere
                 // (e.g. into the Abandon/Finish dialog) while the write was in flight.
@@ -120,6 +124,21 @@ export const RepetitionInputCard: React.FC<RepetitionInputCardProps> = ({
                         aria-label="Repetitions count"
                     />
                 </label>
+                {jumpMeasure && (
+                    <label className="input-group">
+                        <span className="input-label">{jumpMeasure === 'height' ? 'Best height (cm)' : 'Best distance (m)'}</span>
+                        <input
+                            type="number"
+                            step={jumpMeasure === 'height' ? '0.5' : '0.01'}
+                            min="0"
+                            placeholder="Optional"
+                            value={jumpVal}
+                            onChange={e => setJumpVal(e.target.value)}
+                            className="session-input-box"
+                            aria-label={jumpMeasure === 'height' ? 'Best jump height in centimetres' : 'Best jump distance in metres'}
+                        />
+                    </label>
+                )}
             </div>
 
             <div className="gauge-row">
