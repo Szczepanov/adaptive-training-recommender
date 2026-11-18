@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { EXERCISES } from './exercises';
-import { matchesExerciseQuery } from './exerciseSearch';
+import { EXERCISE_SEARCH_ALIASES, matchesExerciseQuery } from './exerciseSearch';
 
 const idsFor = (query: string) => EXERCISES.filter(ex => matchesExerciseQuery(ex, query)).map(ex => ex.id);
 
@@ -17,5 +17,12 @@ describe('matchesExerciseQuery', () => {
 
     it('matches everything for a blank query', () => {
         expect(EXERCISES.every(ex => matchesExerciseQuery(ex, '  '))).toBe(true);
+    });
+});
+
+describe('EXERCISE_SEARCH_ALIASES', () => {
+    it('only names exercises that exist in the catalog', () => {
+        const ids = new Set(EXERCISES.map(ex => ex.id));
+        expect(Object.keys(EXERCISE_SEARCH_ALIASES).filter(id => !ids.has(id))).toEqual([]);
     });
 });

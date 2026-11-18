@@ -119,8 +119,6 @@ export interface ExerciseDefinition {
   coordinationDemand: 'low' | 'moderate' | 'high';
   contraindicationTags: string[];
   instruction: string;
-  /** Other names athletes search by (e.g. "single-arm farmer carry" for a suitcase carry). Search-only. */
-  aliases?: string[];
   /** Optional for catalog compatibility; new multidomain fixture movements declare it. */
   facets?: ExerciseFacets;
 }
