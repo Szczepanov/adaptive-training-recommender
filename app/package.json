@@ -7,7 +7,7 @@
     "check": "npm run rules:check-sync && npm run audit && npm run typecheck && npm run lint && npm run test && npm run test:perf && npm run validate:knowledge && npm run validate:knowledge-coverage && npm run validate:knowledge-freshness && npm run validate:workouts",
     "rules:build": "node scripts/build-firestore-rules.mjs",
     "rules:check-sync": "node scripts/build-firestore-rules.mjs --check",
-    "audit": "npm audit --audit-level=high",
+    "audit": "node scripts/audit-gate.mjs",
     "predev": "npm run check",
     "dev": "vite",
     "build": "npm run check && npm run build:bundle",
