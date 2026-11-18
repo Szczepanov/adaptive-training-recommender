@@ -1225,7 +1225,11 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                                 >
                                     🔄 Swap Exercise
                                 </button>
-                                {/* The pair wraps as one unit, so "Later" is never orphaned on narrow phones. */}
+                                {/* The pair wraps as one unit, so "Later" is never orphaned on narrow phones.
+                                    Hidden for a step that cannot move at all (a superset/circuit step, or the
+                                    only step a planned block allows); a step that can move one way can always
+                                    move back, so the pair never vanishes under the athlete's focus. */}
+                                {(moveEarlier || moveLater) && (
                                 <span className="move-step-group" role="group" aria-label="Reorder this exercise">
                                     {(['earlier', 'later'] as const).map(direction => {
                                         const move = direction === 'earlier' ? moveEarlier : moveLater;
@@ -1246,6 +1250,7 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                                         );
                                     })}
                                 </span>
+                                )}
                             </div>
                             <h3 className="step-name" ref={activeHeadingRef} tabIndex={-1}>
                                 {stepName(activeStep)}
