@@ -11,6 +11,9 @@ const DISTANCE_JUMP_PATTERNS = new Set(['horizontal_jump', 'lateral_jump', 'unil
  * pattern: horizontal and lateral jumps record distance, any other jump pattern records height.
  * Free-text exercises fall back to their name ("broad jump" → distance, "box jump" → height).
  */
+/** Bounding drills, which record distance. */
+const BOUNDING_EXERCISE = /\b(lateral|skater|single leg|alternate leg|alternating|speed) bounds?\b|\bbounding\b/;
+
 export function jumpMeasureFor(step: Pick<SessionStep, 'exerciseRef' | 'title'>): JumpMeasure | null {
     const ref = step.exerciseRef;
     if (ref?.kind === 'catalog') {
@@ -23,7 +26,9 @@ export function jumpMeasureFor(step: Pick<SessionStep, 'exerciseRef' | 'title'>)
     // Single-leg hops travel, like the catalog's single-leg hop and stick -- unless done in place.
     if (/\b(single|one) leg hop/.test(name)) return /in place|vertical|on the spot/.test(name) ? 'height' : 'distance';
     // Conditioning drills that merely contain the word ("jumping jacks", "jump rope") have no result to record.
-    if (!/\bjump|\bbound/.test(name) || /jumping jack|jump(ing)? rope|skipping/.test(name)) return null;
+    // A bound counts only as a bounding exercise name, never "upper bound 8 reps".
+    const bounding = BOUNDING_EXERCISE.test(name);
+    if ((!/\bjump/.test(name) && !bounding) || /jumping jack|jump(ing)? rope|skipping/.test(name)) return null;
     // Directional jump names only: "long jump", not "box jump with long rest".
-    return /broad jump|long jump|horizontal jump|forward jump|lateral jump|triple jump|\b(lateral|skater|single leg|alternate leg|alternating|speed) bounds?\b|\bskater jumps?\b|\bbounding\b/.test(name) ? 'distance' : 'height';
+    return bounding || /broad jump|long jump|horizontal jump|forward jump|lateral jump|triple jump|\bskater jumps?\b/.test(name) ? 'distance' : 'height';
 }

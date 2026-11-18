@@ -21,6 +21,7 @@ describe('jumpMeasureFor', () => {
         expect(jumpMeasureFor(freeText('Jump rope'))).toBeNull();
         expect(jumpMeasureFor(freeText('Jump-rope intervals'))).toBeNull();
         expect(jumpMeasureFor(freeText('Jumping rope'))).toBeNull();
+        expect(jumpMeasureFor(freeText('Squat (upper bound 8 reps)'))).toBeNull();
     });
 
     it('falls back to the free-text name', () => {
