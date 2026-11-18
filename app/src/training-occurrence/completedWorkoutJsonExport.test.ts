@@ -395,7 +395,7 @@ describe('exportCompletedWorkoutToJson — new set detail', () => {
                             entryId: 'c1', setNumber: 1, isWarmup: false, completedAt: '2026-08-26T07:20:00.000Z', side: 'left',
                             payload: { kind: 'distance', meters: 20, loadKg: 24, gauge: { scale: 'rpe_rts', value: 7 } },
                         }, {
-                            entryId: 'c2', setNumber: 2, isWarmup: false, completedAt: '2026-08-26T07:21:00.000Z', side: 'right',
+                            entryId: 'c2', setNumber: 1, isWarmup: false, completedAt: '2026-08-26T07:21:00.000Z', side: 'right',
                             payload: { kind: 'distance', meters: 20, loadKg: 24 },
                         }],
                     },
@@ -417,6 +417,7 @@ describe('exportCompletedWorkoutToJson — new set detail', () => {
         // Both sides stay as rows, but a left/right pair is one performed work set.
         expect(carry.performed.sets).toHaveLength(2);
         expect(carry.performed.workSets).toBe(1);
+        expect(carry.performed.sets.map(set => set.setNumber)).toEqual([1, 1]);
         expect(cmj.performed.sets[0]).toMatchObject({ kind: 'repetition', reps: 3, jumpHeightCm: 41.5 });
     });
 });

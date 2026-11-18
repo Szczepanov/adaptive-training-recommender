@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ADDED_EXERCISES_BLOCK_ID, appendAddedExerciseStep } from './addedExerciseStep';
 import type { SessionBlock, SessionStep } from './models';
-import { adjacentStepMove, applyStepLayout, applyStepMove, canDropNextTo, layoutOf } from './stepReorder';
+import { adjacentStepMove, applyStepLayout, applyStepMove, canApplyStepMove, layoutOf } from './stepReorder';
 
 const step = (id: string): SessionStep => ({ id, kind: 'exercise', dose: { kind: 'repetition', sets: 3, reps: 5 } });
 const block = (
@@ -131,14 +131,23 @@ describe('applyStepLayout', () => {
     });
 });
 
-describe('canDropNextTo', () => {
+describe('canApplyStepMove', () => {
     it('allows only drops the block rules accept', () => {
         const { blocks, addedId } = withAdded();
-        expect(canDropNextTo(base, 'row', 'squat')).toBe(true);
-        expect(canDropNextTo(base, 'squat', 'curl')).toBe(false);
-        expect(canDropNextTo(blocks, addedId, 'curl')).toBe(true);
-        expect(canDropNextTo(blocks, addedId, 'w1')).toBe(false);
-        expect(canDropNextTo(blocks, addedId, 'a')).toBe(false);
+        expect(canApplyStepMove(base, { stepId: 'row', targetStepId: 'squat', position: 'after' })).toBe(true);
+        expect(canApplyStepMove(base, { stepId: 'squat', targetStepId: 'curl', position: 'before' })).toBe(false);
+        expect(canApplyStepMove(blocks, { stepId: addedId, targetStepId: 'curl', position: 'before' })).toBe(true);
+        expect(canApplyStepMove(blocks, { stepId: addedId, targetStepId: 'w1', position: 'after' })).toBe(false);
+        expect(canApplyStepMove(blocks, { stepId: addedId, targetStepId: 'a', position: 'after' })).toBe(false);
+    });
+
+    it('checks the side under the pointer: after the reference is fine, before it is not', () => {
+        const appended = appendAddedExerciseStep([block('main', ['A', 'B'])], {
+            exerciseRef: { kind: 'catalog', exerciseId: 'back_squat' }, load: { kind: 'relative_step', stepId: 'A', percent: 90 },
+        }, 'x');
+        const addedId = appended.blocks[appended.blockIndex].steps[0].id;
+        expect(canApplyStepMove(appended.blocks, { stepId: addedId, targetStepId: 'A', position: 'after' })).toBe(true);
+        expect(canApplyStepMove(appended.blocks, { stepId: addedId, targetStepId: 'A', position: 'before' })).toBe(false);
     });
 });
 
@@ -165,5 +174,16 @@ describe('restore and move edge cases', () => {
         // ...and Earlier/Later are not offered for it in the first place.
         expect(adjacentStepMove(blocks, 'B', 'earlier')).toBeNull();
         expect(adjacentStepMove(blocks, 'A', 'later')).toBeNull();
+    });
+});
+
+describe('relative-load references written as numbers', () => {
+    it('compare like the validator (String), so they do not block every move', () => {
+        const blocks: SessionBlock[] = [{
+            id: 'main', title: 'main', role: 'main', executionMode: 'sequential',
+            steps: [step('1'), { ...step('B'), load: { kind: 'relative_step', stepId: 1 as unknown as string, percent: 90 } }, step('C'), step('D')],
+        }];
+        expect(applyStepMove(blocks, { stepId: 'D', targetStepId: 'C', position: 'before' })).not.toBe(blocks);
+        expect(applyStepMove(blocks, { stepId: 'B', targetStepId: '1', position: 'before' })).toBe(blocks);
     });
 });

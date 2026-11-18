@@ -367,14 +367,9 @@ export function structuredEntriesReadOf(view: CompletedWorkoutView): StructuredE
  * performed work, so it counts as one set here. Each row stays in `performed.sets`.
  */
 function performedWorkSetCount(work: readonly ExportedPerformedSet[]): number {
-    const unsided = work.filter(set => !set.side).length;
-    const kinds = new Set(work.filter(set => set.side).map(set => set.kind));
-    const sided = [...kinds].reduce((sum, kind) => {
-        const ofKind = work.filter(set => set.side && set.kind === kind);
-        const left = ofKind.filter(set => set.side === 'left').length;
-        return sum + Math.max(left, ofKind.length - left);
-    }, 0);
-    return unsided + sided;
+    // Set numbers already pair the two sides of one set (same kind and exercise), so counting
+    // distinct numbers keeps the count and the rows in step.
+    return new Set(work.map(set => set.setNumber)).size;
 }
 
 /** Projects a structured session step and its logged sets into the exported exercise summary. */

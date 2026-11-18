@@ -271,6 +271,25 @@ describe('SessionCompletionSheet', () => {
         expect(html).not.toContain('are permanently retained in your history and will not be deleted');
     });
 
+    it('says nothing was logged rather than "some of 0 not saved"', () => {
+        const html = renderToStaticMarkup(
+            <SessionCompletionSheet
+                startedAt={new Date().toISOString()}
+                totalSets={0}
+                retainedEntryCount={0}
+                hasUnsavedEntries
+                steps={[]}
+                onComplete={vi.fn()}
+                onAbandon={vi.fn()}
+                onCancel={vi.fn()}
+                saving={false}
+                openAbandonConfirmation={true}
+            />,
+        );
+        expect(html).toContain('No set entries have been logged.');
+        expect(html).not.toContain('have not been saved yet');
+    });
+
     it('does not promise retention for sets that failed to save', () => {
         const html = renderToStaticMarkup(
             <SessionCompletionSheet

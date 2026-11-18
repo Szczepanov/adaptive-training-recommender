@@ -51,6 +51,8 @@ export const RepetitionInputCard: React.FC<RepetitionInputCardProps> = ({
     // Bumped on every edit, so a finished save clears only a result the athlete has not touched since.
     const jumpRevisionRef = useRef(0);
     const jumpInputRef = useRef<HTMLInputElement>(null);
+    /** Set when the jump field gains focus while a save is in flight. */
+    const jumpFocusedDuringSaveRef = useRef(false);
     const setJumpVal = (value: string) => { jumpRevisionRef.current += 1; setJumpDraft({ measure: jumpMeasure, value }); };
 
     const prescribedRpe = step.effort?.kind === 'rpe'
@@ -85,7 +87,7 @@ export const RepetitionInputCard: React.FC<RepetitionInputCardProps> = ({
         if (!payload) return;
 
         const jumpRevisionAtSubmit = jumpRevisionRef.current;
-        const jumpFocusedAtSubmit = jumpInputRef.current !== null && jumpInputRef.current.ownerDocument.activeElement === jumpInputRef.current;
+        jumpFocusedDuringSaveRef.current = false;
         await runSingleFlight(submitInFlightRef, async () => {
             setIsSubmitting(true);
             try {
@@ -103,8 +105,10 @@ export const RepetitionInputCard: React.FC<RepetitionInputCardProps> = ({
                 // ...and leave focus in the jump field if the athlete is already typing the next result.
                 // A move into the field counts, not just typing; submitting from the field (Enter) still
                 // returns to Weight as before.
+                // Gaining focus during the save counts (even tabbing away and back without typing);
+                // submitting from the field and staying there still returns to Weight.
                 const jumpFocusedNow = jumpInputRef.current !== null && jumpInputRef.current.ownerDocument.activeElement === jumpInputRef.current;
-                const movedToJump = jumpFocusedNow && (!jumpFocusedAtSubmit || editedDuringSave);
+                const movedToJump = jumpFocusedNow && (jumpFocusedDuringSaveRef.current || editedDuringSave);
                 if (!movedToJump) refocusIfStillOwned(weightRef.current, formRef.current);
             } finally {
                 setIsSubmitting(false);
@@ -153,6 +157,7 @@ export const RepetitionInputCard: React.FC<RepetitionInputCardProps> = ({
                         <input
                             type="number"
                             ref={jumpInputRef}
+                            onFocus={() => { if (submitInFlightRef.current) jumpFocusedDuringSaveRef.current = true; }}
                             step="any"
                             min={JUMP_RESULT_LIMITS[jumpMeasure].min}
                             max={JUMP_RESULT_LIMITS[jumpMeasure].max}

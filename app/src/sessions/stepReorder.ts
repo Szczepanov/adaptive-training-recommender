@@ -47,10 +47,9 @@ export function locateStep(blocks: readonly SessionBlock[], stepId: string): Ste
     return null;
 }
 
-/** Whether dropping `stepId` next to `targetStepId` (on either side) would change the order. */
-export function canDropNextTo(blocks: SessionBlock[], stepId: string, targetStepId: string): boolean {
-    return applyStepMove(blocks, { stepId, targetStepId, position: 'before' }) !== blocks
-        || applyStepMove(blocks, { stepId, targetStepId, position: 'after' }) !== blocks;
+/** Whether this exact move (the side under the pointer) would change the order. */
+export function canApplyStepMove(blocks: SessionBlock[], move: StepMove): boolean {
+    return applyStepMove(blocks, move) !== blocks;
 }
 
 /** Applies one move; returns the same array when the move is invalid or a no-op. */
@@ -87,7 +86,8 @@ function keepsRelativeLoadsAfterReferences(blocks: readonly SessionBlock[]): boo
     const order = blocks.flatMap(block => block.steps.map(step => step.id));
     return blocks.every(block => block.steps.every(step => {
         if (step.load?.kind !== 'relative_step') return true;
-        const reference = order.indexOf(step.load.stepId);
+        // Validation accepts a non-string id by coercing it with String(); compare the same way.
+        const reference = order.indexOf(String(step.load.stepId));
         return reference !== -1 && reference < order.indexOf(step.id);
     }));
 }

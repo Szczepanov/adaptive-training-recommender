@@ -36,6 +36,7 @@ describe('jumpMeasureFor', () => {
         expect(jumpMeasureFor(freeText('Box jump (upper bound 40 cm)'))).toBe('height');
         expect(jumpMeasureFor(freeText('Lateral bound'))).toBe('distance');
         expect(jumpMeasureFor(freeText('Skater bounds'))).toBe('distance');
+        expect(jumpMeasureFor(freeText('Skater jumps'))).toBe('distance');
         expect(jumpMeasureFor(freeText('Bounding'))).toBe('distance');
     });
 });

@@ -663,6 +663,10 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
         try {
             await sessionExecutionService.logEntry(userId, execution.executionId, entry, diaryWriteOptions);
         } catch {
+            // A rejection before the diary mutation leaves no failed receipt, so record the failure
+            // here too; otherwise a later acknowledged write would refresh the status to `synced`
+            // and the unsaved set would be forgotten (see `mayHaveUnsavedSets`).
+            diaryFailedRef.current = true;
             setSyncStatus('unavailable');
             // The rest timer above starts optimistically (same rationale as the optimistic
             // setEntries call), tied to this entry's id. If the entry itself never

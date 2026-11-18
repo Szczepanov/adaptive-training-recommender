@@ -33,7 +33,7 @@ import { ChoiceCard } from './ChoiceCard';
 import { SessionEntryActions } from './SessionEntryActions';
 import { ExerciseSwapModal } from './ExerciseSwapModal';
 import { isAddedExercisesBlock, isAddedStep } from '../../sessions/addedExerciseStep';
-import { adjacentStepMove, applyStepMove, canDropNextTo, isReorderableBlock, type StepMove } from '../../sessions/stepReorder';
+import { adjacentStepMove, applyStepMove, canApplyStepMove, isReorderableBlock, type StepMove } from '../../sessions/stepReorder';
 import { SessionDefinitionPreview } from './SessionDefinitionPreview';
 import { FlagStrip } from '../FlagStrip';
 import { resolveTodayFlagStripItems, type FlagStripItem } from '../../derived/flags/flagStripItems';
@@ -60,7 +60,7 @@ import fixture05 from '../../sessions/fixtures/05-timed-trunk-and-tissue.json';
 import fixture06 from '../../sessions/fixtures/06-protocol-locked-sprint-jump-test.json';
 import fixture08 from '../../sessions/fixtures/08-recovery-spin-companion.json';
 import { runExclusive } from '../../utils/runExclusive';
-import { loggedSetLabel } from '../../sessions/setUndoState';
+import { loggedSetLabel, sameExerciseRef } from '../../sessions/setUndoState';
 import { LoggedSetUndoBanner } from './LoggedSetUndoBanner';
 
 
@@ -471,9 +471,12 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
 
     // Choice answers carry no weight/reps/duration, so they must never be picked as the
     // "latest" set a suggestion is derived from.
+    // Defaults come from the current exercise only: after a swap, the replaced exercise's load or
+    // duration must not prefill the replacement. "Performed for this step" still lists everything.
     const activeStepWorkEntries = useMemo(
-        () => activeStepEntries.filter(e => e.payload.kind !== 'choice'),
-        [activeStepEntries],
+        () => activeStepEntries.filter(e => e.payload.kind !== 'choice'
+            && (!e.exerciseRef || !activeStep?.exerciseRef || sameExerciseRef(e.exerciseRef, activeStep.exerciseRef))),
+        [activeStepEntries, activeStep],
     );
 
     const latestActiveEntry = activeStepWorkEntries.length > 0 ? activeStepWorkEntries[activeStepWorkEntries.length - 1] : null;
@@ -1526,7 +1529,14 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                                         } : undefined}
                                         onDragOver={canDrag ? event => {
                                             if (!event.dataTransfer.types.includes(STEP_DRAG_MIME)) return;
-                                            if (!draggingStepId || !canDropNextTo(definition.blocks, draggingStepId, step.id)) return;
+                                            if (!draggingStepId) return;
+                                            const overRect = event.currentTarget.getBoundingClientRect();
+                                            const overPosition = event.clientX < overRect.left + overRect.width / 2 ? 'before' : 'after';
+                                            // Same side as the drop handler, so a highlighted drop is always applied.
+                                            if (!canApplyStepMove(definition.blocks, { stepId: draggingStepId, targetStepId: step.id, position: overPosition })) {
+                                                setDropTargetStepId(current => (current === step.id ? null : current));
+                                                return;
+                                            }
                                             event.preventDefault();
                                             event.dataTransfer.dropEffect = 'move';
                                             setDropTargetStepId(step.id);
