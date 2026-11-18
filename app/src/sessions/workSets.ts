@@ -35,11 +35,16 @@ function exerciseKey(ref: SessionEntry['exerciseRef']): string {
     return ref.kind === 'catalog' ? `catalog:${ref.exerciseId}` : `free:${ref.name}`;
 }
 
+/** One policy everywhere: an entry without a recorded exercise belongs to the step's own exercise. */
+function entryExerciseKey(step: SessionStep, entry: SessionEntry): string {
+    return exerciseKey(entry.exerciseRef ?? step.exerciseRef);
+}
+
 /** Sided entries of the step's current exercise: a swap mid-pair starts a fresh pair. */
 function sidedEntries(step: SessionStep, entries: readonly SessionEntry[], kind: 'duration' | 'distance'): SessionEntry[] {
     const current = exerciseKey(step.exerciseRef);
     return entries.filter(entry => entry.stepId === step.id && entry.payload.kind === kind
-        && (!entry.exerciseRef || exerciseKey(entry.exerciseRef) === current));
+        && entryExerciseKey(step, entry) === current);
 }
 
 /**
@@ -58,7 +63,7 @@ export function completedPrescribedSets(step: SessionStep, entries: readonly Ses
     const pairs = new Map<string, { left: number; right: number }>();
     for (const entry of work) {
         if ((entry.payload.kind !== 'duration' && entry.payload.kind !== 'distance') || (entry.side !== 'left' && entry.side !== 'right')) continue;
-        const key = `${entry.payload.kind}|${exerciseKey(entry.exerciseRef)}`;
+        const key = `${entry.payload.kind}|${entryExerciseKey(step, entry)}`;
         const counts = pairs.get(key) ?? { left: 0, right: 0 };
         pairs.set(key, { ...counts, [entry.side]: counts[entry.side] + 1 });
     }

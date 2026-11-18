@@ -42,7 +42,8 @@ interface SessionCompletionSheetProps {
     /** Optional live wall-clock elapsed seconds from the session runner; falls back to `startedAt` delta on mount. */
     elapsedSeconds?: number;
     totalSets: number;
-    /** Logged entries kept on abandon, including half of an unfinished left/right pair. */
+    /** Everything logged that abandon keeps: work and warm-up sets, including half of an
+     * unfinished left/right pair (authored-choice records are not performed work). */
     retainedEntryCount?: number;
     steps: SessionStepSummary[];
     onComplete: (payload: SessionCompletionPayload) => Promise<void>;

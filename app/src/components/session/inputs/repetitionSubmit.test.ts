@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
     buildIntensityGauge,
     buildRepetitionPayload,
+    reconcileJumpDraft,
     focusAndSelect,
     refocusIfStillOwned,
     runSingleFlight,
@@ -159,5 +160,19 @@ describe('buildRepetitionPayload jump result', () => {
 
     it('ignores a jump value when the exercise is not a jump', () => {
         expect(buildRepetitionPayload(draft({ jumpMeasure: null, jumpVal: '40' }))).not.toHaveProperty('jumpHeightCm');
+    });
+});
+
+describe('reconcileJumpDraft', () => {
+    it('drops a height typed before a swap to a distance jump and back to a height jump', () => {
+        const typed = { measure: 'height' as const, value: '42' };
+        const afterDistanceSwap = reconcileJumpDraft(typed, 'distance');
+        expect(afterDistanceSwap).toEqual({ measure: 'distance', value: '' });
+        expect(reconcileJumpDraft(afterDistanceSwap, 'height')).toEqual({ measure: 'height', value: '' });
+    });
+
+    it('keeps the same draft when the unit does not change', () => {
+        const typed = { measure: 'height' as const, value: '42' };
+        expect(reconcileJumpDraft(typed, 'height')).toBe(typed);
     });
 });

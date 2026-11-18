@@ -6,7 +6,9 @@ import {
     refocusIfStillOwned,
     runSingleFlight,
     JUMP_RESULT_LIMITS,
+    reconcileJumpDraft,
     type GaugeScaleType,
+    type JumpDraft,
 } from './repetitionSubmit';
 import { jumpMeasureFor } from '../../../sessions/jumpMeasure';
 
@@ -40,8 +42,12 @@ export const RepetitionInputCard: React.FC<RepetitionInputCardProps> = ({
     const jumpMeasure = jumpMeasureFor(step);
     // The draft remembers the unit it was typed in: after a swap that changes height <-> distance
     // the field starts blank instead of showing centimetres as metres.
-    const [jumpDraft, setJumpDraft] = useState<{ measure: typeof jumpMeasure; value: string }>({ measure: jumpMeasure, value: '' });
-    const jumpVal = jumpDraft.measure === jumpMeasure ? jumpDraft.value : '';
+    const [jumpDraft, setJumpDraft] = useState<JumpDraft>({ measure: jumpMeasure, value: '' });
+    // Any change of unit discards the draft (adjusting state during render, not in an effect), so a
+    // height typed before swapping to a distance jump and back can never be logged for a new exercise.
+    const reconciledJumpDraft = reconcileJumpDraft(jumpDraft, jumpMeasure);
+    if (reconciledJumpDraft !== jumpDraft) setJumpDraft(reconciledJumpDraft);
+    const jumpVal = reconciledJumpDraft.value;
     // Bumped on every edit, so a finished save clears only a result the athlete has not touched since.
     const jumpRevisionRef = useRef(0);
     const jumpInputRef = useRef<HTMLInputElement>(null);

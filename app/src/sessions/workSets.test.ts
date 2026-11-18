@@ -114,3 +114,24 @@ describe('pairing is per exercise', () => {
         expect(hasUnpairedHoldSide(carryStep('farmer_carry'), entries)).toBe(false);
     });
 });
+
+describe('entries without a recorded exercise', () => {
+    const at = '2026-09-01T12:00:00Z';
+    const farmerStep: SessionStep = {
+        id: 'carry', kind: 'exercise', laterality: 'per_side',
+        exerciseRef: { kind: 'catalog', exerciseId: 'farmer_carry' }, dose: { kind: 'distance', sets: 2, meters: 20 },
+    };
+    const legacyLeft: SessionEntry = {
+        id: 'l', executionId: 'exec', stepId: 'carry', completedAt: at, createdAt: at, updatedAt: at, side: 'left',
+        payload: { kind: 'distance', meters: 20 },
+    };
+    const recordedRight: SessionEntry = { ...legacyLeft, id: 'r', side: 'right', exerciseRef: { kind: 'catalog', exerciseId: 'farmer_carry' } };
+
+    it('count as the step\'s own exercise in the cue, the unpaired check and the set count alike', () => {
+        expect(nextHoldSide(farmerStep, [legacyLeft])).toBe('right');
+        expect(hasUnpairedHoldSide(farmerStep, [legacyLeft])).toBe(true);
+        expect(completesPrescribedSet(farmerStep, [legacyLeft], recordedRight)).toBe(true);
+        expect(completedPrescribedSets(farmerStep, [legacyLeft, recordedRight])).toBe(1);
+        expect(hasUnpairedHoldSide(farmerStep, [legacyLeft, recordedRight])).toBe(false);
+    });
+});

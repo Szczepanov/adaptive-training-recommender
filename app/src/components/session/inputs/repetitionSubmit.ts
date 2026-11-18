@@ -55,6 +55,17 @@ export const JUMP_RESULT_LIMITS = {
     distance: { min: 0.01, max: 50 },
 } as const;
 
+export interface JumpDraft {
+    measure: 'height' | 'distance' | null;
+    value: string;
+}
+
+/** A jump draft belongs to the unit it was typed in: any change of unit discards it (returns a
+ * new blank draft); the same unit keeps the very same draft object. */
+export function reconcileJumpDraft(draft: JumpDraft, measure: JumpDraft['measure']): JumpDraft {
+    return draft.measure === measure ? draft : { measure, value: '' };
+}
+
 /** Returns `null` when the draft cannot be logged (reps missing, non-numeric or not positive). */
 export function buildRepetitionPayload(draft: RepetitionDraft): RepetitionEntryPayload | null {
     const reps = parseInt(draft.reps, 10);
