@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { SessionCompletionSheet } from './SessionCompletionSheet';
+import { mayHaveUnsavedSets, type SyncStatus } from './syncAnnouncement';
 import { COMPLETION_TISSUE_LEVEL_OPTIONS, resolveSubmittedTissueFeedback } from './sessionCompletionOptions';
 import type { SessionStepSummary } from '../../workouts/strengthSessionEntry';
 
@@ -246,6 +247,28 @@ describe('SessionCompletionSheet', () => {
         );
 
         expect(html).not.toContain('Incomplete Required Steps');
+    });
+
+    it('keeps the warning after a failed write is followed by another write still in flight', () => {
+        // useSessionRunner keeps one sync status: a rejected logEntry sets `unavailable`, and the
+        // next logEntry overwrites it with `pending` before that write settles.
+        const statusAfterFailureThenNewWrite: SyncStatus = 'pending';
+        const html = renderToStaticMarkup(
+            <SessionCompletionSheet
+                startedAt={new Date().toISOString()}
+                totalSets={1}
+                retainedEntryCount={2}
+                hasUnsavedEntries={mayHaveUnsavedSets(statusAfterFailureThenNewWrite)}
+                steps={[]}
+                onComplete={vi.fn()}
+                onAbandon={vi.fn()}
+                onCancel={vi.fn()}
+                saving={false}
+                openAbandonConfirmation={true}
+            />,
+        );
+        expect(html).toContain('have not been saved yet');
+        expect(html).not.toContain('are permanently retained in your history and will not be deleted');
     });
 
     it('does not promise retention for sets that failed to save', () => {
