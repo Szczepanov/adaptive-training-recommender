@@ -121,7 +121,7 @@ export const DistanceInputCard: React.FC<DistanceInputCardProps> = ({
                     <input
                         type="number"
                         step="0.01"
-                        min="0.01"
+                        min="0"
                         placeholder="Optional"
                         value={seconds}
                         onChange={e => setSeconds(e.target.value)}

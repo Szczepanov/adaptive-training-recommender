@@ -248,6 +248,25 @@ describe('SessionCompletionSheet', () => {
         expect(html).not.toContain('Incomplete Required Steps');
     });
 
+    it('does not promise retention for sets that failed to save', () => {
+        const html = renderToStaticMarkup(
+            <SessionCompletionSheet
+                startedAt={new Date().toISOString()}
+                totalSets={1}
+                retainedEntryCount={3}
+                hasUnsavedEntries
+                steps={[]}
+                onComplete={vi.fn()}
+                onAbandon={vi.fn()}
+                onCancel={vi.fn()}
+                saving={false}
+                openAbandonConfirmation={true}
+            />,
+        );
+        expect(html).toContain('Your logged set entries (3, counting warm-ups and each side of a pair)');
+        expect(html).toContain('Some sets have not been saved yet and may not be retained.');
+    });
+
     it('renders abandon confirmation when openAbandonConfirmation is true', () => {
         const html = renderToStaticMarkup(
             <SessionCompletionSheet
@@ -265,7 +284,7 @@ describe('SessionCompletionSheet', () => {
         expect(html).toContain('id="completion-title"');
         expect(html).toContain('Abandon Session?');
         expect(html).toContain('Yes, Abandon Session');
-        expect(html).toContain('Every set you have logged (2, including warm-ups and single sides of a pair) is permanently retained');
+        expect(html).toContain('Your logged set entries (2, counting warm-ups and each side of a pair) are permanently retained');
     });
 
     it('disables every terminal action while a completion write is in flight, so a second tap cannot double-submit (#724)', () => {

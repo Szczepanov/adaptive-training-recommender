@@ -389,3 +389,16 @@ describe('buildStructuredStepDetails distinct set numbers', () => {
         expect(plank.sets.map(set => set.setNumber)).toEqual([1, 2, 2]);
     });
 });
+
+describe('buildStructuredStepDetails pairing identity', () => {
+    it('does not pair a catalog side with a free-text side of the same name', () => {
+        const at = (m: number) => `2026-08-26T07:${String(m).padStart(2, '0')}:00.000Z`;
+        const base = { executionId: 'exec-1', stepId: 'plank', payload: { kind: 'duration' as const, seconds: 45 } };
+        const entries: SessionEntry[] = [
+            { ...base, id: 'l', completedAt: at(10), createdAt: at(10), updatedAt: at(10), side: 'left', exerciseRef: { kind: 'catalog', exerciseId: 'side-plank' } },
+            { ...base, id: 'r', completedAt: at(11), createdAt: at(11), updatedAt: at(11), side: 'right', exerciseRef: { kind: 'unresolved_free_text', name: 'side-plank' } },
+        ];
+        const plank = buildStructuredStepDetails(definition, entries, []).find(step => step.stepId === 'plank')!;
+        expect(plank.sets.map(set => set.setNumber)).toEqual([1, 2]);
+    });
+});

@@ -162,5 +162,8 @@ describe('restore and move edge cases', () => {
         const blocks = [relative];
         expect(applyStepMove(blocks, { stepId: 'B', targetStepId: 'A', position: 'before' })).toBe(blocks);
         expect(applyStepMove(blocks, { stepId: 'A', targetStepId: 'B', position: 'after' })).toBe(blocks);
+        // ...and Earlier/Later are not offered for it in the first place.
+        expect(adjacentStepMove(blocks, 'B', 'earlier')).toBeNull();
+        expect(adjacentStepMove(blocks, 'A', 'later')).toBeNull();
     });
 });

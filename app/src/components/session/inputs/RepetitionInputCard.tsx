@@ -85,6 +85,7 @@ export const RepetitionInputCard: React.FC<RepetitionInputCardProps> = ({
         if (!payload) return;
 
         const jumpRevisionAtSubmit = jumpRevisionRef.current;
+        const jumpFocusedAtSubmit = jumpInputRef.current !== null && jumpInputRef.current.ownerDocument.activeElement === jumpInputRef.current;
         await runSingleFlight(submitInFlightRef, async () => {
             setIsSubmitting(true);
             try {
@@ -100,8 +101,11 @@ export const RepetitionInputCard: React.FC<RepetitionInputCardProps> = ({
                 // Refocus weight input for next set, unless the user moved focus elsewhere
                 // (e.g. into the Abandon/Finish dialog) while the write was in flight.
                 // ...and leave focus in the jump field if the athlete is already typing the next result.
-                const typingJump = editedDuringSave && jumpInputRef.current?.ownerDocument.activeElement === jumpInputRef.current;
-                if (!typingJump) refocusIfStillOwned(weightRef.current, formRef.current);
+                // A move into the field counts, not just typing; submitting from the field (Enter) still
+                // returns to Weight as before.
+                const jumpFocusedNow = jumpInputRef.current !== null && jumpInputRef.current.ownerDocument.activeElement === jumpInputRef.current;
+                const movedToJump = jumpFocusedNow && (!jumpFocusedAtSubmit || editedDuringSave);
+                if (!movedToJump) refocusIfStillOwned(weightRef.current, formRef.current);
             } finally {
                 setIsSubmitting(false);
             }

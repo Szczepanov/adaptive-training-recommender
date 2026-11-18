@@ -79,6 +79,13 @@ function describeMove(definition: SessionDefinition, move: StepMove): string {
     return moved && neighbour ? `Moved ${stepName(moved)} ${move.position} ${stepName(neighbour)}${where}.` : 'Step moved.';
 }
 
+/** Changes when a swap changes the step's exercise, so per-side split/RPE/load drafts typed for
+ * one exercise are never logged against its replacement (the step id survives a swap). */
+function exerciseIdentity(step: SessionStep): string {
+    const ref = step.exerciseRef;
+    return !ref ? 'none' : ref.kind === 'catalog' ? `catalog:${ref.exerciseId}` : `free:${ref.name}`;
+}
+
 /** Private drag payload type, so only a dragged step pill is accepted as a drop. */
 const STEP_DRAG_MIME = 'application/x-session-step-id';
 
@@ -1357,7 +1364,7 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                                 />
                             ) : inputProfile === 'duration_hold' ? (
                                 <DurationInputCard
-                                    key={activeStep.id}
+                                    key={`${activeStep.id}:${exerciseIdentity(activeStep)}`}
                                     step={activeStep}
                                     suggestedLoadKg={suggestedLoadKg}
                                     suggestedSeconds={suggestedSeconds}
@@ -1368,7 +1375,7 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                                 />
                             ) : inputProfile === 'distance_split' ? (
                                 <DistanceInputCard
-                                    key={activeStep.id}
+                                    key={`${activeStep.id}:${exerciseIdentity(activeStep)}`}
                                     step={activeStep}
                                     suggestedLoadKg={suggestedLoadKg}
                                     nextSide={activeStep.laterality === 'per_side' ? nextHoldSide(activeStep, entries) : undefined}
@@ -1593,6 +1600,7 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                     elapsedSeconds={runner.elapsedSeconds}
                     totalSets={completedSetTotal}
                     retainedEntryCount={entries.filter(entry => entry.payload.kind !== 'choice').length}
+                    hasUnsavedEntries={runner.syncStatus === 'unavailable'}
                     steps={stepSummaries}
                     saving={isFinishing}
                     openAbandonConfirmation={showAbandonConfirmation}

@@ -154,5 +154,8 @@ export function adjacentStepMove(
     if (neighbour === undefined) return null;
     // Always pass the neighbour, also across a block edge: joining the next block at its near end
     // would change the block but not the order the athlete sees.
-    return { stepId, targetStepId: neighbour.id, position: direction === 'earlier' ? 'before' : 'after' };
+    const move: StepMove = { stepId, targetStepId: neighbour.id, position: direction === 'earlier' ? 'before' : 'after' };
+    // Same validation as applying it (e.g. a relative-load step may not pass its reference).
+    const asArray = [...blocks];
+    return applyStepMove(asArray, move) === asArray ? null : move;
 }

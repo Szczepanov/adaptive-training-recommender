@@ -274,7 +274,7 @@ function pairKey(entry: SessionEntry, isWarmup: boolean): string | null {
     if (isWarmup || (entry.side !== 'left' && entry.side !== 'right')) return null;
     if (entry.payload.kind !== 'duration' && entry.payload.kind !== 'distance') return null;
     const ref = entry.exerciseRef;
-    const exercise = !ref ? '' : ref.kind === 'catalog' ? ref.exerciseId : ref.name;
+    const exercise = !ref ? 'none' : ref.kind === 'catalog' ? `catalog:${ref.exerciseId}` : `free:${ref.name}`;
     return `${entry.payload.kind}|${exercise}`;
 }
 
