@@ -136,3 +136,40 @@ describe('SessionDefinitionService', () => {
 });
 
 const awaitedHash = await hashSessionDefinition(definition);
+
+// #1271 review: saving a session as a template promotes added steps; when the session already
+// has an `extra-exercises` block the promoted block must get a free id, or the save fails with
+// a duplicate block id. Exercise the real save path end to end (Firestore mocked).
+describe('SessionDefinitionService save of a template with added exercises', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        firestore.batchCommit.mockResolvedValue(undefined);
+    });
+
+    it('saves a template copy whose source already has an extra-exercises block', async () => {
+        const { appendAddedExerciseStep } = await import('../sessions/addedExerciseStep');
+        const { createCustomTemplateDefinition } = await import('../hooks/useSessionRunner');
+        firestore.getDoc.mockResolvedValue({ exists: () => false });
+        const source: SessionDefinition = {
+            ...definition,
+            blocks: [
+                { id: 'main', role: 'main', executionMode: 'sequential',
+                    steps: [{ id: 'squat', kind: 'exercise', exerciseRef: { kind: 'catalog', exerciseId: 'back_squat' }, dose: { kind: 'repetition', sets: 3, reps: 5 } }] },
+                { id: 'extra-exercises', role: 'accessory', executionMode: 'sequential',
+                    steps: [{ id: 'extra-old', kind: 'exercise', exerciseRef: { kind: 'catalog', exerciseId: 'hip_thrust' }, dose: { kind: 'repetition', sets: 2, reps: 8 } }] },
+            ],
+        };
+        const withAdded = appendAddedExerciseStep(source.blocks, {
+            exerciseRef: { kind: 'catalog', exerciseId: 'nordic_hamstring_curl' },
+            dose: { kind: 'repetition', sets: 2, reps: 5 },
+        }, 'x1');
+        const template = createCustomTemplateDefinition({ ...source, blocks: withAdded.blocks }, 'custom-template-1', 'My lower day');
+
+        const saved = await new SessionDefinitionService({} as never).saveDefinitionRevision('user-1', template);
+
+        expect(saved.header).toMatchObject({ definitionId: 'custom-template-1', latestRevision: 1 });
+        expect(firestore.batchCommit).toHaveBeenCalledTimes(1);
+        const [, revisionPayload] = firestore.batchSet.mock.calls[0];
+        expect(revisionPayload.blocks.map((block: { id: string }) => block.id)).toEqual(['main', 'extra-exercises', 'extra-exercises-2']);
+    });
+});
