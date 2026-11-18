@@ -20,9 +20,10 @@ export function jumpMeasureFor(step: Pick<SessionStep, 'exerciseRef' | 'title'>)
     }
     // Hyphens and underscores read as spaces: "Jump-rope", "single-leg hop".
     const name = (ref?.kind === 'unresolved_free_text' ? ref.name : step.title ?? '').toLowerCase().replace(/[-_]+/g, ' ');
-    // Single-leg hops travel, like the catalog's single-leg hop and stick.
-    if (/\b(single|one) leg hop/.test(name)) return 'distance';
+    // Single-leg hops travel, like the catalog's single-leg hop and stick -- unless done in place.
+    if (/\b(single|one) leg hop/.test(name)) return /in place|vertical|on the spot/.test(name) ? 'height' : 'distance';
     // Conditioning drills that merely contain the word ("jumping jacks", "jump rope") have no result to record.
     if (!/\bjump|\bbound/.test(name) || /jumping jack|jump rope|skipping/.test(name)) return null;
-    return /broad|long|lateral|bound|triple/.test(name) ? 'distance' : 'height';
+    // Directional jump names only: "long jump", not "box jump with long rest".
+    return /broad jump|long jump|lateral (jump|bound)|\bbound|triple jump/.test(name) ? 'distance' : 'height';
 }

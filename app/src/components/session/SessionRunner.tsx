@@ -33,7 +33,7 @@ import { ChoiceCard } from './ChoiceCard';
 import { SessionEntryActions } from './SessionEntryActions';
 import { ExerciseSwapModal } from './ExerciseSwapModal';
 import { isAddedExercisesBlock, isAddedStep } from '../../sessions/addedExerciseStep';
-import { adjacentStepMove, isReorderableBlock, type StepMove } from '../../sessions/stepReorder';
+import { adjacentStepMove, applyStepMove, canDropNextTo, isReorderableBlock, type StepMove } from '../../sessions/stepReorder';
 import { SessionDefinitionPreview } from './SessionDefinitionPreview';
 import { FlagStrip } from '../FlagStrip';
 import { resolveTodayFlagStripItems, type FlagStripItem } from '../../derived/flags/flagStripItems';
@@ -72,7 +72,11 @@ function describeMove(definition: SessionDefinition, move: StepMove): string {
     const steps = definition.blocks.flatMap(block => block.steps);
     const moved = steps.find(step => step.id === move.stepId);
     const neighbour = steps.find(step => step.id === move.targetStepId);
-    return moved && neighbour ? `Moved ${stepName(moved)} ${move.position} ${stepName(neighbour)}.` : 'Step moved.';
+    // The new position keeps repeated moves past same-named steps distinct for screen readers.
+    const after = applyStepMove(definition.blocks, move).flatMap(block => block.steps);
+    const position = after.findIndex(step => step.id === move.stepId) + 1;
+    const where = position > 0 ? `, now ${position} of ${after.length}` : '';
+    return moved && neighbour ? `Moved ${stepName(moved)} ${move.position} ${stepName(neighbour)}${where}.` : 'Step moved.';
 }
 
 /** Private drag payload type, so only a dragged step pill is accepted as a drop. */
@@ -398,6 +402,9 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
     const [showSwapModal, setShowSwapModal] = useState<boolean>(false);
     const [showAddExerciseModal, setShowAddExerciseModal] = useState<boolean>(false);
     const [dropTargetStepId, setDropTargetStepId] = useState<string | null>(null);
+    // dataTransfer contents are unreadable during dragover, so the dragged id is kept here to
+    // offer only drops the block rules allow.
+    const [draggingStepId, setDraggingStepId] = useState<string | null>(null);
     const [moveNotice, setMoveNotice] = useState<string>('');
     const [showSaveTemplateModal, setShowSaveTemplateModal] = useState<boolean>(false);
     const [customTemplateTitle, setCustomTemplateTitle] = useState<string>('');
@@ -782,6 +789,11 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
         }
         return counts;
     }, [definition, entries]);
+    // Same pairing as the step summaries: a left/right hold or carry pair is one set.
+    const completedSetTotal = useMemo(
+        () => [...stepCompletedCounts.values()].reduce((sum, count) => sum + count, 0),
+        [stepCompletedCounts],
+    );
 
     // The advisory rest banner follows the next actually due work rather than authored list order.
     const restNextStep = useMemo(
@@ -1421,15 +1433,17 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                                                     {entry.payload.kind === 'repetition' && (
                                                         <span className="set-metrics">
                                                             {entry.payload.weightKg ? `${entry.payload.weightKg} kg × ` : ''}{entry.payload.reps} reps
+                                                            {entry.payload.jumpHeightCm !== undefined && <span> · best {entry.payload.jumpHeightCm} cm</span>}
+                                                            {entry.payload.jumpDistanceMeters !== undefined && <span> · best {entry.payload.jumpDistanceMeters} m</span>}
                                                             {entry.payload.isWarmup && <span className="warmup-badge"> (warm-up)</span>}
                                                             {entry.payload.gauge && <span className="gauge-badge"> [{entry.payload.gauge.scale}: {entry.payload.gauge.scale === 'velocity_loss' ? entry.payload.gauge.percent : (entry.payload.gauge.scale === 'technical' ? (entry.payload.gauge.met ? 'met' : 'failed') : entry.payload.gauge.value)}]</span>}
                                                         </span>
                                                     )}
                                                     {entry.payload.kind === 'duration' && (
-                                                        <span className="set-metrics">{entry.side === 'left' || entry.side === 'right' ? `${entry.side} · ` : ''}{entry.payload.seconds}s hold</span>
+                                                        <span className="set-metrics">{entry.side === 'left' || entry.side === 'right' ? `${entry.side} · ` : ''}{entry.payload.seconds}s hold{entry.payload.gauge && <span className="gauge-badge"> [RPE {entry.payload.gauge.value}]</span>}</span>
                                                     )}
                                                     {entry.payload.kind === 'distance' && (
-                                                        <span className="set-metrics">{entry.side === 'left' || entry.side === 'right' ? `${entry.side} · ` : ''}{entry.payload.loadKg ? `${entry.payload.loadKg} kg × ` : ''}{entry.payload.meters}m {entry.payload.durationSeconds ? `(${entry.payload.durationSeconds}s)` : ''}</span>
+                                                        <span className="set-metrics">{entry.side === 'left' || entry.side === 'right' ? `${entry.side} · ` : ''}{entry.payload.loadKg ? `${entry.payload.loadKg} kg × ` : ''}{entry.payload.meters}m {entry.payload.durationSeconds ? `(${entry.payload.durationSeconds}s)` : ''}{entry.payload.gauge && <span className="gauge-badge"> [RPE {entry.payload.gauge.value}]</span>}</span>
                                                     )}
                                                     {entry.payload.kind === 'checkoff' && (
                                                         <span className="set-metrics">✓ Completed</span>
@@ -1501,15 +1515,20 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                                         onDragStart={canDrag ? event => {
                                             event.dataTransfer.setData(STEP_DRAG_MIME, step.id);
                                             event.dataTransfer.effectAllowed = 'move';
+                                            setDraggingStepId(step.id);
                                         } : undefined}
                                         onDragOver={canDrag ? event => {
                                             if (!event.dataTransfer.types.includes(STEP_DRAG_MIME)) return;
+                                            if (!draggingStepId || !canDropNextTo(definition.blocks, draggingStepId, step.id)) return;
                                             event.preventDefault();
                                             event.dataTransfer.dropEffect = 'move';
                                             setDropTargetStepId(step.id);
                                         } : undefined}
                                         onDragLeave={canDrag ? () => setDropTargetStepId(current => (current === step.id ? null : current)) : undefined}
-                                        onDragEnd={() => setDropTargetStepId(null)}
+                                        onDragEnd={() => {
+                                            setDropTargetStepId(null);
+                                            setDraggingStepId(null);
+                                        }}
                                         onDrop={canDrag ? event => {
                                             event.preventDefault();
                                             setDropTargetStepId(null);
@@ -1572,7 +1591,7 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                 <SessionCompletionSheet
                     startedAt={runner.execution.startedAt}
                     elapsedSeconds={runner.elapsedSeconds}
-                    totalSets={entries.length}
+                    totalSets={completedSetTotal}
                     steps={stepSummaries}
                     saving={isFinishing}
                     openAbandonConfirmation={showAbandonConfirmation}

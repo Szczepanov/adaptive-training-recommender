@@ -38,7 +38,10 @@ export const RepetitionInputCard: React.FC<RepetitionInputCardProps> = ({
     const [technicalMet, setTechnicalMet] = useState<boolean>(true);
     const [technicalNote, setTechnicalNote] = useState<string>('');
     const jumpMeasure = jumpMeasureFor(step);
-    const [jumpVal, setJumpVal] = useState<string>('');
+    const [jumpVal, setJumpValState] = useState<string>('');
+    // Bumped on every edit, so a finished save clears only a result the athlete has not touched since.
+    const jumpRevisionRef = useRef(0);
+    const setJumpVal = (value: string) => { jumpRevisionRef.current += 1; setJumpValState(value); };
 
     const prescribedRpe = step.effort?.kind === 'rpe'
         ? step.effort.target
@@ -71,7 +74,7 @@ export const RepetitionInputCard: React.FC<RepetitionInputCardProps> = ({
         const payload = buildRepetitionPayload({ reps, weight, isWarmup, gaugeScale, gaugeVal, technicalMet, technicalNote, jumpMeasure, jumpVal });
         if (!payload) return;
 
-        const submittedJump = jumpVal;
+        const jumpRevisionAtSubmit = jumpRevisionRef.current;
         await runSingleFlight(submitInFlightRef, async () => {
             setIsSubmitting(true);
             try {
@@ -81,7 +84,7 @@ export const RepetitionInputCard: React.FC<RepetitionInputCardProps> = ({
                 setGaugeVal('');
                 setTechnicalNote('');
                 // Keep a result the athlete already typed for the next set while this one saved.
-                setJumpVal(current => (current === submittedJump ? '' : current));
+                if (jumpRevisionRef.current === jumpRevisionAtSubmit) setJumpValState('');
 
                 // Refocus weight input for next set, unless the user moved focus elsewhere
                 // (e.g. into the Abandon/Finish dialog) while the write was in flight.

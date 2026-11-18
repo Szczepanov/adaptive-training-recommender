@@ -47,6 +47,12 @@ export function locateStep(blocks: readonly SessionBlock[], stepId: string): Ste
     return null;
 }
 
+/** Whether dropping `stepId` next to `targetStepId` (on either side) would change the order. */
+export function canDropNextTo(blocks: SessionBlock[], stepId: string, targetStepId: string): boolean {
+    return applyStepMove(blocks, { stepId, targetStepId, position: 'before' }) !== blocks
+        || applyStepMove(blocks, { stepId, targetStepId, position: 'after' }) !== blocks;
+}
+
 /** Applies one move; returns the same array when the move is invalid or a no-op. */
 export function applyStepMove(blocks: SessionBlock[], move: StepMove): SessionBlock[] {
     if (move.stepId === move.targetStepId) return blocks;
@@ -130,11 +136,7 @@ export function adjacentStepMove(
     if (index === -1) return null;
     const neighbour = order[direction === 'earlier' ? index - 1 : index + 1];
     if (neighbour === undefined) return null;
-    // Within a block, swap past the neighbour. At a block edge, join the neighbouring block at
-    // its near end -- that is exactly one place earlier/later in the overall order.
-    const sameBlock = neighbour.blockId === order[index].blockId;
-    const position = direction === 'earlier'
-        ? (sameBlock ? 'before' : 'after')
-        : (sameBlock ? 'after' : 'before');
-    return { stepId, targetStepId: neighbour.id, position };
+    // Always pass the neighbour, also across a block edge: joining the next block at its near end
+    // would change the block but not the order the athlete sees.
+    return { stepId, targetStepId: neighbour.id, position: direction === 'earlier' ? 'before' : 'after' };
 }

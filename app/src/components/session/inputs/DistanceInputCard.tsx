@@ -30,7 +30,6 @@ export const DistanceInputCard: React.FC<DistanceInputCardProps> = ({
         : 100;
 
     const [meters, setMeters] = useState<string>(String(defaultMeters));
-    const [seconds, setSeconds] = useState<string>('');
     const showLoad = stepAcceptsMassLoad(step);
     const [loadKg, setLoadKg] = useState<string>(suggestedLoadKg !== undefined ? String(suggestedLoadKg) : '');
     const [selectedSide, setSelectedSide] = useState<'left' | 'right'>(nextSide ?? 'left');
@@ -38,7 +37,14 @@ export const DistanceInputCard: React.FC<DistanceInputCardProps> = ({
     const [rpeBySide, setRpeBySide] = useState<Record<SideKey, string>>({ left: '', right: '', bilateral: '' });
     const sideKey: SideKey = perSide ? selectedSide : 'bilateral';
     const rpe = rpeBySide[sideKey];
-    const setRpe = (value: string) => setRpeBySide(prev => ({ ...prev, [sideKey]: value }));
+    // The optional split time is per side too: a blank right side must not reuse the left's time.
+    const [secondsBySide, setSecondsBySide] = useState<Record<SideKey, string>>({ left: '', right: '', bilateral: '' });
+    const seconds = secondsBySide[sideKey];
+    // Bumped on every edit, so a finished save clears only drafts the athlete has not touched since.
+    const editRevisionRef = useRef<Record<SideKey, number>>({ left: 0, right: 0, bilateral: 0 });
+    const touch = () => { editRevisionRef.current = { ...editRevisionRef.current, [sideKey]: editRevisionRef.current[sideKey] + 1 }; };
+    const setRpe = (value: string) => { touch(); setRpeBySide(prev => ({ ...prev, [sideKey]: value })); };
+    const setSeconds = (value: string) => { touch(); setSecondsBySide(prev => ({ ...prev, [sideKey]: value })); };
     const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
     const submitInFlightRef = useRef(false);
 
@@ -51,13 +57,17 @@ export const DistanceInputCard: React.FC<DistanceInputCardProps> = ({
         const payload = buildDistancePayload({ meters, seconds, loadKg, rpe }, showLoad);
         if (!payload) return;
         const loggedSide = sideKey;
+        const revisionAtSubmit = editRevisionRef.current[loggedSide];
         // One write at a time: the runner appends the entry optimistically and this card then
         // moves to the other side, so a second tap mid-write must not log a side not performed.
         await runSingleFlight(submitInFlightRef, async () => {
             setIsSubmitting(true);
             try {
                 await onSubmit(payload, perSide ? selectedSide : undefined);
-                setRpeBySide(prev => ({ ...prev, [loggedSide]: '' }));
+                if (editRevisionRef.current[loggedSide] === revisionAtSubmit) {
+                    setRpeBySide(prev => ({ ...prev, [loggedSide]: '' }));
+                    setSecondsBySide(prev => ({ ...prev, [loggedSide]: '' }));
+                }
             } finally {
                 setIsSubmitting(false);
             }

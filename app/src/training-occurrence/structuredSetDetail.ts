@@ -269,12 +269,27 @@ function sortedByCompletion(entries: readonly SessionEntry[]): SessionEntry[] {
     return [...entries].sort((a, b) => a.completedAt.localeCompare(b.completedAt) || a.id.localeCompare(b.id));
 }
 
+/** The left/right halves of one per-side hold or carry set share a set number. */
+function sidedKey(entry: SessionEntry, isWarmup: boolean): string | null {
+    if (isWarmup || (entry.side !== 'left' && entry.side !== 'right')) return null;
+    return entry.payload.kind === 'duration' || entry.payload.kind === 'distance' ? `${entry.payload.kind}:${entry.side}` : null;
+}
+
 function toSetRows(entries: readonly SessionEntry[], restByEntryId: ReadonlyMap<string, PerformedRestDetail>): PerformedSetRow[] {
     let warmupCount = 0;
     let workCount = 0;
+    const sidedCounts = new Map<string, number>();
     return entries.map((entry): PerformedSetRow => {
         const isWarmup = isWarmupPayload(entry.payload);
-        const setNumber = isWarmup ? ++warmupCount : ++workCount;
+        const key = sidedKey(entry, isWarmup);
+        let setNumber: number;
+        if (key) {
+            setNumber = (sidedCounts.get(key) ?? 0) + 1;
+            sidedCounts.set(key, setNumber);
+            workCount = Math.max(workCount, setNumber);
+        } else {
+            setNumber = isWarmup ? ++warmupCount : ++workCount;
+        }
         const rest = restByEntryId.get(entry.id);
         return {
             entryId: entry.id,

@@ -38,6 +38,8 @@ function workSetCount(entries: readonly SessionEntry[], definition: SessionDefin
     }
     return [...byStep].reduce((sum, [stepId, stepEntries]) => {
         const step = steps.get(stepId);
+        // A resolved step counts exactly as the runner showed it (`completedPrescribedSets` on the
+        // effective step), so the ledger never disagrees with the athlete's in-session progress.
         if (step) return sum + completedPrescribedSets(step, stepEntries);
         // Unknown step (added, or unresolved definition): a mid-session swap can leave holds and
         // carries under one step id, so pair each payload kind on its own -- order-independent.

@@ -5,9 +5,9 @@ import type { ExerciseDefinition } from './models';
  * catalog/`ExerciseDefinition` because it is search-only and must not touch the
  * decision-affecting catalog files (policy drift, ADR-0010).
  */
-export const EXERCISE_SEARCH_ALIASES: Readonly<Record<string, readonly string[]>> = {
-    suitcase_carry: ['single-arm farmer carry', 'one-arm farmer carry', 'unilateral carry'],
-};
+export const EXERCISE_SEARCH_ALIASES: ReadonlyMap<string, readonly string[]> = new Map([
+    ['suitcase_carry', ['single-arm farmer carry', 'one-arm farmer carry', 'unilateral carry']],
+]);
 
 /**
  * Case-insensitive catalog search used by the swap/add exercise dialog. Besides the name and id
@@ -27,10 +27,12 @@ export function matchesExerciseQuery(exercise: ExerciseDefinition, rawQuery: str
         exercise.name,
         exercise.id,
         exercise.modality,
-        ...(EXERCISE_SEARCH_ALIASES[exercise.id] ?? []),
+        ...(EXERCISE_SEARCH_ALIASES.get(exercise.id) ?? []),
         ...exercise.movementPatterns.map(pattern => pattern.replaceAll('_', ' ')),
         ...exercise.primaryMuscles,
         ...(exercise.equipment ?? []),
     ];
-    return haystack.some(text => text.toLowerCase().includes(query) || normalize(text).includes(normalizedQuery));
+    // A query of only separators ("--") normalizes to '', which every string contains.
+    return haystack.some(text => text.toLowerCase().includes(query)
+        || (normalizedQuery.length > 0 && normalize(text).includes(normalizedQuery)));
 }

@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import type { SessionStep, DurationEntryPayload } from '../../../sessions/models';
 import { playCountdownBeep } from '../../../utils/audioFeedback';
 import { RpeField } from './RpeField';
+import { runSingleFlight } from './repetitionSubmit';
 import { buildHoldPayload } from './setPayloads';
 
 interface DurationInputCardProps {
@@ -44,6 +45,8 @@ export const DurationInputCard: React.FC<DurationInputCardProps> = ({
     // Each side keeps its own RPE draft, like duration and load, so one side's effort never
     // rides along with the other side's hold.
     const [rpeBySide, setRpeBySide] = useState<Record<'left' | 'right' | 'bilateral', string>>({ left: '', right: '', bilateral: '' });
+    const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+    const submitInFlightRef = useRef(false);
     const [isPrepCountdown, setIsPrepCountdown] = useState<boolean>(false);
     const [prepSeconds, setPrepSeconds] = useState<number>(5);
     const [isTimerRunning, setIsTimerRunning] = useState<boolean>(false);
@@ -132,15 +135,24 @@ export const DurationInputCard: React.FC<DurationInputCardProps> = ({
         }
     };
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         const payload = buildHoldPayload({ seconds, loadKg, rpe });
         if (!payload) return;
-        void onSubmit(payload, step.laterality === 'per_side' ? selectedSide : undefined);
-        setRpeBySide(prev => ({ ...prev, [timerSide]: '' }));
+        const loggedSide = timerSide;
         setElapsed(0);
         setIsTimerRunning(false);
         setIsPrepCountdown(false);
+        // One write at a time: a second Log tap before the first settles would record the hold twice.
+        await runSingleFlight(submitInFlightRef, async () => {
+            setIsSubmitting(true);
+            try {
+                await onSubmit(payload, step.laterality === 'per_side' ? selectedSide : undefined);
+                setRpeBySide(prev => ({ ...prev, [loggedSide]: '' }));
+            } finally {
+                setIsSubmitting(false);
+            }
+        });
     };
 
     return (
@@ -250,7 +262,7 @@ export const DurationInputCard: React.FC<DurationInputCardProps> = ({
                 <RpeField step={step} value={rpe} onChange={setRpe} />
             </div>
 
-            <button type="submit" className="log-set-btn" aria-label={step.laterality === 'per_side' ? `Log ${selectedSide} hold` : 'Log hold'}>
+            <button type="submit" className="log-set-btn" disabled={isSubmitting} aria-label={step.laterality === 'per_side' ? `Log ${selectedSide} hold` : 'Log hold'}>
                 Log
             </button>
         </form>

@@ -14,6 +14,7 @@ vi.mock('react', async importOriginal => {
         useState: (initial: unknown) => [typeof initial === 'function' ? (initial as () => unknown)() : initial, vi.fn()],
         useEffect: vi.fn(),
         useCallback: (fn: unknown) => fn,
+        useRef: (initial: unknown) => ({ current: initial }),
     };
 });
 vi.mock('../../../utils/audioFeedback', () => ({ playCountdownBeep: vi.fn() }));
@@ -63,5 +64,19 @@ describe('DurationInputCard', () => {
         expect(findElement(tree, el => el.type === RpeField)).not.toBeNull();
         findElement(tree, el => el.type === 'form')!.props.onSubmit!({ preventDefault: vi.fn() });
         expect(onSubmit).toHaveBeenCalledWith({ kind: 'duration', seconds: 30 }, undefined);
+    });
+});
+
+describe('DurationInputCard double Log', () => {
+    it('ignores a second Log while the first hold is still saving', async () => {
+        let release: () => void = () => {};
+        const onSubmit = vi.fn(() => new Promise<void>(resolve => { release = resolve; }));
+        const tree = DurationInputCard({ step: plank, onSubmit }) as ReactNode;
+        const form = findElement(tree, el => el.type === 'form')!;
+        const first = form.props.onSubmit!({ preventDefault: vi.fn() }) as unknown as Promise<void>;
+        await form.props.onSubmit!({ preventDefault: vi.fn() });
+        expect(onSubmit).toHaveBeenCalledTimes(1);
+        release();
+        await first;
     });
 });

@@ -16,6 +16,15 @@ describe('matchesExerciseQuery', () => {
         expect(idsFor('anti lateral')).toContain('suitcase_carry');
     });
 
+    it('does not match everything for a separator-only query', () => {
+        expect(idsFor('--').length).toBeLessThan(EXERCISES.length);
+    });
+
+    it('ignores ids that are not registered aliases, including inherited object keys', () => {
+        const odd = { ...EXERCISES[0], id: 'constructor' };
+        expect(() => matchesExerciseQuery(odd, 'carry')).not.toThrow();
+    });
+
     it('matches everything for a blank query', () => {
         expect(EXERCISES.every(ex => matchesExerciseQuery(ex, '  '))).toBe(true);
     });
@@ -24,6 +33,6 @@ describe('matchesExerciseQuery', () => {
 describe('EXERCISE_SEARCH_ALIASES', () => {
     it('only names exercises that exist in the catalog', () => {
         const ids = new Set(EXERCISES.map(ex => ex.id));
-        expect(Object.keys(EXERCISE_SEARCH_ALIASES).filter(id => !ids.has(id))).toEqual([]);
+        expect([...EXERCISE_SEARCH_ALIASES.keys()].filter(id => !ids.has(id))).toEqual([]);
     });
 });

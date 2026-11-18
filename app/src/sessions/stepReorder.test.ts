@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ADDED_EXERCISES_BLOCK_ID, appendAddedExerciseStep } from './addedExerciseStep';
 import type { SessionBlock, SessionStep } from './models';
-import { adjacentStepMove, applyStepLayout, applyStepMove, layoutOf } from './stepReorder';
+import { adjacentStepMove, applyStepLayout, applyStepMove, canDropNextTo, layoutOf } from './stepReorder';
 
 const step = (id: string): SessionStep => ({ id, kind: 'exercise', dose: { kind: 'repetition', sets: 3, reps: 5 } });
 const block = (
@@ -74,16 +74,17 @@ describe('adjacentStepMove', () => {
 
     it('moves an added exercise across block edges one place at a time, skipping warm-up and supersets', () => {
         const { blocks, addedId } = withAdded();
-        const intoAccessory = adjacentStepMove(blocks, addedId, 'earlier');
-        expect(intoAccessory).toEqual({ stepId: addedId, targetStepId: 'curl', position: 'after' });
-        const afterFirst = applyStepMove(blocks, intoAccessory!);
-        expect(ids(afterFirst)).toEqual(['warmup:w1', 'main:squat,bench,row', `accessory:curl,${addedId}`, 'ss:a,b']);
+        // Every press passes exactly one neighbour, so the visible order always changes.
+        const first = adjacentStepMove(blocks, addedId, 'earlier');
+        expect(first).toEqual({ stepId: addedId, targetStepId: 'curl', position: 'before' });
+        const afterFirst = applyStepMove(blocks, first!);
+        expect(ids(afterFirst)).toEqual(['warmup:w1', 'main:squat,bench,row', `accessory:${addedId},curl`, 'ss:a,b']);
         const second = applyStepMove(afterFirst, adjacentStepMove(afterFirst, addedId, 'earlier')!);
-        expect(ids(second)).toEqual(['warmup:w1', 'main:squat,bench,row', `accessory:${addedId},curl`, 'ss:a,b']);
-        const third = applyStepMove(second, adjacentStepMove(second, addedId, 'earlier')!);
-        expect(ids(third)).toEqual(['warmup:w1', `main:squat,bench,row,${addedId}`, 'accessory:curl', 'ss:a,b']);
+        expect(ids(second)).toEqual(['warmup:w1', `main:squat,bench,${addedId},row`, 'accessory:curl', 'ss:a,b']);
+        const back = applyStepMove(second, adjacentStepMove(second, addedId, 'later')!);
+        expect(ids(back)).toEqual(['warmup:w1', `main:squat,bench,row,${addedId}`, 'accessory:curl', 'ss:a,b']);
 
-        const atTop = applyStepMove(third, { stepId: addedId, targetStepId: 'squat', position: 'before' });
+        const atTop = applyStepMove(second, { stepId: addedId, targetStepId: 'squat', position: 'before' });
         expect(adjacentStepMove(atTop, addedId, 'earlier')).toBeNull();
     });
 
@@ -127,5 +128,16 @@ describe('applyStepLayout', () => {
 
     it('leaves the authored order when there is no saved layout', () => {
         expect(ids(applyStepLayout(base, []))).toEqual(ids(base));
+    });
+});
+
+describe('canDropNextTo', () => {
+    it('allows only drops the block rules accept', () => {
+        const { blocks, addedId } = withAdded();
+        expect(canDropNextTo(base, 'row', 'squat')).toBe(true);
+        expect(canDropNextTo(base, 'squat', 'curl')).toBe(false);
+        expect(canDropNextTo(blocks, addedId, 'curl')).toBe(true);
+        expect(canDropNextTo(blocks, addedId, 'w1')).toBe(false);
+        expect(canDropNextTo(blocks, addedId, 'a')).toBe(false);
     });
 });

@@ -359,3 +359,19 @@ describe('buildStructuredStepDetails', () => {
         expect(squat.choices).toBeUndefined();
     });
 });
+
+describe('buildStructuredStepDetails per-side set numbers', () => {
+    it('gives both sides of a left/right hold pair the same set number', () => {
+        const hold = (id: string, at: string, side: 'left' | 'right'): SessionEntry => ({
+            id, executionId: 'exec-1', stepId: 'plank', completedAt: at, createdAt: at, updatedAt: at, side,
+            payload: { kind: 'duration', seconds: 45 },
+        });
+        const entries = [
+            hold('l1', '2026-08-26T07:20:00.000Z', 'left'),
+            hold('r1', '2026-08-26T07:21:00.000Z', 'right'),
+            hold('l2', '2026-08-26T07:24:00.000Z', 'left'),
+        ];
+        const plank = buildStructuredStepDetails(definition, entries, []).find(step => step.stepId === 'plank')!;
+        expect(plank.sets.map(set => [set.side, set.setNumber])).toEqual([['left', 1], ['right', 1], ['left', 2]]);
+    });
+});

@@ -138,7 +138,10 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
     // Fixtures are launch inputs only. Resume never consults their current bytes.
     void fixtures;
     const [rawDefinition, setRawDefinition] = useState<SessionDefinition | null>(null);
-    const [restrictedModalities, setRestrictedModalities] = useState<Parameters<typeof ineligibleAlternativeOptionIds>[1]>([]);
+    const [restrictions, setRestrictions] = useState<{
+        executionScope: string;
+        modalities: Parameters<typeof ineligibleAlternativeOptionIds>[1];
+    } | null>(null);
     const [execution, setExecution] = useState<SessionExecution | null>(null);
     const [entries, setEntries] = useState<SessionEntry[]>([]);
     const [activeBlockIndex, setActiveBlockIndex] = useState<number>(0);
@@ -424,17 +427,20 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
     const sessionEnded = effectiveView?.sessionEnded ?? false;
 
     // Alternative eligibility = the day's restricted modalities (read from settings and today's
-    // check-in) applied to the definition's authored alternatives. Only the reads are effectful,
-    // and they do not depend on the definition, so they run once per session start/restore;
-    // eligibility itself is derived purely, so a reorder, swap or add never re-reads and can
-    // never drop restrictions that were already loaded.
-    const hasDefinition = rawDefinition !== null;
-    const constraintsScope = hasDefinition ? execution?.executionId ?? 'starting' : null;
+    // check-in) applied to the definition's authored alternatives. The reads re-run when the
+    // execution changes or the authored alternatives change (a swap or add -- which also retries a
+    // read that failed), never on a reorder; eligibility itself is derived purely.
+    const alternativesSignature = useMemo(() => (rawDefinition
+        ? JSON.stringify(rawDefinition.blocks
+            .flatMap(block => block.steps.map(step => [step.id, step.exerciseRef ?? null, step.alternatives ?? null] as const))
+            .sort((a, b) => a[0].localeCompare(b[0])))
+        : null), [rawDefinition]);
+    const executionScope = rawDefinition ? execution?.executionId ?? 'starting' : null;
     useEffect(() => {
         let cancelled = false;
-        // No sync setState here: with no definition there is no active step, so nothing
-        // ever reads stale restrictions before the next session start loads them fresh below.
-        if (!constraintsScope) return undefined;
+        // No sync setState here: results carry their execution scope, and a result for another
+        // execution is never applied (see `ineligibleOptionIds` below).
+        if (!executionScope || !alternativesSignature) return undefined;
         const today = getLocalDateString();
         Promise.all([
             trainingSettingsService.getTrainingSettings(userId),
@@ -442,21 +448,25 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
         ]).then(([settings, todaysCheckin]) => {
             if (cancelled) return;
             const effectiveInjuries = resolveEffectiveInjuryConstraints(settings.injuries, todaysCheckin?.tissueResponses, today);
-            setRestrictedModalities(resolveInjuryRestrictions(effectiveInjuries, today).restrictedModalities);
+            setRestrictions({ executionScope, modalities: resolveInjuryRestrictions(effectiveInjuries, today).restrictedModalities });
         }).catch(() => {
-            // Fail closed on the display side, not on the write path: if constraints can't
-            // be read, no alternative is flagged eligible or ineligible either way -- the
-            // athlete still sees every authored option, same as before this feature existed.
-            if (!cancelled) setRestrictedModalities([]);
+            // Display-only and fail-open: when constraints can't be read, no alternative is
+            // flagged ineligible, so the athlete still sees every authored option (as before this
+            // feature existed). A restriction read earlier in this execution is kept; the next
+            // swap or add retries. Writes are never gated on this.
+            if (cancelled) return;
+            setRestrictions(prev => (prev?.executionScope === executionScope ? prev : { executionScope, modalities: [] }));
         });
         return () => {
             cancelled = true;
         };
-    }, [constraintsScope, userId]);
-    const ineligibleOptionIds = useMemo<ReadonlySet<string>>(
-        () => (rawDefinition ? ineligibleAlternativeOptionIds(rawDefinition, restrictedModalities) : new Set()),
-        [rawDefinition, restrictedModalities],
-    );
+    }, [executionScope, alternativesSignature, userId]);
+    const ineligibleOptionIds = useMemo<ReadonlySet<string>>(() => {
+        // A previous session's restrictions never apply to this one; until this execution's
+        // read resolves, nothing is flagged.
+        if (!rawDefinition || !restrictions || restrictions.executionScope !== executionScope) return new Set();
+        return ineligibleAlternativeOptionIds(rawDefinition, restrictions.modalities);
+    }, [rawDefinition, restrictions, executionScope]);
 
     const activeBlock = definition?.blocks[activeBlockIndex] ?? null;
     const activeStep = activeBlock?.steps[activeStepIndex] ?? null;

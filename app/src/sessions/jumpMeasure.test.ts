@@ -27,5 +27,8 @@ describe('jumpMeasureFor', () => {
         expect(jumpMeasureFor(freeText('Standing broad jump'))).toBe('distance');
         expect(jumpMeasureFor(freeText('Single-leg hop'))).toBe('distance');
         expect(jumpMeasureFor(freeText('single leg hop and stick'))).toBe('distance');
+        expect(jumpMeasureFor(freeText('Single-leg hop in place'))).toBe('height');
+        expect(jumpMeasureFor(freeText('Box jump with long rest'))).toBe('height');
+        expect(jumpMeasureFor(freeText('Long jump'))).toBe('distance');
     });
 });

@@ -84,3 +84,13 @@ describe('promoteAddedSteps', () => {
         expect(appended.blocks[0].steps[0].id).toBe('added-x1');
     });
 });
+
+describe('promoteAddedSteps block id', () => {
+    it('picks a free block id when the session already has an extra-exercises block', () => {
+        const existing: SessionBlock = { id: 'extra-exercises', title: 'Extra', role: 'accessory', executionMode: 'sequential', steps: [] };
+        const appended = appendAddedExerciseStep([existing], { exerciseRef: { kind: 'catalog', exerciseId: 'nordic_hamstring_curl' } }, 'x1');
+        const ids = promoteAddedSteps(appended.blocks).map(block => block.id);
+        expect(ids).toEqual(['extra-exercises', 'extra-exercises-2']);
+        expect(new Set(ids).size).toBe(ids.length);
+    });
+});
