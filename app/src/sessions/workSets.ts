@@ -35,9 +35,15 @@ function exerciseKey(ref: SessionEntry['exerciseRef']): string {
     return ref.kind === 'catalog' ? `catalog:${ref.exerciseId}` : `free:${ref.name}`;
 }
 
-/** One policy everywhere: an entry without a recorded exercise belongs to the step's own exercise. */
-function entryExerciseKey(step: SessionStep, entry: SessionEntry): string {
-    return exerciseKey(entry.exerciseRef ?? step.exerciseRef);
+/**
+ * One step-independent policy everywhere: an entry's identity is the exercise it recorded, and
+ * "no recorded exercise" is an identity of its own. The runner's working step (after a swap) and
+ * the pinned step the ledger reads can differ, so a fallback to "the step's exercise" would make
+ * them disagree. `logEntry` records the active step's exercise, so an entry lacks one only when
+ * its step had none; such entries pair with each other, never with a recorded exercise's sides.
+ */
+function entryExerciseKey(_step: SessionStep, entry: SessionEntry): string {
+    return exerciseKey(entry.exerciseRef);
 }
 
 /** Sided entries of the step's current exercise: a swap mid-pair starts a fresh pair. */

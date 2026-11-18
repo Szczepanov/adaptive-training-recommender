@@ -53,6 +53,8 @@ describe('per-side distance carries', () => {
     const leg = (id: string, side?: 'left' | 'right'): SessionEntry => ({
         id, executionId: 'exec', stepId: 'carry',
         completedAt: '2026-09-01T12:00:00Z', createdAt: '2026-09-01T12:00:00Z', updatedAt: '2026-09-01T12:00:00Z',
+        // Real entries record the active step's exercise (logEntry).
+        exerciseRef: { kind: 'catalog', exerciseId: 'suitcase_carry' },
         ...(side ? { side } : {}), payload: { kind: 'distance', meters: 20, loadKg: 24 },
     });
 
@@ -117,21 +119,30 @@ describe('pairing is per exercise', () => {
 
 describe('entries without a recorded exercise', () => {
     const at = '2026-09-01T12:00:00Z';
-    const farmerStep: SessionStep = {
-        id: 'carry', kind: 'exercise', laterality: 'per_side',
-        exerciseRef: { kind: 'catalog', exerciseId: 'farmer_carry' }, dose: { kind: 'distance', sets: 2, meters: 20 },
+    // Entries lack an exercise only when their step had none (logEntry records the active one).
+    const unnamedStep: SessionStep = {
+        id: 'carry', kind: 'exercise', laterality: 'per_side', dose: { kind: 'distance', sets: 2, meters: 20 },
     };
-    const legacyLeft: SessionEntry = {
+    const swappedStep: SessionStep = { ...unnamedStep, exerciseRef: { kind: 'catalog', exerciseId: 'farmer_carry' } };
+    const unnamedLeft: SessionEntry = {
         id: 'l', executionId: 'exec', stepId: 'carry', completedAt: at, createdAt: at, updatedAt: at, side: 'left',
         payload: { kind: 'distance', meters: 20 },
     };
-    const recordedRight: SessionEntry = { ...legacyLeft, id: 'r', side: 'right', exerciseRef: { kind: 'catalog', exerciseId: 'farmer_carry' } };
+    const unnamedRight: SessionEntry = { ...unnamedLeft, id: 'r', side: 'right' };
+    const farmerRight: SessionEntry = { ...unnamedRight, id: 'fr', exerciseRef: { kind: 'catalog', exerciseId: 'farmer_carry' } };
 
-    it('count as the step\'s own exercise in the cue, the unpaired check and the set count alike', () => {
-        expect(nextHoldSide(farmerStep, [legacyLeft])).toBe('right');
-        expect(hasUnpairedHoldSide(farmerStep, [legacyLeft])).toBe(true);
-        expect(completesPrescribedSet(farmerStep, [legacyLeft], recordedRight)).toBe(true);
-        expect(completedPrescribedSets(farmerStep, [legacyLeft, recordedRight])).toBe(1);
-        expect(hasUnpairedHoldSide(farmerStep, [legacyLeft, recordedRight])).toBe(false);
+    it('pair with each other', () => {
+        expect(completedPrescribedSets(unnamedStep, [unnamedLeft, unnamedRight])).toBe(1);
+        expect(nextHoldSide(unnamedStep, [unnamedLeft])).toBe('right');
+    });
+
+    it('never pair with a swapped-in exercise, so the runner (swapped step) and ledger (pinned step) agree', () => {
+        const entries = [unnamedLeft, farmerRight];
+        expect(completedPrescribedSets(swappedStep, entries)).toBe(0);
+        expect(completedPrescribedSets(unnamedStep, entries)).toBe(0);
+        expect(completesPrescribedSet(swappedStep, [unnamedLeft], farmerRight)).toBe(false);
+        // The runner cues the swapped exercise from its own sides only.
+        expect(nextHoldSide(swappedStep, [unnamedLeft])).toBe('left');
+        expect(hasUnpairedHoldSide(swappedStep, [unnamedLeft])).toBe(false);
     });
 });
