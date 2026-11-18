@@ -82,7 +82,10 @@ paths. The API probes use credential-free unsupported GET paths and expect struc
 so they do not submit Garmin credentials, Firebase tokens, or measurement data.
 
 For a normal release, do not run Hosting before new backend/index/rules dependencies are ready;
-use **Deploy Production E2E**, which always cuts Hosting last.
+use **Deploy Production E2E**, which always cuts Hosting last. When this workflow runs with both
+targets enabled, it follows the same order: the rules drift gate and rules deploy run first, and
+the Hosting build and deploy only after they succeed. A drift stop therefore never leaves a new
+bundle live against older rules that would reject its writes.
 
 ## Firestore indexes
 
