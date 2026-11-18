@@ -25,6 +25,13 @@ async function visitScenario(page: Page, scenario: VisualScenario): Promise<void
   await page.waitForTimeout(300);
 }
 
+async function startFixtureSession(page: Page, fixtureTitle: string): Promise<void> {
+  await page.getByRole('button', { name: '＋ New session' }).click();
+  await page.getByRole('button', { name: 'From fixture' }).click();
+  const fixtureCard = page.locator('.fixture-card').filter({ hasText: fixtureTitle });
+  await fixtureCard.getByRole('button', { name: 'Start Session →' }).click();
+}
+
 async function capture(page: Page, scenario: VisualScenario, suffix = '', expectedFocus = scenario.expectedFocus): Promise<void> {
   const projectName = test.info().project.name;
   const viewport = projectName === 'visual-mobile-narrow'
@@ -464,12 +471,7 @@ test('captures grouped session runner rotation without horizontal overflow', asy
   await expect(page.locator('.session-runner-container')).toBeVisible();
   expect(await page.locator('body').evaluate(body => body.scrollWidth <= window.innerWidth)).toBe(true);
 
-  const newSessionBtn = page.getByRole('button', { name: '＋ New session' });
-  await newSessionBtn.click();
-  await page.getByRole('button', { name: 'From fixture' }).click();
-
-  const groupedFixture = page.locator('.fixture-card').filter({ hasText: 'Upper-Body Absorption & Field-Readiness Support' });
-  await groupedFixture.getByRole('button', { name: 'Start Session →' }).click();
+  await startFixtureSession(page, 'Upper-Body Absorption & Field-Readiness Support');
   await expect(page.locator('.group-progress')).toContainText('Circuit');
 
   await page.getByRole('checkbox', { name: 'Warm-up', exact: true }).uncheck();
@@ -497,12 +499,7 @@ test('captures per-side hold controls without horizontal overflow', async ({ pag
   if (!scenario) throw new Error('Missing session runner visual scenario');
   await visitScenario(page, scenario);
 
-  const newSessionBtn = page.getByRole('button', { name: '＋ New session' });
-  await newSessionBtn.click();
-  await page.getByRole('button', { name: 'From fixture' }).click();
-
-  const timedFixture = page.locator('.fixture-card').filter({ hasText: 'Timed Trunk & Tissue Preparation' });
-  await timedFixture.getByRole('button', { name: 'Start Session →' }).click();
+  await startFixtureSession(page, 'Timed Trunk & Tissue Preparation');
   await expect(page.getByRole('heading', { name: /soleus iso/i })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Log left hold' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Right side' })).toBeVisible();
@@ -579,10 +576,7 @@ test('captures just-logged set undo and in-place set correction', async ({ page 
   await page.clock.install();
   await visitScenario(page, scenario);
 
-  await page.getByRole('button', { name: '＋ New session' }).click();
-  await page.getByRole('button', { name: 'From fixture' }).click();
-  const fixture = page.locator('.fixture-card').filter({ hasText: 'Full-Body Strength/Power Maintenance' });
-  await fixture.getByRole('button', { name: 'Start Session →' }).click();
+  await startFixtureSession(page, 'Full-Body Strength/Power Maintenance');
   await expect(page.getByRole('button', { name: 'Log repetition set' })).toBeVisible();
   await page.clock.pauseAt(new Date(Date.now() + 1_000));
 
