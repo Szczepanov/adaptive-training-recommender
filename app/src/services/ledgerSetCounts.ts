@@ -6,7 +6,7 @@
  */
 import { resolveEffectiveSession } from '../sessions/choiceResolution';
 import { targetEntriesForGroupStep } from '../sessions/groupProgression';
-import type { SessionDefinition, SessionEntry, SessionStep } from '../sessions/models';
+import type { SessionDefinition, SessionEntry } from '../sessions/models';
 import { completedPrescribedSets, countsTowardPrescribedSets, isWarmupEntry } from '../sessions/workSets';
 
 /** Prescribed exercise steps, block-aware (rounds override a step's sets); alternatives are never summed. */
@@ -14,19 +14,6 @@ export function plannedSetCount(definition: SessionDefinition): number {
     return definition.blocks.reduce((sum, block) => sum + block.steps
         .filter(step => step.kind === 'exercise')
         .reduce((blockSum, step) => blockSum + targetEntriesForGroupStep(block, step), 0), 0);
-}
-
-/** Without the definition, logged left/right holds and carries still pair into one set. */
-function inferredStep(stepId: string, entries: readonly SessionEntry[]): SessionStep {
-    const sided = entries.find(entry => (entry.payload.kind === 'duration' || entry.payload.kind === 'distance')
-        && (entry.side === 'left' || entry.side === 'right'));
-    if (sided?.payload.kind === 'duration') {
-        return { id: stepId, kind: 'exercise', laterality: 'per_side', dose: { kind: 'duration', seconds: 0 } };
-    }
-    if (sided?.payload.kind === 'distance') {
-        return { id: stepId, kind: 'exercise', laterality: 'per_side', dose: { kind: 'distance', meters: 0 } };
-    }
-    return { id: stepId, kind: 'exercise' };
 }
 
 function workSetCount(entries: readonly SessionEntry[], definition: SessionDefinition | null): number {
@@ -37,16 +24,10 @@ function workSetCount(entries: readonly SessionEntry[], definition: SessionDefin
         byStep.set(key, [...(byStep.get(key) ?? []), { ...entry, stepId: key }]);
     }
     return [...byStep].reduce((sum, [stepId, stepEntries]) => {
-        const step = steps.get(stepId);
-        // A resolved step counts exactly as the runner showed it (`completedPrescribedSets` on the
-        // effective step), so the ledger never disagrees with the athlete's in-session progress.
-        if (step) return sum + completedPrescribedSets(step, stepEntries);
-        // Unknown step (added, or unresolved definition): a mid-session swap can leave holds and
-        // carries under one step id, so pair each payload kind on its own -- order-independent.
-        const byKind = new Map<string, SessionEntry[]>();
-        for (const entry of stepEntries) byKind.set(entry.payload.kind, [...(byKind.get(entry.payload.kind) ?? []), entry]);
-        return sum + [...byKind.values()].reduce((kindSum, kindEntries) =>
-            kindSum + completedPrescribedSets(inferredStep(stepId, kindEntries), kindEntries), 0);
+        // Left/right pairing follows the logged entries (see `completedPrescribedSets`), so a
+        // step missing from the definition (added, or unresolved) counts the same way.
+        const step = steps.get(stepId) ?? { id: stepId, kind: 'exercise' as const };
+        return sum + completedPrescribedSets(step, stepEntries);
     }, 0);
 }
 

@@ -33,15 +33,23 @@ function sidedEntries(step: SessionStep, entries: readonly SessionEntry[], kind:
     return entries.filter(entry => entry.stepId === step.id && entry.payload.kind === kind);
 }
 
-/** A left/right hold or carry is one set only once both sides have been logged. */
+/**
+ * A left/right hold or carry is one set only once both sides have been logged.
+ *
+ * Pairing follows the entries, not the step's dose: only the per-side hold and carry cards
+ * record a left/right side, so such an entry is always half of a pair. That keeps the count
+ * right when the dose that was logged differs from the step's -- a mid-session swap changes
+ * only the runner's working step, while the ledger and exports read the pinned one -- and pairs
+ * each payload kind on its own when a swap leaves holds and carries under one step id.
+ * Side-less entries (bilateral work, legacy holds) count one set each.
+ */
 export function completedPrescribedSets(step: SessionStep, entries: readonly SessionEntry[]): number {
     const work = entries.filter(entry => entry.stepId === step.id && countsTowardPrescribedSets(entry));
-    const kind = sidedPayloadKind(step);
-    if (!kind) return work.length;
-    const sided = work.filter(entry => entry.payload.kind === kind);
-    const left = sided.filter(entry => entry.side === 'left').length;
-    const right = sided.filter(entry => entry.side === 'right').length;
-    return work.length - left - right + Math.min(left, right);
+    return (['duration', 'distance'] as const).reduce((count, kind) => {
+        const sided = work.filter(entry => entry.payload.kind === kind && (entry.side === 'left' || entry.side === 'right'));
+        const left = sided.filter(entry => entry.side === 'left').length;
+        return count - sided.length + Math.min(left, sided.length - left);
+    }, work.length);
 }
 
 /** The side to log next for a per-side hold or carry: whichever side has fewer entries, left first. */

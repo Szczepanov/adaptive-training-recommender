@@ -77,8 +77,9 @@ describe('performedSetCounts', () => {
         const choice = entry('pallof', { kind: 'choice', choiceId: 'swap', optionId: 'hold' } as unknown as SessionEntry['payload']);
         const holds = [hold('pallof', 'left'), hold('pallof', 'right'), hold('pallof', 'left'), hold('pallof', 'right')];
         expect(performedSetCounts([{ entries: [choice, ...holds], definition: withChoice }])).toEqual({ work: 2, warmup: 0 });
-        // Choice-free: the pinned repetition dose counts every logged entry, as before.
-        expect(performedSetCounts([{ entries: holds, definition: withChoice }])).toEqual({ work: 4, warmup: 0 });
+        // Choice-free (e.g. the athlete swapped to the hold mid-session, which only the runner's
+        // working step knows): the logged left/right holds still pair, exactly as the runner showed.
+        expect(performedSetCounts([{ entries: holds, definition: withChoice }])).toEqual({ work: 2, warmup: 0 });
     });
 });
 
@@ -90,5 +91,13 @@ describe('performedSetCounts mixed sided kinds on an unknown step', () => {
         const holdFirst = [hold('left'), hold('right'), hold('left'), hold('right'), carry('left'), carry('right')];
         expect(performedSetCounts([{ entries: carryFirst, definition: null }]).work).toBe(3);
         expect(performedSetCounts([{ entries: holdFirst, definition: null }]).work).toBe(3);
+    });
+});
+
+describe('performedSetCounts mixed sided kinds on a resolved step', () => {
+    it('pairs a swapped-in carry and the planned holds independently', () => {
+        const carry = (side: 'left' | 'right') => entry('plank', { kind: 'distance', meters: 20 }, { side });
+        const entries = [hold('plank', 'left'), hold('plank', 'right'), carry('left'), carry('right')];
+        expect(performedSetCounts([{ entries, definition }])).toEqual({ work: 2, warmup: 0 });
     });
 });

@@ -70,3 +70,23 @@ describe('per-side distance carries', () => {
         expect(hasUnpairedHoldSide(bilateral, [leg('b1')])).toBe(false);
     });
 });
+
+describe('pairing follows the logged entries, not the step dose', () => {
+    const at = '2026-09-01T12:00:00Z';
+    const sided = (id: string, kind: 'duration' | 'distance', side: 'left' | 'right'): SessionEntry => ({
+        id, executionId: 'exec', stepId: 'row', completedAt: at, createdAt: at, updatedAt: at, side,
+        payload: kind === 'duration' ? { kind: 'duration', seconds: 30 } : { kind: 'distance', meters: 20 },
+    });
+    // The pinned step is a rep exercise; the athlete swapped to a per-side carry mid-session.
+    const pinnedRow: SessionStep = { id: 'row', kind: 'exercise', dose: { kind: 'repetition', sets: 3, reps: 8 } };
+
+    it('pairs left/right carries logged under a rep step after a swap', () => {
+        expect(completedPrescribedSets(pinnedRow, [sided('l', 'distance', 'left'), sided('r', 'distance', 'right')])).toBe(1);
+    });
+
+    it('pairs holds and carries under one step separately, whatever the order', () => {
+        const entries = [sided('h1', 'duration', 'left'), sided('c1', 'distance', 'left'), sided('h2', 'duration', 'right'), sided('c2', 'distance', 'right')];
+        expect(completedPrescribedSets(step, entries.map(e => ({ ...e, stepId: 'hold' })))).toBe(2);
+        expect(completedPrescribedSets(pinnedRow, entries)).toBe(2);
+    });
+});
