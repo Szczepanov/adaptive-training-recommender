@@ -118,9 +118,10 @@ function formatPerformed(payload: SessionEntryPayload): string {
       const work = payload.weightKg !== undefined && payload.weightKg > 0
         ? `${payload.reps} × ${payload.weightKg} kg`
         : `${payload.reps} reps`;
-      const jump = payload.jumpHeightCm !== undefined
-        ? ` · best ${payload.jumpHeightCm} cm`
-        : payload.jumpDistanceMeters !== undefined ? ` · best ${payload.jumpDistanceMeters} m` : '';
+      const jump = [
+        payload.jumpHeightCm !== undefined ? ` · best ${payload.jumpHeightCm} cm` : '',
+        payload.jumpDistanceMeters !== undefined ? ` · best ${payload.jumpDistanceMeters} m` : '',
+      ].join('');
       return payload.gauge ? `${work}${jump} · ${formatGauge(payload.gauge)}` : `${work}${jump}`;
     }
     case 'duration': {
@@ -191,7 +192,7 @@ function StructuredDetail({ structured }: { structured: NonNullable<CompletedWor
                 return (
                   <li key={set.entryId} className={set.isWarmup ? 'is-warmup' : undefined}>
                     <span className="completed-workout-set-label">{set.isWarmup ? `Warm-up ${set.setNumber}` : `Set ${set.setNumber}`}</span>
-                    <span className="completed-workout-set-performed">{formatPerformed(set.payload)}</span>
+                    <span className="completed-workout-set-performed">{set.side ? `${set.side === 'left' ? 'Left' : 'Right'} · ` : ''}{formatPerformed(set.payload)}</span>
                     {rest && <span className="completed-workout-set-rest">{rest}</span>}
                   </li>
                 );

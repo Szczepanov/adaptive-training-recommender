@@ -36,8 +36,16 @@ function workSetCount(entries: readonly SessionEntry[], definition: SessionDefin
         const key = entry.stepId ?? `entry:${entry.id}`;
         byStep.set(key, [...(byStep.get(key) ?? []), { ...entry, stepId: key }]);
     }
-    return [...byStep].reduce((sum, [stepId, stepEntries]) =>
-        sum + completedPrescribedSets(steps.get(stepId) ?? inferredStep(stepId, stepEntries), stepEntries), 0);
+    return [...byStep].reduce((sum, [stepId, stepEntries]) => {
+        const step = steps.get(stepId);
+        if (step) return sum + completedPrescribedSets(step, stepEntries);
+        // Unknown step (added, or unresolved definition): a mid-session swap can leave holds and
+        // carries under one step id, so pair each payload kind on its own -- order-independent.
+        const byKind = new Map<string, SessionEntry[]>();
+        for (const entry of stepEntries) byKind.set(entry.payload.kind, [...(byKind.get(entry.payload.kind) ?? []), entry]);
+        return sum + [...byKind.values()].reduce((kindSum, kindEntries) =>
+            kindSum + completedPrescribedSets(inferredStep(stepId, kindEntries), kindEntries), 0);
+    }, 0);
 }
 
 export interface ExecutionSetInput {

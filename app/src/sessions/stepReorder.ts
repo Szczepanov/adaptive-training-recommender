@@ -63,6 +63,8 @@ export function applyStepMove(blocks: SessionBlock[], move: StepMove): SessionBl
     const targetBlock = withoutMoving[targetBlockIndex];
     const targetIndex = targetBlock.steps.findIndex(step => step.id === move.targetStepId);
     const insertAt = move.position === 'before' ? targetIndex : targetIndex + 1;
+    // Dropping a step back where it already is changes nothing -- report it as no move.
+    if (targetBlockIndex === from.blockIndex && insertAt === from.stepIndex) return blocks;
     const moved = withoutMoving.map((block, index) => (index === targetBlockIndex
         ? { ...block, steps: [...block.steps.slice(0, insertAt), moving, ...block.steps.slice(insertAt)] }
         : block));
@@ -71,9 +73,41 @@ export function applyStepMove(blocks: SessionBlock[], move: StepMove): SessionBl
     return moved.filter(block => block.id !== ADDED_EXERCISES_BLOCK_ID || block.steps.length > 0);
 }
 
-/** Replays recorded moves in order, skipping any that no longer apply (e.g. an unlogged added step lost on reload). */
-export function applyStepMoves(blocks: SessionBlock[], moves: readonly StepMove[]): SessionBlock[] {
-    return moves.reduce((current, move) => applyStepMove(current, move), blocks);
+/** The athlete's chosen order: each reorderable block's step ids, in order. */
+export type StepLayout = Array<{ blockId: string; stepIds: string[] }>;
+
+export function layoutOf(blocks: readonly SessionBlock[]): StepLayout {
+    return blocks.filter(isReorderableBlock).map(block => ({ blockId: block.id, stepIds: block.steps.map(step => step.id) }));
+}
+
+/**
+ * Restores a saved order onto freshly rebuilt blocks. Ids that no longer exist (an added
+ * exercise never logged) are skipped without disturbing the rest, and the same block rules as
+ * a live move apply, so a tampered or stale layout can never pull a planned step into another
+ * block. Steps the layout does not mention keep their place at the end of their own block.
+ */
+export function applyStepLayout(blocks: readonly SessionBlock[], layout: StepLayout): SessionBlock[] {
+    const origin = new Map(blocks.flatMap((block, blockIndex) => block.steps.map((step, stepIndex) =>
+        [step.id, { step, from: { blockIndex, stepIndex } }] as const)));
+    const placedIn = new Map<string, number>();
+    for (const entry of layout) {
+        const blockIndex = blocks.findIndex(block => block.id === entry.blockId);
+        if (blockIndex === -1) continue;
+        for (const stepId of entry.stepIds) {
+            const found = origin.get(stepId);
+            if (!found || placedIn.has(stepId) || !isReorderableBlock(blocks[found.from.blockIndex])) continue;
+            if (canEnterBlock(blocks, found.from, blockIndex)) placedIn.set(stepId, blockIndex);
+        }
+    }
+    const order = new Map(layout.flatMap(entry => entry.stepIds.map((stepId, index) => [`${entry.blockId}:${stepId}`, index] as const)));
+    const restored = blocks.map((block, blockIndex) => {
+        if (!isReorderableBlock(block)) return block;
+        const inLayout = [...placedIn].filter(([, index]) => index === blockIndex).map(([stepId]) => origin.get(stepId)!.step)
+            .sort((a, b) => order.get(`${block.id}:${a.id}`)! - order.get(`${block.id}:${b.id}`)!);
+        const unplaced = block.steps.filter(step => !placedIn.has(step.id));
+        return { ...block, steps: [...inLayout, ...unplaced] };
+    });
+    return restored.filter(block => block.id !== ADDED_EXERCISES_BLOCK_ID || block.steps.length > 0);
 }
 
 /**

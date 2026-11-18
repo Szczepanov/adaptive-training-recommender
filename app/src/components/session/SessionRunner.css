@@ -1263,6 +1263,12 @@
     border-color: #38bdf8;
 }
 
+.move-step-group {
+    display: inline-flex;
+    flex-wrap: nowrap;
+    gap: 0.5rem;
+}
+
 .move-step-btn {
     background: #1e293b;
     border: 1px solid #475569;

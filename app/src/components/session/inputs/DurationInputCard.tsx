@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import type { SessionStep, DurationEntryPayload } from '../../../sessions/models';
 import { playCountdownBeep } from '../../../utils/audioFeedback';
 import { RpeField } from './RpeField';
-import { buildRpeGauge } from './rpeGauge';
+import { buildHoldPayload } from './setPayloads';
 
 interface DurationInputCardProps {
     step: SessionStep;
@@ -41,7 +41,9 @@ export const DurationInputCard: React.FC<DurationInputCardProps> = ({
         right: suggestedLoadKg !== undefined ? String(suggestedLoadKg) : '',
         bilateral: suggestedLoadKg !== undefined ? String(suggestedLoadKg) : '',
     });
-    const [rpe, setRpe] = useState<string>('');
+    // Each side keeps its own RPE draft, like duration and load, so one side's effort never
+    // rides along with the other side's hold.
+    const [rpeBySide, setRpeBySide] = useState<Record<'left' | 'right' | 'bilateral', string>>({ left: '', right: '', bilateral: '' });
     const [isPrepCountdown, setIsPrepCountdown] = useState<boolean>(false);
     const [prepSeconds, setPrepSeconds] = useState<number>(5);
     const [isTimerRunning, setIsTimerRunning] = useState<boolean>(false);
@@ -49,6 +51,8 @@ export const DurationInputCard: React.FC<DurationInputCardProps> = ({
     const timerSide = step.laterality === 'per_side' ? selectedSide : 'bilateral';
     const seconds = secondsBySide[timerSide];
     const loadKg = loadBySide[timerSide];
+    const rpe = rpeBySide[timerSide];
+    const setRpe = (value: string) => setRpeBySide(prev => ({ ...prev, [timerSide]: value }));
     const elapsed = elapsedBySide[timerSide];
     const setSeconds = (value: string) => setSecondsBySide(prev => ({ ...prev, [timerSide]: value }));
     const setLoadKg = (value: string) => setLoadBySide(prev => ({ ...prev, [timerSide]: value }));
@@ -130,18 +134,10 @@ export const DurationInputCard: React.FC<DurationInputCardProps> = ({
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        const parsedSec = parseInt(seconds, 10);
-        if (isNaN(parsedSec) || parsedSec <= 0) return;
-
-        const parsedLoad = loadKg.trim().length > 0 ? parseFloat(loadKg) : undefined;
-        const gauge = buildRpeGauge(rpe);
-        void onSubmit({
-            kind: 'duration',
-            seconds: parsedSec,
-            ...(parsedLoad !== undefined ? { loadKg: parsedLoad } : {}),
-            ...(gauge ? { gauge } : {}),
-        }, step.laterality === 'per_side' ? selectedSide : undefined);
-        setRpe('');
+        const payload = buildHoldPayload({ seconds, loadKg, rpe });
+        if (!payload) return;
+        void onSubmit(payload, step.laterality === 'per_side' ? selectedSide : undefined);
+        setRpeBySide(prev => ({ ...prev, [timerSide]: '' }));
         setElapsed(0);
         setIsTimerRunning(false);
         setIsPrepCountdown(false);

@@ -49,13 +49,20 @@ export function buildIntensityGauge(draft: RepetitionDraft): IntensityGauge | un
     }
 }
 
+/** Accepted best-jump results; the form uses the same bounds, so nothing is dropped silently. */
+export const JUMP_RESULT_LIMITS = {
+    height: { min: 0.1, max: 200 },
+    distance: { min: 0.01, max: 50 },
+} as const;
+
 /** Returns `null` when the draft cannot be logged (reps missing, non-numeric or not positive). */
 export function buildRepetitionPayload(draft: RepetitionDraft): RepetitionEntryPayload | null {
     const reps = parseInt(draft.reps, 10);
     if (isNaN(reps) || reps <= 0) return null;
     const weightKg = draft.weight.trim().length > 0 ? parseFloat(draft.weight) : undefined;
     const gauge = buildIntensityGauge(draft);
-    const jump = draft.jumpMeasure ? parseBounded(draft.jumpVal ?? '', Number.MIN_VALUE, draft.jumpMeasure === 'height' ? 200 : 50) : undefined;
+    const limits = draft.jumpMeasure ? JUMP_RESULT_LIMITS[draft.jumpMeasure] : undefined;
+    const jump = limits ? parseBounded(draft.jumpVal ?? '', limits.min, limits.max) : undefined;
     return {
         kind: 'repetition',
         setIndex: 1, // dynamically indexed by caller

@@ -267,12 +267,14 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
             || (payload.kind == 'duration'
               && payload.keys().hasOnly(['kind', 'seconds', 'loadKg', 'position', 'gauge'])
               && payload.seconds is number && payload.seconds > 0
-              && (!('loadKg' in payload) || (payload.loadKg is number && payload.loadKg >= 0)))
+              && (!('loadKg' in payload) || (payload.loadKg is number && payload.loadKg >= 0))
+              && (!('gauge' in payload) || (payload.gauge is map && payload.gauge.keys().hasOnly(['scale', 'value']))))
             || (payload.kind == 'distance'
               && payload.keys().hasOnly(['kind', 'meters', 'durationSeconds', 'loadKg', 'gauge'])
               && payload.meters is number && payload.meters > 0
               && (!('durationSeconds' in payload) || (payload.durationSeconds is number && payload.durationSeconds > 0))
-              && (!('loadKg' in payload) || (payload.loadKg is number && payload.loadKg >= 0)))
+              && (!('loadKg' in payload) || (payload.loadKg is number && payload.loadKg >= 0))
+              && (!('gauge' in payload) || (payload.gauge is map && payload.gauge.keys().hasOnly(['scale', 'value']))))
             || (payload.kind == 'sprint'
               && payload.keys().hasOnly(['kind', 'meters', 'splitSeconds', 'surface'])
               && payload.meters is number && payload.meters > 0

@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import type { StepExerciseReplacement } from '../sessions/swapAdaptation';
-import { appendAddedExerciseStep } from '../sessions/addedExerciseStep';
-import { applyStepMove, locateStep, type StepMove } from '../sessions/stepReorder';
-import { clearStepMoves, saveStepMoves } from '../sessions/stepOrderStorage';
+import { appendAddedExerciseStep, promoteAddedSteps } from '../sessions/addedExerciseStep';
+import { applyStepMove, layoutOf, locateStep, type StepMove } from '../sessions/stepReorder';
+import { clearStepLayout, saveStepLayout } from '../sessions/stepOrderStorage';
 import { restoreWorkingDefinition } from '../sessions/workingDefinition';
 import { entryCompositionStamp, relaxUnevidencedRequirements, swappedStepComposition } from '../sessions/compositionStamping';
 import type {
@@ -102,7 +102,8 @@ export interface UseSessionRunnerResult {
     addExerciseStep: (exercise: StepExerciseReplacement) => void;
     /** Moves a step in this session's working order (see `sessions/stepReorder.ts`); the
      * current step stays current. Remembered on this device across reloads. */
-    moveStep: (move: StepMove) => void;
+    /** Returns whether the order changed (false for a disallowed or no-op move, or while a start is loading). */
+    moveStep: (move: StepMove) => boolean;
     saveAsNewTemplate: (title: string, summary?: string) => Promise<string>;
     completeSession: (payload?: SessionCompletionPayload) => Promise<void>;
     abandonSession: (notes?: string) => Promise<void>;
@@ -124,6 +125,7 @@ export function createCustomTemplateDefinition(
         : undefined;
     return {
         ...source,
+        blocks: promoteAddedSteps(source.blocks),
         id: templateId,
         revision: 1,
         title: title.trim().length > 0 ? title.trim() : source.title,
@@ -136,7 +138,7 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
     // Fixtures are launch inputs only. Resume never consults their current bytes.
     void fixtures;
     const [rawDefinition, setRawDefinition] = useState<SessionDefinition | null>(null);
-    const [ineligibleOptionIds, setIneligibleOptionIds] = useState<ReadonlySet<string>>(new Set());
+    const [restrictedModalities, setRestrictedModalities] = useState<Parameters<typeof ineligibleAlternativeOptionIds>[1]>([]);
     const [execution, setExecution] = useState<SessionExecution | null>(null);
     const [entries, setEntries] = useState<SessionEntry[]>([]);
     const [activeBlockIndex, setActiveBlockIndex] = useState<number>(0);
@@ -216,8 +218,6 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
     // across a reload rather than resumed or fabricated, satisfying "app
     // interruption/resume does not fabricate duration".
     const activeRestRef = useRef<ActiveRestState | null>(null);
-    /** The athlete's step moves for the current execution, replayed after a reload. */
-    const stepMovesRef = useRef<StepMove[]>([]);
 
     // Local-only manual countdown started via `startRestTimer` (no durable rest
     // event to attribute it to). Stored as a wall-clock deadline so a throttled
@@ -304,9 +304,7 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
                     setSyncStatus('unavailable');
                     return;
                 }
-                const working = restoreWorkingDefinition(resolved.data, diary.entries, existing.executionId);
-                stepMovesRef.current = working.moves;
-                const restored = working.definition;
+                const restored = restoreWorkingDefinition(resolved.data, diary.entries, existing.executionId);
                 const cursor = resolveResumeCursor(restored, diary.entries);
                 setRawDefinition(restored);
                 setActiveBlockIndex(cursor.blockIndex);
@@ -425,15 +423,18 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
     const definition = effectiveView?.definition ?? null;
     const sessionEnded = effectiveView?.sessionEnded ?? false;
 
-    // Alternative eligibility only depends on the day's resolved constraints and the
-    // (raw) definition's authored alternatives, not on entries -- recomputed once per
-    // session start/restore rather than on every logged entry.
+    // Alternative eligibility = the day's restricted modalities (read from settings and today's
+    // check-in) applied to the definition's authored alternatives. Only the reads are effectful,
+    // and they do not depend on the definition, so they run once per session start/restore;
+    // eligibility itself is derived purely, so a reorder, swap or add never re-reads and can
+    // never drop restrictions that were already loaded.
+    const hasDefinition = rawDefinition !== null;
+    const constraintsScope = hasDefinition ? execution?.executionId ?? 'starting' : null;
     useEffect(() => {
         let cancelled = false;
         // No sync setState here: with no definition there is no active step, so nothing
-        // ever reads a stale `ineligibleOptionIds` before the next session start
-        // recomputes it fresh below.
-        if (!rawDefinition) return undefined;
+        // ever reads stale restrictions before the next session start loads them fresh below.
+        if (!constraintsScope) return undefined;
         const today = getLocalDateString();
         Promise.all([
             trainingSettingsService.getTrainingSettings(userId),
@@ -441,18 +442,21 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
         ]).then(([settings, todaysCheckin]) => {
             if (cancelled) return;
             const effectiveInjuries = resolveEffectiveInjuryConstraints(settings.injuries, todaysCheckin?.tissueResponses, today);
-            const { restrictedModalities } = resolveInjuryRestrictions(effectiveInjuries, today);
-            setIneligibleOptionIds(ineligibleAlternativeOptionIds(rawDefinition, restrictedModalities));
+            setRestrictedModalities(resolveInjuryRestrictions(effectiveInjuries, today).restrictedModalities);
         }).catch(() => {
             // Fail closed on the display side, not on the write path: if constraints can't
             // be read, no alternative is flagged eligible or ineligible either way -- the
             // athlete still sees every authored option, same as before this feature existed.
-            if (!cancelled) setIneligibleOptionIds(new Set());
+            if (!cancelled) setRestrictedModalities([]);
         });
         return () => {
             cancelled = true;
         };
-    }, [rawDefinition, userId]);
+    }, [constraintsScope, userId]);
+    const ineligibleOptionIds = useMemo<ReadonlySet<string>>(
+        () => (rawDefinition ? ineligibleAlternativeOptionIds(rawDefinition, restrictedModalities) : new Set()),
+        [rawDefinition, restrictedModalities],
+    );
 
     const activeBlock = definition?.blocks[activeBlockIndex] ?? null;
     const activeStep = activeBlock?.steps[activeStepIndex] ?? null;
@@ -474,7 +478,6 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
         startInFlightRef.current = true;
         activeRestRef.current = null;
         manualRestDeadlineRef.current = null;
-        stepMovesRef.current = [];
         setRawDefinition(nextDefinition);
         setActiveBlockIndex(0);
         setActiveStepIndex(0);
@@ -526,9 +529,7 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
                     setSyncStatus('unavailable');
                     return;
                 }
-                const working = restoreWorkingDefinition(resolved.data, diary.entries, exec.executionId);
-                stepMovesRef.current = working.moves;
-                const restored = working.definition;
+                const restored = restoreWorkingDefinition(resolved.data, diary.entries, exec.executionId);
                 setRawDefinition(restored);
                 const cursor = resolveResumeCursor(restored, diary.entries);
                 setActiveBlockIndex(cursor.blockIndex);
@@ -828,7 +829,11 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
         manualRestDeadlineRef.current = null;
         setRestSecondsRemaining(0);
         setIsRestRunning(false);
-        closeActiveRest('next_set_started')?.catch(err => console.warn('[useSessionRunner] Failed to persist rest event:', err));
+        // A rest whose deadline passed before the next one-second tick ran to completion; only
+        // a rest still counting down was interrupted by the new work.
+        const active = activeRestRef.current;
+        const reason: RestEndReason = active && restSecondsRemainingAt(active, Date.now()) <= 0 ? 'timer_elapsed' : 'next_set_started';
+        closeActiveRest(reason)?.catch(err => console.warn('[useSessionRunner] Failed to persist rest event:', err));
     }, [closeActiveRest]);
 
     const addRestSeconds = useCallback((seconds: number) => {
@@ -899,46 +904,52 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
     // A finished or abandoned execution is never resumed, so its remembered order is dead weight.
     const executionIdForCleanup = execution && execution.state !== 'in_progress' ? execution.executionId : null;
     useEffect(() => {
-        if (executionIdForCleanup) clearStepMoves(executionIdForCleanup);
+        if (executionIdForCleanup) clearStepLayout(executionIdForCleanup);
     }, [executionIdForCleanup]);
 
-    const recordStepMove = useCallback((move: StepMove) => {
-        stepMovesRef.current = [...stepMovesRef.current, move];
-        if (execution) saveStepMoves(execution.executionId, stepMovesRef.current);
+    /** Remembers the resulting order (not the move), so restore cannot be scrambled. */
+    const rememberOrder = useCallback((blocks: readonly SessionBlock[]) => {
+        if (execution) saveStepLayout(execution.executionId, layoutOf(blocks));
     }, [execution]);
 
+    // A start that resumed an existing execution shows a provisional definition while its diary
+    // and saved order load; an order change made then would overwrite the saved one.
+    const canEditOrder = !isRestoring && execution?.state === 'in_progress';
+
     const addExerciseStep = useCallback((exercise: StepExerciseReplacement) => {
-        if (!rawDefinition) return;
+        if (!rawDefinition || startInFlightRef.current || !canEditOrder) return;
         // Dialogs are modal, so no other definition edit can interleave with this one.
         const appended = appendAddedExerciseStep(rawDefinition.blocks, exercise, crypto.randomUUID());
         const addedStep = appended.blocks[appended.blockIndex].steps[appended.stepIndex];
         const currentStep = rawDefinition.blocks[activeBlockIndex]?.steps[activeStepIndex];
         // The athlete usually adds the exercise they are about to do next, so place it right
         // after the current step rather than at the end of the session.
-        const move: StepMove | null = currentStep
-            ? { stepId: addedStep.id, targetStepId: currentStep.id, position: 'after' }
-            : null;
-        const placed = move ? applyStepMove(appended.blocks, move) : appended.blocks;
-        if (move && placed !== appended.blocks) recordStepMove(move);
+        const placed = currentStep
+            ? applyStepMove(appended.blocks, { stepId: addedStep.id, targetStepId: currentStep.id, position: 'after' })
+            : appended.blocks;
+        // Saved even when it stays at the end: several added exercises keep the order they
+        // were added in after a reload, whatever order they were logged in.
+        rememberOrder(placed);
         const location = locateStep(placed, addedStep.id) ?? appended;
         setRawDefinition({ ...rawDefinition, blocks: placed });
         setActiveBlockIndex(location.blockIndex);
         setActiveStepIndex(location.stepIndex);
-    }, [rawDefinition, activeBlockIndex, activeStepIndex, recordStepMove]);
+    }, [rawDefinition, activeBlockIndex, activeStepIndex, rememberOrder, canEditOrder]);
 
-    const moveStep = useCallback((move: StepMove) => {
-        if (!rawDefinition) return;
+    const moveStep = useCallback((move: StepMove): boolean => {
+        if (!rawDefinition || startInFlightRef.current || !canEditOrder) return false;
         const blocks = applyStepMove(rawDefinition.blocks, move);
-        if (blocks === rawDefinition.blocks) return;
+        if (blocks === rawDefinition.blocks) return false;
         const currentStep = rawDefinition.blocks[activeBlockIndex]?.steps[activeStepIndex];
-        recordStepMove(move);
+        rememberOrder(blocks);
         setRawDefinition({ ...rawDefinition, blocks });
         const location = currentStep ? locateStep(blocks, currentStep.id) : null;
         if (location) {
             setActiveBlockIndex(location.blockIndex);
             setActiveStepIndex(location.stepIndex);
         }
-    }, [rawDefinition, activeBlockIndex, activeStepIndex, recordStepMove]);
+        return true;
+    }, [rawDefinition, activeBlockIndex, activeStepIndex, rememberOrder, canEditOrder]);
 
     const saveAsNewTemplate = useCallback(async (title: string, summary?: string): Promise<string> => {
         if (!rawDefinition) throw new Error('No active session definition to save.');

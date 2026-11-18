@@ -5,6 +5,7 @@ import {
     focusAndSelect,
     refocusIfStillOwned,
     runSingleFlight,
+    JUMP_RESULT_LIMITS,
     type GaugeScaleType,
 } from './repetitionSubmit';
 import { jumpMeasureFor } from '../../../sessions/jumpMeasure';
@@ -70,6 +71,7 @@ export const RepetitionInputCard: React.FC<RepetitionInputCardProps> = ({
         const payload = buildRepetitionPayload({ reps, weight, isWarmup, gaugeScale, gaugeVal, technicalMet, technicalNote, jumpMeasure, jumpVal });
         if (!payload) return;
 
+        const submittedJump = jumpVal;
         await runSingleFlight(submitInFlightRef, async () => {
             setIsSubmitting(true);
             try {
@@ -78,7 +80,8 @@ export const RepetitionInputCard: React.FC<RepetitionInputCardProps> = ({
                 // Reset gauge value for next set only after the write lifecycle has completed.
                 setGaugeVal('');
                 setTechnicalNote('');
-                setJumpVal('');
+                // Keep a result the athlete already typed for the next set while this one saved.
+                setJumpVal(current => (current === submittedJump ? '' : current));
 
                 // Refocus weight input for next set, unless the user moved focus elsewhere
                 // (e.g. into the Abandon/Finish dialog) while the write was in flight.
@@ -129,8 +132,9 @@ export const RepetitionInputCard: React.FC<RepetitionInputCardProps> = ({
                         <span className="input-label">{jumpMeasure === 'height' ? 'Best height (cm)' : 'Best distance (m)'}</span>
                         <input
                             type="number"
-                            step={jumpMeasure === 'height' ? '0.5' : '0.01'}
-                            min="0"
+                            step="any"
+                            min={JUMP_RESULT_LIMITS[jumpMeasure].min}
+                            max={JUMP_RESULT_LIMITS[jumpMeasure].max}
                             placeholder="Optional"
                             value={jumpVal}
                             onChange={e => setJumpVal(e.target.value)}

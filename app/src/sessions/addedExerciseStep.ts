@@ -12,6 +12,21 @@ export function isAddedStep(step: Pick<SessionStep, 'id'> | undefined): boolean 
     return step?.id.startsWith(ADDED_STEP_ID_PREFIX) ?? false;
 }
 
+/**
+ * A saved template prescribes what the athlete added, so those steps are planned from then on:
+ * drop the `added-` id prefix and rename the "Added exercises" block, so the next run treats
+ * them like any other planned step (block-bound moves, normal auto-advance).
+ */
+export function promoteAddedSteps(blocks: readonly SessionBlock[]): SessionBlock[] {
+    return blocks.map(block => ({
+        ...block,
+        ...(block.id === ADDED_EXERCISES_BLOCK_ID ? { id: 'extra-exercises' } : {}),
+        steps: block.steps.map(step => (isAddedStep(step)
+            ? { ...step, id: `extra-${step.id.slice(ADDED_STEP_ID_PREFIX.length)}` }
+            : step)),
+    }));
+}
+
 /** Exercises added during the session are open-ended: the athlete decides how many sets they
  * do, so the runner must not auto-advance away after the first logged set. */
 export function isAddedExercisesBlock(block: SessionBlock | undefined): boolean {

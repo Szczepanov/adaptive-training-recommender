@@ -361,6 +361,22 @@ export function structuredEntriesReadOf(view: CompletedWorkoutView): StructuredE
     return { status: 'complete' };
 }
 
+/**
+ * Work sets as the athlete performed them: a per-side hold or carry logs one row per side, and
+ * a left/right pair is one set (as in `sessions/workSets.ts`). An unpaired side is still
+ * performed work, so it counts as one set here. Each row stays in `performed.sets`.
+ */
+function performedWorkSetCount(work: readonly ExportedPerformedSet[]): number {
+    const unsided = work.filter(set => !set.side).length;
+    const kinds = new Set(work.filter(set => set.side).map(set => set.kind));
+    const sided = [...kinds].reduce((sum, kind) => {
+        const ofKind = work.filter(set => set.side && set.kind === kind);
+        const left = ofKind.filter(set => set.side === 'left').length;
+        return sum + Math.max(left, ofKind.length - left);
+    }, 0);
+    return unsided + sided;
+}
+
 /** Projects a structured session step and its logged sets into the exported exercise summary. */
 function exportExercise(step: StructuredStepDetail, entries: StructuredEntriesRead): ExportedExercise {
     const sets = step.sets.map(exportSet);
@@ -382,7 +398,7 @@ function exportExercise(step: StructuredStepDetail, entries: StructuredEntriesRe
         ...(step.choices && step.choices.length > 0 ? { choices: step.choices.map(choice => ({ ...choice })) } : {}),
         ...(step.choiceOnly ? {} : { performedStatus: performedStatusOf(sets, entries) }),
         performed: {
-            workSets: work.length,
+            workSets: performedWorkSetCount(work),
             warmupSets: warmup.length,
             totalReps: work.reduce((sum, set) => sum + (set.reps ?? 0), 0),
             ...(warmupReps > 0 ? { warmupReps } : {}),

@@ -8,6 +8,7 @@ describe('matchesExerciseQuery', () => {
     it('finds the single-arm (suitcase) carry when the athlete searches for a farmer carry', () => {
         expect(idsFor('farmer')).toEqual(expect.arrayContaining(['farmer_carry', 'suitcase_carry']));
         expect(idsFor('single-arm farmer')).toContain('suitcase_carry');
+        expect(idsFor('single arm farmer carry')).toContain('suitcase_carry');
     });
 
     it('matches movement patterns written with spaces', () => {

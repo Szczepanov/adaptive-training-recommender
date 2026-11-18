@@ -1,19 +1,18 @@
 import { restoreAddedExerciseSteps } from './addedExerciseStep';
 import type { SessionDefinition, SessionEntry } from './models';
-import { loadStepMoves } from './stepOrderStorage';
-import { applyStepMoves, type StepMove } from './stepReorder';
+import { loadStepLayout } from './stepOrderStorage';
+import { applyStepLayout } from './stepReorder';
 
 /**
  * The runner's working definition after a reload: added steps rebuilt from their logged sets,
- * then the athlete's remembered step moves replayed on top. The resume cursor must be resolved
+ * then the athlete's saved step order applied on top. The resume cursor must be resolved
  * against this result, not the saved prescription, so it points at the same step the athlete saw.
  */
 export function restoreWorkingDefinition(
     definition: SessionDefinition,
     entries: readonly SessionEntry[],
     executionId: string,
-): { definition: SessionDefinition; moves: StepMove[] } {
+): SessionDefinition {
     const withAdded = restoreAddedExerciseSteps(definition, entries);
-    const moves = loadStepMoves(executionId);
-    return { definition: { ...withAdded, blocks: applyStepMoves(withAdded.blocks, moves) }, moves };
+    return { ...withAdded, blocks: applyStepLayout(withAdded.blocks, loadStepLayout(executionId)) };
 }

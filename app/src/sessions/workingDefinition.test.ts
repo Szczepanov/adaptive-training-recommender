@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SessionDefinition, SessionEntry } from './models';
 import { resolveResumeCursor } from './sessionProgressProjection';
-import { saveStepMoves } from './stepOrderStorage';
+import { saveStepLayout } from './stepOrderStorage';
 import { restoreWorkingDefinition } from './workingDefinition';
 
 const definition: SessionDefinition = {
@@ -32,7 +32,7 @@ describe('restoreWorkingDefinition', () => {
     afterEach(() => vi.unstubAllGlobals());
 
     it('rebuilds a logged added exercise where the athlete placed it and resumes against that order', () => {
-        saveStepMoves('exec-1', [{ stepId: 'added-nordic', targetStepId: 'squat', position: 'after' }]);
+        saveStepLayout('exec-1', [{ blockId: 'main', stepIds: ['squat', 'added-nordic', 'rdl'] }]);
         const entries = [
             set('e1', 'squat', '2026-11-18T10:00:00Z'),
             set('e2', 'added-nordic', '2026-11-18T10:05:00Z', { exerciseRef: { kind: 'catalog', exerciseId: 'nordic_hamstring_curl' } }),
@@ -40,15 +40,13 @@ describe('restoreWorkingDefinition', () => {
 
         const restored = restoreWorkingDefinition(definition, entries, 'exec-1');
 
-        expect(restored.definition.blocks.map(b => b.steps.map(s => s.id))).toEqual([['squat', 'added-nordic', 'rdl']]);
-        expect(restored.moves).toHaveLength(1);
+        expect(restored.blocks.map(b => b.steps.map(s => s.id))).toEqual([['squat', 'added-nordic', 'rdl']]);
         // Resume goes to the next unfinished planned step; its index must reflect the moved order.
-        expect(resolveResumeCursor(restored.definition, entries)).toMatchObject({ blockIndex: 0, stepIndex: 2 });
+        expect(resolveResumeCursor(restored, entries)).toMatchObject({ blockIndex: 0, stepIndex: 2 });
     });
 
     it('keeps the authored order when nothing was moved', () => {
         const restored = restoreWorkingDefinition(definition, [], 'exec-2');
-        expect(restored.definition.blocks.map(b => b.steps.map(s => s.id))).toEqual([['squat', 'rdl']]);
-        expect(restored.moves).toEqual([]);
+        expect(restored.blocks.map(b => b.steps.map(s => s.id))).toEqual([['squat', 'rdl']]);
     });
 });

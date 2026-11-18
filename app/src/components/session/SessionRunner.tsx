@@ -33,7 +33,7 @@ import { ChoiceCard } from './ChoiceCard';
 import { SessionEntryActions } from './SessionEntryActions';
 import { ExerciseSwapModal } from './ExerciseSwapModal';
 import { isAddedExercisesBlock, isAddedStep } from '../../sessions/addedExerciseStep';
-import { adjacentStepMove, isReorderableBlock } from '../../sessions/stepReorder';
+import { adjacentStepMove, isReorderableBlock, type StepMove } from '../../sessions/stepReorder';
 import { SessionDefinitionPreview } from './SessionDefinitionPreview';
 import { FlagStrip } from '../FlagStrip';
 import { resolveTodayFlagStripItems, type FlagStripItem } from '../../derived/flags/flagStripItems';
@@ -66,6 +66,15 @@ import { LoggedSetUndoBanner } from './LoggedSetUndoBanner';
 
 /** Blank exercise the add-exercise dialog fills in from the chosen exercise's catalog facets. */
 const ADD_EXERCISE_BASE_STEP: SessionStep = { id: 'new-added-exercise', kind: 'exercise' };
+/** "Moved Nordic curl after Back squat." Naming the neighbour makes every successful move's
+ * announcement distinct, so a screen reader re-announces repeated moves of the same step. */
+function describeMove(definition: SessionDefinition, move: StepMove): string {
+    const steps = definition.blocks.flatMap(block => block.steps);
+    const moved = steps.find(step => step.id === move.stepId);
+    const neighbour = steps.find(step => step.id === move.targetStepId);
+    return moved && neighbour ? `Moved ${stepName(moved)} ${move.position} ${stepName(neighbour)}.` : 'Step moved.';
+}
+
 /** Private drag payload type, so only a dragged step pill is accepted as a drop. */
 const STEP_DRAG_MIME = 'application/x-session-step-id';
 
@@ -403,8 +412,8 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
         'input',
     );
     const [pendingAdvance, setPendingAdvance] = useState<{
-        blockIndex: number;
-        stepIndex: number;
+        /** By id, not position: the athlete may reorder steps while the write is in flight. */
+        stepId: string;
         entryCountBefore: number;
     } | null>(null);
     const activeHeadingRef = useRef<HTMLHeadingElement>(null);
@@ -670,11 +679,10 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
     const handleEntrySubmit = async (payload: SessionEntryPayload, side?: 'left' | 'right') => {
         if (!runner.definition || !runner.activeBlock || !runner.activeStep) return;
 
-        const blockIndex = runner.activeBlockIndex;
-        const stepIndex = runner.activeStepIndex;
+        const stepId = runner.activeStep.id;
         const entryCountBefore = runner.entries.length;
         await runner.logEntry(payload, side);
-        setPendingAdvance({ blockIndex, stepIndex, entryCountBefore });
+        setPendingAdvance({ stepId, entryCountBefore });
     };
 
     const selectStepAndFocus = (blockIndex: number, stepIndex: number) => {
@@ -686,16 +694,18 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
     useEffect(() => {
         if (!pendingAdvance || !runner.definition || runner.entries.length <= pendingAdvance.entryCountBefore) return;
         setPendingAdvance(null);
-        if (runner.activeBlockIndex !== pendingAdvance.blockIndex || runner.activeStepIndex !== pendingAdvance.stepIndex) return;
-        const block = runner.definition.blocks[pendingAdvance.blockIndex];
-        const step = block?.steps[pendingAdvance.stepIndex];
-        if (!step || isAddedExercisesBlock(block) || isAddedStep(step)) return;
+        // Still on the step that was logged (wherever a reorder has since put it)?
+        const blockIndex = runner.activeBlockIndex;
+        const stepIndex = runner.activeStepIndex;
+        const block = runner.definition.blocks[blockIndex];
+        const step = block?.steps[stepIndex];
+        if (!step || step.id !== pendingAdvance.stepId || isAddedExercisesBlock(block) || isAddedStep(step)) return;
         const before = completedPrescribedSets(step, runner.entries.slice(0, pendingAdvance.entryCountBefore));
         const after = completedPrescribedSets(step, runner.entries);
         if (after <= before) return;
-        const next = resolveNextDueStep(runner.definition, runner.entries, pendingAdvance.blockIndex, pendingAdvance.stepIndex);
+        const next = resolveNextDueStep(runner.definition, runner.entries, blockIndex, stepIndex);
         if (next) {
-            if (next.blockIndex !== pendingAdvance.blockIndex || next.stepIndex !== pendingAdvance.stepIndex) {
+            if (next.blockIndex !== blockIndex || next.stepIndex !== stepIndex) {
                 setFocusNextStep(true);
                 runner.selectStep(next.blockIndex, next.stepIndex);
             }
@@ -1215,26 +1225,27 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                                 >
                                     🔄 Swap Exercise
                                 </button>
-                                {(['earlier', 'later'] as const).map(direction => {
-                                    const move = direction === 'earlier' ? moveEarlier : moveLater;
-                                    return (
-                                        <button
-                                            key={direction}
-                                            type="button"
-                                            className="move-step-btn"
-                                            // aria-disabled (not disabled) keeps focus on the button at either end.
-                                            aria-disabled={move ? undefined : true}
-                                            onClick={() => {
-                                                if (!move) return;
-                                                runner.moveStep(move);
-                                                setMoveNotice(`Moved ${stepName(activeStep)} ${direction}.`);
-                                            }}
-                                            aria-label={`Move ${stepName(activeStep)} ${direction} in the session`}
-                                        >
-                                            {direction === 'earlier' ? '↑ Earlier' : '↓ Later'}
-                                        </button>
-                                    );
-                                })}
+                                {/* The pair wraps as one unit, so "Later" is never orphaned on narrow phones. */}
+                                <span className="move-step-group" role="group" aria-label="Reorder this exercise">
+                                    {(['earlier', 'later'] as const).map(direction => {
+                                        const move = direction === 'earlier' ? moveEarlier : moveLater;
+                                        return (
+                                            <button
+                                                key={direction}
+                                                type="button"
+                                                className="move-step-btn"
+                                                // aria-disabled (not disabled) keeps focus on the button at either end.
+                                                aria-disabled={move ? undefined : true}
+                                                onClick={() => {
+                                                    if (move && runner.moveStep(move)) setMoveNotice(describeMove(definition, move));
+                                                }}
+                                                aria-label={`Move ${stepName(activeStep)} ${direction} in the session`}
+                                            >
+                                                {direction === 'earlier' ? '↑ Earlier' : '↓ Later'}
+                                            </button>
+                                        );
+                                    })}
+                                </span>
                             </div>
                             <h3 className="step-name" ref={activeHeadingRef} tabIndex={-1}>
                                 {stepName(activeStep)}
@@ -1413,7 +1424,7 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                                                         <span className="set-metrics">{entry.side === 'left' || entry.side === 'right' ? `${entry.side} · ` : ''}{entry.payload.seconds}s hold</span>
                                                     )}
                                                     {entry.payload.kind === 'distance' && (
-                                                        <span className="set-metrics">{entry.payload.loadKg ? `${entry.payload.loadKg} kg × ` : ''}{entry.payload.meters}m {entry.payload.durationSeconds ? `(${entry.payload.durationSeconds}s)` : ''}</span>
+                                                        <span className="set-metrics">{entry.side === 'left' || entry.side === 'right' ? `${entry.side} · ` : ''}{entry.payload.loadKg ? `${entry.payload.loadKg} kg × ` : ''}{entry.payload.meters}m {entry.payload.durationSeconds ? `(${entry.payload.durationSeconds}s)` : ''}</span>
                                                     )}
                                                     {entry.payload.kind === 'checkoff' && (
                                                         <span className="set-metrics">✓ Completed</span>
@@ -1501,8 +1512,9 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                                             if (!draggedId) return;
                                             const rect = event.currentTarget.getBoundingClientRect();
                                             const position = event.clientX < rect.left + rect.width / 2 ? 'before' : 'after';
-                                            runner.moveStep({ stepId: draggedId, targetStepId: step.id, position });
-                                            setMoveNotice(`Moved step ${position} ${stepName(step)}.`);
+                                            const move = { stepId: draggedId, targetStepId: step.id, position } as const;
+                                            // Announce only what actually happened: a drop the block rules refuse changes nothing.
+                                            if (runner.moveStep(move)) setMoveNotice(describeMove(definition, move));
                                         } : undefined}
                                         aria-current={isCurrent ? 'step' : undefined}
                                         onClick={() => selectStepAndFocus(bIdx, sIdx)}

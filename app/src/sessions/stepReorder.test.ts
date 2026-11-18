@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ADDED_EXERCISES_BLOCK_ID, appendAddedExerciseStep } from './addedExerciseStep';
 import type { SessionBlock, SessionStep } from './models';
-import { adjacentStepMove, applyStepMove, applyStepMoves } from './stepReorder';
+import { adjacentStepMove, applyStepLayout, applyStepMove, layoutOf } from './stepReorder';
 
 const step = (id: string): SessionStep => ({ id, kind: 'exercise', dose: { kind: 'repetition', sets: 3, reps: 5 } });
 const block = (
@@ -58,13 +58,9 @@ describe('applyStepMove', () => {
         expect(applyStepMove(base, { stepId: 'gone', targetStepId: 'squat', position: 'after' })).toBe(base);
     });
 
-    it('replays moves in order and skips ones that no longer apply', () => {
-        const moved = applyStepMoves(base, [
-            { stepId: 'row', targetStepId: 'squat', position: 'before' },
-            { stepId: 'added-lost', targetStepId: 'bench', position: 'after' },
-            { stepId: 'w1', targetStepId: 'bench', position: 'after' },
-        ]);
-        expect(ids(moved)).toEqual(['warmup:w1', 'main:row,squat,bench', 'accessory:curl', 'ss:a,b']);
+    it('returns the same blocks when a step is dropped back where it already is', () => {
+        expect(applyStepMove(base, { stepId: 'bench', targetStepId: 'squat', position: 'after' })).toBe(base);
+        expect(applyStepMove(base, { stepId: 'bench', targetStepId: 'row', position: 'before' })).toBe(base);
     });
 });
 
@@ -87,12 +83,49 @@ describe('adjacentStepMove', () => {
         const third = applyStepMove(second, adjacentStepMove(second, addedId, 'earlier')!);
         expect(ids(third)).toEqual(['warmup:w1', `main:squat,bench,row,${addedId}`, 'accessory:curl', 'ss:a,b']);
 
-        const atTop = applyStepMoves(third, [{ stepId: addedId, targetStepId: 'squat', position: 'before' }]);
+        const atTop = applyStepMove(third, { stepId: addedId, targetStepId: 'squat', position: 'before' });
         expect(adjacentStepMove(atTop, addedId, 'earlier')).toBeNull();
     });
 
     it('returns null for superset steps and unknown steps', () => {
         expect(adjacentStepMove(base, 'a', 'later')).toBeNull();
         expect(adjacentStepMove(base, 'nope', 'later')).toBeNull();
+    });
+});
+
+describe('applyStepLayout', () => {
+    it('keeps a reorder of surviving steps when an unlogged added step is gone', () => {
+        // [A,C,B]; add X after A; move B before X -> saved [A,B,X,C]. Reload without X logged.
+        const planned = [block('main', ['A', 'C', 'B'])];
+        const layout = [{ blockId: 'main', stepIds: ['A', 'B', 'added-X', 'C'] }];
+        expect(ids(applyStepLayout(planned, layout))).toEqual(['main:A,B,C']);
+    });
+
+    it('restores added-step order independently of the order they were logged in', () => {
+        // Rebuilt from logging order [Y,X,Z]; the athlete had ordered them [X,Z,Y].
+        const rebuilt = [block('main', ['squat']), block(ADDED_EXERCISES_BLOCK_ID, ['added-Y', 'added-X', 'added-Z'], 'accessory')];
+        const layout = layoutOf([block('main', ['squat']), block(ADDED_EXERCISES_BLOCK_ID, ['added-X', 'added-Z', 'added-Y'], 'accessory')]);
+        expect(ids(applyStepLayout(rebuilt, layout))).toEqual(['main:squat', `${ADDED_EXERCISES_BLOCK_ID}:added-X,added-Z,added-Y`]);
+    });
+
+    it('places an added step into the main block and drops the emptied added block', () => {
+        const rebuilt = [block('main', ['squat', 'bench']), block(ADDED_EXERCISES_BLOCK_ID, ['added-X'], 'accessory')];
+        const layout = [{ blockId: 'main', stepIds: ['squat', 'added-X', 'bench'] }];
+        expect(ids(applyStepLayout(rebuilt, layout))).toEqual(['main:squat,added-X,bench']);
+    });
+
+    it('never applies a stale or tampered layout that breaks the block rules', () => {
+        const layout = [
+            { blockId: 'warmup', stepIds: ['w1', 'squat'] },
+            { blockId: 'main', stepIds: ['row', 'bench'] },
+            { blockId: 'ss', stepIds: ['b', 'a'] },
+        ];
+        // squat stays in main (planned steps never change block); main keeps the layout order
+        // for the steps it names, then the rest; the superset is never reordered.
+        expect(ids(applyStepLayout(base, layout))).toEqual(['warmup:w1', 'main:row,bench,squat', 'accessory:curl', 'ss:a,b']);
+    });
+
+    it('leaves the authored order when there is no saved layout', () => {
+        expect(ids(applyStepLayout(base, []))).toEqual(ids(base));
     });
 });

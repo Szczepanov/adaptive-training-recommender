@@ -1,8 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import type { SessionStep, DistanceEntryPayload } from '../../../sessions/models';
 import { stepAcceptsMassLoad } from '../../../sessions/stepLoadCapability';
 import { RpeField } from './RpeField';
-import { buildRpeGauge } from './rpeGauge';
+import { runSingleFlight } from './repetitionSubmit';
+import { buildDistancePayload, type SideKey } from './setPayloads';
 
 interface DistanceInputCardProps {
     step: SessionStep;
@@ -32,30 +33,35 @@ export const DistanceInputCard: React.FC<DistanceInputCardProps> = ({
     const [seconds, setSeconds] = useState<string>('');
     const showLoad = stepAcceptsMassLoad(step);
     const [loadKg, setLoadKg] = useState<string>(suggestedLoadKg !== undefined ? String(suggestedLoadKg) : '');
-    const [rpe, setRpe] = useState<string>('');
     const [selectedSide, setSelectedSide] = useState<'left' | 'right'>(nextSide ?? 'left');
+    // Each side keeps its own RPE draft, so the left side's effort is never logged on the right.
+    const [rpeBySide, setRpeBySide] = useState<Record<SideKey, string>>({ left: '', right: '', bilateral: '' });
+    const sideKey: SideKey = perSide ? selectedSide : 'bilateral';
+    const rpe = rpeBySide[sideKey];
+    const setRpe = (value: string) => setRpeBySide(prev => ({ ...prev, [sideKey]: value }));
+    const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+    const submitInFlightRef = useRef(false);
 
     useEffect(() => {
         if (nextSide) setSelectedSide(nextSide);
     }, [nextSide, performedEntryCount, step.id]);
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        const parsedMeters = parseFloat(meters);
-        if (isNaN(parsedMeters) || parsedMeters <= 0) return;
-
-        const parsedSec = seconds.trim().length > 0 ? parseFloat(seconds) : undefined;
-        const parsedLoad = showLoad && loadKg.trim().length > 0 ? parseFloat(loadKg) : undefined;
-        if (parsedLoad !== undefined && (isNaN(parsedLoad) || parsedLoad < 0)) return;
-        const gauge = buildRpeGauge(rpe);
-        void onSubmit({
-            kind: 'distance',
-            meters: parsedMeters,
-            ...(parsedSec !== undefined ? { durationSeconds: parsedSec } : {}),
-            ...(parsedLoad !== undefined ? { loadKg: parsedLoad } : {}),
-            ...(gauge ? { gauge } : {}),
-        }, perSide ? selectedSide : undefined);
-        setRpe('');
+        const payload = buildDistancePayload({ meters, seconds, loadKg, rpe }, showLoad);
+        if (!payload) return;
+        const loggedSide = sideKey;
+        // One write at a time: the runner appends the entry optimistically and this card then
+        // moves to the other side, so a second tap mid-write must not log a side not performed.
+        await runSingleFlight(submitInFlightRef, async () => {
+            setIsSubmitting(true);
+            try {
+                await onSubmit(payload, perSide ? selectedSide : undefined);
+                setRpeBySide(prev => ({ ...prev, [loggedSide]: '' }));
+            } finally {
+                setIsSubmitting(false);
+            }
+        });
     };
 
     return (
@@ -125,7 +131,7 @@ export const DistanceInputCard: React.FC<DistanceInputCardProps> = ({
                 <RpeField step={step} value={rpe} onChange={setRpe} />
             </div>
 
-            <button type="submit" className="log-set-btn" aria-label={perSide ? `Log ${selectedSide} side distance` : 'Log distance split'}>
+            <button type="submit" className="log-set-btn" disabled={isSubmitting} aria-label={perSide ? `Log ${selectedSide} side distance` : 'Log distance split'}>
                 Log
             </button>
         </form>

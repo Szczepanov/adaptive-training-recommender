@@ -14,9 +14,15 @@ export const EXERCISE_SEARCH_ALIASES: Readonly<Record<string, readonly string[]>
  * it matches aliases (a suitcase carry is what athletes call a "single-arm farmer carry"),
  * movement patterns ("carry", "jump"), muscles, equipment and modality.
  */
+/** Lower-case with hyphens/underscores read as spaces, so "single arm" finds "single-arm". */
+function normalize(text: string): string {
+    return text.toLowerCase().replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
 export function matchesExerciseQuery(exercise: ExerciseDefinition, rawQuery: string): boolean {
     const query = rawQuery.trim().toLowerCase();
     if (!query) return true;
+    const normalizedQuery = normalize(query);
     const haystack = [
         exercise.name,
         exercise.id,
@@ -26,5 +32,5 @@ export function matchesExerciseQuery(exercise: ExerciseDefinition, rawQuery: str
         ...exercise.primaryMuscles,
         ...(exercise.equipment ?? []),
     ];
-    return haystack.some(text => text.toLowerCase().includes(query));
+    return haystack.some(text => text.toLowerCase().includes(query) || normalize(text).includes(normalizedQuery));
 }

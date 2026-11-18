@@ -412,6 +412,9 @@ export function compareExecutionPriority(a: SessionExecution, b: SessionExecutio
     return rank(b.state) - rank(a.state) || b.startedAt.localeCompare(a.startedAt);
 }
 
+/** The only effort gauge a hold or distance set records. */
+export type RpeGauge = Extract<IntensityGauge, { scale: 'rpe_rts' }>;
+
 export type RepetitionEntryPayload = {
     kind: 'repetition';
     setIndex: number;
@@ -419,7 +422,8 @@ export type RepetitionEntryPayload = {
     weightKg?: number;
     isWarmup?: boolean;
     gauge?: IntensityGauge;
-    /** Best jump height of the set (vertical jumps such as a countermovement jump), in centimetres. */
+    /** Best jump height of the set (vertical jumps such as a countermovement jump), in centimetres.
+     * Mutually exclusive with `jumpDistanceMeters`: a jump records one kind of result. */
     jumpHeightCm?: number;
     /** Best jump distance of the set (horizontal or lateral jumps such as a broad jump), in metres. */
     jumpDistanceMeters?: number;
@@ -431,7 +435,7 @@ export type DurationEntryPayload = {
     loadKg?: number;
     position?: string;
     /** Effort of the hold; holds record RPE only (RIR and velocity loss do not apply). */
-    gauge?: IntensityGauge;
+    gauge?: RpeGauge;
 };
 
 export type DistanceEntryPayload = {
@@ -441,7 +445,7 @@ export type DistanceEntryPayload = {
     /** Carried/pushed load (e.g. farmer carry dumbbells, sled), when the athlete logged one. */
     loadKg?: number;
     /** Effort of the carry/split; RPE only. */
-    gauge?: IntensityGauge;
+    gauge?: RpeGauge;
 };
 
 export type SprintEntryPayload = {

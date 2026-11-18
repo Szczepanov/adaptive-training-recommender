@@ -81,3 +81,14 @@ describe('performedSetCounts', () => {
         expect(performedSetCounts([{ entries: holds, definition: withChoice }])).toEqual({ work: 4, warmup: 0 });
     });
 });
+
+describe('performedSetCounts mixed sided kinds on an unknown step', () => {
+    it('pairs holds and carries independently, whatever the entry order', () => {
+        const carry = (side: 'left' | 'right') => entry('added-x', { kind: 'distance', meters: 20 }, { side });
+        const hold = (side: 'left' | 'right') => entry('added-x', { kind: 'duration', seconds: 30 }, { side });
+        const carryFirst = [carry('left'), carry('right'), hold('left'), hold('right'), hold('left'), hold('right')];
+        const holdFirst = [hold('left'), hold('right'), hold('left'), hold('right'), carry('left'), carry('right')];
+        expect(performedSetCounts([{ entries: carryFirst, definition: null }]).work).toBe(3);
+        expect(performedSetCounts([{ entries: holdFirst, definition: null }]).work).toBe(3);
+    });
+});

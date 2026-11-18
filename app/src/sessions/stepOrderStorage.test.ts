@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { clearStepMoves, loadStepMoves, saveStepMoves } from './stepOrderStorage';
+import { clearStepLayout, loadStepLayout, saveStepLayout } from './stepOrderStorage';
 
 function memoryStorage(): Storage {
     const data = new Map<string, string>();
@@ -13,24 +13,24 @@ function memoryStorage(): Storage {
     };
 }
 
-describe('step order storage', () => {
+describe('step layout storage', () => {
     beforeEach(() => vi.stubGlobal('localStorage', memoryStorage()));
     afterEach(() => vi.unstubAllGlobals());
 
-    it('round-trips moves per execution and clears them', () => {
-        const moves = [{ stepId: 'added-1', targetStepId: 'squat', position: 'after' as const }];
-        saveStepMoves('exec-1', moves);
-        expect(loadStepMoves('exec-1')).toEqual(moves);
-        expect(loadStepMoves('exec-2')).toEqual([]);
-        clearStepMoves('exec-1');
-        expect(loadStepMoves('exec-1')).toEqual([]);
+    it('round-trips a layout per execution and clears it', () => {
+        const layout = [{ blockId: 'main', stepIds: ['squat', 'added-1', 'bench'] }];
+        saveStepLayout('exec-1', layout);
+        expect(loadStepLayout('exec-1')).toEqual(layout);
+        expect(loadStepLayout('exec-2')).toEqual([]);
+        clearStepLayout('exec-1');
+        expect(loadStepLayout('exec-1')).toEqual([]);
     });
 
     it('drops malformed stored data instead of throwing', () => {
-        localStorage.setItem('session-step-order:v1:exec-1', '{not json');
-        expect(loadStepMoves('exec-1')).toEqual([]);
-        localStorage.setItem('session-step-order:v1:exec-1', JSON.stringify([{ stepId: 'a' }, { stepId: 'b', targetStepId: 'c', position: 'before' }]));
-        expect(loadStepMoves('exec-1')).toEqual([{ stepId: 'b', targetStepId: 'c', position: 'before' }]);
+        localStorage.setItem('session-step-layout:v1:exec-1', '{not json');
+        expect(loadStepLayout('exec-1')).toEqual([]);
+        localStorage.setItem('session-step-layout:v1:exec-1', JSON.stringify([{ blockId: 'a' }, { blockId: 'main', stepIds: ['x', 3] }, { blockId: 'b', stepIds: ['y'] }]));
+        expect(loadStepLayout('exec-1')).toEqual([{ blockId: 'b', stepIds: ['y'] }]);
     });
 
     it('works without storage at all', () => {
@@ -39,8 +39,8 @@ describe('step order storage', () => {
             setItem: () => { throw new Error('blocked'); },
             removeItem: () => { throw new Error('blocked'); },
         });
-        expect(() => saveStepMoves('exec-1', [])).not.toThrow();
-        expect(loadStepMoves('exec-1')).toEqual([]);
-        expect(() => clearStepMoves('exec-1')).not.toThrow();
+        expect(() => saveStepLayout('exec-1', [])).not.toThrow();
+        expect(loadStepLayout('exec-1')).toEqual([]);
+        expect(() => clearStepLayout('exec-1')).not.toThrow();
     });
 });

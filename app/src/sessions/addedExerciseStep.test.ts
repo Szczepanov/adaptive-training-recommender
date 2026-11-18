@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { SessionBlock, SessionDefinition, SessionEntry } from './models';
-import { ADDED_EXERCISES_BLOCK_ID, appendAddedExerciseStep, isAddedExercisesBlock, restoreAddedExerciseSteps } from './addedExerciseStep';
+import { ADDED_EXERCISES_BLOCK_ID, appendAddedExerciseStep, isAddedExercisesBlock, isAddedStep, promoteAddedSteps, restoreAddedExerciseSteps } from './addedExerciseStep';
 
 const planned: SessionBlock[] = [{
     id: 'main',
@@ -70,5 +70,17 @@ describe('appendAddedExerciseStep', () => {
         expect(isAddedExercisesBlock(blocks[1])).toBe(true);
         expect(isAddedExercisesBlock(blocks[0])).toBe(false);
         expect(isAddedExercisesBlock(undefined)).toBe(false);
+    });
+});
+
+describe('promoteAddedSteps', () => {
+    it('turns added steps into planned ones when a session is saved as a template', () => {
+        const appended = appendAddedExerciseStep([], { exerciseRef: { kind: 'catalog', exerciseId: 'nordic_hamstring_curl' } }, 'x1');
+        const promoted = promoteAddedSteps(appended.blocks);
+        expect(promoted[0].id).not.toBe(ADDED_EXERCISES_BLOCK_ID);
+        expect(isAddedExercisesBlock(promoted[0])).toBe(false);
+        expect(promoted[0].steps.map(step => step.id)).toEqual(['extra-x1']);
+        expect(isAddedStep(promoted[0].steps[0])).toBe(false);
+        expect(appended.blocks[0].steps[0].id).toBe('added-x1');
     });
 });

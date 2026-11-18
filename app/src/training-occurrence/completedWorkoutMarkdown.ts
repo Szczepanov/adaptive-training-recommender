@@ -66,8 +66,10 @@ function prescriptionText(p: ExportedPrescription): string {
 
 /** `, best 42 cm` for a logged set of jumps; empty otherwise. */
 function jumpSuffix(set: ExportedPerformedSet): string {
-    if (set.jumpHeightCm !== undefined) return `, best ${set.jumpHeightCm} cm`;
-    return set.jumpDistanceMeters !== undefined ? `, best ${set.jumpDistanceMeters} m` : '';
+    return [
+        set.jumpHeightCm !== undefined ? `, best ${set.jumpHeightCm} cm` : '',
+        set.jumpDistanceMeters !== undefined ? `, best ${set.jumpDistanceMeters} m` : '',
+    ].join('');
 }
 
 function setBody(set: ExportedPerformedSet): string {
@@ -183,7 +185,7 @@ function exerciseLines(exercise: ExportedExercise, choices: ChoiceIndex, logComp
     lines.push(...choiceLines(exercise.choices));
     const warmups = exercise.performed.sets.filter(set => set.isWarmup);
     if (warmups.length > 0) {
-        lines.push(`warm-up: ${warmups.map(set => `${setBody(set)}${governingChoiceText(set, choices, logComplete)}`).join(', ')}`);
+        lines.push(`warm-up: ${warmups.map(set => `${set.side ? `${set.side} ` : ''}${setBody(set)}${governingChoiceText(set, choices, logComplete)}`).join(', ')}`);
     }
     for (const set of exercise.performed.sets.filter(item => !item.isWarmup)) lines.push(workSetLine(set, choices, logComplete));
     return lines;
