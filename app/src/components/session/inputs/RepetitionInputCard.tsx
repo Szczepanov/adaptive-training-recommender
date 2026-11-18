@@ -38,10 +38,14 @@ export const RepetitionInputCard: React.FC<RepetitionInputCardProps> = ({
     const [technicalMet, setTechnicalMet] = useState<boolean>(true);
     const [technicalNote, setTechnicalNote] = useState<string>('');
     const jumpMeasure = jumpMeasureFor(step);
-    const [jumpVal, setJumpValState] = useState<string>('');
+    // The draft remembers the unit it was typed in: after a swap that changes height <-> distance
+    // the field starts blank instead of showing centimetres as metres.
+    const [jumpDraft, setJumpDraft] = useState<{ measure: typeof jumpMeasure; value: string }>({ measure: jumpMeasure, value: '' });
+    const jumpVal = jumpDraft.measure === jumpMeasure ? jumpDraft.value : '';
     // Bumped on every edit, so a finished save clears only a result the athlete has not touched since.
     const jumpRevisionRef = useRef(0);
-    const setJumpVal = (value: string) => { jumpRevisionRef.current += 1; setJumpValState(value); };
+    const jumpInputRef = useRef<HTMLInputElement>(null);
+    const setJumpVal = (value: string) => { jumpRevisionRef.current += 1; setJumpDraft({ measure: jumpMeasure, value }); };
 
     const prescribedRpe = step.effort?.kind === 'rpe'
         ? step.effort.target
@@ -84,11 +88,14 @@ export const RepetitionInputCard: React.FC<RepetitionInputCardProps> = ({
                 setGaugeVal('');
                 setTechnicalNote('');
                 // Keep a result the athlete already typed for the next set while this one saved.
-                if (jumpRevisionRef.current === jumpRevisionAtSubmit) setJumpValState('');
+                const editedDuringSave = jumpRevisionRef.current !== jumpRevisionAtSubmit;
+                if (!editedDuringSave) setJumpDraft(prev => ({ ...prev, value: '' }));
 
                 // Refocus weight input for next set, unless the user moved focus elsewhere
                 // (e.g. into the Abandon/Finish dialog) while the write was in flight.
-                refocusIfStillOwned(weightRef.current, formRef.current);
+                // ...and leave focus in the jump field if the athlete is already typing the next result.
+                const typingJump = editedDuringSave && jumpInputRef.current?.ownerDocument.activeElement === jumpInputRef.current;
+                if (!typingJump) refocusIfStillOwned(weightRef.current, formRef.current);
             } finally {
                 setIsSubmitting(false);
             }
@@ -135,6 +142,7 @@ export const RepetitionInputCard: React.FC<RepetitionInputCardProps> = ({
                         <span className="input-label">{jumpMeasure === 'height' ? 'Best height (cm)' : 'Best distance (m)'}</span>
                         <input
                             type="number"
+                            ref={jumpInputRef}
                             step="any"
                             min={JUMP_RESULT_LIMITS[jumpMeasure].min}
                             max={JUMP_RESULT_LIMITS[jumpMeasure].max}

@@ -270,23 +270,32 @@ function sortedByCompletion(entries: readonly SessionEntry[]): SessionEntry[] {
 }
 
 /** The left/right halves of one per-side hold or carry set share a set number. */
-function sidedKey(entry: SessionEntry, isWarmup: boolean): string | null {
+function pairKey(entry: SessionEntry, isWarmup: boolean): string | null {
     if (isWarmup || (entry.side !== 'left' && entry.side !== 'right')) return null;
-    return entry.payload.kind === 'duration' || entry.payload.kind === 'distance' ? `${entry.payload.kind}:${entry.side}` : null;
+    if (entry.payload.kind !== 'duration' && entry.payload.kind !== 'distance') return null;
+    const ref = entry.exerciseRef;
+    const exercise = !ref ? '' : ref.kind === 'catalog' ? ref.exerciseId : ref.name;
+    return `${entry.payload.kind}|${exercise}`;
 }
 
 function toSetRows(entries: readonly SessionEntry[], restByEntryId: ReadonlyMap<string, PerformedRestDetail>): PerformedSetRow[] {
     let warmupCount = 0;
     let workCount = 0;
-    const sidedCounts = new Map<string, number>();
+    // Per pair key: set numbers still waiting for their other side, oldest first, by side.
+    const openHalves = new Map<string, { left: number[]; right: number[] }>();
     return entries.map((entry): PerformedSetRow => {
         const isWarmup = isWarmupPayload(entry.payload);
-        const key = sidedKey(entry, isWarmup);
+        const key = pairKey(entry, isWarmup);
         let setNumber: number;
-        if (key) {
-            setNumber = (sidedCounts.get(key) ?? 0) + 1;
-            sidedCounts.set(key, setNumber);
-            workCount = Math.max(workCount, setNumber);
+        if (key && (entry.side === 'left' || entry.side === 'right')) {
+            const open = openHalves.get(key) ?? { left: [], right: [] };
+            const other = entry.side === 'left' ? 'right' : 'left';
+            const [partner, ...rest] = open[other];
+            // Completes the oldest set still missing this side, or opens a new set number.
+            setNumber = partner ?? ++workCount;
+            openHalves.set(key, partner !== undefined
+                ? { ...open, [other]: rest }
+                : { ...open, [entry.side]: [...open[entry.side], setNumber] });
         } else {
             setNumber = isWarmup ? ++warmupCount : ++workCount;
         }

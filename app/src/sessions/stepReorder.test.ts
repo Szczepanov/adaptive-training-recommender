@@ -141,3 +141,26 @@ describe('canDropNextTo', () => {
         expect(canDropNextTo(blocks, addedId, 'a')).toBe(false);
     });
 });
+
+describe('restore and move edge cases', () => {
+    it('ignores a duplicate id in a saved layout without reordering', () => {
+        const planned = [block('main', ['A', 'B'])];
+        expect(ids(applyStepLayout(planned, [{ blockId: 'main', stepIds: ['A', 'B', 'A'] }]))).toEqual(['main:A,B']);
+    });
+
+    it('keeps block and step ids apart when restoring', () => {
+        const blocks = [block('main', ['a:b', 'c']), block('main:a', ['b'])];
+        const layout = [{ blockId: 'main', stepIds: ['a:b', 'c'] }, { blockId: 'main:a', stepIds: ['x', 'y', 'b'] }];
+        expect(ids(applyStepLayout(blocks, layout))).toEqual(['main:a:b,c', 'main:a:b']);
+    });
+
+    it('refuses a move that puts a relative-load step before its reference', () => {
+        const relative: SessionBlock = {
+            id: 'main', title: 'main', role: 'main', executionMode: 'sequential',
+            steps: [step('A'), { ...step('B'), load: { kind: 'relative_step', stepId: 'A', percent: 90 } }],
+        };
+        const blocks = [relative];
+        expect(applyStepMove(blocks, { stepId: 'B', targetStepId: 'A', position: 'before' })).toBe(blocks);
+        expect(applyStepMove(blocks, { stepId: 'A', targetStepId: 'B', position: 'after' })).toBe(blocks);
+    });
+});

@@ -55,7 +55,12 @@ export const DurationInputCard: React.FC<DurationInputCardProps> = ({
     const seconds = secondsBySide[timerSide];
     const loadKg = loadBySide[timerSide];
     const rpe = rpeBySide[timerSide];
-    const setRpe = (value: string) => setRpeBySide(prev => ({ ...prev, [timerSide]: value }));
+    // Bumped on every edit, so a finished save clears only an RPE the athlete has not touched since.
+    const rpeRevisionRef = useRef<Record<'left' | 'right' | 'bilateral', number>>({ left: 0, right: 0, bilateral: 0 });
+    const setRpe = (value: string) => {
+        rpeRevisionRef.current = { ...rpeRevisionRef.current, [timerSide]: rpeRevisionRef.current[timerSide] + 1 };
+        setRpeBySide(prev => ({ ...prev, [timerSide]: value }));
+    };
     const elapsed = elapsedBySide[timerSide];
     const setSeconds = (value: string) => setSecondsBySide(prev => ({ ...prev, [timerSide]: value }));
     const setLoadKg = (value: string) => setLoadBySide(prev => ({ ...prev, [timerSide]: value }));
@@ -140,6 +145,7 @@ export const DurationInputCard: React.FC<DurationInputCardProps> = ({
         const payload = buildHoldPayload({ seconds, loadKg, rpe });
         if (!payload) return;
         const loggedSide = timerSide;
+        const rpeRevision = rpeRevisionRef.current[loggedSide];
         setElapsed(0);
         setIsTimerRunning(false);
         setIsPrepCountdown(false);
@@ -148,7 +154,7 @@ export const DurationInputCard: React.FC<DurationInputCardProps> = ({
             setIsSubmitting(true);
             try {
                 await onSubmit(payload, step.laterality === 'per_side' ? selectedSide : undefined);
-                setRpeBySide(prev => ({ ...prev, [loggedSide]: '' }));
+                if (rpeRevisionRef.current[loggedSide] === rpeRevision) setRpeBySide(prev => ({ ...prev, [loggedSide]: '' }));
             } finally {
                 setIsSubmitting(false);
             }

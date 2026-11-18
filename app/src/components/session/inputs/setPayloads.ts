@@ -31,8 +31,10 @@ export function buildDistancePayload(
 ): DistanceEntryPayload | null {
     const meters = parseFloat(draft.meters);
     if (!Number.isFinite(meters) || meters <= 0) return null;
-    const durationSeconds = optionalNumber(draft.seconds);
-    if (durationSeconds === null) return null;
+    const parsedSeconds = optionalNumber(draft.seconds);
+    if (parsedSeconds === null || (parsedSeconds !== undefined && parsedSeconds < 0)) return null;
+    // A zero split means "not timed": omit it (the rules require a present split to be > 0).
+    const durationSeconds = parsedSeconds === 0 ? undefined : parsedSeconds;
     const loadKg = acceptsLoad ? optionalNumber(draft.loadKg) : undefined;
     if (loadKg === null || (loadKg !== undefined && loadKg < 0)) return null;
     const gauge = buildRpeGauge(draft.rpe);

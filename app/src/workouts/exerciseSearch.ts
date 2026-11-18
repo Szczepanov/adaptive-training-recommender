@@ -28,7 +28,7 @@ export function matchesExerciseQuery(exercise: ExerciseDefinition, rawQuery: str
         exercise.id,
         exercise.modality,
         ...(EXERCISE_SEARCH_ALIASES.get(exercise.id) ?? []),
-        ...exercise.movementPatterns.map(pattern => pattern.replaceAll('_', ' ')),
+        ...exercise.movementPatterns,
         ...exercise.primaryMuscles,
         ...(exercise.equipment ?? []),
     ];

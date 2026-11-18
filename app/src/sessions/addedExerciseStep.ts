@@ -18,14 +18,20 @@ export function isAddedStep(step: Pick<SessionStep, 'id'> | undefined): boolean 
  * them like any other planned step (block-bound moves, normal auto-advance).
  */
 export function promoteAddedSteps(blocks: readonly SessionBlock[]): SessionBlock[] {
-    const taken = new Set(blocks.map(block => block.id));
-    let promotedId = 'extra-exercises';
-    for (let n = 2; taken.has(promotedId); n++) promotedId = `extra-exercises-${n}`;
+    const free = (base: string, taken: Set<string>): string => {
+        let id = base;
+        for (let n = 2; taken.has(id); n++) id = `${base}-${n}`;
+        taken.add(id);
+        return id;
+    };
+    const blockIds = new Set(blocks.map(block => block.id));
+    const promotedBlockId = free('extra-exercises', blockIds);
+    const stepIds = new Set(blocks.flatMap(block => block.steps.filter(step => !isAddedStep(step)).map(step => step.id)));
     return blocks.map(block => ({
         ...block,
-        ...(block.id === ADDED_EXERCISES_BLOCK_ID ? { id: promotedId } : {}),
+        ...(block.id === ADDED_EXERCISES_BLOCK_ID ? { id: promotedBlockId } : {}),
         steps: block.steps.map(step => (isAddedStep(step)
-            ? { ...step, id: `extra-${step.id.slice(ADDED_STEP_ID_PREFIX.length)}` }
+            ? { ...step, id: free(`extra-${step.id.slice(ADDED_STEP_ID_PREFIX.length)}`, stepIds) }
             : step)),
     }));
 }

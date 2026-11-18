@@ -375,3 +375,17 @@ describe('buildStructuredStepDetails per-side set numbers', () => {
         expect(plank.sets.map(set => [set.side, set.setNumber])).toEqual([['left', 1], ['right', 1], ['left', 2]]);
     });
 });
+
+describe('buildStructuredStepDetails distinct set numbers', () => {
+    it('numbers an unsided set and a later left/right pair 1, 2, 2', () => {
+        const at = (m: number) => `2026-08-26T07:${String(m).padStart(2, '0')}:00.000Z`;
+        const base = { executionId: 'exec-1', stepId: 'plank' } as const;
+        const entries: SessionEntry[] = [
+            { ...base, id: 'b1', completedAt: at(10), createdAt: at(10), updatedAt: at(10), payload: { kind: 'duration', seconds: 45 } },
+            { ...base, id: 'l1', completedAt: at(12), createdAt: at(12), updatedAt: at(12), side: 'left', payload: { kind: 'duration', seconds: 45 } },
+            { ...base, id: 'r1', completedAt: at(13), createdAt: at(13), updatedAt: at(13), side: 'right', payload: { kind: 'duration', seconds: 45 } },
+        ];
+        const plank = buildStructuredStepDetails(definition, entries, []).find(step => step.stepId === 'plank')!;
+        expect(plank.sets.map(set => set.setNumber)).toEqual([1, 2, 2]);
+    });
+});

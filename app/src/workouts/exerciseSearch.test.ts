@@ -14,6 +14,7 @@ describe('matchesExerciseQuery', () => {
     it('matches movement patterns written with spaces', () => {
         expect(idsFor('carry')).toEqual(expect.arrayContaining(['farmer_carry', 'suitcase_carry']));
         expect(idsFor('anti lateral')).toContain('suitcase_carry');
+        expect(idsFor('anti_lateral')).toContain('suitcase_carry');
     });
 
     it('does not match everything for a separator-only query', () => {

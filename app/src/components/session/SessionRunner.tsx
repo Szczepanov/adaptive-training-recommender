@@ -25,7 +25,7 @@ import { sessionDefinitionService, type SessionDefinitionHeader } from '../../se
 import { prepareUnplannedSessionLaunch } from '../../services/sessionAuthoringService';
 import { archivedSavedDefinitionError } from '../../sessions/sessionLaunch';
 import { targetEntriesForGroupStep } from '../../sessions/groupProgression';
-import { completedPrescribedSets, nextHoldSide } from '../../sessions/workSets';
+import { completedPrescribedSets, countsTowardPrescribedSets, nextHoldSide } from '../../sessions/workSets';
 import { stepName } from '../../sessions/stepDisplay';
 import { describeStepNavigatorProgress } from '../../sessions/stepNavigatorProgress';
 import { GroupProgress } from './GroupProgress';
@@ -1592,6 +1592,7 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                     startedAt={runner.execution.startedAt}
                     elapsedSeconds={runner.elapsedSeconds}
                     totalSets={completedSetTotal}
+                    retainedEntryCount={entries.filter(countsTowardPrescribedSets).length}
                     steps={stepSummaries}
                     saving={isFinishing}
                     openAbandonConfirmation={showAbandonConfirmation}

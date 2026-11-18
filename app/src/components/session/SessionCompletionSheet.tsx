@@ -42,6 +42,8 @@ interface SessionCompletionSheetProps {
     /** Optional live wall-clock elapsed seconds from the session runner; falls back to `startedAt` delta on mount. */
     elapsedSeconds?: number;
     totalSets: number;
+    /** Logged entries kept on abandon, including half of an unfinished left/right pair. */
+    retainedEntryCount?: number;
     steps: SessionStepSummary[];
     onComplete: (payload: SessionCompletionPayload) => Promise<void>;
     onAbandon: () => Promise<void>;
@@ -64,6 +66,7 @@ export const SessionCompletionSheet: React.FC<SessionCompletionSheetProps> = ({
     startedAt,
     elapsedSeconds,
     totalSets,
+    retainedEntryCount,
     steps,
     onComplete,
     onAbandon,
@@ -154,7 +157,7 @@ export const SessionCompletionSheet: React.FC<SessionCompletionSheetProps> = ({
                             <p>Are you sure you want to abandon this session?</p>
                         )}
                         <p className="abandon-subtext">
-                            <strong>{abandoningAssessment ? 'What is retained:' : 'Note:'}</strong> Partial sets you have logged ({totalSets} sets) are permanently retained in your history and will not be deleted.
+                            <strong>{abandoningAssessment ? 'What is retained:' : 'Note:'}</strong> Everything you have logged ({retainedEntryCount ?? totalSets} {(retainedEntryCount ?? totalSets) === 1 ? 'entry' : 'entries'}) is permanently retained in your history and will not be deleted.
                         </p>
                         <div className="sheet-actions">
                             <button

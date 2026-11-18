@@ -20,6 +20,7 @@ describe('jumpMeasureFor', () => {
         expect(jumpMeasureFor(freeText('Jumping jacks'))).toBeNull();
         expect(jumpMeasureFor(freeText('Jump rope'))).toBeNull();
         expect(jumpMeasureFor(freeText('Jump-rope intervals'))).toBeNull();
+        expect(jumpMeasureFor(freeText('Jumping rope'))).toBeNull();
     });
 
     it('falls back to the free-text name', () => {
@@ -30,5 +31,7 @@ describe('jumpMeasureFor', () => {
         expect(jumpMeasureFor(freeText('Single-leg hop in place'))).toBe('height');
         expect(jumpMeasureFor(freeText('Box jump with long rest'))).toBe('height');
         expect(jumpMeasureFor(freeText('Long jump'))).toBe('distance');
+        expect(jumpMeasureFor(freeText('Horizontal jump'))).toBe('distance');
+        expect(jumpMeasureFor(freeText('Forward jump'))).toBe('distance');
     });
 });

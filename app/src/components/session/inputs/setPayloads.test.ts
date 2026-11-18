@@ -28,6 +28,11 @@ describe('buildDistancePayload', () => {
         expect(buildDistancePayload({ meters: '15', seconds: '', loadKg: '24', rpe: '' }, false)).toEqual({ kind: 'distance', meters: 15 });
     });
 
+    it('omits a zero split (not timed) and rejects a negative one', () => {
+        expect(buildDistancePayload({ meters: '40', seconds: '0', loadKg: '', rpe: '' }, true)).toEqual({ kind: 'distance', meters: 40 });
+        expect(buildDistancePayload({ meters: '40', seconds: '-3', loadKg: '', rpe: '' }, true)).toBeNull();
+    });
+
     it('rejects a missing distance or a negative load', () => {
         expect(buildDistancePayload({ meters: '', seconds: '', loadKg: '', rpe: '' }, true)).toBeNull();
         expect(buildDistancePayload({ meters: '40', seconds: '', loadKg: '-1', rpe: '' }, true)).toBeNull();

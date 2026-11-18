@@ -265,7 +265,7 @@ describe('SessionCompletionSheet', () => {
         expect(html).toContain('id="completion-title"');
         expect(html).toContain('Abandon Session?');
         expect(html).toContain('Yes, Abandon Session');
-        expect(html).toContain('Partial sets you have logged (2 sets) are permanently retained');
+        expect(html).toContain('Everything you have logged (2 entries) is permanently retained');
     });
 
     it('disables every terminal action while a completion write is in flight, so a second tap cannot double-submit (#724)', () => {

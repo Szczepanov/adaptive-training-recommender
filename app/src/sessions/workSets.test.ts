@@ -90,3 +90,27 @@ describe('pairing follows the logged entries, not the step dose', () => {
         expect(completedPrescribedSets(pinnedRow, entries)).toBe(2);
     });
 });
+
+describe('pairing is per exercise', () => {
+    const at = '2026-09-01T12:00:00Z';
+    const carry = (id: string, exerciseId: string, side: 'left' | 'right'): SessionEntry => ({
+        id, executionId: 'exec', stepId: 'carry', completedAt: at, createdAt: at, updatedAt: at, side,
+        exerciseRef: { kind: 'catalog', exerciseId }, payload: { kind: 'distance', meters: 20 },
+    });
+    const carryStep = (exerciseId: string): SessionStep => ({
+        id: 'carry', kind: 'exercise', laterality: 'per_side',
+        exerciseRef: { kind: 'catalog', exerciseId }, dose: { kind: 'distance', sets: 2, meters: 20 },
+    });
+
+    it('does not complete a set from the left of carry A and the right of carry B', () => {
+        const entries = [carry('a', 'suitcase_carry', 'left'), carry('b', 'farmer_carry', 'right')];
+        expect(completedPrescribedSets(carryStep('farmer_carry'), entries)).toBe(0);
+    });
+
+    it('cues the side due for the current exercise after a swap mid-pair', () => {
+        const entries = [carry('a', 'suitcase_carry', 'left')];
+        expect(nextHoldSide(carryStep('suitcase_carry'), entries)).toBe('right');
+        expect(nextHoldSide(carryStep('farmer_carry'), entries)).toBe('left');
+        expect(hasUnpairedHoldSide(carryStep('farmer_carry'), entries)).toBe(false);
+    });
+});

@@ -40,11 +40,18 @@ export const DistanceInputCard: React.FC<DistanceInputCardProps> = ({
     // The optional split time is per side too: a blank right side must not reuse the left's time.
     const [secondsBySide, setSecondsBySide] = useState<Record<SideKey, string>>({ left: '', right: '', bilateral: '' });
     const seconds = secondsBySide[sideKey];
-    // Bumped on every edit, so a finished save clears only drafts the athlete has not touched since.
-    const editRevisionRef = useRef<Record<SideKey, number>>({ left: 0, right: 0, bilateral: 0 });
-    const touch = () => { editRevisionRef.current = { ...editRevisionRef.current, [sideKey]: editRevisionRef.current[sideKey] + 1 }; };
-    const setRpe = (value: string) => { touch(); setRpeBySide(prev => ({ ...prev, [sideKey]: value })); };
-    const setSeconds = (value: string) => { touch(); setSecondsBySide(prev => ({ ...prev, [sideKey]: value })); };
+    // Bumped on every edit, per field and side, so a finished save clears only the fields the
+    // athlete has not touched since submitting (an edited RPE must not keep an old split, or vice versa).
+    const editRevisionRef = useRef<Record<'rpe' | 'seconds', Record<SideKey, number>>>({
+        rpe: { left: 0, right: 0, bilateral: 0 },
+        seconds: { left: 0, right: 0, bilateral: 0 },
+    });
+    const touch = (field: 'rpe' | 'seconds') => {
+        const current = editRevisionRef.current;
+        editRevisionRef.current = { ...current, [field]: { ...current[field], [sideKey]: current[field][sideKey] + 1 } };
+    };
+    const setRpe = (value: string) => { touch('rpe'); setRpeBySide(prev => ({ ...prev, [sideKey]: value })); };
+    const setSeconds = (value: string) => { touch('seconds'); setSecondsBySide(prev => ({ ...prev, [sideKey]: value })); };
     const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
     const submitInFlightRef = useRef(false);
 
@@ -57,17 +64,16 @@ export const DistanceInputCard: React.FC<DistanceInputCardProps> = ({
         const payload = buildDistancePayload({ meters, seconds, loadKg, rpe }, showLoad);
         if (!payload) return;
         const loggedSide = sideKey;
-        const revisionAtSubmit = editRevisionRef.current[loggedSide];
+        const rpeRevision = editRevisionRef.current.rpe[loggedSide];
+        const secondsRevision = editRevisionRef.current.seconds[loggedSide];
         // One write at a time: the runner appends the entry optimistically and this card then
         // moves to the other side, so a second tap mid-write must not log a side not performed.
         await runSingleFlight(submitInFlightRef, async () => {
             setIsSubmitting(true);
             try {
                 await onSubmit(payload, perSide ? selectedSide : undefined);
-                if (editRevisionRef.current[loggedSide] === revisionAtSubmit) {
-                    setRpeBySide(prev => ({ ...prev, [loggedSide]: '' }));
-                    setSecondsBySide(prev => ({ ...prev, [loggedSide]: '' }));
-                }
+                if (editRevisionRef.current.rpe[loggedSide] === rpeRevision) setRpeBySide(prev => ({ ...prev, [loggedSide]: '' }));
+                if (editRevisionRef.current.seconds[loggedSide] === secondsRevision) setSecondsBySide(prev => ({ ...prev, [loggedSide]: '' }));
             } finally {
                 setIsSubmitting(false);
             }
@@ -115,7 +121,7 @@ export const DistanceInputCard: React.FC<DistanceInputCardProps> = ({
                     <input
                         type="number"
                         step="0.01"
-                        min="0"
+                        min="0.01"
                         placeholder="Optional"
                         value={seconds}
                         onChange={e => setSeconds(e.target.value)}

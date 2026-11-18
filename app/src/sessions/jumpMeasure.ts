@@ -23,7 +23,7 @@ export function jumpMeasureFor(step: Pick<SessionStep, 'exerciseRef' | 'title'>)
     // Single-leg hops travel, like the catalog's single-leg hop and stick -- unless done in place.
     if (/\b(single|one) leg hop/.test(name)) return /in place|vertical|on the spot/.test(name) ? 'height' : 'distance';
     // Conditioning drills that merely contain the word ("jumping jacks", "jump rope") have no result to record.
-    if (!/\bjump|\bbound/.test(name) || /jumping jack|jump rope|skipping/.test(name)) return null;
+    if (!/\bjump|\bbound/.test(name) || /jumping jack|jump(ing)? rope|skipping/.test(name)) return null;
     // Directional jump names only: "long jump", not "box jump with long rest".
-    return /broad jump|long jump|lateral (jump|bound)|\bbound|triple jump/.test(name) ? 'distance' : 'height';
+    return /broad jump|long jump|horizontal jump|forward jump|lateral (jump|bound)|\bbound|triple jump/.test(name) ? 'distance' : 'height';
 }

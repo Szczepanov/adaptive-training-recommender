@@ -1,5 +1,5 @@
 import { ADDED_EXERCISES_BLOCK_ID, isAddedStep } from './addedExerciseStep';
-import type { SessionBlock } from './models';
+import type { SessionBlock, SessionStep } from './models';
 
 /**
  * Athlete-chosen order of steps during a session (e.g. an exercise added mid-session that
@@ -74,9 +74,22 @@ export function applyStepMove(blocks: SessionBlock[], move: StepMove): SessionBl
     const moved = withoutMoving.map((block, index) => (index === targetBlockIndex
         ? { ...block, steps: [...block.steps.slice(0, insertAt), moving, ...block.steps.slice(insertAt)] }
         : block));
+    // A step loaded as a percentage of another step must stay after it (validation requires it,
+    // so a template saved from this order would otherwise be rejected).
+    if (!keepsRelativeLoadsAfterReferences(moved)) return blocks;
     // The trailing "Added exercises" block exists only to hold added steps; once they have all
     // been placed elsewhere it would render as an empty group.
     return moved.filter(block => block.id !== ADDED_EXERCISES_BLOCK_ID || block.steps.length > 0);
+}
+
+/** Every `relative_step` load still references a step that comes earlier in the session. */
+function keepsRelativeLoadsAfterReferences(blocks: readonly SessionBlock[]): boolean {
+    const order = blocks.flatMap(block => block.steps.map(step => step.id));
+    return blocks.every(block => block.steps.every(step => {
+        if (step.load?.kind !== 'relative_step') return true;
+        const reference = order.indexOf(step.load.stepId);
+        return reference !== -1 && reference < order.indexOf(step.id);
+    }));
 }
 
 /** The athlete's chosen order: each reorderable block's step ids, in order. */
@@ -95,24 +108,27 @@ export function layoutOf(blocks: readonly SessionBlock[]): StepLayout {
 export function applyStepLayout(blocks: readonly SessionBlock[], layout: StepLayout): SessionBlock[] {
     const origin = new Map(blocks.flatMap((block, blockIndex) => block.steps.map((step, stepIndex) =>
         [step.id, { step, from: { blockIndex, stepIndex } }] as const)));
-    const placedIn = new Map<string, number>();
+    // Each block's list is built in the order placements are accepted, so a duplicate id or a
+    // block/step id that looks like another's can never reorder anything.
+    const placed = new Set<string>();
+    const listed = blocks.map(() => [] as SessionStep[]);
     for (const entry of layout) {
         const blockIndex = blocks.findIndex(block => block.id === entry.blockId);
         if (blockIndex === -1) continue;
         for (const stepId of entry.stepIds) {
             const found = origin.get(stepId);
-            if (!found || placedIn.has(stepId) || !isReorderableBlock(blocks[found.from.blockIndex])) continue;
-            if (canEnterBlock(blocks, found.from, blockIndex)) placedIn.set(stepId, blockIndex);
+            if (!found || placed.has(stepId) || !isReorderableBlock(blocks[found.from.blockIndex])) continue;
+            if (!canEnterBlock(blocks, found.from, blockIndex)) continue;
+            placed.add(stepId);
+            listed[blockIndex].push(found.step);
         }
     }
-    const order = new Map(layout.flatMap(entry => entry.stepIds.map((stepId, index) => [`${entry.blockId}:${stepId}`, index] as const)));
     const restored = blocks.map((block, blockIndex) => {
         if (!isReorderableBlock(block)) return block;
-        const inLayout = [...placedIn].filter(([, index]) => index === blockIndex).map(([stepId]) => origin.get(stepId)!.step)
-            .sort((a, b) => order.get(`${block.id}:${a.id}`)! - order.get(`${block.id}:${b.id}`)!);
-        const unplaced = block.steps.filter(step => !placedIn.has(step.id));
-        return { ...block, steps: [...inLayout, ...unplaced] };
+        const unplaced = block.steps.filter(step => !placed.has(step.id));
+        return { ...block, steps: [...listed[blockIndex], ...unplaced] };
     });
+    if (!keepsRelativeLoadsAfterReferences(restored)) return [...blocks];
     return restored.filter(block => block.id !== ADDED_EXERCISES_BLOCK_ID || block.steps.length > 0);
 }
 

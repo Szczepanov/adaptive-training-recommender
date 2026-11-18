@@ -70,13 +70,18 @@ describe('DurationInputCard', () => {
 describe('DurationInputCard double Log', () => {
     it('ignores a second Log while the first hold is still saving', async () => {
         let release: () => void = () => {};
-        const onSubmit = vi.fn(() => new Promise<void>(resolve => { release = resolve; }));
+        const pending = new Promise<void>(resolve => { release = resolve; });
+        const onSubmit = vi.fn(() => pending);
         const tree = DurationInputCard({ step: plank, onSubmit }) as ReactNode;
         const form = findElement(tree, el => el.type === 'form')!;
         const first = form.props.onSubmit!({ preventDefault: vi.fn() }) as unknown as Promise<void>;
-        await form.props.onSubmit!({ preventDefault: vi.fn() });
-        expect(onSubmit).toHaveBeenCalledTimes(1);
-        release();
-        await first;
+        const second = form.props.onSubmit!({ preventDefault: vi.fn() }) as unknown as Promise<void>;
+        try {
+            // Asserted before either save settles, so a broken guard reports two calls, not a timeout.
+            expect(onSubmit).toHaveBeenCalledTimes(1);
+        } finally {
+            release();
+            await Promise.all([first, second]);
+        }
     });
 });

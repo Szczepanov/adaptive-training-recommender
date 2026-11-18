@@ -94,3 +94,13 @@ describe('promoteAddedSteps block id', () => {
         expect(new Set(ids).size).toBe(ids.length);
     });
 });
+
+describe('promoteAddedSteps step ids', () => {
+    it('gives a promoted step a free id when a planned step already uses it', () => {
+        const planned: SessionBlock = { id: 'main', title: 'Main', role: 'main', executionMode: 'sequential',
+            steps: [{ id: 'extra-x1', kind: 'exercise' }] };
+        const appended = appendAddedExerciseStep([planned], { exerciseRef: { kind: 'catalog', exerciseId: 'nordic_hamstring_curl' } }, 'x1');
+        const ids = promoteAddedSteps(appended.blocks).flatMap(block => block.steps.map(step => step.id));
+        expect(ids).toEqual(['extra-x1', 'extra-x1-2']);
+    });
+});
