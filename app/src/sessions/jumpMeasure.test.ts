@@ -1,0 +1,43 @@
+import { describe, expect, it } from 'vitest';
+import { jumpMeasureFor } from './jumpMeasure';
+
+const catalog = (exerciseId: string) => ({ exerciseRef: { kind: 'catalog' as const, exerciseId } });
+const freeText = (name: string) => ({ exerciseRef: { kind: 'unresolved_free_text' as const, name } });
+
+describe('jumpMeasureFor', () => {
+    it('records height for vertical catalog jumps and distance for horizontal or lateral ones', () => {
+        expect(jumpMeasureFor(catalog('countermovement_jump'))).toBe('height');
+        expect(jumpMeasureFor(catalog('drop_jump_low'))).toBe('height');
+        expect(jumpMeasureFor(catalog('broad_jump'))).toBe('distance');
+        expect(jumpMeasureFor(catalog('lateral_bound_stick'))).toBe('distance');
+        expect(jumpMeasureFor(catalog('single_leg_hop_stick'))).toBe('distance');
+    });
+
+    it('records nothing for non-jumping exercises', () => {
+        expect(jumpMeasureFor(catalog('back_squat'))).toBeNull();
+        expect(jumpMeasureFor(catalog('farmer_carry'))).toBeNull();
+        expect(jumpMeasureFor(freeText('Back extension'))).toBeNull();
+        expect(jumpMeasureFor(freeText('Jumping jacks'))).toBeNull();
+        expect(jumpMeasureFor(freeText('Jump rope'))).toBeNull();
+        expect(jumpMeasureFor(freeText('Jump-rope intervals'))).toBeNull();
+        expect(jumpMeasureFor(freeText('Jumping rope'))).toBeNull();
+        expect(jumpMeasureFor(freeText('Squat (upper bound 8 reps)'))).toBeNull();
+    });
+
+    it('falls back to the free-text name', () => {
+        expect(jumpMeasureFor(freeText('Box jump'))).toBe('height');
+        expect(jumpMeasureFor(freeText('Standing broad jump'))).toBe('distance');
+        expect(jumpMeasureFor(freeText('Single-leg hop'))).toBe('distance');
+        expect(jumpMeasureFor(freeText('single leg hop and stick'))).toBe('distance');
+        expect(jumpMeasureFor(freeText('Single-leg hop in place'))).toBe('height');
+        expect(jumpMeasureFor(freeText('Box jump with long rest'))).toBe('height');
+        expect(jumpMeasureFor(freeText('Long jump'))).toBe('distance');
+        expect(jumpMeasureFor(freeText('Horizontal jump'))).toBe('distance');
+        expect(jumpMeasureFor(freeText('Forward jump'))).toBe('distance');
+        expect(jumpMeasureFor(freeText('Box jump (upper bound 40 cm)'))).toBe('height');
+        expect(jumpMeasureFor(freeText('Lateral bound'))).toBe('distance');
+        expect(jumpMeasureFor(freeText('Skater bounds'))).toBe('distance');
+        expect(jumpMeasureFor(freeText('Skater jumps'))).toBe('distance');
+        expect(jumpMeasureFor(freeText('Bounding'))).toBe('distance');
+    });
+});

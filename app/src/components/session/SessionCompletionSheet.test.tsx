@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { SessionCompletionSheet } from './SessionCompletionSheet';
+import { mayHaveUnsavedSets, type SyncStatus } from './syncAnnouncement';
 import { COMPLETION_TISSUE_LEVEL_OPTIONS, resolveSubmittedTissueFeedback } from './sessionCompletionOptions';
 import type { SessionStepSummary } from '../../workouts/strengthSessionEntry';
 
@@ -248,6 +249,68 @@ describe('SessionCompletionSheet', () => {
         expect(html).not.toContain('Incomplete Required Steps');
     });
 
+    it('keeps the warning after a failed write is followed by another write still in flight', () => {
+        // useSessionRunner keeps one sync status: a rejected logEntry sets `unavailable`, and the
+        // next logEntry overwrites it with `pending` before that write settles.
+        const statusAfterFailureThenNewWrite: SyncStatus = 'pending';
+        const html = renderToStaticMarkup(
+            <SessionCompletionSheet
+                startedAt={new Date().toISOString()}
+                totalSets={1}
+                retainedEntryCount={2}
+                hasUnsavedEntries={mayHaveUnsavedSets(statusAfterFailureThenNewWrite)}
+                steps={[]}
+                onComplete={vi.fn()}
+                onAbandon={vi.fn()}
+                onCancel={vi.fn()}
+                saving={false}
+                openAbandonConfirmation={true}
+            />,
+        );
+        expect(html).toContain('have not been saved yet');
+        expect(html).not.toContain('are permanently retained in your history and will not be deleted');
+    });
+
+    it('says nothing was logged rather than "some of 0 not saved"', () => {
+        const html = renderToStaticMarkup(
+            <SessionCompletionSheet
+                startedAt={new Date().toISOString()}
+                totalSets={0}
+                retainedEntryCount={0}
+                hasUnsavedEntries
+                steps={[]}
+                onComplete={vi.fn()}
+                onAbandon={vi.fn()}
+                onCancel={vi.fn()}
+                saving={false}
+                openAbandonConfirmation={true}
+            />,
+        );
+        expect(html).toContain('No set entries have been logged.');
+        expect(html).not.toContain('have not been saved yet');
+    });
+
+    it('does not promise retention for sets that failed to save', () => {
+        const html = renderToStaticMarkup(
+            <SessionCompletionSheet
+                startedAt={new Date().toISOString()}
+                totalSets={1}
+                retainedEntryCount={3}
+                hasUnsavedEntries
+                steps={[]}
+                onComplete={vi.fn()}
+                onAbandon={vi.fn()}
+                onCancel={vi.fn()}
+                saving={false}
+                openAbandonConfirmation={true}
+            />,
+        );
+        expect(html).toContain('Some of your logged set entries (3, counting warm-ups and each side of a pair) have not been saved yet.');
+        expect(html).toContain('unsaved ones may be lost');
+        // No blanket promise that everything is kept.
+        expect(html).not.toContain('are permanently retained in your history and will not be deleted');
+    });
+
     it('renders abandon confirmation when openAbandonConfirmation is true', () => {
         const html = renderToStaticMarkup(
             <SessionCompletionSheet
@@ -265,7 +328,7 @@ describe('SessionCompletionSheet', () => {
         expect(html).toContain('id="completion-title"');
         expect(html).toContain('Abandon Session?');
         expect(html).toContain('Yes, Abandon Session');
-        expect(html).toContain('Partial sets you have logged (2 sets) are permanently retained');
+        expect(html).toContain('Your logged set entries (2, counting warm-ups and each side of a pair) are permanently retained');
     });
 
     it('disables every terminal action while a completion write is in flight, so a second tap cannot double-submit (#724)', () => {

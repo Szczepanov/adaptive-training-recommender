@@ -11,3 +11,13 @@ export function nextSyncAnnouncement(previous: string | null, status: SyncStatus
     if (status === 'synced' && previous !== null && previous !== 'Sync status: synced') return 'Sync status: synced';
     return previous;
 }
+
+/**
+ * Whether some logged sets may not be durably saved yet. The runner keeps one status that each
+ * new write overwrites (a failed set followed by a fresh write reads `pending`), and `queued`
+ * writes are not acknowledged either, so only `synced` lets the abandon confirmation promise that
+ * every logged set is retained.
+ */
+export function mayHaveUnsavedSets(status: SyncStatus): boolean {
+    return status !== 'synced';
+}

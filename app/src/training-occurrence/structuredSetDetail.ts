@@ -78,6 +78,8 @@ export interface PerformedSetRow {
     governingChoiceEntryId?: string;
     /** The option that governing choice selected, as stamped on the set. */
     selectedOptionId?: string;
+    /** Left or right for a per-side hold, carry or set; absent for bilateral work. */
+    side?: 'left' | 'right';
 }
 
 export interface StructuredStepDetail {
@@ -267,12 +269,36 @@ function sortedByCompletion(entries: readonly SessionEntry[]): SessionEntry[] {
     return [...entries].sort((a, b) => a.completedAt.localeCompare(b.completedAt) || a.id.localeCompare(b.id));
 }
 
+/** The left/right halves of one per-side hold or carry set share a set number. */
+function pairKey(entry: SessionEntry, isWarmup: boolean): string | null {
+    if (isWarmup || (entry.side !== 'left' && entry.side !== 'right')) return null;
+    if (entry.payload.kind !== 'duration' && entry.payload.kind !== 'distance') return null;
+    const ref = entry.exerciseRef;
+    const exercise = !ref ? 'none' : ref.kind === 'catalog' ? `catalog:${ref.exerciseId}` : `free:${ref.name}`;
+    return `${entry.payload.kind}|${exercise}`;
+}
+
 function toSetRows(entries: readonly SessionEntry[], restByEntryId: ReadonlyMap<string, PerformedRestDetail>): PerformedSetRow[] {
     let warmupCount = 0;
     let workCount = 0;
+    // Per pair key: set numbers still waiting for their other side, oldest first, by side.
+    const openHalves = new Map<string, { left: number[]; right: number[] }>();
     return entries.map((entry): PerformedSetRow => {
         const isWarmup = isWarmupPayload(entry.payload);
-        const setNumber = isWarmup ? ++warmupCount : ++workCount;
+        const key = pairKey(entry, isWarmup);
+        let setNumber: number;
+        if (key && (entry.side === 'left' || entry.side === 'right')) {
+            const open = openHalves.get(key) ?? { left: [], right: [] };
+            const other = entry.side === 'left' ? 'right' : 'left';
+            const [partner, ...rest] = open[other];
+            // Completes the oldest set still missing this side, or opens a new set number.
+            setNumber = partner ?? ++workCount;
+            openHalves.set(key, partner !== undefined
+                ? { ...open, [other]: rest }
+                : { ...open, [entry.side]: [...open[entry.side], setNumber] });
+        } else {
+            setNumber = isWarmup ? ++warmupCount : ++workCount;
+        }
         const rest = restByEntryId.get(entry.id);
         return {
             entryId: entry.id,
@@ -284,6 +310,7 @@ function toSetRows(entries: readonly SessionEntry[], restByEntryId: ReadonlyMap<
             ...(rest ? { rest } : {}),
             ...(entry.governingChoiceEntryId ? { governingChoiceEntryId: entry.governingChoiceEntryId } : {}),
             ...(entry.selectedOptionId ? { selectedOptionId: entry.selectedOptionId } : {}),
+            ...(entry.side === 'left' || entry.side === 'right' ? { side: entry.side } : {}),
         };
     });
 }

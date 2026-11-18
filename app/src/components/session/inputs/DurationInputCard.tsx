@@ -1,6 +1,9 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import type { SessionStep, DurationEntryPayload } from '../../../sessions/models';
 import { playCountdownBeep } from '../../../utils/audioFeedback';
+import { RpeField } from './RpeField';
+import { runSingleFlight } from './repetitionSubmit';
+import { buildHoldPayload } from './setPayloads';
 
 interface DurationInputCardProps {
     step: SessionStep;
@@ -10,6 +13,10 @@ interface DurationInputCardProps {
     /** Changes whenever a duration entry for this step is added/removed, even if nextSide is unchanged. */
     performedEntryCount?: number;
     onSubmit: (payload: DurationEntryPayload, side?: 'left' | 'right') => void | Promise<void>;
+    /** Fired when the hold itself starts (after the lead-in, or on "Start Now"), so a
+     * still-running rest countdown ends instead of elapsing -- and beeping -- in the middle of
+     * the hold. A cancelled lead-in leaves the rest running. */
+    onWorkStarted?: () => void;
 }
 
 export const DurationInputCard: React.FC<DurationInputCardProps> = ({
@@ -19,6 +26,7 @@ export const DurationInputCard: React.FC<DurationInputCardProps> = ({
     nextSide,
     performedEntryCount = 0,
     onSubmit,
+    onWorkStarted,
 }) => {
     const dose = step.dose;
     const targetSeconds = suggestedSeconds ?? (dose?.kind === 'duration'
@@ -34,6 +42,11 @@ export const DurationInputCard: React.FC<DurationInputCardProps> = ({
         right: suggestedLoadKg !== undefined ? String(suggestedLoadKg) : '',
         bilateral: suggestedLoadKg !== undefined ? String(suggestedLoadKg) : '',
     });
+    // Each side keeps its own RPE draft, like duration and load, so one side's effort never
+    // rides along with the other side's hold.
+    const [rpeBySide, setRpeBySide] = useState<Record<'left' | 'right' | 'bilateral', string>>({ left: '', right: '', bilateral: '' });
+    const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+    const submitInFlightRef = useRef(false);
     const [isPrepCountdown, setIsPrepCountdown] = useState<boolean>(false);
     const [prepSeconds, setPrepSeconds] = useState<number>(5);
     const [isTimerRunning, setIsTimerRunning] = useState<boolean>(false);
@@ -41,6 +54,13 @@ export const DurationInputCard: React.FC<DurationInputCardProps> = ({
     const timerSide = step.laterality === 'per_side' ? selectedSide : 'bilateral';
     const seconds = secondsBySide[timerSide];
     const loadKg = loadBySide[timerSide];
+    const rpe = rpeBySide[timerSide];
+    // Bumped on every edit, so a finished save clears only an RPE the athlete has not touched since.
+    const rpeRevisionRef = useRef<Record<'left' | 'right' | 'bilateral', number>>({ left: 0, right: 0, bilateral: 0 });
+    const setRpe = (value: string) => {
+        rpeRevisionRef.current = { ...rpeRevisionRef.current, [timerSide]: rpeRevisionRef.current[timerSide] + 1 };
+        setRpeBySide(prev => ({ ...prev, [timerSide]: value }));
+    };
     const elapsed = elapsedBySide[timerSide];
     const setSeconds = (value: string) => setSecondsBySide(prev => ({ ...prev, [timerSide]: value }));
     const setLoadKg = (value: string) => setLoadBySide(prev => ({ ...prev, [timerSide]: value }));
@@ -69,6 +89,7 @@ export const DurationInputCard: React.FC<DurationInputCardProps> = ({
                 }, 1000);
             } else {
                 // Prep finished: play GO sound and start main timer
+                onWorkStarted?.();
                 playCountdownBeep(true);
                 setIsPrepCountdown(false);
                 setElapsed(0);
@@ -78,7 +99,7 @@ export const DurationInputCard: React.FC<DurationInputCardProps> = ({
         return () => {
             if (interval) clearInterval(interval);
         };
-    }, [isPrepCountdown, prepSeconds, setElapsed]);
+    }, [isPrepCountdown, prepSeconds, setElapsed, onWorkStarted]);
 
     // Main hold stopwatch
     useEffect(() => {
@@ -100,6 +121,7 @@ export const DurationInputCard: React.FC<DurationInputCardProps> = ({
     };
 
     const handleSkipPrepAndStart = () => {
+        onWorkStarted?.();
         playCountdownBeep(true);
         setIsPrepCountdown(false);
         setElapsed(0);
@@ -118,20 +140,25 @@ export const DurationInputCard: React.FC<DurationInputCardProps> = ({
         }
     };
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        const parsedSec = parseInt(seconds, 10);
-        if (isNaN(parsedSec) || parsedSec <= 0) return;
-
-        const parsedLoad = loadKg.trim().length > 0 ? parseFloat(loadKg) : undefined;
-        void onSubmit({
-            kind: 'duration',
-            seconds: parsedSec,
-            ...(parsedLoad !== undefined ? { loadKg: parsedLoad } : {}),
-        }, step.laterality === 'per_side' ? selectedSide : undefined);
+        const payload = buildHoldPayload({ seconds, loadKg, rpe });
+        if (!payload) return;
+        const loggedSide = timerSide;
+        const rpeRevision = rpeRevisionRef.current[loggedSide];
         setElapsed(0);
         setIsTimerRunning(false);
         setIsPrepCountdown(false);
+        // One write at a time: a second Log tap before the first settles would record the hold twice.
+        await runSingleFlight(submitInFlightRef, async () => {
+            setIsSubmitting(true);
+            try {
+                await onSubmit(payload, step.laterality === 'per_side' ? selectedSide : undefined);
+                if (rpeRevisionRef.current[loggedSide] === rpeRevision) setRpeBySide(prev => ({ ...prev, [loggedSide]: '' }));
+            } finally {
+                setIsSubmitting(false);
+            }
+        });
     };
 
     return (
@@ -238,9 +265,10 @@ export const DurationInputCard: React.FC<DurationInputCardProps> = ({
                         aria-label="Extra load in kilograms"
                     />
                 </label>
+                <RpeField step={step} value={rpe} onChange={setRpe} />
             </div>
 
-            <button type="submit" className="log-set-btn" aria-label={step.laterality === 'per_side' ? `Log ${selectedSide} hold` : 'Log hold'}>
+            <button type="submit" className="log-set-btn" disabled={isSubmitting} aria-label={step.laterality === 'per_side' ? `Log ${selectedSide} hold` : 'Log hold'}>
                 Log
             </button>
         </form>

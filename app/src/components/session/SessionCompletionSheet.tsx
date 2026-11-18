@@ -42,6 +42,12 @@ interface SessionCompletionSheetProps {
     /** Optional live wall-clock elapsed seconds from the session runner; falls back to `startedAt` delta on mount. */
     elapsedSeconds?: number;
     totalSets: number;
+    /** Logged sets that abandon keeps: work and warm-up sets, including half of an unfinished
+     * left/right pair. Authored-choice records are not sets and are not counted here. */
+    retainedEntryCount?: number;
+    /** Some logged sets may not be durably saved yet (any sync state but `synced`): do not promise
+     * that everything is retained. See `mayHaveUnsavedSets`. */
+    hasUnsavedEntries?: boolean;
     steps: SessionStepSummary[];
     onComplete: (payload: SessionCompletionPayload) => Promise<void>;
     onAbandon: () => Promise<void>;
@@ -64,6 +70,8 @@ export const SessionCompletionSheet: React.FC<SessionCompletionSheetProps> = ({
     startedAt,
     elapsedSeconds,
     totalSets,
+    retainedEntryCount,
+    hasUnsavedEntries = false,
     steps,
     onComplete,
     onAbandon,
@@ -154,7 +162,11 @@ export const SessionCompletionSheet: React.FC<SessionCompletionSheetProps> = ({
                             <p>Are you sure you want to abandon this session?</p>
                         )}
                         <p className="abandon-subtext">
-                            <strong>{abandoningAssessment ? 'What is retained:' : 'Note:'}</strong> Partial sets you have logged ({totalSets} sets) are permanently retained in your history and will not be deleted.
+                            <strong>{abandoningAssessment ? 'What is retained:' : 'Note:'}</strong> {(retainedEntryCount ?? totalSets) === 0
+                                ? 'No set entries have been logged.'
+                                : hasUnsavedEntries
+                                ? `Some of your logged set entries (${retainedEntryCount ?? totalSets}, counting warm-ups and each side of a pair) have not been saved yet. Saved sets are permanently retained in your history; unsaved ones may be lost.`
+                                : `Your logged set entries (${retainedEntryCount ?? totalSets}, counting warm-ups and each side of a pair) are permanently retained in your history and will not be deleted.`}
                         </p>
                         <div className="sheet-actions">
                             <button

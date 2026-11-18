@@ -6,7 +6,7 @@
  */
 import { resolveEffectiveSession } from '../sessions/choiceResolution';
 import { targetEntriesForGroupStep } from '../sessions/groupProgression';
-import type { SessionDefinition, SessionEntry, SessionStep } from '../sessions/models';
+import type { SessionDefinition, SessionEntry } from '../sessions/models';
 import { completedPrescribedSets, countsTowardPrescribedSets, isWarmupEntry } from '../sessions/workSets';
 
 /** Prescribed exercise steps, block-aware (rounds override a step's sets); alternatives are never summed. */
@@ -16,14 +16,6 @@ export function plannedSetCount(definition: SessionDefinition): number {
         .reduce((blockSum, step) => blockSum + targetEntriesForGroupStep(block, step), 0), 0);
 }
 
-/** Without the definition, logged left/right holds still pair into one set. */
-function inferredStep(stepId: string, entries: readonly SessionEntry[]): SessionStep {
-    const sided = entries.some(entry => entry.payload.kind === 'duration' && (entry.side === 'left' || entry.side === 'right'));
-    return sided
-        ? { id: stepId, kind: 'exercise', laterality: 'per_side', dose: { kind: 'duration', seconds: 0 } }
-        : { id: stepId, kind: 'exercise' };
-}
-
 function workSetCount(entries: readonly SessionEntry[], definition: SessionDefinition | null): number {
     const steps = new Map((definition?.blocks ?? []).flatMap(block => block.steps.map(step => [step.id, step] as const)));
     const byStep = new Map<string, SessionEntry[]>();
@@ -31,8 +23,12 @@ function workSetCount(entries: readonly SessionEntry[], definition: SessionDefin
         const key = entry.stepId ?? `entry:${entry.id}`;
         byStep.set(key, [...(byStep.get(key) ?? []), { ...entry, stepId: key }]);
     }
-    return [...byStep].reduce((sum, [stepId, stepEntries]) =>
-        sum + completedPrescribedSets(steps.get(stepId) ?? inferredStep(stepId, stepEntries), stepEntries), 0);
+    return [...byStep].reduce((sum, [stepId, stepEntries]) => {
+        // Left/right pairing follows the logged entries (see `completedPrescribedSets`), so a
+        // step missing from the definition (added, or unresolved) counts the same way.
+        const step = steps.get(stepId) ?? { id: stepId, kind: 'exercise' as const };
+        return sum + completedPrescribedSets(step, stepEntries);
+    }, 0);
 }
 
 export interface ExecutionSetInput {

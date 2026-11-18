@@ -7,6 +7,35 @@ export const ADDED_EXERCISES_BLOCK_ID = 'added-during-session';
 /** Prefix of every added step id; the summary reports such work as unplanned. */
 const ADDED_STEP_ID_PREFIX = 'added-';
 
+/** Whether a step was added by the athlete during the session (wherever it has since been moved). */
+export function isAddedStep(step: Pick<SessionStep, 'id'> | undefined): boolean {
+    return step?.id.startsWith(ADDED_STEP_ID_PREFIX) ?? false;
+}
+
+/**
+ * A saved template prescribes what the athlete added, so those steps are planned from then on:
+ * drop the `added-` id prefix and rename the "Added exercises" block, so the next run treats
+ * them like any other planned step (block-bound moves, normal auto-advance).
+ */
+export function promoteAddedSteps(blocks: readonly SessionBlock[]): SessionBlock[] {
+    const free = (base: string, taken: Set<string>): string => {
+        let id = base;
+        for (let n = 2; taken.has(id); n++) id = `${base}-${n}`;
+        taken.add(id);
+        return id;
+    };
+    const blockIds = new Set(blocks.map(block => block.id));
+    const promotedBlockId = free('extra-exercises', blockIds);
+    const stepIds = new Set(blocks.flatMap(block => block.steps.filter(step => !isAddedStep(step)).map(step => step.id)));
+    return blocks.map(block => ({
+        ...block,
+        ...(block.id === ADDED_EXERCISES_BLOCK_ID ? { id: promotedBlockId } : {}),
+        steps: block.steps.map(step => (isAddedStep(step)
+            ? { ...step, id: free(`extra-${step.id.slice(ADDED_STEP_ID_PREFIX.length)}`, stepIds) }
+            : step)),
+    }));
+}
+
 /** Exercises added during the session are open-ended: the athlete decides how many sets they
  * do, so the runner must not auto-advance away after the first logged set. */
 export function isAddedExercisesBlock(block: SessionBlock | undefined): boolean {

@@ -11,6 +11,10 @@ export interface RepetitionDraft {
     gaugeVal: string;
     technicalMet: boolean;
     technicalNote: string;
+    /** Set for jump exercises: which result the optional `jumpVal` holds. */
+    jumpMeasure?: 'height' | 'distance' | null;
+    /** Best jump of the set -- centimetres for height, metres for distance. */
+    jumpVal?: string;
 }
 
 function parseBounded(raw: string, min: number, max: number): number | undefined {
@@ -45,12 +49,31 @@ export function buildIntensityGauge(draft: RepetitionDraft): IntensityGauge | un
     }
 }
 
+/** Accepted best-jump results; the form uses the same bounds, so nothing is dropped silently. */
+export const JUMP_RESULT_LIMITS = {
+    height: { min: 0.1, max: 200 },
+    distance: { min: 0.01, max: 50 },
+} as const;
+
+export interface JumpDraft {
+    measure: 'height' | 'distance' | null;
+    value: string;
+}
+
+/** A jump draft belongs to the unit it was typed in: any change of unit discards it (returns a
+ * new blank draft); the same unit keeps the very same draft object. */
+export function reconcileJumpDraft(draft: JumpDraft, measure: JumpDraft['measure']): JumpDraft {
+    return draft.measure === measure ? draft : { measure, value: '' };
+}
+
 /** Returns `null` when the draft cannot be logged (reps missing, non-numeric or not positive). */
 export function buildRepetitionPayload(draft: RepetitionDraft): RepetitionEntryPayload | null {
     const reps = parseInt(draft.reps, 10);
     if (isNaN(reps) || reps <= 0) return null;
     const weightKg = draft.weight.trim().length > 0 ? parseFloat(draft.weight) : undefined;
     const gauge = buildIntensityGauge(draft);
+    const limits = draft.jumpMeasure ? JUMP_RESULT_LIMITS[draft.jumpMeasure] : undefined;
+    const jump = limits ? parseBounded(draft.jumpVal ?? '', limits.min, limits.max) : undefined;
     return {
         kind: 'repetition',
         setIndex: 1, // dynamically indexed by caller
@@ -58,6 +81,8 @@ export function buildRepetitionPayload(draft: RepetitionDraft): RepetitionEntryP
         ...(weightKg !== undefined ? { weightKg } : {}),
         isWarmup: draft.isWarmup,
         ...(gauge ? { gauge } : {}),
+        ...(jump !== undefined && draft.jumpMeasure === 'height' ? { jumpHeightCm: jump } : {}),
+        ...(jump !== undefined && draft.jumpMeasure === 'distance' ? { jumpDistanceMeters: jump } : {}),
     };
 }
 

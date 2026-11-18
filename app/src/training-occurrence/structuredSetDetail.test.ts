@@ -359,3 +359,46 @@ describe('buildStructuredStepDetails', () => {
         expect(squat.choices).toBeUndefined();
     });
 });
+
+describe('buildStructuredStepDetails per-side set numbers', () => {
+    it('gives both sides of a left/right hold pair the same set number', () => {
+        const hold = (id: string, at: string, side: 'left' | 'right'): SessionEntry => ({
+            id, executionId: 'exec-1', stepId: 'plank', completedAt: at, createdAt: at, updatedAt: at, side,
+            payload: { kind: 'duration', seconds: 45 },
+        });
+        const entries = [
+            hold('l1', '2026-08-26T07:20:00.000Z', 'left'),
+            hold('r1', '2026-08-26T07:21:00.000Z', 'right'),
+            hold('l2', '2026-08-26T07:24:00.000Z', 'left'),
+        ];
+        const plank = buildStructuredStepDetails(definition, entries, []).find(step => step.stepId === 'plank')!;
+        expect(plank.sets.map(set => [set.side, set.setNumber])).toEqual([['left', 1], ['right', 1], ['left', 2]]);
+    });
+});
+
+describe('buildStructuredStepDetails distinct set numbers', () => {
+    it('numbers an unsided set and a later left/right pair 1, 2, 2', () => {
+        const at = (m: number) => `2026-08-26T07:${String(m).padStart(2, '0')}:00.000Z`;
+        const base = { executionId: 'exec-1', stepId: 'plank' } as const;
+        const entries: SessionEntry[] = [
+            { ...base, id: 'b1', completedAt: at(10), createdAt: at(10), updatedAt: at(10), payload: { kind: 'duration', seconds: 45 } },
+            { ...base, id: 'l1', completedAt: at(12), createdAt: at(12), updatedAt: at(12), side: 'left', payload: { kind: 'duration', seconds: 45 } },
+            { ...base, id: 'r1', completedAt: at(13), createdAt: at(13), updatedAt: at(13), side: 'right', payload: { kind: 'duration', seconds: 45 } },
+        ];
+        const plank = buildStructuredStepDetails(definition, entries, []).find(step => step.stepId === 'plank')!;
+        expect(plank.sets.map(set => set.setNumber)).toEqual([1, 2, 2]);
+    });
+});
+
+describe('buildStructuredStepDetails pairing identity', () => {
+    it('does not pair a catalog side with a free-text side of the same name', () => {
+        const at = (m: number) => `2026-08-26T07:${String(m).padStart(2, '0')}:00.000Z`;
+        const base = { executionId: 'exec-1', stepId: 'plank', payload: { kind: 'duration' as const, seconds: 45 } };
+        const entries: SessionEntry[] = [
+            { ...base, id: 'l', completedAt: at(10), createdAt: at(10), updatedAt: at(10), side: 'left', exerciseRef: { kind: 'catalog', exerciseId: 'side-plank' } },
+            { ...base, id: 'r', completedAt: at(11), createdAt: at(11), updatedAt: at(11), side: 'right', exerciseRef: { kind: 'unresolved_free_text', name: 'side-plank' } },
+        ];
+        const plank = buildStructuredStepDetails(definition, entries, []).find(step => step.stepId === 'plank')!;
+        expect(plank.sets.map(set => set.setNumber)).toEqual([1, 2]);
+    });
+});

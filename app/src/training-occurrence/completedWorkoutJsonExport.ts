@@ -45,7 +45,13 @@ export interface ExportedPerformedSet {
     durationSeconds?: number;
     distanceMeters?: number;
     heightInches?: number;
+    /** Best jump height of a repetition set of jumps. */
+    jumpHeightCm?: number;
+    /** Best jump distance of a repetition set of jumps. */
+    jumpDistanceMeters?: number;
     completed?: boolean;
+    /** Left or right for a per-side hold, carry or set. */
+    side?: 'left' | 'right';
     effort?: ExportedSetEffort;
     /** Set when the athlete swapped to a different exercise for this set. */
     performedExercise?: ExerciseRef;
@@ -255,17 +261,28 @@ function payloadFields(payload: SessionEntryPayload): Partial<ExportedPerformedS
             return {
                 reps: payload.reps,
                 ...(payload.weightKg !== undefined ? { weightKg: payload.weightKg } : {}),
+                ...(payload.jumpHeightCm !== undefined ? { jumpHeightCm: payload.jumpHeightCm } : {}),
+                ...(payload.jumpDistanceMeters !== undefined ? { jumpDistanceMeters: payload.jumpDistanceMeters } : {}),
                 ...(effort ? { effort } : {}),
             };
         }
-        case 'duration':
-            return { durationSeconds: payload.seconds, ...(payload.loadKg !== undefined ? { weightKg: payload.loadKg } : {}) };
-        case 'distance':
+        case 'duration': {
+            const effort = effortOf(payload.gauge);
+            return {
+                durationSeconds: payload.seconds,
+                ...(payload.loadKg !== undefined ? { weightKg: payload.loadKg } : {}),
+                ...(effort ? { effort } : {}),
+            };
+        }
+        case 'distance': {
+            const effort = effortOf(payload.gauge);
             return {
                 distanceMeters: payload.meters,
                 ...(payload.durationSeconds !== undefined ? { durationSeconds: payload.durationSeconds } : {}),
                 ...(payload.loadKg !== undefined ? { weightKg: payload.loadKg } : {}),
+                ...(effort ? { effort } : {}),
             };
+        }
         case 'sprint':
             return { distanceMeters: payload.meters, durationSeconds: payload.splitSeconds };
         case 'jump_attempt':
@@ -287,6 +304,7 @@ function exportSet(row: PerformedSetRow): ExportedPerformedSet {
         completedAt: row.completedAt,
         kind: row.payload.kind,
         ...payloadFields(row.payload),
+        ...(row.side ? { side: row.side } : {}),
         ...(row.exerciseRef ? { performedExercise: row.exerciseRef } : {}),
         ...(row.governingChoiceEntryId ? { governingChoiceEntryId: row.governingChoiceEntryId } : {}),
         ...(row.selectedOptionId ? { selectedOptionId: row.selectedOptionId } : {}),
@@ -343,6 +361,17 @@ export function structuredEntriesReadOf(view: CompletedWorkoutView): StructuredE
     return { status: 'complete' };
 }
 
+/**
+ * Work sets as the athlete performed them: a per-side hold or carry logs one row per side, and
+ * a left/right pair is one set (as in `sessions/workSets.ts`). An unpaired side is still
+ * performed work, so it counts as one set here. Each row stays in `performed.sets`.
+ */
+function performedWorkSetCount(work: readonly ExportedPerformedSet[]): number {
+    // Set numbers already pair the two sides of one set (same kind and exercise), so counting
+    // distinct numbers keeps the count and the rows in step.
+    return new Set(work.map(set => set.setNumber)).size;
+}
+
 /** Projects a structured session step and its logged sets into the exported exercise summary. */
 function exportExercise(step: StructuredStepDetail, entries: StructuredEntriesRead): ExportedExercise {
     const sets = step.sets.map(exportSet);
@@ -364,7 +393,7 @@ function exportExercise(step: StructuredStepDetail, entries: StructuredEntriesRe
         ...(step.choices && step.choices.length > 0 ? { choices: step.choices.map(choice => ({ ...choice })) } : {}),
         ...(step.choiceOnly ? {} : { performedStatus: performedStatusOf(sets, entries) }),
         performed: {
-            workSets: work.length,
+            workSets: performedWorkSetCount(work),
             warmupSets: warmup.length,
             totalReps: work.reduce((sum, set) => sum + (set.reps ?? 0), 0),
             ...(warmupReps > 0 ? { warmupReps } : {}),

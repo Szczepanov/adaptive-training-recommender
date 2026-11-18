@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { SessionBlock, SessionDefinition, SessionEntry } from './models';
-import { ADDED_EXERCISES_BLOCK_ID, appendAddedExerciseStep, isAddedExercisesBlock, restoreAddedExerciseSteps } from './addedExerciseStep';
+import { ADDED_EXERCISES_BLOCK_ID, appendAddedExerciseStep, isAddedExercisesBlock, isAddedStep, promoteAddedSteps, restoreAddedExerciseSteps } from './addedExerciseStep';
 
 const planned: SessionBlock[] = [{
     id: 'main',
@@ -70,5 +70,37 @@ describe('appendAddedExerciseStep', () => {
         expect(isAddedExercisesBlock(blocks[1])).toBe(true);
         expect(isAddedExercisesBlock(blocks[0])).toBe(false);
         expect(isAddedExercisesBlock(undefined)).toBe(false);
+    });
+});
+
+describe('promoteAddedSteps', () => {
+    it('turns added steps into planned ones when a session is saved as a template', () => {
+        const appended = appendAddedExerciseStep([], { exerciseRef: { kind: 'catalog', exerciseId: 'nordic_hamstring_curl' } }, 'x1');
+        const promoted = promoteAddedSteps(appended.blocks);
+        expect(promoted[0].id).not.toBe(ADDED_EXERCISES_BLOCK_ID);
+        expect(isAddedExercisesBlock(promoted[0])).toBe(false);
+        expect(promoted[0].steps.map(step => step.id)).toEqual(['extra-x1']);
+        expect(isAddedStep(promoted[0].steps[0])).toBe(false);
+        expect(appended.blocks[0].steps[0].id).toBe('added-x1');
+    });
+});
+
+describe('promoteAddedSteps block id', () => {
+    it('picks a free block id when the session already has an extra-exercises block', () => {
+        const existing: SessionBlock = { id: 'extra-exercises', title: 'Extra', role: 'accessory', executionMode: 'sequential', steps: [] };
+        const appended = appendAddedExerciseStep([existing], { exerciseRef: { kind: 'catalog', exerciseId: 'nordic_hamstring_curl' } }, 'x1');
+        const ids = promoteAddedSteps(appended.blocks).map(block => block.id);
+        expect(ids).toEqual(['extra-exercises', 'extra-exercises-2']);
+        expect(new Set(ids).size).toBe(ids.length);
+    });
+});
+
+describe('promoteAddedSteps step ids', () => {
+    it('gives a promoted step a free id when a planned step already uses it', () => {
+        const planned: SessionBlock = { id: 'main', title: 'Main', role: 'main', executionMode: 'sequential',
+            steps: [{ id: 'extra-x1', kind: 'exercise' }] };
+        const appended = appendAddedExerciseStep([planned], { exerciseRef: { kind: 'catalog', exerciseId: 'nordic_hamstring_curl' } }, 'x1');
+        const ids = promoteAddedSteps(appended.blocks).flatMap(block => block.steps.map(step => step.id));
+        expect(ids).toEqual(['extra-x1', 'extra-x1-2']);
     });
 });
