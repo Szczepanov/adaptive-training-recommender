@@ -1,0 +1,10 @@
+{
+  "$comment": "Expiring exceptions for scripts/audit-gate.mjs. Only for advisories with no published fix. Each entry needs a reason and an expiry date; when it expires the audit gate fails again until the entry is re-reviewed or removed. See docs/standards/agent-tooling.md.",
+  "exceptions": [
+    {
+      "id": "GHSA-fc5q-39xc-vjpf",
+      "reason": "picomatch ReDoS via repeated extglobs; every release up to the latest (4.0.7) is affected and no fix is published. It reaches us only through build/test/lint tooling (vite, vitest, vite-plugin-pwa/workbox, typescript-eslint, node-gyp) matching repository-authored glob patterns; it is not in the shipped bundle and never sees user input.",
+      "expires": "2026-12-18"
+    }
+  ]
+}

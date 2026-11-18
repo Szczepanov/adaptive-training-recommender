@@ -388,7 +388,17 @@ UI, ingestion and docs changes.
 
 The frontend dependency audit remains required, matching `npm run check`. It runs in a
 preflight phase after hygiene, before expensive suites start, so registry failures and security
-findings fail promptly. Python dependency-security registry checks and Docker/BuildKit checks
+findings fail promptly.
+
+`npm run audit` is `app/scripts/audit-gate.mjs`: it fails on every high or critical advisory
+except those listed in `app/audit-allowlist.json`. An exception is allowed only for an advisory
+with no published fix, and every entry needs a GHSA id, a reason (where the package is reached
+and why that is acceptable) and an expiry date. A finding is waived only when *every* high or
+critical advisory behind it is listed, so a new advisory in the same package still fails. When
+an entry expires the gate fails again; re-check upstream, then either upgrade and delete the
+entry or extend it with a refreshed reason. The gate prints each waived advisory on every run
+and notes entries that no longer match anything. Never bypass the gate or the pre-push hook
+instead. Python dependency-security registry checks and Docker/BuildKit checks
 remain CI-owned environment gates.
 
 The contract is implemented by `scripts/verify_repo.py`; `make verify` is the stable public
