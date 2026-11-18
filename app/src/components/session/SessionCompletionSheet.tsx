@@ -45,7 +45,8 @@ interface SessionCompletionSheetProps {
     /** Logged sets that abandon keeps: work and warm-up sets, including half of an unfinished
      * left/right pair. Authored-choice records are not sets and are not counted here. */
     retainedEntryCount?: number;
-    /** Some writes failed (sync unavailable): those sets may not be retained, so say so. */
+    /** Some logged sets may not be durably saved yet (any sync state but `synced`): do not promise
+     * that everything is retained. See `mayHaveUnsavedSets`. */
     hasUnsavedEntries?: boolean;
     steps: SessionStepSummary[];
     onComplete: (payload: SessionCompletionPayload) => Promise<void>;

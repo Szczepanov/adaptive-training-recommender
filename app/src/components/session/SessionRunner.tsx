@@ -48,7 +48,7 @@ import { trainingSettingsService } from '../../services/trainingSettingsService'
 import { getLocalDateString } from '../../utils/localDate';
 import { isSoundEnabled, setSoundEnabled } from '../../utils/audioFeedback';
 import { SCREEN_LABELS } from '../../types/navigation';
-import { nextSyncAnnouncement } from './syncAnnouncement';
+import { mayHaveUnsavedSets, nextSyncAnnouncement } from './syncAnnouncement';
 import './SessionRunner.css';
 
 // Import positive fixtures for quick unplanned session launch
@@ -1600,7 +1600,7 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                     elapsedSeconds={runner.elapsedSeconds}
                     totalSets={completedSetTotal}
                     retainedEntryCount={entries.filter(entry => entry.payload.kind !== 'choice').length}
-                    hasUnsavedEntries={runner.syncStatus === 'unavailable'}
+                    hasUnsavedEntries={mayHaveUnsavedSets(runner.syncStatus)}
                     steps={stepSummaries}
                     saving={isFinishing}
                     openAbandonConfirmation={showAbandonConfirmation}
