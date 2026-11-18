@@ -263,8 +263,10 @@ describe('SessionCompletionSheet', () => {
                 openAbandonConfirmation={true}
             />,
         );
-        expect(html).toContain('Your logged set entries (3, counting warm-ups and each side of a pair)');
-        expect(html).toContain('Some sets have not been saved yet and may not be retained.');
+        expect(html).toContain('Some of your logged set entries (3, counting warm-ups and each side of a pair) have not been saved yet.');
+        expect(html).toContain('unsaved ones may be lost');
+        // No blanket promise that everything is kept.
+        expect(html).not.toContain('are permanently retained in your history and will not be deleted');
     });
 
     it('renders abandon confirmation when openAbandonConfirmation is true', () => {

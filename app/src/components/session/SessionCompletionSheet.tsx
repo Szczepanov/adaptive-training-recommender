@@ -161,7 +161,9 @@ export const SessionCompletionSheet: React.FC<SessionCompletionSheetProps> = ({
                             <p>Are you sure you want to abandon this session?</p>
                         )}
                         <p className="abandon-subtext">
-                            <strong>{abandoningAssessment ? 'What is retained:' : 'Note:'}</strong> Your logged set entries ({retainedEntryCount ?? totalSets}, counting warm-ups and each side of a pair) are permanently retained in your history and will not be deleted.{hasUnsavedEntries ? ' Some sets have not been saved yet and may not be retained.' : ''}
+                            <strong>{abandoningAssessment ? 'What is retained:' : 'Note:'}</strong> {hasUnsavedEntries
+                                ? `Some of your logged set entries (${retainedEntryCount ?? totalSets}, counting warm-ups and each side of a pair) have not been saved yet. Saved sets are permanently retained in your history; unsaved ones may be lost.`
+                                : `Your logged set entries (${retainedEntryCount ?? totalSets}, counting warm-ups and each side of a pair) are permanently retained in your history and will not be deleted.`}
                         </p>
                         <div className="sheet-actions">
                             <button
