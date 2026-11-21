@@ -148,4 +148,37 @@ describe('CompletedWorkoutList click wiring (#895 criterion 12)', () => {
         expect(buttons.some(b => b.text.startsWith('Link Garmin'))).toBe(false);
         expect(buttons.some(b => b.text === 'Unlink Garmin source')).toBe(false);
     });
+
+    it('"Copy for AI" redacts userId even when responses fail to load', async () => {
+        const writeText = vi.fn().mockResolvedValue(undefined);
+        vi.stubGlobal('navigator', { clipboard: { writeText } });
+        const { sessionResponseService } = await import('../services/sessionResponseService');
+        const spy = vi.spyOn(sessionResponseService, 'getResponsesForSourceReadState').mockRejectedValue(new Error('offline'));
+        try {
+            const view: CompletedWorkoutView = {
+                ...structuredOnly,
+                structured: {
+                    ...structuredOnly.structured!,
+                    title: 'Squat for athlete-secret-7',
+                    execution: {
+                        executionId: 'exec-1', state: 'completed',
+                        startedAt: '2026-08-26T06:50:00.000Z', completedAt: '2026-08-26T07:35:00.000Z',
+                        note: 'Note mentioning athlete-secret-7',
+                    },
+                },
+            };
+            const copyAi = collectButtons(<CompletedWorkoutList workouts={[view]} userId="athlete-secret-7" />)
+                .filter(b => b.text.includes('Copy for AI'));
+            expect(copyAi).toHaveLength(1);
+            await copyAi[0].onClick();
+            expect(writeText).toHaveBeenCalledTimes(1);
+            const md = writeText.mock.calls[0][0] as string;
+            expect(md).not.toContain('athlete-secret-7');
+            expect(md).toContain('# Session: Squat for &#91;redacted&#93;');
+            expect(md).toContain('responses: unavailable (read failed)');
+        } finally {
+            spy.mockRestore();
+            vi.unstubAllGlobals();
+        }
+    });
 });

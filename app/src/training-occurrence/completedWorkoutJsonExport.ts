@@ -304,7 +304,7 @@ function exportSet(row: PerformedSetRow): ExportedPerformedSet {
         completedAt: row.completedAt,
         kind: row.payload.kind,
         ...payloadFields(row.payload),
-        ...(row.side ? { side: row.side } : {}),
+        ...(row.side === 'left' || row.side === 'right' ? { side: row.side } : {}),
         ...(row.exerciseRef ? { performedExercise: row.exerciseRef } : {}),
         ...(row.governingChoiceEntryId ? { governingChoiceEntryId: row.governingChoiceEntryId } : {}),
         ...(row.selectedOptionId ? { selectedOptionId: row.selectedOptionId } : {}),

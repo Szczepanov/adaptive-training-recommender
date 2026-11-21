@@ -39,7 +39,7 @@ const injuryRegions: Array<{ value: BodyRegion; label: string }> = [
   { value: 'shoulder', label: 'Shoulder' }, { value: 'elbow', label: 'Elbow' }, { value: 'wrist', label: 'Wrist' },
 ];
 const injuryModalities: SessionTemplate['modality'][] = ['Running', 'Cycling', 'Swimming', 'Walking', 'Strength', 'Field', 'Mobility', 'Cross Training'];
-const emptyInjuryDraft = { region: '', severity: 'limit' as InjuryConstraint['severity'], restrictedModalities: [] as SessionTemplate['modality'][], reviewBy: '', note: '' };
+const emptyInjuryDraft = { id: undefined as string | undefined, region: '', severity: 'limit' as InjuryConstraint['severity'], restrictedModalities: [] as SessionTemplate['modality'][], reviewBy: '', note: '' };
 
 function CrossSurfaceNote({ onNavigate, children }: { onNavigate?: (screen: Screen) => void; children: ReactNode }) {
   return (
@@ -121,7 +121,9 @@ export function TrainingSettings({ userId, onNavigate }: TrainingSettingsProps) 
   const saveInjury = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!settings) return;
+    const existingId = editingInjuryIndex !== null ? (injuryDraft.id ?? settings.injuries?.[editingInjuryIndex]?.id) : undefined;
     const injury: InjuryConstraint = {
+      ...(existingId ? { id: existingId } : {}),
       severity: injuryDraft.severity,
       ...(injuryDraft.region ? { region: injuryDraft.region as BodyRegion } : {}),
       ...(injuryDraft.restrictedModalities.length > 0 ? { restrictedModalities: injuryDraft.restrictedModalities } : {}),
@@ -141,6 +143,7 @@ export function TrainingSettings({ userId, onNavigate }: TrainingSettingsProps) 
   const editInjury = (injury: InjuryConstraint, index: number) => {
     setEditingInjuryIndex(index);
     setInjuryDraft({
+      id: injury.id,
       region: injury.region ?? '',
       severity: injury.severity,
       restrictedModalities: injury.restrictedModalities ?? [],
@@ -302,7 +305,7 @@ export function TrainingSettings({ userId, onNavigate }: TrainingSettingsProps) 
         {settings.injuries && settings.injuries.length > 0 ? (
           <div className="injuries-list">
             {settings.injuries.map((inj, index) => (
-              <div key={index} className="injury-card-item">
+              <div key={inj.id ?? index} className="injury-card-item">
                 <div className="injury-card-details">
                   <div className="injury-card-header">
                     <strong className="injury-card-region">{inj.region ? inj.region.toUpperCase().replace('_', ' ') : 'General Activity'}</strong>
@@ -316,6 +319,7 @@ export function TrainingSettings({ userId, onNavigate }: TrainingSettingsProps) 
                   <button type="button" className="btn-injury-action remove" onClick={() => {
                     const nextInjuries = (settings.injuries ?? []).filter((_, i) => i !== index);
                     if (editingInjuryIndex === index) { setInjuryDraft(emptyInjuryDraft); setEditingInjuryIndex(null); }
+                    else if (editingInjuryIndex !== null && index < editingInjuryIndex) { setEditingInjuryIndex(editingInjuryIndex - 1); }
                     void saveDestructive({ injuries: nextInjuries }, 'Injury constraint removed.');
                   }}>Remove</button>
                 </div>

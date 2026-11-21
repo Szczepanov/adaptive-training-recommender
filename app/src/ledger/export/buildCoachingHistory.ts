@@ -40,9 +40,15 @@ function flatten(rows: readonly PlacementInput[] | undefined): FlatAssignment[] 
 
 const assignmentId = (row: FlatAssignment): string => `${row.planId}@${row.revision}:${row.sessionId}`;
 
+function isUnverifiedRevision(row: { planId: string; revision: number }, records: LedgerExportRecords): boolean {
+    return (records.unverifiedPlanRevisions ?? [])
+        .some(item => item.planId === row.planId && item.revision === row.revision);
+}
+
 /** Authored content of the placement's session, or the reason it cannot be read. */
 function sessionContent(row: FlatAssignment, records: LedgerExportRecords, context: BuildContext):
     { session?: PlanSessionContentInput; absent: LedgerState } {
+    if (isUnverifiedRevision(row, records)) return { absent: 'unavailable' };
     const revision = records.planRevisions?.find(item => item.planId === row.planId && item.revision === row.revision);
     // A revision that is not exported failed verification (invalid source) or could not be read.
     if (!revision?.sessions) {
@@ -112,6 +118,7 @@ function sessionDates(row: FlatAssignment, records: LedgerExportRecords, asOfDat
  *   the plan was imported on or before the placement date, so the work may belong to that revision.
  */
 function evidenceCoversPlacement(row: FlatAssignment, records: LedgerExportRecords, context: BuildContext): boolean {
+    if (isUnverifiedRevision(row, records)) return false;
     if (row.date > context.window.endDate) return false;
     // Executions and links are read only inside the window, so every date the session sat on
     // (and each date it moved from) must be inside it.

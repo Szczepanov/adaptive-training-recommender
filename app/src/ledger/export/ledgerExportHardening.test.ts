@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildLedgerExport } from './buildLedgerExport.ts';
+import { redactText } from './stripIdentity.ts';
 import {
     activity,
     AS_OF,
@@ -213,6 +214,8 @@ describe('final review fixes', () => {
     it('still redacts real e-mail addresses (P1)', () => {
         const result = buildLedgerExport(fullInput({ legacyEngine: { a: 'a.b@example.com', b: 'x@mail.co.uk.' } }));
         expect(result.legacyEngine).toEqual({ a: '[redacted]', b: '[redacted].' });
+        expect(redactText(`hello ${FAKE_USER_ID} and ${FAKE_USER_ID}_extra mail ${FAKE_EMAIL}`, new Set([FAKE_USER_ID])))
+            .toBe(`hello [redacted] and ${FAKE_USER_ID}_extra mail [redacted]`);
     });
 
     it('reports a performance target without a subject as invalid instead of throwing (P2)', () => {

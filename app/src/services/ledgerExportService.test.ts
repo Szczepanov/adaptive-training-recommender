@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fullRecords, AS_OF } from '../ledger/export/ledgerExportFixtures.testSupport';
 import { computeContentHash } from '../engine/externalPlanHash';
+import { userContextCheckpoint } from '../ledger/export/compact/contextCheckpoint';
 import { SOURCE_KEYS } from '../ledger/export/inputs';
 import { ENGINE_OPINION_KEYS } from '../ledger/export/schema';
 import { PLACEMENT_HISTORY_TRUNCATED_OPERATION } from '../ledger/placementHistory';
@@ -358,6 +359,52 @@ describe('LedgerExportService', () => {
                 ? available({ ...future, assignments: [{ sessionId: 'old-1', date: '2026-11-28', status: 'planned' }] }) : { status: 'MISSING' }));
             await new LedgerExportService().build('owner', { ...request, purpose: 'morning' });
             expect(reads.revision).not.toHaveBeenCalledWith('owner', 'plan-1', 1);
+        });
+
+        it('degrades only a legacy-overlay-only revision lacking an activation hash without invalidating external_plan_revisions', async () => {
+            const latestWithSession = {
+                schema: 'external-plan@6',
+                sessions: [{ id: 'new-1', title: 'New threshold', definition: { summary: 'Verified rev 2', blocks: [] } }],
+            };
+            const newHash = await computeContentHash(latestWithSession);
+            reads.plans.mockResolvedValue(available(['plan-1']));
+            reads.header.mockResolvedValue(available({ revision: 2, contentHash: newHash, importedAt: '2026-11-18T08:00:00Z' }));
+            // Activation list is complete but has no entry for revision 1 (placed only via legacy overlay).
+            reads.activations.mockResolvedValue(available([
+                { revision: 2, contentHash: newHash, activatedAt: '2026-11-18T08:00:00Z' },
+            ]));
+            reads.revision.mockImplementation((_uid, _plan, revision) => Promise.resolve(available(revision === 1 ? older : latestWithSession)));
+            const pastLegacy = { planId: 'plan-1', revision: 1, assignments: [{ sessionId: 'old-1', date: '2026-11-19', status: 'planned' }] };
+            const rev2Placement = { planId: 'plan-1', revision: 2, assignments: [{ sessionId: 'new-1', date: '2026-11-19', status: 'planned' }] };
+            reads.placement.mockImplementation((_uid, _plan, revision) => Promise.resolve(
+                revision === undefined || revision === 1 ? available(pastLegacy)
+                    : revision === 2 ? available(rev2Placement)
+                        : { status: 'MISSING' },
+            ));
+
+            const result = await new LedgerExportService().build('owner', { ...request, purpose: 'morning' });
+            expect(result.sources.find(s => s.source === 'external_plan_revisions')?.state).toBe('measured');
+            expect(result.coachingHistory.planRevisions.state).toBe('measured');
+            expect(result.coachingHistory.planRevisions.items.map(row => row.id)).toEqual(['plan-1@2']);
+            expect(userContextCheckpoint(result).collections.planRevisions.complete).toBe(true);
+
+            const legacyPlacement = result.coachingHistory.placements.items.find(item => item.id === 'plan-1@1:old-1')!;
+            expect(legacyPlacement.fields.title).toMatchObject({ value: null, state: 'unavailable' });
+            expect(legacyPlacement.fields.outcome.value).toBe('unknown');
+
+            const verifiedPlacement = result.coachingHistory.placements.items.find(item => item.id === 'plan-1@2:new-1')!;
+            expect(verifiedPlacement.fields.title).toMatchObject({ value: 'New threshold', state: 'measured' });
+            expect(verifiedPlacement.fields.outcome.value).toBe('missed');
+
+            // An actual content-hash mismatch still marks external_plan_revisions as invalid.
+            reads.activations.mockResolvedValue(available([
+                { revision: 1, contentHash: 'sha256:wrong', activatedAt: '2026-11-01T08:00:00Z' },
+                { revision: 2, contentHash: newHash, activatedAt: '2026-11-18T08:00:00Z' },
+            ]));
+            const mismatch = await new LedgerExportService().build('owner', { ...request, purpose: 'morning' });
+            expect(mismatch.sources.find(s => s.source === 'external_plan_revisions')?.state).toBe('invalid');
+            expect(mismatch.coachingHistory.planRevisions.state).toBe('invalid');
+            expect(verifiedPlacement.fields.outcome.value).not.toBe(mismatch.coachingHistory.placements.items.find(i => i.id === 'plan-1@2:new-1')?.fields.outcome.value);
         });
     });
 });

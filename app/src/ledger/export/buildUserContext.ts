@@ -7,6 +7,7 @@
  */
 import type { TrainingSettings, UserPreferences } from '../models.ts';
 import { byDateThenId, collect, sourceState, type BuildContext } from './buildContext.ts';
+import { fnv1a } from './fnv1a.ts';
 import type { GoalInput, GoalPerformanceTargetInput, LedgerExportRecords } from './inputs.ts';
 import {
     contextRecord,
@@ -106,6 +107,39 @@ function injuryValues(row: InjuryRow): Record<typeof INJURY_FIELDS[number], Ledg
     };
 }
 
+/** Deterministic fallback id for legacy injuries stored without `id`; `resolvedAt` is excluded so resolving keeps the same id. */
+function legacyInjuryId(row: InjuryRow): string {
+    const hash = fnv1a(JSON.stringify({
+        createdAt: row.createdAt ?? null,
+        region: row.region ?? null,
+        severity: row.severity,
+        reviewBy: row.reviewBy ?? null,
+        note: row.note ?? null,
+        restrictedModalities: row.restrictedModalities ?? null,
+    }));
+    return `injury-legacy-${hash}`;
+}
+
+function withStableInjuryIds(rows: readonly InjuryRow[] | undefined): Array<{ row: InjuryRow; id: string }> | undefined {
+    if (!rows) return undefined;
+    const used = new Set<string>();
+    for (const row of rows) {
+        if (row.id) used.add(row.id);
+    }
+    return rows.map(row => {
+        if (row.id) return { row, id: row.id };
+        const base = legacyInjuryId(row);
+        let candidate = base;
+        let suffix = 2;
+        while (used.has(candidate)) {
+            candidate = `${base}-${suffix}`;
+            suffix += 1;
+        }
+        used.add(candidate);
+        return { row, id: candidate };
+    });
+}
+
 /** No settings document, or no `injuries` field, is "not recorded", never an empty "none". */
 function buildInjuries(records: LedgerExportRecords, context: BuildContext): LedgerUserContext['injuries'] {
     const settings = records.trainingSettings;
@@ -115,7 +149,7 @@ function buildInjuries(records: LedgerExportRecords, context: BuildContext): Led
     ];
     const base = collect(context, {
         key: 'training_settings',
-        records: rows?.map((row, index) => ({ row, id: `injury-${String(index + 1).padStart(3, '0')}` })),
+        records: withStableInjuryIds(rows),
         toItem: ({ row, id }) => contextRecord(record(id, null, injuryValues(row)),
             fact(row.createdAt, { source: SOURCE, absent: 'not_recorded' })),
     });

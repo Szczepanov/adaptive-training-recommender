@@ -268,6 +268,9 @@ export interface LedgerExportRecords {
     placementHistory?: readonly PlacementEvent[];
     /** Revisions whose history exceeded the bounded scan; only their statusHistory is unavailable. */
     placementHistoryUnavailable?: readonly { planId: string; revision: number }[];
+    /** Older revisions placed only through the legacy overlay with no activation hash; only their
+     * placement content and past outcomes degrade, never the whole plan-revisions source. */
+    unverifiedPlanRevisions?: readonly { planId: string; revision: number }[];
     plannedToPerformed?: readonly PlannedToPerformedInput[];
     /** Hash-verified executions of plan sessions in the window. Absent = not read, so no past
      * placement can be shown as missed. */

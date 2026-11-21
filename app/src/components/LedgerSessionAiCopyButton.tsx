@@ -32,6 +32,7 @@ export function LedgerSessionAiCopyButton({ userId, execution, title }: Props) {
       () => getCompletedWorkoutsInRange(userId, execution.date, addDaysToLocalDateString(execution.date, 1)),
       new Date().toISOString(),
       id => sessionResponseService.getResponsesForSourceReadState(userId, { kind: 'execution', id }),
+      userId,
     );
     try {
       await copyDeferredText(text);

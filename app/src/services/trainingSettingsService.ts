@@ -65,7 +65,12 @@ export function migrateLegacyConstraints(userId: string, constraints: UserConstr
     return result;
 }
 
-export function mergeSettings(current: TrainingSettings, update: TrainingSettingsUpdate, today = getLocalDateString()): TrainingSettings {
+export function mergeSettings(
+    current: TrainingSettings,
+    update: TrainingSettingsUpdate,
+    today = getLocalDateString(),
+    createInjuryId: () => string = () => `injury-${crypto.randomUUID()}`,
+): TrainingSettings {
     const previous = current.injuries ?? [];
     if ((update.injuryExpected && !valuesEqual(previous, update.injuryExpected))
         || (update.injuryHistoryExpected && !valuesEqual(current.injuryHistory ?? [], update.injuryHistoryExpected))) {
@@ -76,25 +81,47 @@ export function mergeSettings(current: TrainingSettings, update: TrainingSetting
     if (update.injuries !== undefined) {
         const remaining = previous.map((injury, index) => ({ injury, index }));
         injuries = update.injuries.map((injury, index) => {
-            const match = remaining.findIndex(item => item.index === update.injuryEditIndex && index === update.injuryEditIndex);
-            const exact = remaining.findIndex(item => valuesEqual(item.injury, injury));
-            const selected = match >= 0 ? match : exact;
+            const byId = injury.id !== undefined ? remaining.findIndex(item => item.injury.id === injury.id) : -1;
+            const byEditIndex = byId >= 0 ? byId
+                : remaining.findIndex(item => item.index === update.injuryEditIndex && index === update.injuryEditIndex);
+            const selected = byEditIndex >= 0 ? byEditIndex
+                : remaining.findIndex(item => valuesEqual(item.injury, injury));
             const fields = { ...injury };
+            delete fields.id;
             delete fields.createdAt;
             delete fields.resolvedAt;
             if (selected >= 0) {
                 const [old] = remaining.splice(selected, 1);
-                return { ...fields, ...(old.injury.createdAt ? { createdAt: old.injury.createdAt } : {}) };
+                const id = old.injury.id ?? injury.id;
+                return {
+                    ...fields,
+                    ...(id !== undefined ? { id } : {}),
+                    ...(old.injury.createdAt ? { createdAt: old.injury.createdAt } : {}),
+                };
             }
             if (update.injuryRestore && injuryHistory) {
-                const historyIndex = injuryHistory.findLastIndex(item => {
+                const byHistoryId = injury.id !== undefined ? injuryHistory.findLastIndex(item => item.id === injury.id) : -1;
+                const historyIndex = byHistoryId >= 0 ? byHistoryId : injuryHistory.findLastIndex(item => {
                     const original = { ...item };
                     delete original.resolvedAt;
                     return valuesEqual(original, injury);
                 });
+                const restored = historyIndex >= 0 ? injuryHistory[historyIndex] : undefined;
                 if (historyIndex >= 0) injuryHistory = injuryHistory.filter((_, i) => i !== historyIndex);
+                const id = restored?.id ?? injury.id;
+                const createdAt = injury.createdAt ?? restored?.createdAt;
+                return {
+                    ...fields,
+                    ...(id !== undefined ? { id } : {}),
+                    ...(createdAt ? { createdAt } : {}),
+                };
             }
-            return { ...fields, ...(update.injuryRestore ? (injury.createdAt ? { createdAt: injury.createdAt } : {}) : { createdAt: today }) };
+            const id = injury.id ?? (update.injuryRestore ? undefined : createInjuryId());
+            return {
+                ...fields,
+                ...(id !== undefined ? { id } : {}),
+                ...(update.injuryRestore ? (injury.createdAt ? { createdAt: injury.createdAt } : {}) : { createdAt: today }),
+            };
         });
         if (remaining.length && !update.injuryRestore) injuryHistory = [...(injuryHistory ?? []), ...remaining.map(({ injury }) => ({ ...injury, resolvedAt: today }))];
     }

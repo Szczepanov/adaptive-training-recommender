@@ -470,6 +470,8 @@ export const BODY_REGIONS = [
 export type BodyRegion = typeof BODY_REGIONS[number];
 
 export interface InjuryConstraint {
+  /** Stable identity preserved across edits, resolution into history, and undo. */
+  id?: string;
   /** Warsaw-local calendar dates; absent creation date means unknown. */
   createdAt?: string;
   resolvedAt?: string;

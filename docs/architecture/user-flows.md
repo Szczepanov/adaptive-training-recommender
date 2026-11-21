@@ -574,6 +574,8 @@ that never gained authority reads `choice (not applied)`, and a set done before 
 (`under earlier choice`). Choices that apply to no step get a `## Session choices` section. Responses are joined
 through the workout's structured-execution source refs, never `SessionResponse.occurrenceId`; every window is listed as
 recorded, `not recorded` (complete read) or `unknown` (failed or partial read), and a response recorded on a later date says so.
+Per-set `side` is preserved when recorded (`left` or `right`), authored and provider text is Markdown-escaped and identity-redacted,
+and only the trailing `ref:` occurrence id is kept.
 
 ### 10. Protocol testing
 

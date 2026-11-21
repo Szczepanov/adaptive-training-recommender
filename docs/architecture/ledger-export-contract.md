@@ -111,8 +111,10 @@ placement on an older revision exports both its content and that revision's head
 reads such a revision even when it is referenced only by a placement: besides the header, the
 activation history and performed links, it reads the plan's legacy (unscoped) placement overlay
 and adds its revision when an assignment falls inside the placement bounds. That revision is
-hash-verified like any other; when no attesting hash can be read, its placement content stays
-`unavailable` and no header is exported. An unreadable legacy overlay degrades the placement
+hash-verified like any other; when an older revision placed only through that legacy overlay has no
+activation hash (`unverifiedPlanRevisions`), only that revision's placement content becomes
+`unavailable` and its past `outcome` becomes `unknown`, leaving `external_plan_revisions`
+`measured` and exporting no header for it. An unreadable legacy overlay degrades the placement
 source.
 
 ### Abbreviating unchanged user context
@@ -144,8 +146,10 @@ comparison metadata, never context text.
   `not_yet_supported` (a schema-fixed state) counts as complete.
 - **Version.** `CHECKPOINT_FORMAT_VERSION` is bumped whenever the hash contract or these rules change.
   Version 1 added `observedOn` to the hash and the metadata; version 2 added `selectionDates` and
-  `from`, which decide removal on a moved window. Both the renderer and the store reader
-  treat another or no `formatVersion` (a legacy stored value) as no checkpoint: full context.
+  `from`, which decide removal on a moved window; version 3 included `coachingHistory.planRevisions`;
+  version 4 uses stable stored or content-derived injury ids instead of positional indices. Both the
+  renderer and the store reader treat another or no `formatVersion` (a legacy stored value) as no
+  checkpoint: full context.
 
 **Refresh export (Phase 4).** The `planning` purpose is the export used to start a new chat, so
 `renderLedgerExportCompact` ignores any `PreviousContext` for it (`purposeAlwaysRendersFullContext`) and

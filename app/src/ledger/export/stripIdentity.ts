@@ -54,6 +54,16 @@ function tokenPattern(identities: ReadonlySet<string>): RegExp | null {
     return usable.length === 0 ? null : new RegExp(`(?<![\\w-])(?:${usable.join('|')})(?![\\w-])`, 'g');
 }
 
+function redactWithPattern(value: string, tokens: RegExp | null): string {
+    const withoutEmail = value.replace(EMAIL, REDACTED);
+    return tokens ? withoutEmail.replace(tokens, REDACTED) : withoutEmail;
+}
+
+/** Redacts e-mail addresses and whole identity tokens from free text. */
+export function redactText(value: string, identities: ReadonlySet<string>): string {
+    return redactWithPattern(value, tokenPattern(identities));
+}
+
 /**
  * Returns a copy of the export with identities redacted in every string leaf, `legacyEngine`
  * included. E-mails go from all leaves; identity tokens (whole tokens only) from all
@@ -61,12 +71,8 @@ function tokenPattern(identities: ReadonlySet<string>): RegExp | null {
  */
 export function redactLeaves<T extends object>(output: T, identities: ReadonlySet<string>): T {
     const tokens = tokenPattern(identities);
-    const redactString = (text: string, structural: boolean): string => {
-        const withoutEmail = text.replace(EMAIL, REDACTED);
-        return tokens && !structural ? withoutEmail.replace(tokens, REDACTED) : withoutEmail;
-    };
     const walk = (node: unknown, structural: boolean): unknown => {
-        if (typeof node === 'string') return redactString(node, structural);
+        if (typeof node === 'string') return redactWithPattern(node, structural ? null : tokens);
         if (Array.isArray(node)) return node.map(item => walk(item, structural));
         if (node === null || typeof node !== 'object') return node;
         return Object.fromEntries(Object.entries(node)

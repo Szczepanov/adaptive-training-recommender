@@ -112,6 +112,7 @@ describe('previousContext', () => {
 
     it.each([
         ['another format version', { formatVersion: CHECKPOINT_FORMAT_VERSION + 1 }],
+        ['format version 3', { formatVersion: 3 }],
         ['format version 2', { formatVersion: 2 }],
         ['format version 1', { formatVersion: 1 }],
         ['no format version (legacy)', { formatVersion: undefined }],
@@ -206,5 +207,45 @@ describe('previousContext', () => {
         };
         const hostileOut = renderLedgerExportCompact(ledger, { previousContext: hostilePrior });
         expect(hostileOut).toContain('removed: planRevisions/rev&#124;&#91;bad&#93;');
+    });
+
+    it('keeps subsequent injury ids unchanged on deletion and emits removed for the exact deleted injury (explicit and legacy ids)', () => {
+        const baseRecords = fullInput({ purpose: 'morning' }).records;
+        const explicitFirst = { id: 'injury-first', region: 'knee' as const, severity: 'limit' as const, createdAt: '2026-10-01' };
+        const explicitSecond = { id: 'injury-second', region: 'ankle' as const, severity: 'monitor' as const, createdAt: '2026-10-02' };
+
+        const beforeExplicit = buildLedgerExport(fullInput({
+            purpose: 'morning',
+            records: { ...baseRecords, trainingSettings: { ...baseRecords.trainingSettings!, injuries: [explicitFirst, explicitSecond] } },
+        }));
+        const cpExplicit = previousOf(beforeExplicit);
+        const afterExplicit = buildLedgerExport(fullInput({
+            purpose: 'morning',
+            records: { ...baseRecords, trainingSettings: { ...baseRecords.trainingSettings!, injuries: [explicitSecond] } },
+        }));
+        expect(afterExplicit.userContext.injuries.items.map(i => i.id)).toEqual(['injury-second']);
+        const outExplicit = userContext(renderLedgerExportCompact(afterExplicit, { previousContext: cpExplicit }));
+        expect(outExplicit).toContain('removed: injuries/injury-first');
+        expect(outExplicit).not.toContain('removed: injuries/injury-second');
+        expect(outExplicit).toMatch(/unchanged since.*injuries\/injury-second/);
+
+        // Legacy entries lacking stored id also preserve subsequent ids and report exact removal.
+        const legacyFirst = { region: 'knee' as const, severity: 'limit' as const, createdAt: '2026-10-01' };
+        const legacySecond = { region: 'shoulder' as const, severity: 'exclude' as const, createdAt: '2026-10-02' };
+        const beforeLegacy = buildLedgerExport(fullInput({
+            purpose: 'morning',
+            records: { ...baseRecords, trainingSettings: { ...baseRecords.trainingSettings!, injuries: [legacyFirst, legacySecond] } },
+        }));
+        const [legacyFirstId, legacySecondId] = beforeLegacy.userContext.injuries.items.map(i => i.id);
+        const cpLegacy = previousOf(beforeLegacy);
+        const afterLegacy = buildLedgerExport(fullInput({
+            purpose: 'morning',
+            records: { ...baseRecords, trainingSettings: { ...baseRecords.trainingSettings!, injuries: [legacySecond] } },
+        }));
+        expect(afterLegacy.userContext.injuries.items.map(i => i.id)).toEqual([legacySecondId]);
+        const outLegacy = userContext(renderLedgerExportCompact(afterLegacy, { previousContext: cpLegacy }));
+        expect(outLegacy).toContain(`removed: injuries/${legacyFirstId}`);
+        expect(outLegacy).not.toContain(`removed: injuries/${legacySecondId}`);
+        expect(outLegacy).toMatch(new RegExp(`unchanged since.*injuries/${legacySecondId}`));
     });
 });

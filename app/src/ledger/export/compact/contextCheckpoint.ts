@@ -4,6 +4,7 @@
  * its lower date bound and whether the read was complete. Only hashes and comparison metadata,
  * never raw context text. Pure.
  */
+import { fnv1a } from '../fnv1a.ts';
 import type {
     ContextRecord,
     LedgerCollection,
@@ -17,9 +18,10 @@ import { isLocalDate } from '../window.ts';
  * Bump whenever the hash contract or the scope/completeness rules change: a stored checkpoint
  * of another (or no) version means full context. 1 = record-level `observedOn` is hashed;
  * 2 = per-item selection dates and per-collection lower bounds decide removal;
- * 3 = `coachingHistory.planRevisions` is included in the checkpoint.
+ * 3 = `coachingHistory.planRevisions` is included in the checkpoint;
+ * 4 = injuries use stable stored/content-derived ids instead of positional indices.
  */
-export const CHECKPOINT_FORMAT_VERSION = 3;
+export const CHECKPOINT_FORMAT_VERSION = 4;
 
 export interface CollectionCheckpoint {
     /** The selection that produced the items, e.g. `from:<window start>` or `all-active`. */
@@ -58,15 +60,6 @@ function canonical(value: unknown): unknown {
         return out;
     }
     return value;
-}
-
-/** 32-bit FNV-1a over UTF-16 code units, 8 hex chars. Deterministic and browser-safe; not cryptographic. */
-function fnv1a(input: string): string {
-    let hash = 0x811c9dc5;
-    for (let i = 0; i < input.length; i++) {
-        hash = Math.imul(hash ^ input.charCodeAt(i), 0x01000193) >>> 0;
-    }
-    return hash.toString(16).padStart(8, '0');
 }
 
 function hashOf(value: unknown): string {

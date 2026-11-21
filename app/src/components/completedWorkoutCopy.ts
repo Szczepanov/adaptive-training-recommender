@@ -55,6 +55,10 @@ export async function buildWorkoutAiCopy(
     view: CompletedWorkoutView,
     exportedAt: string,
     loadResponses: ResponseLoader | undefined,
+    userId?: string,
 ): Promise<string> {
-    return formatCompletedWorkoutMarkdown(view, exportedAt, await loadWorkoutResponses(view, loadResponses));
+    const responses = await loadWorkoutResponses(view, loadResponses);
+    return userId
+        ? formatCompletedWorkoutMarkdown(view, exportedAt, responses, new Set([userId]))
+        : formatCompletedWorkoutMarkdown(view, exportedAt, responses);
 }

@@ -420,4 +420,46 @@ describe('exportCompletedWorkoutToJson — new set detail', () => {
         expect(carry.performed.sets.map(set => set.setNumber)).toEqual([1, 1]);
         expect(cmj.performed.sets[0]).toMatchObject({ kind: 'repetition', reps: 3, jumpHeightCm: 41.5 });
     });
+
+    it('preserves side on repetition, paired duration, and warm-up sets while omitting bilateral', () => {
+        const base = structuredView.structured!;
+        const stamp = '2026-08-26T07:00:00.000Z';
+        const view: CompletedWorkoutView = {
+            ...structuredView,
+            structured: {
+                ...base,
+                steps: [
+                    {
+                        stepId: 'split-squat', title: 'Split Squat', isOptional: false, prescribed: { sets: 2, reps: 8 },
+                        sets: [
+                            { entryId: 'w1', setNumber: 1, isWarmup: true, completedAt: stamp, side: 'left', payload: { kind: 'repetition', setIndex: 0, reps: 5, weightKg: 10, isWarmup: true } },
+                            { entryId: 'w2', setNumber: 2, isWarmup: true, completedAt: stamp, side: 'bilateral' as never, payload: { kind: 'repetition', setIndex: 0, reps: 5, weightKg: 20, isWarmup: true } },
+                            { entryId: 's1', setNumber: 1, isWarmup: false, completedAt: stamp, side: 'left', payload: { kind: 'repetition', setIndex: 1, reps: 8, weightKg: 20 } },
+                            { entryId: 's2', setNumber: 2, isWarmup: false, completedAt: stamp, side: 'right', payload: { kind: 'repetition', setIndex: 2, reps: 8, weightKg: 20 } },
+                            { entryId: 's3', setNumber: 3, isWarmup: false, completedAt: stamp, side: 'bilateral' as never, payload: { kind: 'repetition', setIndex: 3, reps: 8, weightKg: 40 } },
+                        ],
+                    },
+                    {
+                        stepId: 'side-plank', title: 'Side Plank', isOptional: false, prescribed: { sets: 1, seconds: 45 },
+                        sets: [
+                            { entryId: 'h1', setNumber: 1, isWarmup: false, completedAt: stamp, side: 'left', payload: { kind: 'duration', seconds: 45 } },
+                            { entryId: 'h2', setNumber: 1, isWarmup: false, completedAt: stamp, side: 'right', payload: { kind: 'duration', seconds: 45 } },
+                        ],
+                    },
+                ],
+            },
+        };
+        const [splitSquat, sidePlank] = exportCompletedWorkoutToJson(view, EXPORTED_AT).exercises;
+        expect(splitSquat.performed.sets.map(set => [set.isWarmup, set.setNumber, set.side])).toEqual([
+            [true, 1, 'left'],
+            [true, 2, undefined],
+            [false, 1, 'left'],
+            [false, 2, 'right'],
+            [false, 3, undefined],
+        ]);
+        expect('side' in splitSquat.performed.sets[1]).toBe(false);
+        expect('side' in splitSquat.performed.sets[4]).toBe(false);
+        expect(sidePlank.performed.workSets).toBe(1);
+        expect(sidePlank.performed.sets.map(set => [set.setNumber, set.side])).toEqual([[1, 'left'], [1, 'right']]);
+    });
 });

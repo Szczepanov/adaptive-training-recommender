@@ -183,3 +183,87 @@ describe('injury history', () => {
         expect(reopened.injuryHistory).toEqual(removed.injuryHistory);
     });
 });
+
+describe('stable injury ids (#1261)', () => {
+    it('validates injury id format and rejects duplicate ids across injuries and injuryHistory', () => {
+        const base = createDefaultTrainingSettings('athlete', '2026-08-07T10:00:00.000Z');
+        expect(parseTrainingSettings({
+            ...base,
+            injuries: [{ id: 'injury-a', severity: 'limit' }],
+            injuryHistory: [{ id: 'injury-b', severity: 'monitor', resolvedAt: '2026-08-10' }],
+        }, 'athlete')?.injuries?.[0].id).toBe('injury-a');
+
+        for (const badId of ['', '   ', ' lead', 'trail ', 'x'.repeat(129), 123]) {
+            expect(parseTrainingSettings({ ...base, injuries: [{ id: badId, severity: 'limit' }] }, 'athlete')).toBeNull();
+        }
+        expect(parseTrainingSettings({
+            ...base,
+            injuries: [{ id: 'dup', severity: 'limit' }, { id: 'dup', severity: 'monitor' }],
+        }, 'athlete')).toBeNull();
+        expect(parseTrainingSettings({
+            ...base,
+            injuryHistory: [{ id: 'dup', severity: 'limit', resolvedAt: '2026-08-08' }, { id: 'dup', severity: 'monitor', resolvedAt: '2026-08-09' }],
+        }, 'athlete')).toBeNull();
+        expect(parseTrainingSettings({
+            ...base,
+            injuries: [{ id: 'dup', severity: 'limit' }],
+            injuryHistory: [{ id: 'dup', severity: 'monitor', resolvedAt: '2026-08-09' }],
+        }, 'athlete')).toBeNull();
+    });
+
+    it('generates ids on add, matches by id first, preserves id on edit/resolution/restore and supports revert', () => {
+        let seq = 0;
+        const nextId = () => `injury-gen-${++seq}`;
+        const initial = createDefaultTrainingSettings('athlete', '2026-08-07T10:00:00.000Z');
+
+        // Add two injuries without explicit ids -> generates unique ids.
+        const withTwo = mergeSettings(initial, {
+            injuries: [{ region: 'knee', severity: 'limit' }, { region: 'ankle', severity: 'monitor' }],
+        }, '2026-10-01', nextId);
+        expect(withTwo.injuries?.map(i => i.id)).toEqual(['injury-gen-1', 'injury-gen-2']);
+
+        // Matching by id takes precedence over a misleading injuryEditIndex.
+        const editedSecondById = mergeSettings(withTwo, {
+            injuries: [
+                withTwo.injuries![0],
+                { id: 'injury-gen-2', region: 'ankle', severity: 'exclude', note: 'Worse' },
+            ],
+            injuryEditIndex: 0,
+        }, '2026-10-05', nextId);
+        expect(editedSecondById.injuries?.[0]).toEqual(withTwo.injuries![0]);
+        expect(editedSecondById.injuries?.[1]).toEqual({
+            id: 'injury-gen-2', region: 'ankle', severity: 'exclude', note: 'Worse', createdAt: '2026-10-01',
+        });
+
+        // Editing via injuryEditIndex when caller omits id still preserves old.injury.id.
+        const editWithoutId = mergeSettings(editedSecondById, {
+            injuries: [
+                { region: 'knee', severity: 'monitor' },
+                editedSecondById.injuries![1],
+            ],
+            injuryEditIndex: 0,
+        }, '2026-10-06', nextId);
+        expect(editWithoutId.injuries?.[0].id).toBe('injury-gen-1');
+        expect(editWithoutId.injuries?.[0].createdAt).toBe('2026-10-01');
+
+        // Removing the first leaves the second's id unchanged and keeps the first's id in injuryHistory.
+        const removalUpdate: TrainingSettingsUpdate = { injuries: [editWithoutId.injuries![1]] };
+        const removed = mergeSettings(editWithoutId, removalUpdate, '2026-10-10', nextId);
+        expect(removed.injuries).toEqual([editWithoutId.injuries![1]]);
+        expect(removed.injuryHistory).toEqual([{ ...editWithoutId.injuries![0], resolvedAt: '2026-10-10' }]);
+
+        // Undo via buildRevertUpdate matches injuryHistory by id and restores original id and createdAt.
+        const revert = buildRevertUpdate(editWithoutId, removalUpdate)!;
+        const restored = mergeSettings(removed, revert, '2026-10-11', nextId);
+        expect(restored.injuries).toEqual(editWithoutId.injuries);
+        expect(restored.injuryHistory).toEqual([]);
+
+        // injuryRestore matches injuryHistory by id even when fields differ from the archived copy.
+        const customRestore = mergeSettings(removed, {
+            injuries: [{ id: 'injury-gen-1', region: 'knee', severity: 'limit', createdAt: '2026-10-01' }, editWithoutId.injuries![1]],
+            injuryRestore: true,
+        }, '2026-10-12', nextId);
+        expect(customRestore.injuries?.[0].id).toBe('injury-gen-1');
+        expect(customRestore.injuryHistory).toEqual([]);
+    });
+});

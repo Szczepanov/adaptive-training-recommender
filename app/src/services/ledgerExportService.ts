@@ -220,6 +220,7 @@ export class LedgerExportService {
         records.placements = [];
         records.placementHistory = [];
         records.placementHistoryUnavailable = [];
+        records.unverifiedPlanRevisions = [];
         let revisionState: LedgerState = 'measured';
         let placementState: LedgerState = 'measured';
         try {
@@ -241,7 +242,8 @@ export class LedgerExportService {
                 if (legacy.status === 'INVALID' || legacy.status === 'UNAVAILABLE') placementState = worstState([placementState, legacy.status === 'INVALID' ? 'invalid' : 'unavailable']);
                 const placed = legacy.status === 'AVAILABLE' && legacy.data.assignments
                     .some(a => a.date >= placementBounds.from && a.date <= placementBounds.to) ? [legacy.data.revision] : [];
-                const refs = new Set([header.data.revision, ...(records.plannedToPerformed ?? []).filter(r => r.planId === planId).map(r => r.revision),
+                const plannedRefs = new Set((records.plannedToPerformed ?? []).filter(r => r.planId === planId).map(r => r.revision));
+                const refs = new Set([header.data.revision, ...plannedRefs,
                     ...(activations.status === 'AVAILABLE' ? activations.data.map(a => a.revision) : []), ...placed]);
                 if (activations.status !== 'AVAILABLE') revisionState = worstState([revisionState, activations.status === 'INVALID' ? 'invalid' : 'unavailable']);
                 for (const revision of [...refs].sort((a, b) => a - b)) {
@@ -257,6 +259,12 @@ export class LedgerExportService {
                     else if (placement.status !== 'MISSING') placementState = worstState([placementState, placement.status === 'INVALID' ? 'invalid' : 'unavailable']);
                     if (plan.status !== 'AVAILABLE') { revisionState = worstState([revisionState, plan.status === 'INVALID' ? 'invalid' : 'unavailable']); continue; }
                     const activation = activations.status === 'AVAILABLE' ? activations.data.find(a => a.revision === revision) : undefined;
+                    // An older revision placed only through the legacy overlay has no activation hash;
+                    // degrade only that placement instead of failing the whole plan-revisions source (#1261).
+                    if (activations.status === 'AVAILABLE' && !activation && revision !== header.data.revision && !plannedRefs.has(revision)) {
+                        records.unverifiedPlanRevisions = [...records.unverifiedPlanRevisions, { planId, revision }];
+                        continue;
+                    }
                     const hash = revision === header.data.revision ? header.data.contentHash : activation?.contentHash;
                     const importedAt = revision === header.data.revision ? header.data.importedAt : activation?.activatedAt;
                     if (!hash || !importedAt || await computeContentHash(plan.data) !== hash) { revisionState = worstState([revisionState, 'invalid']); continue; }

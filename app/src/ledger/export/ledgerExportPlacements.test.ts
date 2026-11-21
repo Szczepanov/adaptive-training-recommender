@@ -150,6 +150,31 @@ describe('revisions referenced only by a future placement', () => {
         expect(result.coachingHistory.placements.items[0].fields.title).toMatchObject({ value: null, state: 'unavailable' });
         expect(result.coachingHistory.planRevisions.items.map(row => row.id)).toEqual(['plan-1@2']);
     });
+
+    it('degrades only an unverified legacy-overlay revision while keeping verified revisions and outcomes intact', () => {
+        const result = buildLedgerExport(fullInput({
+            purpose: 'morning',
+            records: {
+                ...fullRecords(),
+                planRevisions: [REVISION],
+                unverifiedPlanRevisions: [{ planId: 'plan-1', revision: 1 }],
+                plannedToPerformed: [],
+                planExecutions: [],
+                placements: [
+                    { planId: 'plan-1', revision: 1, assignments: [{ sessionId: 'old-1', date: '2026-11-19', status: 'planned' }] },
+                    { planId: 'plan-1', revision: 2, assignments: [{ sessionId: 's1', date: '2026-11-19', status: 'planned' }] },
+                ],
+            },
+        }));
+        expect(result.coachingHistory.planRevisions.state).toBe('measured');
+        const unverified = result.coachingHistory.placements.items.find(i => i.id === 'plan-1@1:old-1')!;
+        expect(unverified.fields.title).toMatchObject({ value: null, state: 'unavailable' });
+        expect(unverified.fields.outcome.value).toBe('unknown');
+
+        const verified = result.coachingHistory.placements.items.find(i => i.id === 'plan-1@2:s1')!;
+        expect(verified.fields.title).toMatchObject({ value: 'Tempo ride', state: 'measured' });
+        expect(verified.fields.outcome.value).toBe('missed');
+    });
 });
 
 describe('placement events stay cut off at asOfDate', () => {

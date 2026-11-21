@@ -32,12 +32,18 @@ export function parseTrainingSettings(raw: unknown, userId: string): TrainingSet
     if (typeof migration.legacyReviewed !== 'boolean' || !(typeof migration.migratedAt === 'string' || migration.migratedAt === null)) return null;
     if (typeof data.createdAt !== 'string' || typeof data.updatedAt !== 'string') return null;
 
+    const seenInjuryIds = new Set<string>();
     for (const list of [data.injuries, data.injuryHistory]) {
         if (list === undefined) continue;
         if (!Array.isArray(list)) return null;
         for (const injury of list) {
             if (!injury || typeof injury !== 'object') return null;
             const item = injury as Record<string, unknown>;
+            if (item.id !== undefined) {
+                if (typeof item.id !== 'string' || item.id.length === 0 || item.id.length > 128 || item.id.trim() !== item.id) return null;
+                if (seenInjuryIds.has(item.id)) return null;
+                seenInjuryIds.add(item.id);
+            }
             if (typeof item.severity !== 'string' || !['monitor', 'limit', 'exclude'].includes(item.severity)) return null;
             if (item.region !== undefined && (typeof item.region !== 'string' || !validBodyRegions.includes(item.region as BodyRegion))) return null;
             if (item.reviewBy !== undefined && (typeof item.reviewBy !== 'string' || !isValidDate(item.reviewBy))) return null;

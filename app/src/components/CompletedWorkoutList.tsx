@@ -403,7 +403,7 @@ export function CompletedWorkoutList({ workouts, exportWindow, windowSweep, onRe
   const handleCopyForAi = (workout: CompletedWorkoutView) => copyWorkout(
     `ai:${workout.performedOccurrenceId}`,
     'Failed to copy session report for AI',
-    buildWorkoutAiCopy(workout, new Date().toISOString(), responseLoader),
+    buildWorkoutAiCopy(workout, new Date().toISOString(), responseLoader, userId),
   );
 
   return (
