@@ -80,14 +80,40 @@ function occurrenceLine(ledger: LedgerExport, row: Occurrence, consumed: Set<str
     return [parts.join(' · '), ...(present(workSets) ? ['detail: copy the session report from History'] : [])];
 }
 
+function activitySummaryLine(row: LedgerExport['facts']['activities']['items'][number]): string {
+    const { type, durationMin, averageHr, maxHr, activityTrainingLoad, intensityTag, sessionCost } = row.fields;
+    const hr = present(averageHr) && present(maxHr)
+        ? `HR ${formatValue(averageHr.value)}/${formatValue(maxHr.value)} bpm`
+        : present(averageHr)
+            ? `HR ${formatValue(averageHr.value)} bpm`
+            : present(maxHr)
+                ? `maxHR ${formatValue(maxHr.value)} bpm`
+                : '';
+    const parts = [
+        present(type) ? text(type.value) : '',
+        present(durationMin) ? `${formatValue(durationMin.value)} min` : '',
+        hr,
+        present(activityTrainingLoad) ? `load ${formatValue(activityTrainingLoad.value)}` : '',
+        present(intensityTag) ? text(intensityTag.value) : '',
+        present(sessionCost) ? `cost ${text(sessionCost.value)}` : '',
+    ].filter(Boolean);
+    return parts.length
+        ? `activity (${text(row.id)}): ${parts.join(' · ')} (details in Facts)`
+        : `activity (${text(row.id)}): details in Facts`;
+}
+
 export function yesterdaySection(ledger: LedgerExport, consumed: Set<string>): string[] {
     const date = addDaysToLocalDateString(ledger.asOfDate, -1);
     const performed = ledger.facts.performedTraining;
     const rows = performed.items.filter(row => row.observedOn === date)
         .sort((a, b) => String(a.fields.startedAt.value ?? '').localeCompare(String(b.fields.startedAt.value ?? '')));
     const group = dominantSource(performed.items.flatMap(row => Object.entries(row.fields)));
+    const yesterdayActivities = rows.length ? [] : ledger.facts.activities.items.filter(row => row.observedOn === date);
     const body = rows.length
         ? rows.flatMap(row => occurrenceLine(ledger, row, consumed, group))
-        : [`performed: none recorded for ${text(date)} (${text(performed.state)})`];
+        : [
+            `performed: none recorded for ${text(date)} (${text(performed.state)})`,
+            ...yesterdayActivities.map(activitySummaryLine),
+        ];
     return [`## Yesterday (${text(date)})`, ...body, ''];
 }

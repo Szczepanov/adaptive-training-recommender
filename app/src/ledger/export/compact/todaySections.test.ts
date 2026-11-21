@@ -254,4 +254,22 @@ describe('renderTodaySections', () => {
         expect(yesterdayLine(linkedRpe(build(), { value: null, source: 'athlete', state: 'unavailable' }))).toContain('· sRPE: unavailable ·');
         expect(yesterdayLine(linkedRpe(build(), { value: null, source: 'athlete', state: 'measured' }))).toContain('· sRPE: not recorded ·');
     });
+
+    it('surfaces yesterday provider activities when performedTraining has no row without consuming Facts', () => {
+        const withPerformed = build();
+        expect(renderTodaySections(withPerformed).lines.some(line => line.startsWith('activity ('))).toBe(false);
+
+        const ledger = build();
+        ledger.facts.performedTraining.items = [];
+        const result = renderTodaySections(ledger);
+        expect(result.lines).toContain('performed: none recorded for 2026-11-19 (measured)');
+        expect(result.lines).toContain('activity (act-001): cycling · 60 min · HR 140 bpm · load 80 · moderate · cost moderate (details in Facts)');
+        expect(result.consumedIds.has('act-001')).toBe(false);
+        expect(renderLedgerExportCompact(ledger)).toContain('#### act-001 (2026-11-19)');
+
+        ledger.facts.activities.items[0].fields.maxHr = { value: 165, unit: 'bpm', source: 'garmin', state: 'measured' };
+        expect(renderTodaySections(ledger).lines).toContain(
+            'activity (act-001): cycling · 60 min · HR 140/165 bpm · load 80 · moderate · cost moderate (details in Facts)',
+        );
+    });
 });

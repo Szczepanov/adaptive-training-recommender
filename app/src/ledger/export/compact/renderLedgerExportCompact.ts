@@ -18,7 +18,9 @@ import {
 import { derivedMetricLines } from './derivedLines.ts';
 import { flagsSection } from './flagLines.ts';
 import {
+    collectionOf,
     contextDelta,
+    filterDelta,
     isCurrentFormat,
     type PreviousContext,
     unchangedLines,
@@ -548,9 +550,66 @@ function compactConstraintLines(row: ContextRecord, group: string | undefined, s
     return missing ? [line, missing] : [line];
 }
 
-function constraintsLines(rows: LedgerCollection<ContextRecord>, skipIds: SkipIds, stripUnsupportedMeta: boolean): string[] {
-    return renderCollection('constraints', rows, skipIds, 'unchanged (listed above)', (items, group) =>
-        items.flatMap(row => compactConstraintLines(row, group, stripUnsupportedMeta) ?? recordLines(row, group, { stripUnsupportedMeta })));
+type EquipmentField = keyof LedgerExport['userContext']['equipment']['fields'];
+
+const LEGACY_EQUIPMENT_CONSTRAINT_TO_FIELD: Readonly<Record<string, EquipmentField>> = {
+    has_free_weights: 'free_weights',
+    has_pull_up_bar: 'pullup_bar',
+    has_stationary_bike: 'indoor_bike',
+    has_indoor_bike: 'indoor_bike',
+    has_treadmill: 'treadmill',
+    has_outdoor_bike: 'outdoor_bike',
+    has_swim_access: 'swim_access',
+    no_cable_machine: 'cable_machine',
+    has_cable_machine: 'cable_machine',
+};
+
+function isSupersededLegacyEquipmentConstraint(
+    row: ContextRecord,
+    equipment: LedgerExport['userContext']['equipment'],
+): boolean {
+    if (!(row.id in LEGACY_EQUIPMENT_CONSTRAINT_TO_FIELD)) return false;
+    const mappedField = LEGACY_EQUIPMENT_CONSTRAINT_TO_FIELD[row.id];
+    const category = row.fields.category;
+    if (category?.state !== 'measured' || category.value !== 'equipment') return false;
+    const eqField = equipment.fields[mappedField];
+    return eqField?.state === 'measured' && typeof eqField.value === 'boolean';
+}
+
+function constraintsLines(
+    rows: LedgerCollection<ContextRecord>,
+    skipIds: SkipIds,
+    stripUnsupportedMeta: boolean,
+    equipment: LedgerExport['userContext']['equipment'],
+): string[] {
+    const nonSkipped = rows.items.filter(row => !skipIds.has(row.id));
+    const superseded = nonSkipped.filter(row => isSupersededLegacyEquipmentConstraint(row, equipment));
+    const kept = nonSkipped.filter(row => !isSupersededLegacyEquipmentConstraint(row, equipment));
+    const formatConstraint = (row: ContextRecord, group: string | undefined) =>
+        compactConstraintLines(row, group, stripUnsupportedMeta) ?? recordLines(row, group, { stripUnsupportedMeta });
+
+    if (!rows.items.length || !nonSkipped.length || !superseded.length) {
+        return renderCollection('constraints', rows, skipIds, 'unchanged (listed above)', (items, group) =>
+            items.flatMap(row => formatConstraint(row, group)));
+    }
+
+    const legacyNote = `${superseded.length} legacy equipment toggle${superseded.length === 1 ? '' : 's'} superseded by equipment above`;
+    if (!kept.length) {
+        const meta = [
+            rows.state === 'measured' ? '' : `state: ${text(rows.state)}`,
+            rows.droppedUndated > 0 ? `droppedUndated: ${rows.droppedUndated}` : '',
+            (rows.droppedOutOfWindow ?? 0) > 0 ? `constraints outside window: ${rows.droppedOutOfWindow}` : '',
+        ].filter(Boolean);
+        const unchangedNote = skipIds.size > 0 ? `${skipIds.size} unchanged (listed above); ` : '';
+        return [[`constraints: ${unchangedNote}${legacyNote}`, ...meta].join('; '), ''];
+    }
+
+    const combinedSkip = new Set([...skipIds, ...superseded.map(row => row.id)]);
+    const note = `superseded by equipment above: ${superseded.length} legacy toggle${superseded.length === 1 ? '' : 's'}`;
+    return renderCollection('constraints', rows, combinedSkip, 'unchanged (listed above)', (items, group) => [
+        ...items.flatMap(row => formatConstraint(row, group)),
+        note,
+    ]);
 }
 
 interface CompactGoal {
@@ -665,7 +724,8 @@ function hasRecordDefaultUnsupportedMeta(row: ContextRecord): boolean {
 /** A checkpoint of another (or no) format version means full context. */
 export function userContextSection(ledger: LedgerExport, checkpoint?: PreviousContext): string[] {
     const previous = isCurrentFormat(checkpoint) ? checkpoint : undefined;
-    const delta = previous ? contextDelta(userContextCheckpoint(ledger), previous, userContextStates(ledger)) : null;
+    const fullDelta = previous ? contextDelta(userContextCheckpoint(ledger), previous, userContextStates(ledger)) : null;
+    const delta = fullDelta ? filterDelta(fullDelta, key => collectionOf(key) !== 'planRevisions') : null;
     const isUnchanged = (key: string) => delta?.unchangedKeys.has(key) ?? false;
 
     const renderedGoals = new Map(
@@ -705,7 +765,7 @@ export function userContextSection(ledger: LedgerExport, checkpoint?: PreviousCo
             if (name === 'availability') lines.push(...availabilityLines(rows, skip, liftUnsupportedMeta));
             else if (name === 'events') lines.push(...eventsLines(rows, skip, dedupedGoalEventIds, liftUnsupportedMeta));
             else if (name === 'goals') lines.push(...goalsLines(rows, skip, liftUnsupportedMeta));
-            else if (name === 'constraints') lines.push(...constraintsLines(rows, skip, liftUnsupportedMeta));
+            else if (name === 'constraints') lines.push(...constraintsLines(rows, skip, liftUnsupportedMeta, ledger.userContext.equipment));
             else lines.push(...collectionLines(name, rows, skip, 'unchanged (listed above)', { stripUnsupportedMeta: liftUnsupportedMeta }));
             continue;
         }
@@ -722,12 +782,18 @@ export function userContextSection(ledger: LedgerExport, checkpoint?: PreviousCo
     return ['## User context', ...head, ...metaNote, ...lines, ''];
 }
 
-function planRevisionsLines(ledger: LedgerExport, skipIds: SkipIds): string[] {
+function planRevisionsLines(
+    ledger: LedgerExport,
+    skipIds: SkipIds,
+    skippedLabel = 'shown above',
+    unchangedNote?: string,
+): string[] {
     const rows = ledger.coachingHistory.planRevisions;
     const options: RecordRenderOptions = { omitPlanRevisionHeaderFields: true };
-    return renderCollection('planRevisions', rows, skipIds, 'shown above', (items, group) => {
+    return renderCollection('planRevisions', rows, skipIds, skippedLabel, (items, group) => {
+        const extra = unchangedNote ? [unchangedNote] : [];
         if (ledger.purpose !== 'morning') {
-            return items.flatMap(row => recordLines(row, group, options));
+            return [...items.flatMap(row => recordLines(row, group, options)), ...extra];
         }
 
         const referencedRevisions = new Set<string>();
@@ -772,20 +838,48 @@ function planRevisionsLines(ledger: LedgerExport, skipIds: SkipIds): string[] {
             ? [`older revisions: ${older.length} omitted in morning export (use planning for full history)`]
             : [];
 
-        return [...kept.flatMap(row => recordLines(row, group, options)), ...olderLines];
+        return [...kept.flatMap(row => recordLines(row, group, options)), ...olderLines, ...extra];
     });
 }
 
-export function coachingHistorySection(ledger: LedgerExport, skipIds: SkipIds = NO_SKIP): string[] {
+export function coachingHistorySection(
+    ledger: LedgerExport,
+    skipIds: SkipIds = NO_SKIP,
+    checkpoint?: PreviousContext,
+): string[] {
+    const previous = isCurrentFormat(checkpoint) ? checkpoint : undefined;
+    const revDelta = previous
+        ? filterDelta(contextDelta(userContextCheckpoint(ledger), previous, userContextStates(ledger)), key => collectionOf(key) === 'planRevisions')
+        : null;
+    const revUnchangedIds = new Set(
+        ledger.coachingHistory.planRevisions.items
+            .filter(row => revDelta?.unchangedKeys.has(`planRevisions/${row.id}`))
+            .map(row => row.id),
+    );
+    const revHead = revDelta && previous
+        ? [
+            ...revDelta.removed.map(key => `removed: ${key}`),
+            ...revDelta.unreadable.map(({ key, reason }) => `not readable now: ${key} (${reason})`),
+        ]
+        : [];
+    const revSkippedLabel = previous && revUnchangedIds.size > 0
+        ? `unchanged since ${text(previous.exportedOn)}`
+        : 'shown above';
+    const revUnchangedNote = previous && revUnchangedIds.size > 0
+        ? `unchanged since ${text(previous.exportedOn)}: ${revUnchangedIds.size} revision${revUnchangedIds.size === 1 ? '' : 's'}`
+        : undefined;
+
     const emptyMeasured: string[] = [];
     const lines: string[] = [];
     for (const [name, rows] of Object.entries(ledger.coachingHistory)) {
         if (isEmptyMeasuredCollection(rows)) emptyMeasured.push(name);
-        else if (name === 'planRevisions') lines.push(...planRevisionsLines(ledger, skipIds));
-        else lines.push(...collectionLines(name, rows, skipIds));
+        else if (name === 'planRevisions') {
+            const combinedSkip = new Set([...skipIds, ...revUnchangedIds]);
+            lines.push(...planRevisionsLines(ledger, combinedSkip, revSkippedLabel, revUnchangedNote));
+        } else lines.push(...collectionLines(name, rows, skipIds));
     }
     if (emptyMeasured.length) lines.push(`no rows (measured): ${emptyMeasured.map(text).join(', ')}`, '');
-    return ['## Coaching history', ...lines];
+    return ['## Coaching history', ...revHead, ...lines];
 }
 
 function header(ledger: LedgerExport): string[] {
@@ -805,6 +899,7 @@ function header(ledger: LedgerExport): string[] {
 export function renderLedgerExportCompact(ledger: LedgerExport, options?: CompactRenderOptions): string {
     const today = renderTodaySections(ledger);
     const consumed = today.consumedIds;
+    const checkpoint = purposeAlwaysRendersFullContext(ledger.purpose) ? undefined : options?.previousContext;
     const lines = [
         ...header(ledger),
         ...today.lines,
@@ -812,8 +907,8 @@ export function renderLedgerExportCompact(ledger: LedgerExport, options?: Compac
         ...flagsSection(ledger),
         ...factsSection(ledger, consumed),
         ...derivedSection(ledger, today.baselinedCollections, today.baselinedFields),
-        ...userContextSection(ledger, purposeAlwaysRendersFullContext(ledger.purpose) ? undefined : options?.previousContext),
-        ...coachingHistorySection(ledger, consumed),
+        ...userContextSection(ledger, checkpoint),
+        ...coachingHistorySection(ledger, consumed, checkpoint),
     ];
     if (ledger.legacyEngine !== null) lines.push('', '## Legacy engine (opt-in opinions)', text(ledger.legacyEngine));
     return `${lines.join('\n').replace(/\n{3,}/g, '\n\n').trimEnd()}\n`;

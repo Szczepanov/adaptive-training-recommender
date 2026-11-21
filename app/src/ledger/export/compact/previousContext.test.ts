@@ -112,6 +112,7 @@ describe('previousContext', () => {
 
     it.each([
         ['another format version', { formatVersion: CHECKPOINT_FORMAT_VERSION + 1 }],
+        ['format version 2', { formatVersion: 2 }],
         ['format version 1', { formatVersion: 1 }],
         ['no format version (legacy)', { formatVersion: undefined }],
     ])('%s gives full context', (_name, patch) => {
@@ -141,5 +142,33 @@ describe('previousContext', () => {
         const ledger = build();
         expect(renderLedgerExportCompact(ledger, { previousContext: previousOf(ledger) }).length).toBeLessThanOrEqual(8145);
         expect(renderLedgerExportCompact(ledger).length).toBeLessThanOrEqual(13032);
+    });
+
+    it('checkpoints unchanged planRevisions on morning while keeping new revisions and full planning history', () => {
+        const ledger = build();
+        const previous = previousOf(ledger);
+        const unchangedOut = renderLedgerExportCompact(ledger, { previousContext: previous });
+        const history = unchangedOut.slice(unchangedOut.indexOf('## Coaching history'));
+        expect(history).toContain('planRevisions: 1 unchanged since 2026-11-13');
+        expect(history).not.toContain('Build aerobic base first.');
+        expect(userContext(unchangedOut)).not.toContain('planRevisions');
+
+        // A new revision renders in full while leaving the earlier unchanged revision counted.
+        const second = structuredClone(ledger.coachingHistory.planRevisions.items[0]);
+        second.id = 'plan-1@3';
+        second.fields.revision = { value: 3, source: 'adaptive', state: 'measured' };
+        second.fields.importedAt = { value: '2026-11-20T08:00:00Z', source: 'adaptive', state: 'measured' };
+        second.fields.authorRationale = { value: 'Updated progression block.', source: 'adaptive', state: 'measured' };
+        ledger.coachingHistory.planRevisions.items.push(second);
+        const mixedOut = renderLedgerExportCompact(ledger, { previousContext: previous });
+        const mixedRevisions = mixedOut.slice(mixedOut.indexOf('### planRevisions'), mixedOut.indexOf('### placements'));
+        expect(mixedRevisions).toContain('#### plan-1@3');
+        expect(mixedRevisions).toContain('authorRationale: Updated progression block.');
+        expect(mixedRevisions).toContain('unchanged since 2026-11-13: 1 revision');
+        expect(mixedRevisions).not.toContain('#### plan-1@2');
+
+        // Planning exports always ignore the checkpoint for planRevisions as well.
+        const planning = build('planning');
+        expect(renderLedgerExportCompact(planning, { previousContext: previous })).toContain('authorRationale: Build aerobic base first.');
     });
 });

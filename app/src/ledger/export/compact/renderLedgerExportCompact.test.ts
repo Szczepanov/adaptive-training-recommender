@@ -597,4 +597,44 @@ describe('morning export deduplication and shortening', () => {
         expect(mixedPrefs).toContain('recovery: mixed · defaultTime: 60 min weekday, 90 min weekend');
         expect(mixedPrefs).toContain('preferredTimeOfDay: morning (stale)');
     });
+
+    it('suppresses superseded legacy equipment constraints when equipment has measured booleans', () => {
+        const allLegacy = buildLedgerExport(fullInput({
+            purpose: 'morning',
+            records: {
+                ...fullInput().records,
+                constraints: [
+                    { ...fullInput().records.constraints![0], key: 'has_free_weights', label: 'Free Weights Available', value: false, severity: 'hard', category: 'equipment', description: 'Access to dumbbells' },
+                    { ...fullInput().records.constraints![0], key: 'no_cable_machine', label: 'No Cable Machine', value: false, severity: 'hard', category: 'equipment', description: 'Cable machine is not available' },
+                ],
+            },
+        }));
+        const allLegacyOut = renderLedgerExportCompact(allLegacy);
+        expect(allLegacyOut).toContain('constraints: 2 legacy equipment toggles superseded by equipment above');
+        expect(allLegacyOut).not.toContain('has_free_weights');
+        expect(allLegacyOut).not.toContain('no_cable_machine');
+
+        // Mixed legacy + non-legacy keeps the non-legacy constraint and counts superseded toggles.
+        const mixed = buildLedgerExport(fullInput({
+            purpose: 'morning',
+            records: {
+                ...fullInput().records,
+                constraints: [
+                    ...fullInput().records.constraints!,
+                    { ...fullInput().records.constraints![0], key: 'has_free_weights', label: 'Free Weights Available', value: false, severity: 'hard', category: 'equipment', description: 'Access to dumbbells' },
+                ],
+            },
+        }));
+        const mixedOut = renderLedgerExportCompact(mixed);
+        expect(mixedOut).toContain('### constraints (constraints; athlete)');
+        expect(mixedOut).toContain('no_barbell: true [soft, equipment] — No barbell');
+        expect(mixedOut).toContain('superseded by equipment above: 1 legacy toggle');
+        expect(mixedOut).not.toContain('has_free_weights');
+
+        // Non-measured equipment field stops suppression for that constraint.
+        allLegacy.userContext.equipment.fields.free_weights = { value: null, source: 'athlete', state: 'unavailable' };
+        const unmeasuredEqOut = renderLedgerExportCompact(allLegacy);
+        expect(unmeasuredEqOut).toContain('has_free_weights: false [hard, equipment]');
+        expect(unmeasuredEqOut).not.toContain('no_cable_machine');
+    });
 });

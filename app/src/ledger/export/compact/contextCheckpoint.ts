@@ -16,9 +16,10 @@ import { isLocalDate } from '../window.ts';
 /**
  * Bump whenever the hash contract or the scope/completeness rules change: a stored checkpoint
  * of another (or no) version means full context. 1 = record-level `observedOn` is hashed;
- * 2 = per-item selection dates and per-collection lower bounds decide removal.
+ * 2 = per-item selection dates and per-collection lower bounds decide removal;
+ * 3 = `coachingHistory.planRevisions` is included in the checkpoint.
  */
-export const CHECKPOINT_FORMAT_VERSION = 2;
+export const CHECKPOINT_FORMAT_VERSION = 3;
 
 export interface CollectionCheckpoint {
     /** The selection that produced the items, e.g. `from:<window start>` or `all-active`. */
@@ -100,6 +101,9 @@ export function userContextItemHashes(ledger: LedgerExport): Record<string, stri
         } else {
             hashes[name] = hashOf(context);
         }
+    }
+    for (const row of ledger.coachingHistory.planRevisions.items) {
+        hashes[`planRevisions/${row.id}`] = hashOf({ observedOn: row.observedOn, fields: row.fields });
     }
     return hashes;
 }
@@ -194,6 +198,11 @@ export function userContextCheckpoint(ledger: LedgerExport): UserContextCheckpoi
         const scope = SCOPES[name];
         if (scope) collections[name] = { ...scope(ledger), complete: isComplete(ledger, name, context) };
     }
+    const revisions = ledger.coachingHistory.planRevisions;
+    collections.planRevisions = {
+        scope: 'all',
+        complete: revisions.state === 'measured' && revisions.droppedUndated === 0,
+    };
     return {
         formatVersion: CHECKPOINT_FORMAT_VERSION,
         itemHashes: userContextItemHashes(ledger),
