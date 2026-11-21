@@ -114,6 +114,10 @@ export function TrainingSettings({ userId, onNavigate }: TrainingSettingsProps) 
     const restored = await save(current.revert);
     if (restored) {
       setUndoState(latest => latest === current ? null : latest);
+      if (current.revert.injuries !== undefined) {
+        setInjuryDraft(emptyInjuryDraft);
+        setEditingInjuryIndex(null);
+      }
     }
     setUndoInFlight(false);
   };
@@ -150,6 +154,19 @@ export function TrainingSettings({ userId, onNavigate }: TrainingSettingsProps) 
       reviewBy: injury.reviewBy ?? '',
       note: injury.note ?? '',
     });
+  };
+
+  const removeInjury = async (index: number) => {
+    if (!settings) return;
+    const nextInjuries = (settings.injuries ?? []).filter((_, i) => i !== index);
+    if (await saveDestructive({ injuries: nextInjuries }, 'Injury constraint removed.')) {
+      if (editingInjuryIndex === index) {
+        setInjuryDraft(emptyInjuryDraft);
+        setEditingInjuryIndex(null);
+      } else if (editingInjuryIndex !== null && index < editingInjuryIndex) {
+        setEditingInjuryIndex(editingInjuryIndex - 1);
+      }
+    }
   };
 
   const today = getLocalDateString();
@@ -316,12 +333,7 @@ export function TrainingSettings({ userId, onNavigate }: TrainingSettingsProps) 
                 </div>
                 <div className="injury-card-actions">
                   <button type="button" className="btn-injury-action edit" onClick={() => editInjury(inj, index)}>Edit</button>
-                  <button type="button" className="btn-injury-action remove" onClick={() => {
-                    const nextInjuries = (settings.injuries ?? []).filter((_, i) => i !== index);
-                    if (editingInjuryIndex === index) { setInjuryDraft(emptyInjuryDraft); setEditingInjuryIndex(null); }
-                    else if (editingInjuryIndex !== null && index < editingInjuryIndex) { setEditingInjuryIndex(editingInjuryIndex - 1); }
-                    void saveDestructive({ injuries: nextInjuries }, 'Injury constraint removed.');
-                  }}>Remove</button>
+                  <button type="button" className="btn-injury-action remove" onClick={() => void removeInjury(index)}>Remove</button>
                 </div>
               </div>
             ))}

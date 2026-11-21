@@ -294,12 +294,14 @@ function buildPlanRevisions(
     }
     const latest = new Map<string, number>();
     for (const row of records.planRevisions ?? []) {
+        if (isUnverifiedRevision(row, records)) continue;
         latest.set(row.planId, Math.max(latest.get(row.planId) ?? row.revision, row.revision));
     }
     return collect(context, {
         key: 'external_plan_revisions',
         records: records.planRevisions,
-        include: row => referenced.has(`${row.planId}@${row.revision}`) || latest.get(row.planId) === row.revision,
+        include: row => !isUnverifiedRevision(row, records)
+            && (referenced.has(`${row.planId}@${row.revision}`) || latest.get(row.planId) === row.revision),
         toItem: row => {
             const date = warsawDateOf(row.importedAt) ?? undefined;
             const base = { source: SOURCE, observedOn: date };

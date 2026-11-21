@@ -152,12 +152,13 @@ describe('revisions referenced only by a future placement', () => {
     });
 
     it('degrades only an unverified legacy-overlay revision while keeping verified revisions and outcomes intact', () => {
+        const unverifiedLatest: PlanRevisionInput = { ...REVISION, revision: 3, contentHash: 'sha256:bad', importedAt: '2026-11-20T08:00:00Z' };
         const result = buildLedgerExport(fullInput({
             purpose: 'morning',
             records: {
                 ...fullRecords(),
-                planRevisions: [REVISION],
-                unverifiedPlanRevisions: [{ planId: 'plan-1', revision: 1 }],
+                planRevisions: [OLDER, REVISION, unverifiedLatest],
+                unverifiedPlanRevisions: [{ planId: 'plan-1', revision: 1 }, { planId: 'plan-1', revision: 3 }],
                 plannedToPerformed: [],
                 planExecutions: [],
                 placements: [
@@ -167,6 +168,7 @@ describe('revisions referenced only by a future placement', () => {
             },
         }));
         expect(result.coachingHistory.planRevisions.state).toBe('measured');
+        expect(result.coachingHistory.planRevisions.items.map(row => row.id)).toEqual(['plan-1@2']);
         const unverified = result.coachingHistory.placements.items.find(i => i.id === 'plan-1@1:old-1')!;
         expect(unverified.fields.title).toMatchObject({ value: null, state: 'unavailable' });
         expect(unverified.fields.outcome.value).toBe('unknown');

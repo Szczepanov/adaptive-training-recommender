@@ -80,25 +80,48 @@ export function mergeSettings(
     let injuryHistory = current.injuryHistory;
     if (update.injuries !== undefined) {
         const remaining = previous.map((injury, index) => ({ injury, index }));
-        injuries = update.injuries.map((injury, index) => {
-            const byId = injury.id !== undefined ? remaining.findIndex(item => item.injury.id === injury.id) : -1;
-            const byEditIndex = byId >= 0 ? byId
-                : remaining.findIndex(item => item.index === update.injuryEditIndex && index === update.injuryEditIndex);
-            const selected = byEditIndex >= 0 ? byEditIndex
-                : remaining.findIndex(item => valuesEqual(item.injury, injury));
+        const matched = new Array<NonNullable<TrainingSettings['injuries']>[number] | undefined>(update.injuries.length);
+        const stripMeta = (injury: NonNullable<TrainingSettings['injuries']>[number]) => {
             const fields = { ...injury };
             delete fields.id;
             delete fields.createdAt;
             delete fields.resolvedAt;
+            return fields;
+        };
+        const mergeMatched = (
+            injury: NonNullable<TrainingSettings['injuries']>[number],
+            old: NonNullable<TrainingSettings['injuries']>[number],
+        ) => {
+            const id = old.id ?? injury.id;
+            return {
+                ...stripMeta(injury),
+                ...(id !== undefined ? { id } : {}),
+                ...(old.createdAt ? { createdAt: old.createdAt } : {}),
+            };
+        };
+
+        // Pass 1: claim all explicit id matches first so index/value heuristics never steal another id's row.
+        update.injuries.forEach((injury, index) => {
+            if (injury.id === undefined) return;
+            const byId = remaining.findIndex(item => item.injury.id === injury.id);
+            if (byId >= 0) {
+                const [old] = remaining.splice(byId, 1);
+                matched[index] = mergeMatched(injury, old.injury);
+            }
+        });
+
+        // Pass 2: resolve remaining entries by edit index, value equality, history restore, or new id.
+        injuries = update.injuries.map((injury, index) => {
+            const alreadyMatched = matched[index];
+            if (alreadyMatched) return alreadyMatched;
+            const byEditIndex = remaining.findIndex(item => item.index === update.injuryEditIndex && index === update.injuryEditIndex);
+            const selected = byEditIndex >= 0 ? byEditIndex
+                : remaining.findIndex(item => valuesEqual(item.injury, injury));
             if (selected >= 0) {
                 const [old] = remaining.splice(selected, 1);
-                const id = old.injury.id ?? injury.id;
-                return {
-                    ...fields,
-                    ...(id !== undefined ? { id } : {}),
-                    ...(old.injury.createdAt ? { createdAt: old.injury.createdAt } : {}),
-                };
+                return mergeMatched(injury, old.injury);
             }
+            const fields = stripMeta(injury);
             if (update.injuryRestore && injuryHistory) {
                 const byHistoryId = injury.id !== undefined ? injuryHistory.findLastIndex(item => item.id === injury.id) : -1;
                 const historyIndex = byHistoryId >= 0 ? byHistoryId : injuryHistory.findLastIndex(item => {

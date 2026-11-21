@@ -266,4 +266,29 @@ describe('stable injury ids (#1261)', () => {
         expect(customRestore.injuries?.[0].id).toBe('injury-gen-1');
         expect(customRestore.injuryHistory).toEqual([]);
     });
+
+    it('claims explicit id matches before injuryEditIndex on out-of-order updates', () => {
+        let seq = 0;
+        const nextId = () => `injury-gen-${++seq}`;
+        const initial = createDefaultTrainingSettings('athlete', '2026-08-07T10:00:00.000Z');
+        const withTwo = mergeSettings(initial, {
+            injuries: [{ region: 'knee', severity: 'limit' }, { region: 'ankle', severity: 'monitor' }],
+        }, '2026-10-01', nextId);
+
+        const reordered = mergeSettings(withTwo, {
+            injuries: [
+                { region: 'hip', severity: 'monitor' },
+                { id: 'injury-gen-1', region: 'knee', severity: 'exclude' },
+            ],
+            injuryEditIndex: 0,
+        }, '2026-10-07', nextId);
+
+        expect(reordered.injuries).toEqual([
+            { id: 'injury-gen-3', region: 'hip', severity: 'monitor', createdAt: '2026-10-07' },
+            { id: 'injury-gen-1', region: 'knee', severity: 'exclude', createdAt: '2026-10-01' },
+        ]);
+        expect(reordered.injuryHistory).toEqual([
+            { id: 'injury-gen-2', region: 'ankle', severity: 'monitor', createdAt: '2026-10-01', resolvedAt: '2026-10-07' },
+        ]);
+    });
 });

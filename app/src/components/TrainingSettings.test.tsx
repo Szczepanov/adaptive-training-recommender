@@ -111,4 +111,79 @@ describe('TrainingSettings injury id handling', () => {
     expect(update.injuryEditIndex).toBe(1);
     expect(update.injuries[1].id).toBe('inj-2');
   });
+
+  it('updates editing state only after remove succeeds and resets it on injury undo', async () => {
+    const flush = () => new Promise<void>(resolve => setTimeout(resolve, 0));
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const tree = render();
+      const editButtons = tree.filter(el => el.type === 'button' && el.props.className === 'btn-injury-action edit');
+      editButtons[1].props.onClick!();
+
+      // Failing remove keeps the active edit index and draft intact.
+      const editingTree = render();
+      const removeBeforeFail = editingTree.filter(el => el.type === 'button' && el.props.className === 'btn-injury-action remove');
+      mocks.updateTrainingSettings.mockRejectedValueOnce(new Error('network'));
+      removeBeforeFail[0].props.onClick!();
+      await flush();
+
+      expect(mocks.slots[3]).toBe(1);
+      expect((mocks.slots[2] as { id?: string }).id).toBe('inj-2');
+      expect(mocks.slots[1]).toBe('Unable to save that setting. Please try again.');
+
+      // Succeeding remove of an earlier entry shifts editingInjuryIndex down and raises Undo.
+      const afterFailTree = render();
+      const removeAfterFail = afterFailTree.filter(el => el.type === 'button' && el.props.className === 'btn-injury-action remove');
+      const afterRemoveFirst: TrainingSettingsModel = {
+        ...base,
+        injuries: [base.injuries![1], base.injuries![2]],
+      };
+      mocks.updateTrainingSettings.mockResolvedValueOnce(afterRemoveFirst);
+      removeAfterFail[0].props.onClick!();
+      await flush();
+
+      expect(mocks.slots[0]).toEqual(afterRemoveFirst);
+      expect(mocks.slots[3]).toBe(0);
+      expect((mocks.slots[2] as { id?: string }).id).toBe('inj-2');
+      expect((mocks.slots[4] as { revert: { injuries?: unknown[] } } | null)?.revert.injuries).toHaveLength(3);
+
+      // Failing Undo leaves the active edit index, draft, and Undo toast untouched.
+      const afterRemoveTree = render();
+      const undoButton = afterRemoveTree.find(el => el.type === 'button' && el.props.children === 'Undo')!;
+      mocks.updateTrainingSettings.mockRejectedValueOnce(new Error('offline'));
+      undoButton.props.onClick!();
+      await flush();
+
+      expect(mocks.slots[3]).toBe(0);
+      expect((mocks.slots[2] as { id?: string }).id).toBe('inj-2');
+      expect(mocks.slots[4]).not.toBeNull();
+      expect(mocks.slots[5]).toBe(false);
+
+      // Succeeding injury Undo clears editing state so editingIndex cannot target the wrong row.
+      const retryUndoTree = render();
+      const retryUndoButton = retryUndoTree.find(el => el.type === 'button' && el.props.children === 'Undo')!;
+      mocks.updateTrainingSettings.mockResolvedValueOnce(base);
+      retryUndoButton.props.onClick!();
+      await flush();
+
+      expect(mocks.slots[0]).toEqual(base);
+      expect(mocks.slots[3]).toBeNull();
+      expect(mocks.slots[2]).toEqual({
+        id: undefined,
+        region: '',
+        severity: 'limit',
+        restrictedModalities: [],
+        reviewBy: '',
+        note: '',
+      });
+      expect(mocks.slots[4]).toBeNull();
+      expect(mocks.slots[5]).toBe(false);
+
+      const restoredTree = render();
+      const submitButton = restoredTree.find(el => el.type === 'button' && el.props.className === 'btn-injury-submit')!;
+      expect(submitButton.props.children).toBe('+ Add injury constraint');
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
 });
