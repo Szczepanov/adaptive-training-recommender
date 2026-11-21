@@ -382,7 +382,9 @@ describe('morning export deduplication and shortening', () => {
         expect(morningRevisions).not.toContain('planId:');
         expect(morningRevisions).not.toContain('revision:');
         expect(morningRevisions).toContain('#### newest-unref@1 (2026-11-19)');
-        expect(morningRevisions).toContain('older revisions (2): old-a@1 (2026-08-26), old-b@1 (2026-09-14)');
+        expect(morningRevisions).toContain('older revisions: 2 omitted in morning export (use planning for full history)');
+        expect(morningRevisions).not.toContain('old-a@1');
+        expect(morningRevisions).not.toContain('old-b@1');
         expect(morningRevisions).not.toContain('Old block.');
 
         const planningLedger = buildLedgerExport({ ...fullInput({ purpose: 'planning' }), records: {
@@ -426,8 +428,9 @@ describe('morning export deduplication and shortening', () => {
         expect(out).not.toContain('subjective_baselines: shown in Today above');
     });
 
-    it('compacts recovery_beyond_baseline triggers and groups identical inactive flags', () => {
+    it('compacts recovery_beyond_baseline triggers, omits Today-matching values, and groups identical inactive flags', () => {
         const ledger = buildLedgerExport(fullInput({ purpose: 'morning' }));
+        // Matching Today values (hrvOvernightAvg=62, restingHr=48, sleepScore=81 in fullInput fixture): omit repeated value+unit.
         ledger.flags = [
             flag('illness_anomaly', '2026-11-19', { active: null, state: 'not_recorded', definitionVersion: 'illness_anomaly-v1' }),
             flag('illness_risk_symptom', '2026-11-19', { active: null, state: 'not_recorded', definitionVersion: 'illness_risk_symptom-v1' }),
@@ -436,9 +439,9 @@ describe('morning export deduplication and shortening', () => {
                 definitionVersion: 'recovery_beyond_baseline-v1',
                 threshold: 'band check',
                 inputs: [
-                    { name: 'hrv', value: { value: 55, unit: 'ms', source: 'daily_recovery_snapshot', state: 'measured' } },
-                    { name: 'rhr', value: { value: 44, unit: 'bpm', source: 'daily_recovery_snapshot', state: 'measured' } },
-                    { name: 'sleep', value: { value: 74, unit: 'pts', source: 'daily_recovery_snapshot', state: 'measured' } },
+                    { name: 'hrv', value: { value: 62, unit: 'ms', source: 'daily_recovery_snapshot', state: 'measured' } },
+                    { name: 'rhr', value: { value: 48, unit: 'bpm', source: 'daily_recovery_snapshot', state: 'measured' } },
+                    { name: 'sleep', value: { value: 81, unit: 'pts', source: 'daily_recovery_snapshot', state: 'measured' } },
                     { name: 'hrv_delta7d', value: { value: -8, unit: 'ms', source: 'daily_recovery_snapshots', state: 'measured' } },
                     { name: 'hrv_band', value: { value: 4.8, unit: 'ms', source: 'daily_recovery_snapshots', state: 'measured' } },
                     { name: 'rhr_delta7d', value: { value: 0.6, unit: 'bpm', source: 'daily_recovery_snapshots', state: 'measured' } },
@@ -449,10 +452,29 @@ describe('morning export deduplication and shortening', () => {
                 ],
             }),
         ];
-        const out = renderLedgerExportCompact(ledger);
-        expect(out).toContain('illness_anomaly, illness_risk_symptom: unknown (not_recorded) 2026-11-19 (definition v1)');
-        expect(out).toContain('triggers: hrv 55 ms (7d −8 vs band 4.8) · rhr 44 bpm (7d +0.6 vs band 1.5) · sleep 74 pts (7d −12.9 vs band 8.5)');
-        expect(out).toContain('source_revision: dde8183ef145… (source flag_capture)');
+        const matchingOut = renderLedgerExportCompact(ledger);
+        expect(matchingOut).toContain('illness_anomaly, illness_risk_symptom: unknown (not_recorded) 2026-11-19 (definition v1)');
+        expect(matchingOut).toContain('triggers: hrv 7d −8 vs band 4.8 · rhr 7d +0.6 vs band 1.5 · sleep 7d −12.9 vs band 8.5');
+        expect(matchingOut).toContain('source_revision: dde8183ef145… (source flag_capture)');
+
+        // Differing Today values (post-flag sync) or non-Today flags keep value+unit explicit.
+        ledger.flags[2].inputs[0].value = { value: 55, unit: 'ms', source: 'daily_recovery_snapshot', state: 'measured' };
+        ledger.flags[2].inputs[1].value = { value: 44, unit: 'bpm', source: 'daily_recovery_snapshot', state: 'measured' };
+        ledger.flags[2].inputs[2].value = { value: 74, unit: 'pts', source: 'daily_recovery_snapshot', state: 'measured' };
+        const diffOut = renderLedgerExportCompact(ledger);
+        expect(diffOut).toContain('triggers: hrv 55 ms (7d −8 vs band 4.8) · rhr 44 bpm (7d +0.6 vs band 1.5) · sleep 74 pts (7d −12.9 vs band 8.5)');
+
+        // Non-Today flag keeps full values even when identical to Today's recovery numbers.
+        ledger.flags[2] = {
+            ...ledger.flags[2],
+            observedOn: '2026-11-19',
+            inputs: [
+                { name: 'hrv', value: { value: 62, unit: 'ms', source: 'daily_recovery_snapshot', state: 'measured' } },
+                { name: 'hrv_delta7d', value: { value: -8, unit: 'ms', source: 'daily_recovery_snapshots', state: 'measured' } },
+                { name: 'hrv_band', value: { value: 4.8, unit: 'ms', source: 'daily_recovery_snapshots', state: 'measured' } },
+            ],
+        };
+        expect(renderLedgerExportCompact(ledger)).toContain('triggers: hrv 62 ms (7d −8 vs band 4.8)');
     });
 
     it('groups empty measured collections per section while keeping non-measured ones separate', () => {
@@ -518,5 +540,42 @@ describe('morning export deduplication and shortening', () => {
         const diffGoalsOut = renderLedgerExportCompact(ledger);
         expect(diffGoalsOut).not.toContain('goals missing:');
         expect(diffGoalsOut).toContain('description: National champs');
+    });
+
+    it('compacts environment, preferences scalars, and historical recovery facts while falling back on exceptions', () => {
+        const planning = buildLedgerExport({
+            ...fullInput({ purpose: 'planning' }),
+            records: {
+                ...fullInput().records,
+                recovery: [
+                    fullInput().records.recovery![0],
+                    { ...fullInput().records.recovery![0], date: '2026-11-18' },
+                    fullInput().records.recovery![1],
+                ],
+            },
+        });
+        const compactOut = renderLedgerExportCompact(planning);
+        expect(compactOut).toContain('### environment (athlete)\ndefault: either · max: 60 min weekday');
+        expect(compactOut).toContain('### preferences (athlete)\nrecovery: mixed · timeOfDay: morning · defaultTime: 60 min weekday, 90 min weekend\nmodalities: preferred: Cycling (none deprioritized/avoided)');
+        expect(compactOut).toContain('2026-11-19: sleep 81 (7.5h), rhr 48 bpm, hrv 62 ms (BALANCED), resp 14, bb 70, steps 0 (D-1), stress 25');
+        expect(compactOut).toContain('2026-11-18: sleep 81 (7.5h), rhr 48 bpm, hrv 62 ms (BALANCED), resp 14, bb 70, steps 0 (D-1), stress 25');
+        expect(compactOut).toContain('recovery missing: weightKg, bodyFatPct (missing)');
+
+        // Non-measured or mismatched-date field on one row falls back only for that row; differing missingness ungroups.
+        const rec18 = planning.facts.recovery.items.find(r => r.observedOn === '2026-11-18')!;
+        const rec19 = planning.facts.recovery.items.find(r => r.observedOn === '2026-11-19')!;
+        rec18.fields.weightKg = { value: 72.4, unit: 'kg', source: 'garmin', state: 'measured' };
+        rec19.fields.hrvOvernightAvg = { value: 60, unit: 'ms', source: 'garmin', state: 'stale' };
+        const mixedRecovery = renderLedgerExportCompact(planning);
+        expect(mixedRecovery).toContain('#### recovery-2026-11-19 (2026-11-19)');
+        expect(mixedRecovery).toContain('hrvOvernightAvg: 60 ms (stale)');
+        expect(mixedRecovery).toContain('2026-11-18: sleep 81 (7.5h), rhr 48 bpm, hrv 62 ms (BALANCED), resp 14, bb 70, steps 0 (D-1), stress 25, weightKg 72.4 kg');
+        expect(mixedRecovery).toContain('missing: bodyFatPct (missing)');
+
+        // Non-measured scalar preference falls back only for that field while keeping measured ones compacted.
+        planning.userContext.preferences.fields.preferredTimeOfDay = { value: 'morning', source: 'athlete', state: 'stale' };
+        const mixedPrefs = renderLedgerExportCompact(planning);
+        expect(mixedPrefs).toContain('recovery: mixed · defaultTime: 60 min weekday, 90 min weekend');
+        expect(mixedPrefs).toContain('preferredTimeOfDay: morning (stale)');
     });
 });

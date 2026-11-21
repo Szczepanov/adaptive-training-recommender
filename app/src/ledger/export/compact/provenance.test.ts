@@ -23,8 +23,9 @@ describe('compact provenance (spec 2a)', () => {
 
     it('does not repeat the group source on every field', () => {
         const out = renderLedgerExportCompact(morning());
-        expect(out).not.toMatch(/^sleepScore: [^\n]*garmin/m);
-        expect(out).toContain('sleepScore: 81 score\n');
+        expect(out).not.toMatch(/^(?:sleepScore|2026-11-19): [^\n]*garmin/m);
+        expect(out).toContain('2026-11-19: sleep 81 (7.5h), rhr 48 bpm, hrv 62 ms (BALANCED), resp 14, bb 70, steps 0 (D-1), stress 25\n');
+        expect(out).toContain('readiness: 7 score_1_10\n');
     });
 
     it('adds a field-level source only when it differs from the group', () => {

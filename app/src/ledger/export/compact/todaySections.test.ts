@@ -236,8 +236,8 @@ describe('renderTodaySections', () => {
             todayFlag({ id: 'illness_anomaly', state: 'stale', definitionVersion: 'illness_anomaly-v2', evaluatedAt: '2026-11-20T06:00:00Z' }),
         ];
         expect(renderTodaySections(ledger).lines).toContain('flags: '
-            + 'injury_constraint_touches_session inactive (definition v1; session s-1; evaluated 2026-11-20T06:00:00Z); '
-            + 'injury_constraint_touches_session inactive (definition v1; session s-2; evaluated 2026-11-20T07:00:00Z); '
+            + 'injury_constraint_touches_session inactive (definition v1; session s-1; evaluated 06:00:00Z); '
+            + 'injury_constraint_touches_session inactive (definition v1; session s-2; evaluated 07:00:00Z); '
             + 'illness_anomaly inactive (stale; definition v2)');
     });
 

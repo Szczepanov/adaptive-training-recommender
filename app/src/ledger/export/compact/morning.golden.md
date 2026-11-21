@@ -57,17 +57,8 @@ illness_anomaly, illness_risk_symptom, injury_constraint_touches_session, recove
 
 ## Facts
 ### recovery (daily_recovery_snapshots; garmin)
-#### recovery-2026-11-19 (2026-11-19)
-sleepScore: 81 score
-sleepDurationSec: 27000 s
-restingHr: 48 bpm
-hrvOvernightAvg: 62 ms
-hrvStatus: BALANCED
-respirationAvg: 14 breaths/min
-bodyBatteryWake: 70 score
-totalSteps: 0 steps (D-1)
-stressAvg: 25 score
-missing: weightKg, bodyFatPct (missing)
+2026-11-19: sleep 81 (7.5h), rhr 48 bpm, hrv 62 ms (BALANCED), resp 14, bb 70, steps 0 (D-1), stress 25
+recovery missing: weightKg, bodyFatPct (missing)
 
 ### checkins (daily_subjective_checkins; athlete)
 #### checkin-2026-11-19 (2026-11-19)
@@ -153,8 +144,7 @@ missing: restrictedModalities, since (not_recorded); resolvedAt (not_applicable)
 yes: free_weights, indoor_bike · no: cable_machine, treadmill, pullup_bar
 missing: outdoor_bike, swim_access (missing)
 ### environment (athlete)
-defaultEnvironment: either
-weekdayMaxMinutes: 60 min
+default: either · max: 60 min weekday
 missing: weekendMaxMinutes (not_recorded)
 ### guardrails (athlete)
 active: avoid_overhead_pressing (others false)
@@ -184,10 +174,7 @@ availabilityContextOverride: {"environment":"indoor","equipment":&#91;"free_weig
 missing: startLocal (missing); endLocal, availabilityOverrideMin, environment, equipment (not_applicable)
 
 ### preferences (athlete)
-preferredRecoveryStyle: mixed
-defaultWeekdayTimeMin: 60
-defaultWeekendTimeMin: 90
-preferredTimeOfDay: morning
+recovery: mixed · timeOfDay: morning · defaultTime: 60 min weekday, 90 min weekend
 modalities: preferred: Cycling (none deprioritized/avoided)
 missing: unavailableModalities (missing)
 ### goals (goals; athlete)

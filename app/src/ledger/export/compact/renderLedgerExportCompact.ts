@@ -1,3 +1,4 @@
+import { addDaysToLocalDateString } from '../../../utils/localDate.ts';
 import { text } from '../markdownText.ts';
 import type {
     ActivityCollection, ContextRecord, DerivedMetric, LedgerCollection, LedgerExport, LedgerRecord,
@@ -9,6 +10,7 @@ import {
     dominantSource,
     entryLines,
     type FieldEntry,
+    formatNumber,
     formatValue,
     groupLabel,
     missingLine,
@@ -158,11 +160,117 @@ function sourceSection(sources: SourceState[]): string[] {
     return ['## Sources', ...body, ''];
 }
 
+const isPresentField = (leaf: LedgerValue<unknown> | undefined): leaf is LedgerValue<unknown> =>
+    leaf !== undefined && leaf.value !== null && leaf.value !== undefined;
+
+function finiteNumber(leaf: LedgerValue<unknown> | undefined): number | null {
+    return isPresentField(leaf) && typeof leaf.value === 'number' && Number.isFinite(leaf.value) ? leaf.value : null;
+}
+
+const RECOVERY_CONSUMED_FIELDS: ReadonlySet<string> = new Set([
+    'sleepScore', 'sleepDurationSec', 'restingHr', 'hrvOvernightAvg', 'hrvStatus',
+    'respirationAvg', 'bodyBatteryWake', 'totalSteps', 'stressAvg',
+]);
+
+interface CompactRecoveryRow {
+    line: string;
+    missing: string | null;
+}
+
+function asCompactRecoveryRow(row: LedgerRecord, group: string | undefined): CompactRecoveryRow | null {
+    if (!row.observedOn) return null;
+    const yesterday = addDaysToLocalDateString(row.observedOn, -1);
+    const entries = recordEntries(row);
+    for (const [key, val] of entries) {
+        if (!isPresentField(val)) continue;
+        if (val.state !== 'measured' || val.source !== group) return null;
+        if (val.observedOn !== undefined && val.observedOn !== null
+            && val.observedOn !== row.observedOn
+            && !(key === 'totalSteps' && val.observedOn === yesterday)) {
+            return null;
+        }
+    }
+
+    const {
+        sleepScore, sleepDurationSec, restingHr, hrvOvernightAvg, hrvStatus,
+        respirationAvg, bodyBatteryWake, totalSteps, stressAvg,
+    } = row.fields;
+    const parts: string[] = [];
+
+    const score = finiteNumber(sleepScore);
+    const durationSec = finiteNumber(sleepDurationSec);
+    if (score !== null) {
+        const hours = durationSec !== null ? ` (${formatNumber(durationSec / 3600)}h)` : '';
+        parts.push(`sleep ${formatNumber(score)}${hours}`);
+    } else if (durationSec !== null) {
+        parts.push(`sleep ${formatNumber(durationSec / 3600)}h`);
+    }
+    const rhr = finiteNumber(restingHr);
+    if (rhr !== null) parts.push(`rhr ${formatNumber(rhr)} bpm`);
+    const hrv = finiteNumber(hrvOvernightAvg);
+    if (hrv !== null) {
+        const status = isPresentField(hrvStatus) ? ` (${text(hrvStatus.value)})` : '';
+        parts.push(`hrv ${formatNumber(hrv)} ms${status}`);
+    } else if (isPresentField(hrvStatus)) {
+        parts.push(`hrvStatus ${text(hrvStatus.value)}`);
+    }
+    const resp = finiteNumber(respirationAvg);
+    if (resp !== null) parts.push(`resp ${formatNumber(resp)}`);
+    const bb = finiteNumber(bodyBatteryWake);
+    if (bb !== null) parts.push(`bb ${formatNumber(bb)}`);
+    const steps = finiteNumber(totalSteps);
+    if (steps !== null) {
+        const dMinus1 = totalSteps.observedOn === yesterday ? ' (D-1)' : '';
+        parts.push(`steps ${formatNumber(steps)}${dMinus1}`);
+    }
+    const stress = finiteNumber(stressAvg);
+    if (stress !== null) parts.push(`stress ${formatNumber(stress)}`);
+
+    for (const [key, val] of entries) {
+        if (!RECOVERY_CONSUMED_FIELDS.has(key) && isPresentField(val)) {
+            parts.push(`${text(key)} ${formatValue(val.value)}${val.unit ? ` ${text(val.unit)}` : ''}`);
+        }
+    }
+    if (!parts.length) return null;
+
+    const idNote = row.id !== `recovery-${row.observedOn}` ? ` (${text(row.id)})` : '';
+    const missing = missingLine(entries, group);
+    return {
+        line: `${text(row.observedOn)}${idNote}: ${parts.join(', ')}`,
+        missing: missing ? missing.slice('missing: '.length) : null,
+    };
+}
+
+function recoveryFactsLines(rows: LedgerCollection<LedgerRecord>, skipIds: SkipIds): string[] {
+    return renderCollection('recovery', rows, skipIds, 'shown above', (items, group) => {
+        const compact: CompactRecoveryRow[] = [];
+        const rest: LedgerRecord[] = [];
+        for (const row of items) {
+            const entry = asCompactRecoveryRow(row, group);
+            if (entry) compact.push(entry);
+            else rest.push(row);
+        }
+
+        const missingSummaries = compact.map(entry => entry.missing).filter((m): m is string => m !== null);
+        const distinctMissing = new Set(missingSummaries);
+        const sharedMissing = compact.length > 0 && distinctMissing.size === 1 && missingSummaries.length === compact.length
+            ? missingSummaries[0]
+            : null;
+
+        const compactLines = compact.flatMap(entry => (
+            sharedMissing === null && entry.missing ? [entry.line, `missing: ${entry.missing}`] : [entry.line]
+        ));
+        if (sharedMissing) compactLines.push(`recovery missing: ${sharedMissing}`);
+        return [...compactLines, ...rest.flatMap(row => recordLines(row, group))];
+    });
+}
+
 export function factsSection(ledger: LedgerExport, skipIds: SkipIds = NO_SKIP): string[] {
     const emptyMeasured: string[] = [];
     const lines: string[] = [];
     for (const [name, rows] of Object.entries(ledger.facts)) {
         if (isEmptyMeasuredCollection(rows)) emptyMeasured.push(name);
+        else if (name === 'recovery') lines.push(...recoveryFactsLines(rows, skipIds));
         else lines.push(...collectionLines(name, rows, skipIds));
     }
     if (emptyMeasured.length) lines.push(`no rows (measured): ${emptyMeasured.map(text).join(', ')}`, '');
@@ -224,28 +332,95 @@ function booleanSingletonBody(name: 'equipment' | 'guardrails', entries: readonl
     return [line, ...(missing ? [missing] : [])];
 }
 
+const ENVIRONMENT_COMPACT_FIELDS: ReadonlySet<string> = new Set([
+    'defaultEnvironment',
+    'weekdayMaxMinutes',
+    'weekendMaxMinutes',
+]);
+
+function environmentBody(entries: readonly FieldEntry[], group: string | undefined): string[] | null {
+    const present = entries.filter(([, value]) => isPresentField(value));
+    if (!present.length) return null;
+    const eligible = present.every(([key, value]) =>
+        ENVIRONMENT_COMPACT_FIELDS.has(key) && value.state === 'measured' && value.source === group);
+    if (!eligible) return null;
+
+    const byKey = new Map(present);
+    const defaultEnv = byKey.get('defaultEnvironment');
+    const weekday = byKey.get('weekdayMaxMinutes');
+    const weekend = byKey.get('weekendMaxMinutes');
+    const maxParts = [
+        weekday ? `${formatValue(weekday.value)} min weekday` : '',
+        weekend ? `${formatValue(weekend.value)} min weekend` : '',
+    ].filter(Boolean);
+    const summary = [
+        defaultEnv ? `default: ${formatValue(defaultEnv.value)}` : '',
+        maxParts.length ? `max: ${maxParts.join(', ')}` : '',
+    ].filter(Boolean).join(' · ');
+    const missing = missingLine(entries, group);
+    return [summary, ...(missing ? [missing] : [])];
+}
+
+const SCALAR_PREFERENCE_FIELDS: ReadonlySet<string> = new Set([
+    'preferredRecoveryStyle',
+    'preferredTimeOfDay',
+    'defaultWeekdayTimeMin',
+    'defaultWeekendTimeMin',
+]);
+
 function preferencesBody(entries: readonly FieldEntry[], group: string | undefined): string[] | null {
-    const foldedKeys = new Set<string>();
+    const folded = new Set<string>();
+    const byKey = new Map<string, LedgerValue<unknown>>();
     const nonEmpty: string[] = [];
     const emptyLabels: string[] = [];
+    let hasModalities = false;
+
     for (const [key, value] of entries) {
         const label = MODALITY_LABELS.get(key);
-        if (!label || value.state !== 'measured' || value.source !== group || !isStringArray(value.value)) continue;
-        foldedKeys.add(key);
-        if (value.value.length) nonEmpty.push(`${label}: ${value.value.map(item => text(item)).join(', ')}`);
-        else emptyLabels.push(label);
+        if (label && value.state === 'measured' && value.source === group && isStringArray(value.value)) {
+            folded.add(key);
+            hasModalities = true;
+            if (value.value.length) nonEmpty.push(`${label}: ${value.value.map(item => text(item)).join(', ')}`);
+            else emptyLabels.push(label);
+            continue;
+        }
+        if (SCALAR_PREFERENCE_FIELDS.has(key) && isPresentField(value) && value.state === 'measured' && value.source === group) {
+            folded.add(key);
+            byKey.set(key, value);
+        }
     }
-    if (!foldedKeys.size) return null;
+    if (!folded.size) return null;
+
+    const recovery = byKey.get('preferredRecoveryStyle');
+    const timeOfDay = byKey.get('preferredTimeOfDay');
+    const weekday = byKey.get('defaultWeekdayTimeMin');
+    const weekend = byKey.get('defaultWeekendTimeMin');
+    const defaultTimeParts = [
+        weekday ? `${formatValue(weekday.value)} min weekday` : '',
+        weekend ? `${formatValue(weekend.value)} min weekend` : '',
+    ].filter(Boolean);
+    const scalarLine = [
+        recovery ? `recovery: ${formatValue(recovery.value)}` : '',
+        timeOfDay ? `timeOfDay: ${formatValue(timeOfDay.value)}` : '',
+        defaultTimeParts.length ? `defaultTime: ${defaultTimeParts.join(', ')}` : '',
+    ].filter(Boolean).join(' · ');
+
     const restPresent = entries
-        .filter(([key, value]) => !foldedKeys.has(key) && value.value !== null && value.value !== undefined);
+        .filter(([key, value]) => !folded.has(key) && isPresentField(value));
     const presentLines = entryLines(restPresent, group);
     const main = nonEmpty.join(' · ');
     const noneNote = emptyLabels.length ? `none ${emptyLabels.join('/')}` : '';
-    const modalitiesLine = main && noneNote ? `modalities: ${main} (${noneNote})`
-        : main ? `modalities: ${main}`
-            : `modalities: ${noneNote}`;
+    const modalitiesLine = !hasModalities ? null
+        : main && noneNote ? `modalities: ${main} (${noneNote})`
+            : main ? `modalities: ${main}`
+                : `modalities: ${noneNote}`;
     const missing = missingLine(entries, group);
-    return [...presentLines, modalitiesLine, ...(missing ? [missing] : [])];
+    return [
+        ...(scalarLine ? [scalarLine] : []),
+        ...presentLines,
+        ...(modalitiesLine ? [modalitiesLine] : []),
+        ...(missing ? [missing] : []),
+    ];
 }
 
 function singletonLines(name: string, row: ContextRecord, stripUnsupportedMeta: boolean): string[] {
@@ -257,6 +432,10 @@ function singletonLines(name: string, row: ContextRecord, stripUnsupportedMeta: 
     if (collapsed) return [heading, collapsed];
     if (name === 'equipment' || name === 'guardrails') {
         const compact = booleanSingletonBody(name, entries, group);
+        if (compact) return [heading, ...compact];
+    }
+    if (name === 'environment') {
+        const compact = environmentBody(entries, group);
         if (compact) return [heading, ...compact];
     }
     if (name === 'preferences') {
@@ -573,10 +752,7 @@ function planRevisionsLines(ledger: LedgerExport, skipIds: SkipIds): string[] {
         }
 
         const olderLines = older.length
-            ? [`older revisions (${older.length}): ${older.map(row => {
-                const date = row.observedOn ?? (typeof row.fields.importedAt?.value === 'string' ? row.fields.importedAt.value : null);
-                return date ? `${text(row.id)} (${text(date)})` : text(row.id);
-            }).join(', ')}`]
+            ? [`older revisions: ${older.length} omitted in morning export (use planning for full history)`]
             : [];
 
         return [...kept.flatMap(row => recordLines(row, group, options)), ...olderLines];

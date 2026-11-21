@@ -18,11 +18,42 @@ const scopeKey = (flag: LedgerFlag) => [flagLabel(flag), flag.definitionVersion 
 const isNumericValue = (leaf: LedgerValue<unknown> | undefined): leaf is LedgerValue<number> =>
     leaf !== undefined && typeof leaf.value === 'number' && Number.isFinite(leaf.value);
 
+const TRIGGER_TO_RECOVERY_FIELD = [
+    ['hrv', 'hrvOvernightAvg'],
+    ['rhr', 'restingHr'],
+    ['sleep', 'sleepScore'],
+] as const;
+
+const NO_TODAY_VALUES: ReadonlyMap<string, number> = new Map();
+
+function formatEvaluatedAt(evaluatedAt: string, observedOn: string): string {
+    if (evaluatedAt.startsWith(`${observedOn}T`)) {
+        const time = evaluatedAt.slice(observedOn.length + 1).replace(/\.\d+(?=(?:Z|[+-]\d{2}:\d{2})$)/, '');
+        return text(time);
+    }
+    return text(evaluatedAt);
+}
+
+function todayRecoveryMetricValues(ledger: LedgerExport): ReadonlyMap<string, number> {
+    const rows = ledger.facts.recovery.items.filter(row => row.observedOn === ledger.asOfDate);
+    if (rows.length !== 1) return NO_TODAY_VALUES;
+    const fields = rows[0].fields;
+    const values = new Map<string, number>();
+    for (const [metric, fieldName] of TRIGGER_TO_RECOVERY_FIELD) {
+        const leaf = fields[fieldName];
+        if (leaf.state === 'measured' && typeof leaf.value === 'number' && Number.isFinite(leaf.value)) {
+            values.set(metric, leaf.value);
+        }
+    }
+    return values;
+}
+
 function formatTrigger(
     metric: string,
     val: LedgerValue<number>,
     delta: LedgerValue<number>,
     band: LedgerValue<number>,
+    todayValues: ReadonlyMap<string, number>,
 ): string {
     const valState = val.state === 'measured' ? '' : ` (${text(val.state)})`;
     const deltaState = delta.state === 'measured' ? '' : ` (${text(delta.state)})`;
@@ -30,10 +61,19 @@ function formatTrigger(
     const unit = val.unit ? ` ${text(val.unit)}` : '';
     const d = delta.value as number;
     const signed = d > 0 ? `+${formatNumber(d)}` : d < 0 ? `\u2212${formatNumber(Math.abs(d))}` : '0';
-    return `${text(metric)} ${formatNumber(val.value as number)}${unit}${valState} (7d ${signed}${deltaState} vs band ${formatNumber(band.value as number)}${bandState})`;
+    const bandPart = `7d ${signed}${deltaState} vs band ${formatNumber(band.value as number)}${bandState}`;
+    if (val.state === 'measured' && todayValues.get(metric) === val.value) {
+        return `${text(metric)} ${bandPart}`;
+    }
+    return `${text(metric)} ${formatNumber(val.value as number)}${unit}${valState} (${bandPart})`;
 }
 
-function activeFlagInputLines(flag: LedgerFlag, entries: readonly FieldEntry[], group: string | undefined): string[] {
+function activeFlagInputLines(
+    flag: LedgerFlag,
+    entries: readonly FieldEntry[],
+    group: string | undefined,
+    todayValues: ReadonlyMap<string, number>,
+): string[] {
     if (flag.id !== 'recovery_beyond_baseline') return entryLines(entries, group);
     const byName = new Map(entries);
     const consumed = new Set<string>();
@@ -46,7 +86,7 @@ function activeFlagInputLines(flag: LedgerFlag, entries: readonly FieldEntry[], 
             consumed.add(metric);
             consumed.add(`${metric}_delta7d`);
             consumed.add(`${metric}_band`);
-            triggers.push(formatTrigger(metric, val, delta, band));
+            triggers.push(formatTrigger(metric, val, delta, band, todayValues));
         }
     }
     const remaining = entries.filter(([name]) => !consumed.has(name));
@@ -56,18 +96,18 @@ function activeFlagInputLines(flag: LedgerFlag, entries: readonly FieldEntry[], 
     ];
 }
 
-function activeFlagLines(flag: LedgerFlag): string[] {
+function activeFlagLines(flag: LedgerFlag, todayValues: ReadonlyMap<string, number>): string[] {
     const entries: FieldEntry[] = flag.inputs.map(input => [input.name, input.value]);
     const group = dominantSource(entries);
     return [
         `#### ${text(flag.id)} (${text(flag.observedOn)})`,
         ...(flag.state === 'measured' ? [] : [`state: ${text(flag.state)}`]),
         ...(flag.definitionVersion ? [`definition: ${text(flag.definitionVersion)}`] : []),
-        ...(flag.evaluatedAt ? [`evaluatedAt: ${text(flag.evaluatedAt)}`] : []),
+        ...(flag.evaluatedAt ? [`evaluatedAt: ${formatEvaluatedAt(flag.evaluatedAt, flag.observedOn)}`] : []),
         ...(flag.sessionRef ? [`sessionRef: ${text(flag.sessionRef)}`] : []),
         `threshold: ${text(flag.threshold)}`,
         ...(group ? [`inputs: source ${text(group)}`] : []),
-        ...activeFlagInputLines(flag, entries, group),
+        ...activeFlagInputLines(flag, entries, group, todayValues),
     ];
 }
 
@@ -85,7 +125,7 @@ export function flagScopeParts(flag: LedgerFlag, sameDayRepeat: boolean): string
         flag.definitionVersion ? `definition ${text(shortVersion(flag))}` : '',
         flag.sessionRef ? `session ${text(flag.sessionRef)}` : '',
         // Same-day re-evaluations stay separate, told apart by their persisted instant.
-        sameDayRepeat ? `evaluated ${flag.evaluatedAt ? text(flag.evaluatedAt) : 'time not persisted'}` : '',
+        sameDayRepeat ? `evaluated ${flag.evaluatedAt ? formatEvaluatedAt(flag.evaluatedAt, flag.observedOn) : 'time not persisted'}` : '',
     ].filter(Boolean);
 }
 
@@ -140,6 +180,12 @@ export function flagsSection(ledger: LedgerExport): string[] {
     // Today's non-active evaluations are summarised under Today; active detail stays here.
     const shown = ledger.flags.filter(flag => flag.observedOn !== ledger.asOfDate || flag.active === true);
     if (!shown.length) return ['## Flags', `flags: only ${text(ledger.asOfDate)} evaluated (see Today)`, ''];
+    const todayValues = todayRecoveryMetricValues(ledger);
     const active = shown.filter(flag => flag.active === true);
-    return ['## Flags', ...active.flatMap(activeFlagLines), ...inactiveFlagLines(shown), ''];
+    return [
+        '## Flags',
+        ...active.flatMap(flag => activeFlagLines(flag, flag.observedOn === ledger.asOfDate ? todayValues : NO_TODAY_VALUES)),
+        ...inactiveFlagLines(shown),
+        '',
+    ];
 }

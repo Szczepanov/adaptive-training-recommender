@@ -43,8 +43,8 @@ describe('compact flag ranges respect scope and version (spec 2a)', () => {
             flag('illness_anomaly', '2026-11-18', { evaluatedAt: '2026-11-18T06:00:00Z' }),
             flag('illness_anomaly', '2026-11-18', { evaluatedAt: '2026-11-18T18:00:00Z', active: null, state: 'unavailable' }),
         ]);
-        expect(out).toContain('illness_anomaly: inactive 2026-11-18 (evaluated 2026-11-18T06:00:00Z)');
-        expect(out).toContain('illness_anomaly: unknown (unavailable) 2026-11-18 (evaluated 2026-11-18T18:00:00Z)');
+        expect(out).toContain('illness_anomaly: inactive 2026-11-18 (evaluated 06:00:00Z)');
+        expect(out).toContain('illness_anomaly: unknown (unavailable) 2026-11-18 (evaluated 18:00:00Z)');
     });
 
     it('keeps two same-day evaluations with the same state apart, distinguished by evaluatedAt', () => {
@@ -53,8 +53,8 @@ describe('compact flag ranges respect scope and version (spec 2a)', () => {
             flag('illness_anomaly', '2026-11-18', { evaluatedAt: '2026-11-18T18:00:00Z' }),
         ]);
         expect(out.match(/illness_anomaly: inactive 2026-11-18/g)).toHaveLength(2);
-        expect(out).toContain('(evaluated 2026-11-18T06:00:00Z)');
-        expect(out).toContain('(evaluated 2026-11-18T18:00:00Z)');
+        expect(out).toContain('(evaluated 06:00:00Z)');
+        expect(out).toContain('(evaluated 18:00:00Z)');
     });
 
     it('never merges unavailable dates into inactive', () => {
@@ -66,10 +66,14 @@ describe('compact flag ranges respect scope and version (spec 2a)', () => {
         expect(out).toContain('illness_anomaly: inactive 2026-11-19\n');
     });
 
-    it('prints version and evaluation time on an active flag in full', () => {
-        const out = render([flag('recovery_beyond_baseline', '2026-11-19', {
-            active: true, threshold: 't', definitionVersion: 'v3', evaluatedAt: '2026-11-19T06:00:00Z' })]);
-        expect(out).toContain('definition: v3');
-        expect(out).toContain('evaluatedAt: 2026-11-19T06:00:00Z');
+    it('prints version and shortened same-day evaluation time on an active flag, while keeping cross-day evaluatedAt in full', () => {
+        const sameDay = render([flag('recovery_beyond_baseline', '2026-11-19', {
+            active: true, threshold: 't', definitionVersion: 'v3', evaluatedAt: '2026-11-19T06:03:08.555Z' })]);
+        expect(sameDay).toContain('definition: v3');
+        expect(sameDay).toContain('evaluatedAt: 06:03:08Z');
+
+        const crossDay = render([flag('recovery_beyond_baseline', '2026-11-19', {
+            active: true, threshold: 't', definitionVersion: 'v3', evaluatedAt: '2026-11-20T06:03:08.555Z' })]);
+        expect(crossDay).toContain('evaluatedAt: 2026-11-20T06:03:08.555Z');
     });
 });
