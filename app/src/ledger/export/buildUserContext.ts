@@ -7,6 +7,7 @@
  */
 import type { TrainingSettings, UserPreferences } from '../models.ts';
 import { byDateThenId, collect, sourceState, type BuildContext } from './buildContext.ts';
+import { fnv1a } from './fnv1a.ts';
 import type { GoalInput, GoalPerformanceTargetInput, LedgerExportRecords } from './inputs.ts';
 import {
     contextRecord,
@@ -106,16 +107,66 @@ function injuryValues(row: InjuryRow): Record<typeof INJURY_FIELDS[number], Ledg
     };
 }
 
+/** Deterministic fallback id for legacy injuries stored without `id`; `resolvedAt` is excluded so resolving keeps the same id. */
+function legacyInjuryId(row: InjuryRow): string {
+    const hash = fnv1a(JSON.stringify({
+        createdAt: row.createdAt ?? null,
+        region: row.region ?? null,
+        severity: row.severity,
+        reviewBy: row.reviewBy ?? null,
+        note: row.note ?? null,
+        restrictedModalities: row.restrictedModalities ?? null,
+    }));
+    return `injury-legacy-${hash}`;
+}
+
+/**
+ * Ids for every injury row, by position (`active[i]`, `history[i]`). Stored ids are used verbatim. Identical legacy
+ * rows share a fallback hash, so their `-2`, `-3` suffixes are handed out oldest first: history by
+ * `resolvedAt` (stored order breaks ties), then active rows. Resolving only ever appends a later
+ * episode, so no existing row's suffix moves; computing over the full history (before the window
+ * filter) keeps an episode leaving the window from passing its id to another.
+ */
+function stableInjuryIds(active: readonly InjuryRow[], history: readonly InjuryRow[]): { active: string[]; history: string[] } {
+    const ordered = [
+        ...history.map((row, index) => ({ row, index, list: 'history' as const })).sort((a, b) =>
+            (a.row.resolvedAt ?? '').localeCompare(b.row.resolvedAt ?? '') || a.index - b.index),
+        ...active.map((row, index) => ({ row, index, list: 'active' as const })),
+    ];
+    const used = new Set(ordered.flatMap(({ row }) => (row.id ? [row.id] : [])));
+    const ids = { active: new Array<string>(active.length), history: new Array<string>(history.length) };
+    for (const { row, index, list } of ordered) {
+        if (row.id) {
+            ids[list][index] = row.id;
+            continue;
+        }
+        const base = legacyInjuryId(row);
+        let candidate = base;
+        let suffix = 2;
+        while (used.has(candidate)) {
+            candidate = `${base}-${suffix}`;
+            suffix += 1;
+        }
+        used.add(candidate);
+        ids[list][index] = candidate;
+    }
+    return ids;
+}
+
 /** No settings document, or no `injuries` field, is "not recorded", never an empty "none". */
 function buildInjuries(records: LedgerExportRecords, context: BuildContext): LedgerUserContext['injuries'] {
     const settings = records.trainingSettings;
+    const active = settings?.injuries ?? [];
+    const history = settings?.injuryHistory ?? [];
+    const ids = stableInjuryIds(active, history);
     const rows = settings === undefined ? undefined : [
-        ...(settings?.injuries ?? []),
-        ...(settings?.injuryHistory ?? []).filter(row => row.resolvedAt && row.resolvedAt >= context.window.startDate),
+        ...active.map((row, index) => ({ row, id: ids.active[index] })),
+        ...history.map((row, index) => ({ row, id: ids.history[index] }))
+            .filter(({ row }) => row.resolvedAt && row.resolvedAt >= context.window.startDate),
     ];
     const base = collect(context, {
         key: 'training_settings',
-        records: rows?.map((row, index) => ({ row, id: `injury-${String(index + 1).padStart(3, '0')}` })),
+        records: rows,
         toItem: ({ row, id }) => contextRecord(record(id, null, injuryValues(row)),
             fact(row.createdAt, { source: SOURCE, absent: 'not_recorded' })),
     });

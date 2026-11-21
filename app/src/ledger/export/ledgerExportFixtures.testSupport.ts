@@ -182,7 +182,7 @@ export const settings: TrainingSettings = {
         avoid_overhead_pressing: true,
         avoid_heavy_spinal_loading: false,
     },
-    injuries: [{ region: 'knee', severity: 'limit', note: 'patellar tendon', reviewBy: '2026-12-01' }],
+    injuries: [{ id: 'injury-001', region: 'knee', severity: 'limit', note: 'patellar tendon', reviewBy: '2026-12-01' }],
     defaults: { weekdayMaxMinutes: 60, weekendMaxMinutes: null, environment: 'either' },
     preferences: { preferActiveRecovery: false },
     migration: { legacyReviewed: true, migratedAt: null },

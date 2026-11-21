@@ -17,10 +17,11 @@ export async function loadLedgerSessionAiCopyText(
   fetchViews: () => Promise<readonly CompletedWorkoutView[]>,
   exportedAt: string,
   loadResponses: ResponseLoader | undefined,
+  userId?: string,
 ): Promise<string> {
   const view = findCompletedWorkoutForExecution(await fetchViews(), executionId);
   if (!view) throw new WorkoutNotReadyError();
-  return buildWorkoutAiCopy(view, exportedAt, loadResponses);
+  return buildWorkoutAiCopy(view, exportedAt, loadResponses, userId);
 }
 
 /**

@@ -402,3 +402,36 @@ describe('buildStructuredStepDetails pairing identity', () => {
         expect(plank.sets.map(set => set.setNumber)).toEqual([1, 2]);
     });
 });
+
+describe('buildStructuredStepDetails per-set side preservation', () => {
+    it('preserves left/right side on repetition, duration, distance and warm-up sets and omits bilateral', () => {
+        const at = (m: number) => `2026-08-26T07:${String(m).padStart(2, '0')}:00.000Z`;
+        const entries: SessionEntry[] = [
+            { ...repEntry('w-left', at(1), 5, 20, true), side: 'left' },
+            { ...repEntry('w-right', at(2), 5, 20, true), side: 'right' },
+            { ...repEntry('w-bi', at(3), 5, 40, true), side: 'bilateral' },
+            { ...repEntry('s-left', at(4), 8, 30), side: 'left' },
+            { ...repEntry('s-right', at(5), 8, 30), side: 'right' },
+            { ...repEntry('s-bi', at(6), 8, 60), side: 'bilateral' },
+            { id: 'd-left', executionId: 'exec-1', stepId: 'plank', completedAt: at(7), createdAt: at(7), updatedAt: at(7), side: 'left', payload: { kind: 'duration', seconds: 30 } },
+            { id: 'd-right', executionId: 'exec-1', stepId: 'plank', completedAt: at(8), createdAt: at(8), updatedAt: at(8), side: 'right', payload: { kind: 'duration', seconds: 30 } },
+            { id: 'd-bi', executionId: 'exec-1', stepId: 'plank', completedAt: at(9), createdAt: at(9), updatedAt: at(9), side: 'bilateral', payload: { kind: 'duration', seconds: 45 } },
+        ];
+        const details = buildStructuredStepDetails(definition, entries, []);
+        const squat = details.find(step => step.stepId === 'squat')!;
+        expect(squat.sets.map(set => [set.entryId, set.isWarmup, set.setNumber, set.side])).toEqual([
+            ['w-left', true, 1, 'left'],
+            ['w-right', true, 2, 'right'],
+            ['w-bi', true, 3, undefined],
+            ['s-left', false, 1, 'left'],
+            ['s-right', false, 2, 'right'],
+            ['s-bi', false, 3, undefined],
+        ]);
+        const plank = details.find(step => step.stepId === 'plank')!;
+        expect(plank.sets.map(set => [set.entryId, set.setNumber, set.side])).toEqual([
+            ['d-left', 1, 'left'],
+            ['d-right', 1, 'right'],
+            ['d-bi', 2, undefined],
+        ]);
+    });
+});

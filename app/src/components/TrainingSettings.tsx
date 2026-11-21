@@ -39,7 +39,7 @@ const injuryRegions: Array<{ value: BodyRegion; label: string }> = [
   { value: 'shoulder', label: 'Shoulder' }, { value: 'elbow', label: 'Elbow' }, { value: 'wrist', label: 'Wrist' },
 ];
 const injuryModalities: SessionTemplate['modality'][] = ['Running', 'Cycling', 'Swimming', 'Walking', 'Strength', 'Field', 'Mobility', 'Cross Training'];
-const emptyInjuryDraft = { region: '', severity: 'limit' as InjuryConstraint['severity'], restrictedModalities: [] as SessionTemplate['modality'][], reviewBy: '', note: '' };
+const emptyInjuryDraft = { id: undefined as string | undefined, region: '', severity: 'limit' as InjuryConstraint['severity'], restrictedModalities: [] as SessionTemplate['modality'][], reviewBy: '', note: '' };
 
 function CrossSurfaceNote({ onNavigate, children }: { onNavigate?: (screen: Screen) => void; children: ReactNode }) {
   return (
@@ -64,6 +64,9 @@ export function TrainingSettings({ userId, onNavigate }: TrainingSettingsProps) 
   // Forces ProgressionReviewPanel to re-mount and reload its due-block list after the
   // editor saves a new/revised block, rather than the two components sharing state.
   const [progressionRefreshKey, setProgressionRefreshKey] = useState(0);
+  // A removal shifts row indices; while it saves, no other row may be opened for editing,
+  // or the post-save index adjustment would retarget a newer editor at the wrong injury.
+  const [injuryRemovalPending, setInjuryRemovalPending] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -114,6 +117,10 @@ export function TrainingSettings({ userId, onNavigate }: TrainingSettingsProps) 
     const restored = await save(current.revert);
     if (restored) {
       setUndoState(latest => latest === current ? null : latest);
+      if (current.revert.injuries !== undefined) {
+        setInjuryDraft(emptyInjuryDraft);
+        setEditingInjuryIndex(null);
+      }
     }
     setUndoInFlight(false);
   };
@@ -121,7 +128,9 @@ export function TrainingSettings({ userId, onNavigate }: TrainingSettingsProps) 
   const saveInjury = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!settings) return;
+    const existingId = editingInjuryIndex !== null ? (injuryDraft.id ?? settings.injuries?.[editingInjuryIndex]?.id) : undefined;
     const injury: InjuryConstraint = {
+      ...(existingId ? { id: existingId } : {}),
       severity: injuryDraft.severity,
       ...(injuryDraft.region ? { region: injuryDraft.region as BodyRegion } : {}),
       ...(injuryDraft.restrictedModalities.length > 0 ? { restrictedModalities: injuryDraft.restrictedModalities } : {}),
@@ -139,14 +148,34 @@ export function TrainingSettings({ userId, onNavigate }: TrainingSettingsProps) 
   };
 
   const editInjury = (injury: InjuryConstraint, index: number) => {
+    if (injuryRemovalPending) return;
     setEditingInjuryIndex(index);
     setInjuryDraft({
+      id: injury.id,
       region: injury.region ?? '',
       severity: injury.severity,
       restrictedModalities: injury.restrictedModalities ?? [],
       reviewBy: injury.reviewBy ?? '',
       note: injury.note ?? '',
     });
+  };
+
+  const removeInjury = async (index: number) => {
+    if (!settings || injuryRemovalPending) return;
+    const nextInjuries = (settings.injuries ?? []).filter((_, i) => i !== index);
+    setInjuryRemovalPending(true);
+    try {
+      if (await saveDestructive({ injuries: nextInjuries }, 'Injury constraint removed.')) {
+        if (editingInjuryIndex === index) {
+          setInjuryDraft(emptyInjuryDraft);
+          setEditingInjuryIndex(null);
+        } else if (editingInjuryIndex !== null && index < editingInjuryIndex) {
+          setEditingInjuryIndex(editingInjuryIndex - 1);
+        }
+      }
+    } finally {
+      setInjuryRemovalPending(false);
+    }
   };
 
   const today = getLocalDateString();
@@ -302,7 +331,7 @@ export function TrainingSettings({ userId, onNavigate }: TrainingSettingsProps) 
         {settings.injuries && settings.injuries.length > 0 ? (
           <div className="injuries-list">
             {settings.injuries.map((inj, index) => (
-              <div key={index} className="injury-card-item">
+              <div key={inj.id ?? index} className="injury-card-item">
                 <div className="injury-card-details">
                   <div className="injury-card-header">
                     <strong className="injury-card-region">{inj.region ? inj.region.toUpperCase().replace('_', ' ') : 'General Activity'}</strong>
@@ -312,12 +341,8 @@ export function TrainingSettings({ userId, onNavigate }: TrainingSettingsProps) 
                   {inj.note && <span className="injury-card-note">Note: {inj.note}</span>}
                 </div>
                 <div className="injury-card-actions">
-                  <button type="button" className="btn-injury-action edit" onClick={() => editInjury(inj, index)}>Edit</button>
-                  <button type="button" className="btn-injury-action remove" onClick={() => {
-                    const nextInjuries = (settings.injuries ?? []).filter((_, i) => i !== index);
-                    if (editingInjuryIndex === index) { setInjuryDraft(emptyInjuryDraft); setEditingInjuryIndex(null); }
-                    void saveDestructive({ injuries: nextInjuries }, 'Injury constraint removed.');
-                  }}>Remove</button>
+                  <button type="button" className="btn-injury-action edit" disabled={injuryRemovalPending} onClick={() => editInjury(inj, index)}>Edit</button>
+                  <button type="button" className="btn-injury-action remove" disabled={injuryRemovalPending} onClick={() => void removeInjury(index)}>Remove</button>
                 </div>
               </div>
             ))}

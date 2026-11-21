@@ -34,6 +34,15 @@ describe('buildWorkoutAiCopy', () => {
         expect(load).not.toHaveBeenCalled();
         expect(formatMarkdown).toHaveBeenLastCalledWith(withoutExecution, EXPORTED_AT, undefined);
     });
+
+    it('passes userId as an identity set even when responses are absent or failed', async () => {
+        await buildWorkoutAiCopy(withoutExecution, EXPORTED_AT, undefined, 'user-secret-42');
+        expect(formatMarkdown).toHaveBeenLastCalledWith(withoutExecution, EXPORTED_AT, undefined, new Set(['user-secret-42']));
+
+        const failingLoad = vi.fn().mockRejectedValue(new Error('offline'));
+        await buildWorkoutAiCopy(withExecution, EXPORTED_AT, failingLoad, 'user-secret-42');
+        expect(formatMarkdown).toHaveBeenLastCalledWith(withExecution, EXPORTED_AT, { status: 'failed' }, new Set(['user-secret-42']));
+    });
 });
 
 describe('loadWorkoutResponses', () => {

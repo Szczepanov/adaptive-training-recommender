@@ -617,3 +617,64 @@ describe('buildLedgerExport privacy and determinism', () => {
         expect(JSON.stringify(input)).toBe(before);
     });
 });
+
+describe('buildLedgerExport stable injury ids (#1261)', () => {
+    it('uses stored injury ids verbatim and generates deterministic key-order-independent fallback ids for legacy rows', () => {
+        const legacyA = { region: 'knee' as const, severity: 'limit' as const, note: 'Left knee', createdAt: '2026-10-01' };
+        const legacyAReordered = { note: 'Left knee', createdAt: '2026-10-01', severity: 'limit' as const, region: 'knee' as const };
+        const legacyB = { region: 'ankle' as const, severity: 'monitor' as const, createdAt: '2026-10-02' };
+        const explicit = { id: 'injury-explicit-9', region: 'hip' as const, severity: 'exclude' as const, createdAt: '2026-10-03' };
+
+        const first = buildLedgerExport(fullInput({
+            records: { trainingSettings: { ...settings, injuries: [legacyA, legacyA, legacyB, explicit] } },
+        }));
+        const byNote = (note: string) => first.userContext.injuries.items.find(item => item.fields.note.value === note)!.id;
+        const firstIds = first.userContext.injuries.items.map(item => item.id);
+        const legacyAIds = first.userContext.injuries.items
+            .filter(item => item.fields.note.value === 'Left knee')
+            .map(item => item.id);
+        expect(legacyAIds[0]).toMatch(/^injury-legacy-[0-9a-f]{8}$/);
+        expect(legacyAIds[1]).toBe(`${legacyAIds[0]}-2`);
+        const legacyBId = first.userContext.injuries.items.find(item => item.fields.region.value === 'ankle')!.id;
+        expect(legacyBId).toMatch(/^injury-legacy-[0-9a-f]{8}$/);
+        expect(legacyBId).not.toBe(legacyAIds[0]);
+        expect(byNote('Left knee')).toBe(legacyAIds[0]);
+        expect(firstIds).toContain('injury-explicit-9');
+
+        // Key order changes and resolving (adding resolvedAt) do not alter legacy ids, and deleting an earlier entry preserves later ids.
+        const resolvedAndDeleted = buildLedgerExport(fullInput({
+            records: {
+                trainingSettings: {
+                    ...settings,
+                    injuries: [legacyB, explicit],
+                    injuryHistory: [{ ...legacyAReordered, resolvedAt: '2026-11-18' }],
+                },
+            },
+        }));
+        expect(resolvedAndDeleted.userContext.injuries.items.map(item => item.id))
+            .toEqual(['injury-explicit-9', legacyAIds[0], legacyBId].sort());
+    });
+
+    it('keeps identical legacy episodes on their ids when the active one is resolved or an old one leaves the window', () => {
+        const knee = { region: 'knee' as const, severity: 'limit' as const };
+        const idsOf = (injuries: typeof knee[], injuryHistory: Array<typeof knee & { resolvedAt: string }>, startDate?: string) => {
+            const out = buildLedgerExport(fullInput({
+                records: { trainingSettings: { ...settings, injuries, injuryHistory } },
+                ...(startDate ? { window: { startDate, endDate: fullInput().asOfDate } } : {}),
+            }));
+            return out.userContext.injuries.items.map(item => [item.id, item.fields.resolvedAt.value ?? null]);
+        };
+        const earlier = { ...knee, resolvedAt: '2026-11-10' };
+        const before = idsOf([knee], [earlier]);
+        const historyId = before.find(([, resolvedAt]) => resolvedAt === '2026-11-10')![0];
+        const activeId = before.find(([, resolvedAt]) => resolvedAt === null)![0];
+        expect(activeId).not.toBe(historyId);
+
+        // Resolving the active episode appends it after the older one; neither id moves.
+        const after = idsOf([], [earlier, { ...knee, resolvedAt: '2026-11-18' }]);
+        expect(after).toEqual(expect.arrayContaining([[historyId, '2026-11-10'], [activeId, '2026-11-18']]));
+
+        // The older episode leaving the export window does not hand its id to the active one.
+        expect(idsOf([knee], [earlier], '2026-11-15')).toEqual([[activeId, null]]);
+    });
+});

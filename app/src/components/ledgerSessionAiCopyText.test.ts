@@ -17,6 +17,40 @@ describe('loadLedgerSessionAiCopyText', () => {
     await expect(result).rejects.toThrow('offline');
     await expect(result).rejects.not.toBeInstanceOf(WorkoutNotReadyError);
   });
+
+  it('threads userId to redact it from the Markdown report even without responses', async () => {
+    const view = {
+      performedOccurrenceId: 'pto-1',
+      sourceKeys: ['structured_execution:exec-1'],
+      localDate: '2026-11-14',
+      sourceBadge: { hasStructured: true, hasProvider: false, providers: [] },
+      reconciliation: { state: 'single_source' },
+      structured: {
+        title: 'Run for user-secret-99',
+        comparison: {
+          definitionId: 'w-1', revision: 1, title: 'Run for user-secret-99',
+          totalPlannedSteps: 0, completedStepsCount: 0, missingRequiredStepsCount: 0, stepComparisons: [],
+          summary: { totalReps: 0, totalTonnageKg: 0, totalDurationSeconds: 0, totalDistanceMeters: 0 },
+        },
+        steps: [],
+        performedRest: 'not_recorded',
+        entryInvalidRecords: 0,
+        execution: { executionId: 'exec-1', state: 'completed', startedAt: '2026-11-14T07:00:00.000Z', note: 'Owner user-secret-99' },
+      },
+      garminExerciseSetsAreDiagnosticOnly: true,
+      sourceReads: {
+        structured: { status: 'available' },
+        provider: 'not_linked',
+        outbox: { status: 'read', queued: 0, failed: 0 },
+        reconciliationSweep: 'completed',
+        ambiguousCounterpart: false,
+      },
+    } as unknown as CompletedWorkoutView;
+    const md = await loadLedgerSessionAiCopyText('exec-1', async () => [view], '2026-11-14T10:00:00.000Z', undefined, 'user-secret-99');
+    expect(md).not.toContain('user-secret-99');
+    expect(md).toContain('# Session: Run for &#91;redacted&#93;');
+    expect(md).toContain('note: Owner &#91;redacted&#93;');
+  });
 });
 
 describe('copyFailureState', () => {

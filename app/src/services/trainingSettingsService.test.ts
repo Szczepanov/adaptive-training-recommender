@@ -183,3 +183,152 @@ describe('injury history', () => {
         expect(reopened.injuryHistory).toEqual(removed.injuryHistory);
     });
 });
+
+describe('stable injury ids (#1261)', () => {
+    it('validates injury id format and rejects duplicate ids across injuries and injuryHistory', () => {
+        const base = createDefaultTrainingSettings('athlete', '2026-08-07T10:00:00.000Z');
+        expect(parseTrainingSettings({
+            ...base,
+            injuries: [{ id: 'injury-a', severity: 'limit' }],
+            injuryHistory: [{ id: 'injury-b', severity: 'monitor', resolvedAt: '2026-08-10' }],
+        }, 'athlete')?.injuries?.[0].id).toBe('injury-a');
+
+        for (const badId of ['', '   ', ' lead', 'trail ', 'x'.repeat(129), 123]) {
+            expect(parseTrainingSettings({ ...base, injuries: [{ id: badId, severity: 'limit' }] }, 'athlete')).toBeNull();
+        }
+        expect(parseTrainingSettings({
+            ...base,
+            injuries: [{ id: 'dup', severity: 'limit' }, { id: 'dup', severity: 'monitor' }],
+        }, 'athlete')).toBeNull();
+        expect(parseTrainingSettings({
+            ...base,
+            injuryHistory: [{ id: 'dup', severity: 'limit', resolvedAt: '2026-08-08' }, { id: 'dup', severity: 'monitor', resolvedAt: '2026-08-09' }],
+        }, 'athlete')).toBeNull();
+        expect(parseTrainingSettings({
+            ...base,
+            injuries: [{ id: 'dup', severity: 'limit' }],
+            injuryHistory: [{ id: 'dup', severity: 'monitor', resolvedAt: '2026-08-09' }],
+        }, 'athlete')).toBeNull();
+    });
+
+    it('generates ids on add, matches by id first, preserves id on edit/resolution/restore and supports revert', () => {
+        let seq = 0;
+        const nextId = () => `injury-gen-${++seq}`;
+        const initial = createDefaultTrainingSettings('athlete', '2026-08-07T10:00:00.000Z');
+
+        // Add two injuries without explicit ids -> generates unique ids.
+        const withTwo = mergeSettings(initial, {
+            injuries: [{ region: 'knee', severity: 'limit' }, { region: 'ankle', severity: 'monitor' }],
+        }, '2026-10-01', nextId);
+        expect(withTwo.injuries?.map(i => i.id)).toEqual(['injury-gen-1', 'injury-gen-2']);
+
+        // Matching by id takes precedence over a misleading injuryEditIndex.
+        const editedSecondById = mergeSettings(withTwo, {
+            injuries: [
+                withTwo.injuries![0],
+                { id: 'injury-gen-2', region: 'ankle', severity: 'exclude', note: 'Worse' },
+            ],
+            injuryEditIndex: 0,
+        }, '2026-10-05', nextId);
+        expect(editedSecondById.injuries?.[0]).toEqual(withTwo.injuries![0]);
+        expect(editedSecondById.injuries?.[1]).toEqual({
+            id: 'injury-gen-2', region: 'ankle', severity: 'exclude', note: 'Worse', createdAt: '2026-10-01',
+        });
+
+        // Editing via injuryEditIndex when caller omits id still preserves old.injury.id.
+        const editWithoutId = mergeSettings(editedSecondById, {
+            injuries: [
+                { region: 'knee', severity: 'monitor' },
+                editedSecondById.injuries![1],
+            ],
+            injuryEditIndex: 0,
+        }, '2026-10-06', nextId);
+        expect(editWithoutId.injuries?.[0].id).toBe('injury-gen-1');
+        expect(editWithoutId.injuries?.[0].createdAt).toBe('2026-10-01');
+
+        // Removing the first leaves the second's id unchanged and keeps the first's id in injuryHistory.
+        const removalUpdate: TrainingSettingsUpdate = { injuries: [editWithoutId.injuries![1]] };
+        const removed = mergeSettings(editWithoutId, removalUpdate, '2026-10-10', nextId);
+        expect(removed.injuries).toEqual([editWithoutId.injuries![1]]);
+        expect(removed.injuryHistory).toEqual([{ ...editWithoutId.injuries![0], resolvedAt: '2026-10-10' }]);
+
+        // Undo via buildRevertUpdate matches injuryHistory by id and restores original id and createdAt.
+        const revert = buildRevertUpdate(editWithoutId, removalUpdate)!;
+        const restored = mergeSettings(removed, revert, '2026-10-11', nextId);
+        expect(restored.injuries).toEqual(editWithoutId.injuries);
+        expect(restored.injuryHistory).toEqual([]);
+
+        // injuryRestore matches injuryHistory by id even when fields differ from the archived copy.
+        const customRestore = mergeSettings(removed, {
+            injuries: [{ id: 'injury-gen-1', region: 'knee', severity: 'limit', createdAt: '2026-10-01' }, editWithoutId.injuries![1]],
+            injuryRestore: true,
+        }, '2026-10-12', nextId);
+        expect(customRestore.injuries?.[0].id).toBe('injury-gen-1');
+        expect(customRestore.injuryHistory).toEqual([]);
+    });
+
+    it('backfills a stable id onto id-less legacy injuries on the first write and keeps it through later edits and undo', () => {
+        let seq = 0;
+        const nextId = () => `injury-gen-${++seq}`;
+        const legacyKnee = { region: 'knee' as const, severity: 'limit' as const, createdAt: '2026-09-01' };
+        const legacyAnkle = { region: 'ankle' as const, severity: 'monitor' as const };
+        const initial = { ...createDefaultTrainingSettings('athlete'), injuries: [legacyKnee, legacyAnkle] };
+
+        const editUpdate: TrainingSettingsUpdate = {
+            injuries: [{ ...legacyKnee, severity: 'exclude' }, legacyAnkle],
+            injuryEditIndex: 0,
+        };
+        const edited = mergeSettings(initial, editUpdate, '2026-10-01', nextId);
+        expect(edited.injuries).toEqual([
+            { id: 'injury-gen-1', region: 'knee', severity: 'exclude', createdAt: '2026-09-01' },
+            { id: 'injury-gen-2', region: 'ankle', severity: 'monitor' },
+        ]);
+
+        // A second edit without the id in the draft keeps the backfilled id.
+        const editedAgain = mergeSettings(edited, {
+            injuries: [{ region: 'knee', severity: 'monitor' }, edited.injuries![1]],
+            injuryEditIndex: 0,
+        }, '2026-10-02', nextId);
+        expect(editedAgain.injuries?.map(i => i.id)).toEqual(['injury-gen-1', 'injury-gen-2']);
+
+        // Undoing an add keeps the id backfilled onto the id-less legacy row by that add.
+        const legacyOnly = { ...createDefaultTrainingSettings('athlete'), injuries: [legacyAnkle] };
+        const addUpdate: TrainingSettingsUpdate = { injuries: [legacyAnkle, { region: 'hip', severity: 'monitor' }] };
+        const added = mergeSettings(legacyOnly, addUpdate, '2026-10-01', nextId);
+        const backfilledId = added.injuries![0].id;
+        expect(backfilledId).toBeDefined();
+        const undoneAdd = mergeSettings(added, buildRevertUpdate(legacyOnly, addUpdate)!, '2026-10-02', nextId);
+        expect(undoneAdd.injuries).toEqual([{ ...legacyAnkle, id: backfilledId }]);
+
+        // Undo restores the previous field values without generating further ids.
+        const idsBeforeUndo = seq;
+        const undone = mergeSettings(edited, buildRevertUpdate(initial, editUpdate)!, '2026-10-03', nextId);
+        expect(undone.injuries?.map(i => i.severity)).toEqual(['limit', 'monitor']);
+        expect(seq).toBe(idsBeforeUndo);
+    });
+
+    it('claims explicit id matches before injuryEditIndex on out-of-order updates', () => {
+        let seq = 0;
+        const nextId = () => `injury-gen-${++seq}`;
+        const initial = createDefaultTrainingSettings('athlete', '2026-08-07T10:00:00.000Z');
+        const withTwo = mergeSettings(initial, {
+            injuries: [{ region: 'knee', severity: 'limit' }, { region: 'ankle', severity: 'monitor' }],
+        }, '2026-10-01', nextId);
+
+        const reordered = mergeSettings(withTwo, {
+            injuries: [
+                { region: 'hip', severity: 'monitor' },
+                { id: 'injury-gen-1', region: 'knee', severity: 'exclude' },
+            ],
+            injuryEditIndex: 0,
+        }, '2026-10-07', nextId);
+
+        expect(reordered.injuries).toEqual([
+            { id: 'injury-gen-3', region: 'hip', severity: 'monitor', createdAt: '2026-10-07' },
+            { id: 'injury-gen-1', region: 'knee', severity: 'exclude', createdAt: '2026-10-01' },
+        ]);
+        expect(reordered.injuryHistory).toEqual([
+            { id: 'injury-gen-2', region: 'ankle', severity: 'monitor', createdAt: '2026-10-01', resolvedAt: '2026-10-07' },
+        ]);
+    });
+});

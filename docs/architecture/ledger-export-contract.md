@@ -136,8 +136,10 @@ placement on an older revision exports both its content and that revision's head
 reads such a revision even when it is referenced only by a placement: besides the header, the
 activation history and performed links, it reads the plan's legacy (unscoped) placement overlay
 and adds its revision when an assignment falls inside the placement bounds. That revision is
-hash-verified like any other; when no attesting hash can be read, its placement content stays
-`unavailable` and no header is exported. An unreadable legacy overlay degrades the placement
+hash-verified like any other; when an older revision placed only through that legacy overlay has no
+activation hash (`unverifiedPlanRevisions`), only that revision's placement content becomes
+`unavailable` and its past `outcome` becomes `unknown`, leaving `external_plan_revisions`
+`measured` and exporting no header for it. An unreadable legacy overlay degrades the placement
 source.
 
 ### Abbreviating unchanged user context
@@ -170,12 +172,13 @@ never context text.
   it is not truncated. A single record is complete when its settings source (`training_settings` or
   `preferences`) was read `measured`. `trainingDislikes` has no source to read: `measured` or
   `not_yet_supported` (a schema-fixed state) counts as complete.
-- **Version.** `CHECKPOINT_FORMAT_VERSION` (currently `3`) is bumped whenever the hash contract or
+- **Version.** `CHECKPOINT_FORMAT_VERSION` (currently `4`) is bumped whenever the hash contract or
   these rules change. Version 1 added `observedOn` to the hash and the metadata; version 2 added
   `selectionDates` and `from`, which decide removal on a moved window; version 3 added
   `coachingHistory.planRevisions` to the checkpoint (`userContextSection` filters out `planRevisions`
   keys and `coachingHistorySection` applies them only on `morning` exports, where kept revisions
-  were rendered under `morning-active`). Both the renderer and the store reader treat another or no
+  were rendered under `morning-active`); version 4 uses stable stored or content-derived injury ids
+  instead of positional indices. Both the renderer and the store reader treat another or no
   `formatVersion` (a legacy stored value) as no checkpoint: full context.
 
 **Refresh export (Phase 4).** The `planning` purpose is the export used to start a new chat, so

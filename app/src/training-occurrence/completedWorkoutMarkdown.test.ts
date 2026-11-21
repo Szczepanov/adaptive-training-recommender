@@ -369,4 +369,152 @@ describe('formatCompletedWorkoutMarkdown', () => {
         expect(md).toContain('ref: pto-1');
         expect(md.split('pto-1')).toHaveLength(2);
     });
+
+    it('renders per-set side on warm-ups, paired holds/carries, and non-duration/distance sets while omitting bilateral', () => {
+        const md = formatCompletedWorkoutMarkdown(withSteps([
+            {
+                stepId: 'carry', title: 'Suitcase Carry', isOptional: false, prescribed: { sets: 1, meters: 20 },
+                sets: [
+                    { entryId: 'c1', setNumber: 1, isWarmup: false, completedAt: stamp, side: 'left', payload: { kind: 'distance', meters: 20, loadKg: 24 } },
+                    { entryId: 'c2', setNumber: 1, isWarmup: false, completedAt: stamp, side: 'right', payload: { kind: 'distance', meters: 20, loadKg: 24 } },
+                ],
+            },
+            {
+                stepId: 'hold', title: 'Side Plank', isOptional: false, prescribed: { sets: 1, seconds: 45 },
+                sets: [
+                    { entryId: 'h1', setNumber: 1, isWarmup: false, completedAt: stamp, side: 'left', payload: { kind: 'duration', seconds: 45 } },
+                    { entryId: 'h2', setNumber: 1, isWarmup: false, completedAt: stamp, side: 'right', payload: { kind: 'duration', seconds: 45 } },
+                ],
+            },
+            {
+                stepId: 'split', title: 'Bulgarian Split Squat', isOptional: false, prescribed: { sets: 2, reps: 8 },
+                sets: [
+                    { entryId: 'w1', setNumber: 1, isWarmup: true, completedAt: stamp, side: 'left', payload: rep(0, 5, 10, { isWarmup: true }) },
+                    { entryId: 'w2', setNumber: 2, isWarmup: true, completedAt: stamp, side: 'right', payload: rep(0, 5, 10, { isWarmup: true }) },
+                    { entryId: 'w3', setNumber: 3, isWarmup: true, completedAt: stamp, side: 'bilateral' as never, payload: rep(0, 5, 0, { isWarmup: true }) },
+                    { entryId: 's1', setNumber: 1, isWarmup: false, completedAt: stamp, side: 'left', payload: rep(1, 8, 20) },
+                    { entryId: 's2', setNumber: 2, isWarmup: false, completedAt: stamp, side: 'right', payload: rep(2, 8, 20) },
+                    { entryId: 's3', setNumber: 3, isWarmup: false, completedAt: stamp, side: 'bilateral' as never, payload: rep(3, 8, 40) },
+                ],
+            },
+        ]), EXPORTED_AT);
+        expect(md).toContain('1: left 20 m @ 24 kg\n1: right 20 m @ 24 kg');
+        expect(md).toContain('1: left 45 s\n1: right 45 s');
+        expect(md).toContain('warm-up: left 5 @ 10 kg, right 5 @ 10 kg, 5 @ 0 kg');
+        expect(md).toContain('1: left 8 @ 20 kg\n2: right 8 @ 20 kg\n3: 8 @ 40 kg');
+        expect(md).not.toContain('bilateral');
+    });
+
+    it('escapes metacharacters/newlines and redacts emails and identities across authored and provider text', () => {
+        const hostile = 'Title\n## H2 | <tag> & `code` [x](u) *b* _i_\r\u2028\u2029 owner@example.com owner-uid-99 garmin-act-secret-77 exec-1';
+        const view: CompletedWorkoutView = {
+            ...structuredView,
+            sourceReads: { ...completeReads, structured: { status: 'definition_unresolved', definition: 'MISSING' } },
+            structured: {
+                ...structuredView.structured!,
+                title: hostile,
+                sessionChoices: [{
+                    choiceEntryId: 'sc1', effective: true, choiceId: 'c0', optionId: 'opt_[0]',
+                    optionLabel: 'Option | *label* owner@example.com', reason: 'Because\n## reason owner-uid-99',
+                    completedAt: stamp,
+                }],
+                execution: {
+                    ...structuredView.structured!.execution!,
+                    note: 'Session\nnote owner@example.com owner-uid-99 | _edge_',
+                },
+                steps: [
+                    {
+                        stepId: 's-main',
+                        title: 'Swapped *Exercise*\n## H2 owner-uid-99',
+                        plannedTitle: 'Planned | Exercise owner@example.com',
+                        isOptional: false,
+                        prescribed: {
+                            sets: 2, reps: 6,
+                            load: { kind: 'band', bandColor: 'red_[band]|owner-uid-99' },
+                            tempo: '3-1-1-0\n## tempo',
+                            notes: 'Step *note* <br> owner@example.com',
+                        },
+                        choices: [{
+                            choiceEntryId: 'ch1', effective: false, supersededByChoiceEntryId: 'ch2',
+                            choiceId: 'c1', optionId: 'opt_id|owner@example.com',
+                            reason: 'Pain | *bad*\nnext', completedAt: stamp,
+                        }, {
+                            choiceEntryId: 'ch2', effective: true, supersedesChoiceEntryId: 'ch1',
+                            choiceId: 'c1', optionId: 'opt2', optionLabel: 'Better `opt` owner-uid-99',
+                            completedAt: stamp,
+                        }],
+                        sets: [{
+                            entryId: 'e1', setNumber: 1, isWarmup: false, completedAt: stamp,
+                            payload: rep(1, 6, 40),
+                            governingChoiceEntryId: 'ch1',
+                            exerciseRef: { kind: 'catalog', exerciseId: 'owner-uid-99_squat|<tag>' },
+                        }],
+                    },
+                    {
+                        stepId: 's-desc',
+                        title: 'Carry',
+                        isOptional: false,
+                        prescribed: { sets: 1, load: { kind: 'descriptive', display: 'Heavy `sandbag` owner@example.com' } },
+                        sets: [],
+                    },
+                ],
+            },
+        };
+        // No responses passed: caller-supplied userId must still be redacted.
+        const md = formatCompletedWorkoutMarkdown(view, EXPORTED_AT, undefined, new Set(['owner-uid-99']));
+        expect(md).not.toContain('owner@example.com');
+        expect(md).not.toContain('owner-uid-99');
+        expect(md).not.toContain('garmin-act-secret-77');
+        expect(md).not.toContain('exec-1');
+        expect(md).not.toContain('\n## H2');
+        expect(md).not.toContain('\n## reason');
+        expect(md).not.toContain('\n## tempo');
+        expect(md).not.toContain('<tag>');
+        expect(md).not.toContain('<br>');
+        expect(md).toContain('&#92;u000a');
+        expect(md).toContain('&#92;u000d');
+        expect(md).toContain('&#92;u2028');
+        expect(md).toContain('&#92;u2029');
+        expect(md).toContain('&#91;redacted&#93;');
+        expect(md).toContain('performed as &#91;redacted&#93; squat&#124;&#60;tag&#62;');
+        expect(md).toContain('&#95;edge&#95;');
+        expect(md).toContain('Heavy &#96;sandbag&#96; &#91;redacted&#93;');
+        expect(md).toContain('red&#95;&#91;band&#93;&#124;&#91;redacted&#93; band');
+        expect(md).toContain('under earlier choice: opt_id&#124;&#91;redacted&#93;');
+        expect(md).toContain('\nref: pto-1\n');
+
+        // Response notes and techniqueNote are also redacted and escaped; the occurrence id appears only as the trailing ref.
+        const withResponses = formatCompletedWorkoutMarkdown(
+            { ...structuredView, performedOccurrenceId: 'pto-keep-me' },
+            EXPORTED_AT,
+            [response({ techniqueNote: 'Cue\n| owner-uid-99', note: 'Felt *good* owner@example.com pto-keep-me' })],
+            new Set(['owner-uid-99']),
+        );
+        expect(withResponses).not.toContain('owner-uid-99');
+        expect(withResponses).not.toContain('owner@example.com');
+        expect(withResponses).toContain('technique: Cue&#92;u000a&#124; &#91;redacted&#93;');
+        expect(withResponses).toContain('note: Felt &#42;good&#42; &#91;redacted&#93; &#91;redacted&#93;');
+        expect(withResponses.trimEnd().endsWith('ref: pto-keep-me')).toBe(true);
+        expect(withResponses.split('pto-keep-me')).toHaveLength(2);
+
+        // Provider-only workout title (garmin.type) is redacted and escaped.
+        const providerHostile: CompletedWorkoutView = {
+            ...providerOnlyView,
+            performedOccurrenceId: 'pto-provider',
+            garmin: { ...providerOnlyView.garmin!, type: 'owner-uid-99_##_[run]\n| <x>' },
+        };
+        const providerMd = formatCompletedWorkoutMarkdown(providerHostile, EXPORTED_AT, undefined, new Set(['owner-uid-99']));
+        expect(providerMd).not.toContain('owner-uid-99');
+        expect(providerMd).not.toContain('\n##');
+        expect(providerMd).toContain('# Session: &#91;redacted&#93; ## &#91;run&#93;&#92;u000a&#124; &#60;x&#62;');
+        expect(providerMd).toContain('ref: pto-provider');
+
+        // structuredLogLine escapes definition_unresolved status/definition if custom values arrive.
+        const unresolved: CompletedWorkoutView = {
+            ...providerOnlyView,
+            sourceReads: { ...completeReads, structured: { status: 'definition_unresolved', definition: 'owner-uid-99|bad' as never } },
+        };
+        const unresolvedMd = formatCompletedWorkoutMarkdown(unresolved, EXPORTED_AT, undefined, new Set(['owner-uid-99']));
+        expect(unresolvedMd).toContain('structured log: unavailable (definition_unresolved: &#91;redacted&#93;&#124;bad)');
+    });
 });
