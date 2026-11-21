@@ -44,9 +44,20 @@ set counts are one `<work>/<planned> work sets (+<warmup> warm-up)` phrase, a co
 (under Today, Yesterday or Upcoming; its collection then prints `<name>: <n> shown above`). A
 user-context collection whose items are all abbreviated prints `<name>: <n> unchanged (listed above)`
 instead, since those items are only named on the `unchanged since` line. An
-inactive or unavailable flag is a summary line; an active flag prints in full, with its
-`definitionVersion` and `evaluatedAt` when persisted. Placement headers and the planned
-part of a yesterday line carry the record ids (`plan-1@2:s4`, `plan-1@2:s1 → occ-1`).
+inactive or unavailable flag is a summary line (and non-active flags sharing state, date range,
+`definitionVersion` and `sessionRef` share one comma-joined line via `inactiveFlagLines`); an active
+flag prints in full, with its `definitionVersion` and `evaluatedAt` (omitting the date prefix when on
+`observedOn` via `formatEvaluatedAt`) when persisted, and `recovery_beyond_baseline` folds each
+`(metric, metric_delta7d, metric_band)` triplet onto a `triggers:` line (`activeFlagInputLines`).
+Numeric leaves shorten decimals via `formatNumber`, long SHA-256 hex hashes shorten via
+`formatValue`, `sleepDurationSec` formats in hours, uniform measured `recovery` rows fold onto one
+date line (`recoveryFactsLines` / `asCompactRecoveryRow`), empty measured collections group onto
+`no rows (measured): <names>` (`isEmptyMeasuredCollection`), `not_yet_supported` derived slots group
+onto `not_yet_supported: <ids>`, and uniform measured user-context entries (`equipment`,
+`guardrails`, `environment`, `preferences`, consecutive-date `schedule_window` runs in `availability`,
+active `constraints` with measured `equipment` fields superseding legacy toggles, and active `goals`
+deduplicating matching `goal-<id>` `events`) fold into compact summaries. Placement headers and the
+planned part of a yesterday line carry the record ids (`plan-1@2:s4`, `plan-1@2:s1 → occ-1`).
 
 Provenance (spec 2a): the header declares `states: measured unless noted; source shown per group`,
 so `measured` is never printed per field. Source is provenance, not a state: each record group line
@@ -71,23 +82,37 @@ each prints on its own line with `evaluated <evaluatedAt>`. Unavailable dates ne
 
 Size targets on the fixture morning export (asserted in `previousContext.test.ts`): at most 8,145
 characters with a matching `previousContext`, 13,032 without. `renderLedgerExport` remains the verbose diagnostic view.
-`renderLedgerExport` remains the verbose diagnostic view.
 Output starts with `# Ledger update — <asOfDate> (<purpose>)`, then:
 
 1. `## Today (<date>)` (`todaySections.ts` `renderTodaySections`): today's check-in and recovery
-   values with their 28-day baselines and the exported `<field>_delta28d` leaves (a missing
+   values inline with their 7-day/recent average, 28-day/long baseline, spread (`28d` stdev/MAD or
+   subjective variability), and the exported `<field>_delta28d` leaves (`baselineLines.ts`
+   `baselinedRecordLines`, `RECOVERY_BASELINE_TRIPLETS`, `CHECKIN_BASELINE_TRIPLETS`; a missing
    baseline prints its state; a delta that is not measured prints `delta: <state>`; the renderer
-   never subtracts), today's evaluated flags, and today's placements in full.
-2. `## Yesterday (<date>)` (`yesterdaySection.ts`): one line per performed occurrence, with the
-   validated `workSets`/`plannedSets`/`warmupSets` (an absent count prints its state, never 0),
+   never subtracts), today's evaluated flags, and today's placements in full. `## Derived`
+   (`derivedLines.ts` `derivedMetricLines`) suppresses redundant `biometric_baselines` /
+   `subjective_baselines` triplets and deltas already printed inline under Today (`shown in Today
+   above`), while keeping `recordedDays` and any missingness visible.
+2. `## Yesterday (<date>)` (`yesterdaySection.ts`): one line per performed occurrence (`occurrenceLine`),
+   with the validated `workSets`/`plannedSets`/`warmupSets` (an absent count prints its state, never 0),
    session RPE from the responses named in `linkedResponseIds`, the executed definition, and the
-   planned session title joined through `plannedToPerformed`.
+   planned session title joined through `plannedToPerformed`. When `workSets` is present, a
+   `detail: copy the session report from History` line points readers to the separate
+   `completed_workout_v1` session report (`training-occurrence/completedWorkoutJsonExport.ts`
+   `exportCompletedWorkoutToJson` and `training-occurrence/completedWorkoutMarkdown.ts`
+   `formatCompletedWorkoutMarkdown`, copied from History **Copy for AI** or Home **Copy session for
+   AI**). When `facts.performedTraining` has no rows for `D - 1`, it prints `performed: none
+   recorded for <date> (<state>)` and falls back to summarizing any `facts.activities` rows observed
+   on `D - 1` (`activitySummaryLine`), while full activity and segment details remain in `## Facts`.
 3. `## Upcoming (<from>…<to>)`: placements after the as-of date in date order, each with title,
    priority, status, summary, step notes and fallback. The section is omitted when the purpose
    has no forward window (diagnostic).
 4. `## Sources` (non-measured only), `## Flags`, `## Facts`, `## Derived`, `## User context`
    and `## Coaching history`. Records already shown under Today, Yesterday or Upcoming are
-   skipped by id so nothing prints twice.
+   skipped by id so nothing prints twice. On `morning` exports, `planRevisions` keeps only the
+   latest revision and revisions referenced by exported placements, links or overrides
+   (`morningKeptRevisionIds`, noting omitted older revisions) and checkpoints unchanged revisions
+   against `PreviousContext`; `planning` and `diagnostic` exports always print full `planRevisions`.
 
 ### Upcoming placements and the forward bound
 
@@ -117,35 +142,41 @@ source.
 
 ### Abbreviating unchanged user context
 
-`compact/contextCheckpoint.ts` `userContextCheckpoint` describes one export's user context as a
-checkpoint: `formatVersion` (`CHECKPOINT_FORMAT_VERSION`), `itemHashes`, `selectionDates` and, per
-user-context name, `collections[name] = { scope, complete, from? }`. It stores only hashes and
-comparison metadata, never context text.
+`compact/contextCheckpoint.ts` `userContextCheckpoint` describes one export's user context (plus
+`coachingHistory.planRevisions`) as a checkpoint: `formatVersion` (`CHECKPOINT_FORMAT_VERSION`),
+`itemHashes`, `selectionDates` and, per tracked collection or single record name,
+`collections[name] = { scope, complete, from? }`. It stores only hashes and comparison metadata,
+never context text.
 
 - **Hashes.** `userContextItemHashes` hashes each item (key `<collection>/<id>`, `<name>` for single
   records and `trainingDislikes`) with a stable 32-bit FNV-1a over its sorted-key JSON: the leaves
-  with their state and source, `since`, `revisions` and the record's `observedOn`. `observedOn` is
-  the item's own semantic date (an availability or travel date, a goal's target date), not an export
-  artifact, so it is hashed. Only `readAt` and `exportedAt` are excluded, wherever they appear.
-  Residual risk: a 32-bit hash collides with probability about 2⁻³² per changed item, in which
-  case a changed item would read as unchanged. The hash is for change detection, not security.
+  with their state and source, `since`, `revisions` and the record's `observedOn` (`planRevisions/<id>`
+  hashes `{ observedOn, fields }`, limited on `morning` exports to `morningKeptRevisionIds`).
+  `observedOn` is the item's own semantic date (an availability or travel date, a goal's target date),
+  not an export artifact, so it is hashed. Only `readAt` and `exportedAt` are excluded, wherever they
+  appear. Residual risk: a 32-bit hash collides with probability about 2⁻³² per changed item, in
+  which case a changed item would read as unchanged. The hash is for change detection, not security.
 - **Scope.** Mirrors `buildUserContext`: `from:<window start>` for `travel`, `venueRestrictions`,
   `availability` and `events`; `active+resolved-from:<window start>` for `injuries`; `all-active`
-  for `goals` and `constraints`; `current` for the single records and `trainingDislikes`. The
+  for `goals` and `constraints`; `current` for the single records and `trainingDislikes`; and
+  `morning-active` (for `morning` exports) or `all` (otherwise) for `planRevisions`. The
   date-windowed collections also store their lower bound, `from` (the window start).
 - **Selection dates.** `selectionDates[key]` is the date the collection's bound compares against in
   `buildUserContext`: `travel` and `events` by end date (an intent block's `dateRange.endDate`; a goal
   event's end date is its `targetDate`), `availability` and `venueRestrictions` by `date`, a resolved
-  injury by `resolvedAt`. An active injury, goals, constraints and single records have none: they are
-  not selected by date.
+  injury by `resolvedAt`. An active injury, goals, constraints, single records and `planRevisions`
+  have none: they are not selected by date.
 - **Complete.** A collection is complete only when its state is `measured`, `droppedUndated` is 0 and
   it is not truncated. A single record is complete when its settings source (`training_settings` or
   `preferences`) was read `measured`. `trainingDislikes` has no source to read: `measured` or
   `not_yet_supported` (a schema-fixed state) counts as complete.
-- **Version.** `CHECKPOINT_FORMAT_VERSION` is bumped whenever the hash contract or these rules change.
-  Version 1 added `observedOn` to the hash and the metadata; version 2 added `selectionDates` and
-  `from`, which decide removal on a moved window. Both the renderer and the store reader
-  treat another or no `formatVersion` (a legacy stored value) as no checkpoint: full context.
+- **Version.** `CHECKPOINT_FORMAT_VERSION` (currently `3`) is bumped whenever the hash contract or
+  these rules change. Version 1 added `observedOn` to the hash and the metadata; version 2 added
+  `selectionDates` and `from`, which decide removal on a moved window; version 3 added
+  `coachingHistory.planRevisions` to the checkpoint (`userContextSection` filters out `planRevisions`
+  keys and `coachingHistorySection` applies them only on `morning` exports, where kept revisions
+  were rendered under `morning-active`). Both the renderer and the store reader treat another or no
+  `formatVersion` (a legacy stored value) as no checkpoint: full context.
 
 **Refresh export (Phase 4).** The `planning` purpose is the export used to start a new chat, so
 `renderLedgerExportCompact` ignores any `PreviousContext` for it (`purposeAlwaysRendersFullContext`) and
@@ -178,8 +209,9 @@ with their current hash and date (they were printed in full, so the chat holds t
 prior it stores nothing for the collection. An unreadable item is therefore never later abbreviated
 as unchanged. A complete read in a moved window advances the checkpoint to it: out-of-scope keys are
 reported once as `out of scope now` and not carried, since carrying them would accumulate stale keys;
-an item that reappears prints in full. This follows the Phase 2c spec as amended by an agent ruling that the owner
-is to confirm in PR review.
+an item that reappears prints in full. This implements the Phase 2c checkpoint rules in
+`contextCheckpoint.ts` and `previousContext.ts`; the incomplete-read rule is an agent ruling the
+owner has yet to confirm.
 
 The brief screen (`DataView`, `components/useBriefCheckpoint.ts`) advances nothing on copy or
 download. In ledger mode `ContextBriefService.build` returns the export's `contextCheckpoint` and
@@ -217,8 +249,8 @@ toggle describe, so a copy can never carry the wrong variant.
 | Layer | Contents | Authority and gaps |
 | --- | --- | --- |
 | `facts` | Recovery, check-ins, canonical performed occurrences, session responses, current assessment observation heads, body mass, nutrition, bounded activity detail, competition outcomes | Recorded facts only; provider activity rows are provenance and never added to canonical totals |
-| `derived` | Biometric and subjective baseline metrics with units, readiness and source states | D−1 step normalization and performed-load slots remain `not_yet_supported` pending #1166; no engine derivations are called |
-| `flags` | The closed four D-FLAGS ids with immutable evaluation metadata and inputs | Persisted versions pass through in deterministic date/session/time order; uncaptured dates remain `not_recorded`; illness/anomaly remains withheld by HA7 |
+| `derived` | Biometric and subjective baseline metrics with units, readiness and source states | D−1 step normalization and performed-load slots remain `not_yet_supported`; no engine derivations are called |
+| `flags` | The closed four D-FLAGS ids with immutable evaluation metadata and inputs | Persisted versions pass through in deterministic date/session/time order; uncaptured dates remain `not_recorded`; under HA7 `visible-v1` ([ADR-0054](../adr/0054-ha7-visible-early-warning-release-gate.md), `#1263`), `illness_anomaly` passes through the revisions `flagCaptureService` captured via `evaluateIllnessAnomalyFlag` from the latest persisted health-anomaly assessment (revisions captured before the unlock keep `null / not_yet_supported` with reason `ha7_release_gate_unmet`; raw shadow payloads stay excluded) |
 | `userContext` | Current active goals/constraints, settings/equipment, active injuries and resolved injury periods overlapping the window, preferences, travel, venue restrictions, availability and intent-block events | Injury `since` and `resolvedAt` use recorded dates; legacy onset stays unknown. Other unsupported effective dates and revision history stay explicit; `updatedAt` does not establish field-level history |
 | `coachingHistory` | Immutable external-plan revision headers/rationale, as-of placements with a derived past `outcome`, immutable placement events, moved/dropped placement overrides plus in-session swaps/omissions (with the athlete's choice reason), canonical planned→performed links | Drop/move reasons on changes saved before Phase 3C, and unrecorded legacy history, remain `not_yet_supported` |
 
@@ -262,8 +294,10 @@ linked to more than one structured execution (for example an abandoned run and a
 unresolved, as `canonicalBroadHistory.ts` treats multiple structured sources, so `plannedSets` is
 `unavailable` while `workSets` and `warmupSets` still sum the real performed sets of every run, and
 the compact line then prints no ratio (`9 work sets (+1 warm-up) (planned: unavailable)`).
-`workSets` counts live, non-choice, non-warm-up entries with the runner's set rule (a left/right
-hold is one set once both sides are logged); `warmupSets` counts live entries flagged
+`workSets` counts live, non-choice, non-warm-up entries via `performedSetCounts` and the runner's
+`completedPrescribedSets` rule (for both per-side holds (`duration` entries with `side`) and per-side
+carries (`distance` entries with `side`), each left/right pair for the same payload kind and
+recorded exercise counts as one set once both sides are logged); `warmupSets` counts live entries flagged
 `isWarmup`. A warm-up *block* is not a warm-up set: its exercise steps count toward
 `plannedSets`, and sets logged on them without the flag count as work. Linked provider work is
 never added. An
@@ -457,8 +491,8 @@ the actual user action and verifies the downloaded schema on desktop and mobile 
 
 ## Remaining phase gates
 
-This export does not turn off engine adjudication or close #1144. Phase 2 still needs the
-ADR-0052 extraction and device evidence gates. Client capture cannot fill earlier missed
-dates; a qualifying D-EVAL block still requires sufficient recorded flag coverage,
+The exporter stays read-only and never runs engine adjudication; Phase 1 extraction (`#1144`) and
+the Phase 2 ledger-mode switch-off (`#1167` / `#1254`) are shipped. Client capture cannot fill
+earlier missed dates; a qualifying D-EVAL block still requires sufficient recorded flag coverage,
 legacy placement history before event recording, and the owner-completed protocol
 retest-interval table. Explicit gaps are not passing evidence.
