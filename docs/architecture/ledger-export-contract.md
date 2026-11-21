@@ -199,9 +199,11 @@ A key that disappeared prints:
   the new `from` (or no selection date, as for an active injury);
 - `not readable now: <key> (<state>)` when the current read is incomplete (`incomplete` when the state
   is `measured` but rows were omitted or truncated);
-- `out of scope now: <key>` when the read is complete but the key left the selection by date: its
-  selection date fell before the new window start, as when the morning window moves forward a day
-  past it.
+- `out of scope now: <key>` when the read is complete but the key left the selection: either a
+  date-windowed key's selection date fell before the new window start (as when the morning window
+  moves forward a day past it), or, on `morning` exports, a `planRevisions/<id>` entry still present
+  in `coachingHistory.planRevisions.items` rotated out of `morningKeptRevisionIds`
+  (`morningOmittedRevisionKeys` in `compact/contextCheckpoint.ts`).
 
 The renderer takes the checkpoint as an explicit input and reads no store or clock.
 
