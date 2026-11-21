@@ -218,7 +218,7 @@ describe('morning export deduplication and shortening', () => {
             respiration7dAvg: num(12.1, 'breaths/min', 'daily_recovery_snapshots'),
             respiration28dAvg: num(12, 'breaths/min', 'daily_recovery_snapshots'),
             respiration28dMad: num(0.3, 'breaths/min', 'daily_recovery_snapshots'),
-            sleepScore_delta28d: num(-12.7, 'score', 'daily_recovery_snapshots'),
+            sleepScore_delta28d: miss('daily_recovery_snapshots'),
             restingHr_delta28d: num(1.4, 'bpm', 'daily_recovery_snapshots'),
         };
         const subj = ledger.derived.find(m => m.id === 'subjective_baselines')!;
@@ -237,10 +237,10 @@ describe('morning export deduplication and shortening', () => {
         expect(withToday).toContain('restingHr: 48 bpm (7d 43.4 · 28d 42.6 (stale, 2026-11-20) ±1.2, +1.4)');
         expect(withToday).toContain('hrvOvernightAvg: 62 ms (7d 63 · 28d 65.4 ±4.8, delta: unavailable)');
         expect(withToday).toContain('respirationAvg: 14 breaths/min (7d 12.1 · 28d 12 ±0.3, delta: unavailable)');
-        expect(withToday).toContain('biometric_baselines: shown in Today above; missing: sleepScore28dAvg (missing)');
+        expect(withToday).toContain('biometric_baselines: shown in Today above; missing: sleepScore28dAvg, sleepScore_delta28d (missing)');
         expect(withToday).toContain('subjective_baselines: shown in Today above (recordedDays: 7d 6, 28d 27)');
         expect(withToday).toContain('not_yet_supported: d_minus_1_step_normalization, rolling_performed_training_load');
-        expect(withToday).not.toContain('sleepScore_delta28d');
+        expect(withToday).not.toContain('restingHr_delta28d');
         expect(withToday).not.toContain('readiness_delta28d');
         expect(withToday).not.toContain('value (not_applicable)');
 
@@ -260,9 +260,43 @@ describe('morning export deduplication and shortening', () => {
         expect(withoutToday).toContain('respiration: 7d 12.1 · 28d 12 (mad 0.3) breaths/min');
         expect(withoutToday).toContain('readiness: 7d 7.3 · 28d 7.5 (var 1) 1-10');
         expect(withoutToday).toContain('recordedDays: 7d 6, 28d 27');
-        expect(withoutToday).toContain('sleepScore_delta28d: -12.7 score');
+        expect(withoutToday).toContain('restingHr_delta28d: 1.4 bpm');
         expect(withoutToday).toContain('readiness_delta28d: -1.5 score_1_10');
-        expect(withoutToday).toContain('missing: value (unavailable); sleepScore28dAvg (missing)');
+        expect(withoutToday).toContain('missing: value (unavailable); sleepScore28dAvg, sleepScore_delta28d (missing)');
+    });
+
+    it('keeps unprinted *_delta28d missingness in Derived while suppressing deltas printed inline under Today', () => {
+        const ledger = buildLedgerExport(fullInput({ purpose: 'morning' }));
+        const bio = ledger.derived.find(m => m.id === 'biometric_baselines')!;
+        bio.metrics = {
+            ...bio.metrics!,
+            restingHr7dAvg: num(47, 'bpm', 'daily_recovery_snapshots'),
+            restingHr28dAvg: num(46, 'bpm', 'daily_recovery_snapshots'),
+            restingHr28dStdev: num(1.5, 'bpm', 'daily_recovery_snapshots'),
+            restingHr_delta28d: num(2, 'bpm', 'daily_recovery_snapshots'),
+        };
+        const subj = ledger.derived.find(m => m.id === 'subjective_baselines')!;
+        subj.metrics = {
+            ...subj.metrics!,
+            readiness_recentAvg: num(7.2, '1-10', 'daily_subjective_checkins'),
+            readiness_longAvg: num(7.5, '1-10', 'daily_subjective_checkins'),
+            readiness_variability: num(1, '1-10', 'daily_subjective_checkins'),
+            readiness_delta28d: num(-0.5, 'score_1_10', 'daily_subjective_checkins'),
+            // soreness is null (not_recorded) on Today in fullInput; sleepQuality has a missing 28d baseline.
+            soreness_delta28d: miss('daily_subjective_checkins', 'not_recorded'),
+        };
+        const out = renderLedgerExportCompact(ledger);
+        const derivedBlock = out.slice(out.indexOf('## Derived'), out.indexOf('## User context'));
+        expect(out).toContain('readiness: 7 score_1_10 (7d 7.2 · 28d 7.5 ±1, −0.5)');
+        expect(out).toContain('restingHr: 48 bpm (7d 47 · 28d 46 ±1.5, +2)');
+        expect(out).toContain('sleepQuality: 6 score_1_10 (28d baseline: missing)');
+        expect(out).toContain('sleepScore: 81 (28d baseline: missing)');
+        expect(out).toContain('soreness: not_recorded');
+        expect(derivedBlock).not.toContain('readiness_delta28d');
+        expect(derivedBlock).not.toContain('restingHr_delta28d');
+        expect(derivedBlock).toContain('sleepScore_delta28d');
+        expect(derivedBlock).toContain('sleepQuality_delta28d');
+        expect(derivedBlock).toContain('soreness_delta28d (not_recorded)');
     });
 
     it('groups standard schedule_window availability by date while keeping non-standard windows in full', () => {
@@ -442,6 +476,64 @@ describe('morning export deduplication and shortening', () => {
         expect(planningOut).toContain('#### old-a@1 (2026-08-26)');
         expect(planningOut).toContain('Old block.');
         expect(planningOut).not.toContain('older revisions');
+    });
+
+    it('reports rotated-out existing planRevisions as out of scope now and only deleted ones as removed', () => {
+        const day1 = buildLedgerExport(fullInput({ purpose: 'morning' }));
+        const rev1 = structuredClone(day1.coachingHistory.planRevisions.items[0]);
+        rev1.id = 'a@1';
+        rev1.observedOn = '2026-11-19';
+        rev1.fields.planId = { value: 'a', source: 'adaptive', state: 'measured' };
+        rev1.fields.revision = { value: 1, source: 'adaptive', state: 'measured' };
+        rev1.fields.importedAt = { value: '2026-11-19T08:00:00Z', source: 'adaptive', state: 'measured' };
+        rev1.fields.authorRationale = { value: 'Old a@1 rationale.', source: 'adaptive', state: 'measured' };
+        day1.coachingHistory.planRevisions.items.push(rev1);
+        const day1Cp = mergeCheckpoint(undefined, userContextCheckpoint(day1), '2026-11-19');
+
+        const day2 = structuredClone(day1);
+        const rev2 = structuredClone(rev1);
+        rev2.id = 'a@2';
+        rev2.observedOn = '2026-11-20';
+        rev2.fields.revision = { value: 2, source: 'adaptive', state: 'measured' };
+        rev2.fields.importedAt = { value: '2026-11-20T08:00:00Z', source: 'adaptive', state: 'measured' };
+        rev2.fields.authorRationale = { value: 'New a@2 rationale.', source: 'adaptive', state: 'measured' };
+        day2.coachingHistory.planRevisions.items.push(rev2);
+
+        const outOfScopeOut = renderLedgerExportCompact(day2, { previousContext: day1Cp });
+        const outOfScopeHistory = outOfScopeOut.slice(outOfScopeOut.indexOf('## Coaching history'));
+        expect(outOfScopeHistory).toContain('out of scope now: planRevisions/a@1');
+        expect(outOfScopeHistory).not.toContain('removed:');
+
+        const day2Cp = mergeCheckpoint(day1Cp, userContextCheckpoint(day2), '2026-11-20');
+        expect(day2Cp.itemHashes['planRevisions/a@1']).toBeUndefined();
+
+        const day3 = structuredClone(day2);
+        const refPlacement = structuredClone(day3.coachingHistory.placements.items[0]);
+        refPlacement.id = 'a@1:s1';
+        refPlacement.fields.planId = { value: 'a', source: 'adaptive', state: 'measured' };
+        refPlacement.fields.revision = { value: 1, source: 'adaptive', state: 'measured' };
+        day3.coachingHistory.placements.items.push(refPlacement);
+        const day3History = renderLedgerExportCompact(day3, { previousContext: day2Cp })
+            .slice(renderLedgerExportCompact(day3, { previousContext: day2Cp }).indexOf('## Coaching history'));
+        expect(day3History).toContain('#### a@1 (2026-11-19)');
+        expect(day3History).toContain('authorRationale: Old a@1 rationale.');
+        expect(day3History).not.toContain('out of scope now:');
+
+        const deleted = structuredClone(day2);
+        deleted.coachingHistory.planRevisions.items = deleted.coachingHistory.planRevisions.items.filter(row => row.id !== 'a@1');
+        const deletedHistory = renderLedgerExportCompact(deleted, { previousContext: day1Cp })
+            .slice(renderLedgerExportCompact(deleted, { previousContext: day1Cp }).indexOf('## Coaching history'));
+        expect(deletedHistory).toContain('removed: planRevisions/a@1');
+        expect(deletedHistory).not.toContain('out of scope now:');
+
+        // Escapes markdown punctuation in out-of-scope revision keys.
+        const hostileDay1 = structuredClone(day1);
+        hostileDay1.coachingHistory.planRevisions.items[1].id = 'a|[bad]@1';
+        const hostileCp = mergeCheckpoint(undefined, userContextCheckpoint(hostileDay1), '2026-11-19');
+        const hostileDay2 = structuredClone(hostileDay1);
+        hostileDay2.coachingHistory.planRevisions.items.push(rev2);
+        const hostileOut = renderLedgerExportCompact(hostileDay2, { previousContext: hostileCp });
+        expect(hostileOut).toContain('out of scope now: planRevisions/a&#124;&#91;bad&#93;@1');
     });
 
     it('keeps the previousContext checkpoint test helper clean', () => {

@@ -12,7 +12,7 @@
 
 **Spec:** `docs/plans/2026-11-14-ledger-export-ai-content.md`, Phase 2. The spec is on PR #1257 (branch `docs/ledger-export-ai-content`) and is not on `main` until that PR merges.
 
-**Status:** Implemented on branch `feat/ledger-export-morning-update` (Tasks 1-6). Not yet merged; the `docs/plans/README.md` row is added by #1258, so it is deliberately not edited here.
+**Status:** Implemented (Tasks 1-6), merged in #1260 on 2026-11-15.
 
 ## Global Constraints
 

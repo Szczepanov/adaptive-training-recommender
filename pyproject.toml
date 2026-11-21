@@ -41,11 +41,13 @@ branch = true
 
 [tool.ruff]
 line-length = 100
+# Keep py313 so ruff format does not emit Python 3.14-only PEP 758 `except A, B:` syntax
+# in scripts/ and modules parsed by older system Python or pre-commit hook environments.
 target-version = "py313"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B"]
-ignore = ["E501", "RUF001", "RUF002", "RUF003"]
+ignore = ["E501"]
 
 [tool.mypy]
 python_version = "3.14"

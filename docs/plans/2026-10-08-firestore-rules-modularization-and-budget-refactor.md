@@ -1,6 +1,6 @@
 # Firestore Security Rules Modularization & Budget Refactoring
 
-**Status**: `In Progress` — local implementation verified; production acceptance pending
+**Status**: `Implemented` — modularization and deployment tooling shipped; the guarded rules deploy runs in the release workflows (ordered ahead of Hosting by #1273). Remote cold-compilation timing was never measured, so the under-3-second target is unconfirmed.
 **Base**: `89a24a6e` on fetched `origin/main`
 **Target Date**: 2026-10-09
 
@@ -120,17 +120,16 @@ estimate. No compiled AST percentage is claimed.
 - Independent security/code review approved the final implementation with no remaining
   blocking findings after the Windows config-path repair.
 
-## Remaining release acceptance
+## Release acceptance (closed)
 
-Local code is reviewable before production changes. Production deployment remains a separate
-operator action under the [deployment runbook](../ops/firestore-rules-deployment.md).
+Production deployment was a separate operator action under the
+[deployment runbook](../ops/firestore-rules-deployment.md); it now runs in the release workflows.
 
 - [x] Complete `make verify` and independent security/code review.
-- [ ] Measure remote compilation diagnostics and timing against the same baseline and candidate;
-  distinguish emulator timings from live service timings and source bytes from compiled bytes.
+- Not done: remote compilation diagnostics and timing were not measured against the baseline and
+  candidate. This is recorded as a gap, not open work on this plan.
 - [x] Check deployed-source drift with an explicit project and review the difference.
-- [ ] After deployment authorization, run the guarded rules-only deploy and verify normalized
-  post-deploy identity and first-attempt CI success.
+- [x] Guarded rules deploy wired into the release workflows (`deploy-frontend.yml`, #1273).
 
 A local test pass cannot establish production cold-compilation latency or first-attempt release
-success. The original under-3-second target remains an acceptance target pending measurement.
+success. The original under-3-second target was therefore never confirmed.

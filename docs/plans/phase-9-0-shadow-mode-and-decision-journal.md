@@ -1,6 +1,6 @@
 # Phase 9.0: Shadow mode and the decision journal
 
-* **Status:** In progress. 9.0.1-9.0.6 are complete; 9.0.7 (run the block) is startable now. The historical 2026-08-22 target date passed without a recorded completed block.
+* **Status:** Superseded by ADR-0052 D-EVAL. 9.0.1-9.0.6 were completed; 9.0.7 (run the block) and 9.0.8 were never run and are not to be started — D-EVAL's pre-registered block replaces them. The historical 2026-08-22 target date passed without a recorded completed block.
 * **Blocked by:** nothing. 9.0.1's unattended-ingestion precondition closed 2026-08-27.
 * **Unlocks:** a decision on whether to retire the manual AI daily loop, and a real subjective corpus for [Phase 9](./phase-9-subjective-baselines.md) 9.5.
 * **Source analysis:** [2026-08-16 manual loop vs app adjudication](../analysis/2026-08-16-manual-loop-vs-app-adjudication.md)
@@ -283,4 +283,4 @@ Then choose one:
 | 9.0.7 | Run the block | `[ ]` | — |
 | 9.0.8 | Readout and decision | `[ ]` | 9.0.7 |
 
-All preconditions through 9.0.6 are complete. 9.0.7 is startable now; block day 1 is 2026-08-22 (see 9.0.1 evidence note above).
+All preconditions through 9.0.6 were completed. 9.0.7 and 9.0.8 were superseded by ADR-0052 D-EVAL before the block ran.

@@ -93,7 +93,11 @@ describe('formatResult', () => {
 describe('parseAllowlist', () => {
   it('accepts the committed allowlist', () => {
     const raw = JSON.parse(readFileSync(resolve(import.meta.dirname, '..', 'audit-allowlist.json'), 'utf8'));
-    expect(parseAllowlist(raw).map(entry => entry.id)).toEqual([PICO]);
+    expect(parseAllowlist(raw)).toEqual([]);
+  });
+
+  it('accepts valid exception entries', () => {
+    expect(parseAllowlist({ exceptions: allowlist })).toEqual(allowlist);
   });
 
   it.each([

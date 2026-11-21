@@ -129,6 +129,17 @@ export function morningKeptRevisionIds(ledger: LedgerExport): ReadonlySet<string
     return kept;
 }
 
+/** Keys (`planRevisions/<id>`) present in the ledger but omitted from `morning` exports. */
+export function morningOmittedRevisionKeys(ledger: LedgerExport): ReadonlySet<string> {
+    if (ledger.purpose !== 'morning') return new Set();
+    const kept = morningKeptRevisionIds(ledger);
+    return new Set(
+        ledger.coachingHistory.planRevisions.items
+            .filter(row => !kept.has(row.id))
+            .map(row => `planRevisions/${row.id}`),
+    );
+}
+
 /** `<collection>/<id>` for collection items, `<name>` for single records and `trainingDislikes`. */
 export function userContextItemHashes(ledger: LedgerExport): Record<string, string> {
     const hashes: Record<string, string> = {};

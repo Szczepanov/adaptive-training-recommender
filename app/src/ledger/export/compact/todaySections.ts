@@ -22,6 +22,8 @@ export interface TodaySections {
     baselinedCollections: ReadonlySet<'recovery' | 'checkins'>;
     /** Individual field names that had a non-null Today value with inline baseline info. */
     baselinedFields: ReadonlySet<string>;
+    /** Delta keys (`*_delta28d`) whose inline delta text was rendered under Today. */
+    renderedDeltas: ReadonlySet<string>;
 }
 
 /** `<id> <active|inactive|unknown> (<state>; definition v; session s; evaluated t)`, notes as in Flags. */
@@ -50,7 +52,7 @@ const placementDate = (ledger: LedgerExport, date: string) => ledger.coachingHis
 function todayRecords(
     ledger: LedgerExport, label: string, collection: { state: LedgerState; source: string; items: LedgerRecord[] },
     derivedId: string, triplets: Readonly<Record<string, BaselineTripletKeys>>, consumed: Set<string>,
-    baselinedFields: Set<string>,
+    baselinedFields: Set<string>, renderedDeltas: Set<string>,
 ): string[] {
     const rows = collection.items.filter(row => row.observedOn === ledger.asOfDate);
     if (!rows.length) return [absentRecordLine(label, ledger.asOfDate, collection.state)];
@@ -63,7 +65,7 @@ function todayRecords(
     }
     const group = dominantSource(collection.items.flatMap(row => Object.entries(row.fields)));
     return [`${label} (${groupLabel(collection.source, group)}):`,
-        ...rows.flatMap(row => baselinedRecordLines(ledger, row, derivedId, triplets, group))];
+        ...rows.flatMap(row => baselinedRecordLines(ledger, row, derivedId, triplets, group, renderedDeltas))];
 }
 
 const codeUnitCompare = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
@@ -88,6 +90,7 @@ export function renderTodaySections(ledger: LedgerExport): TodaySections {
     const consumed = new Set<string>();
     const baselinedCollections = new Set<'recovery' | 'checkins'>();
     const baselinedFields = new Set<string>();
+    const renderedDeltas = new Set<string>();
     if (ledger.facts.checkins.items.some(row => row.observedOn === ledger.asOfDate)) baselinedCollections.add('checkins');
     if (ledger.facts.recovery.items.some(row => row.observedOn === ledger.asOfDate)) baselinedCollections.add('recovery');
     const group = placementGroup(ledger);
@@ -95,8 +98,8 @@ export function renderTodaySections(ledger: LedgerExport): TodaySections {
     todays.forEach(row => consumed.add(row.id));
     const lines = [
         `## Today (${text(ledger.asOfDate)})`,
-        ...todayRecords(ledger, 'check-in', ledger.facts.checkins, 'subjective_baselines', CHECKIN_BASELINE_TRIPLETS, consumed, baselinedFields),
-        ...todayRecords(ledger, 'recovery', ledger.facts.recovery, 'biometric_baselines', RECOVERY_BASELINE_TRIPLETS, consumed, baselinedFields),
+        ...todayRecords(ledger, 'check-in', ledger.facts.checkins, 'subjective_baselines', CHECKIN_BASELINE_TRIPLETS, consumed, baselinedFields, renderedDeltas),
+        ...todayRecords(ledger, 'recovery', ledger.facts.recovery, 'biometric_baselines', RECOVERY_BASELINE_TRIPLETS, consumed, baselinedFields, renderedDeltas),
         flagsLine(ledger.flags, ledger.asOfDate),
         ...(todays.length ? [group.label, ...todays.flatMap(row => placementBlock(row, group.source))]
             : [`placements: none dated ${text(ledger.asOfDate)}`]),
@@ -104,5 +107,5 @@ export function renderTodaySections(ledger: LedgerExport): TodaySections {
         ...yesterdaySection(ledger, consumed),
         ...upcomingSection(ledger, consumed),
     ];
-    return { lines, consumedIds: consumed, baselinedCollections, baselinedFields };
+    return { lines, consumedIds: consumed, baselinedCollections, baselinedFields, renderedDeltas };
 }

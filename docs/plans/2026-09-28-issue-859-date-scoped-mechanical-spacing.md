@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | `In review` — implementation is complete on PR #887; merge remains the delivery gate |
+| **Status** | `Implemented` — PR #887 merged |
 | **Source** | [issue #859](https://github.com/Szczepanov/adaptive-training-recommender/issues/859) |
 | **Analysis** | [2026-09-28 issue #859 date-scoped mechanical-spacing analysis](../analysis/2026-09-28-issue-859-date-scoped-mechanical-spacing-analysis.md) |
 | **Blocked by** | Nothing. #804 and #805 are merged; PR #855 explicitly left this as the independent follow-up. |
