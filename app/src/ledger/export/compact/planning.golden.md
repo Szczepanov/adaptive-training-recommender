@@ -54,10 +54,7 @@ missing: statusHistory (not_yet_supported)
 flag_evaluations: unavailable
 
 ## Flags
-illness_anomaly: unknown (unavailable) 2026-11-07…2026-11-19 (definition v1)
-illness_risk_symptom: unknown (unavailable) 2026-11-07…2026-11-19 (definition v1)
-injury_constraint_touches_session: unknown (unavailable) 2026-11-07…2026-11-19 (definition v1)
-recovery_beyond_baseline: unknown (unavailable) 2026-11-07…2026-11-19 (definition v1)
+illness_anomaly, illness_risk_symptom, injury_constraint_touches_session, recovery_beyond_baseline: unknown (unavailable) 2026-11-07…2026-11-19 (definition v1)
 
 ## Facts
 ### recovery (daily_recovery_snapshots; garmin)
@@ -176,23 +173,9 @@ placing: 4
 missing: fieldSize, elapsedSeconds, distanceM, summary (not_recorded)
 
 ## Derived
-### biometric_baselines
-definition: Rolling biometric baselines (ADR-0024)
-window: 7d,28d
-missing: sleepScore7dAvg, sleepScore28dAvg, sleepScore28dStdev, restingHr7dAvg, restingHr28dAvg, restingHr28dStdev, hrv7dAvg, hrv28dAvg, hrv28dStdev, respiration7dAvg, respiration28dAvg, respiration28dMad (missing)
-### subjective_baselines (daily_subjective_checkins)
-definition: Subjective baseline averages and variability
-window: 7d,28d
-recordedDays: 7d 0, 28d 0
-missing: readiness_recentAvg, readiness_longAvg, readiness_variability, sleepQuality_recentAvg, sleepQuality_longAvg, sleepQuality_variability, fatigue_recentAvg, fatigue_longAvg, fatigue_variability, soreness_recentAvg, soreness_longAvg, soreness_variability, mentalStress_recentAvg, mentalStress_longAvg, mentalStress_variability, motivation_recentAvg, motivation_longAvg, motivation_variability (missing)
-### d_minus_1_step_normalization
-definition: D-1 step normalization (I3, ADR-0003)
-window: 7d,28d
-missing: value (not_yet_supported)
-### rolling_performed_training_load
-definition: Rolling performed-training load and exposure ledgers (#813)
-window: 7d,28d
-missing: value (not_yet_supported)
+biometric_baselines: shown in Today above; missing: sleepScore7dAvg, sleepScore28dAvg, sleepScore28dStdev, restingHr7dAvg, restingHr28dAvg, restingHr28dStdev, hrv7dAvg, hrv28dAvg, hrv28dStdev, respiration7dAvg, respiration28dAvg, respiration28dMad (missing)
+subjective_baselines: shown in Today above (recordedDays: 7d 0, 28d 0); missing: readiness_recentAvg, readiness_longAvg, readiness_variability, sleepQuality_recentAvg, sleepQuality_longAvg, sleepQuality_variability, fatigue_recentAvg, fatigue_longAvg, fatigue_variability, soreness_recentAvg, soreness_longAvg, soreness_variability, mentalStress_recentAvg, mentalStress_longAvg, mentalStress_variability, motivation_recentAvg, motivation_longAvg, motivation_variability (missing)
+not_yet_supported: d_minus_1_step_normalization, rolling_performed_training_load
 
 ## User context
 note: since, revisions are not_yet_supported (ledger) unless noted
@@ -205,21 +188,14 @@ note: patellar tendon
 missing: restrictedModalities, since (not_recorded); resolvedAt (not_applicable)
 
 ### equipment (athlete)
-free_weights: true
-cable_machine: false
-treadmill: false
-indoor_bike: true
-pullup_bar: false
+yes: free_weights, indoor_bike · no: cable_machine, treadmill, pullup_bar
 missing: outdoor_bike, swim_access (missing)
 ### environment (athlete)
 defaultEnvironment: either
 weekdayMaxMinutes: 60 min
 missing: weekendMaxMinutes (not_recorded)
 ### guardrails (athlete)
-avoid_high_impact: false
-avoid_heavy_lower_body: false
-avoid_overhead_pressing: true
-avoid_heavy_spinal_loading: false
+active: avoid_overhead_pressing (others false)
 ### travel (plan_blocks; athlete)
 #### block-1 (2026-11-25)
 startDate: 2026-11-25
@@ -250,20 +226,12 @@ preferredRecoveryStyle: mixed
 defaultWeekdayTimeMin: 60
 defaultWeekendTimeMin: 90
 preferredTimeOfDay: morning
-preferredModalities: Cycling
-deprioritizedModalities: none
-avoidedModalities: none
+modalities: preferred: Cycling (none deprioritized/avoided)
 missing: unavailableModalities (missing)
 ### goals (goals; athlete)
-#### goal-1 (2027-04-18)
-title: Spring gran fondo
-domain: endurance
-status: active
-priority: 4
-targetDate: 2027-04-18
-eventCategory: race
+goal-1 (2027-04-18): Spring gran fondo [P4, race, endurance]
 timing: {"earliestDate":"2027-04-18","latestDate":"2027-04-18","planningDate":"2027-04-18"}
-missing: description, performanceTarget, targetMetric, targetValue, targetUnit, targetOutcome, eventLifecycle (not_recorded)
+goals missing: description, performanceTarget, targetMetric, targetValue, targetUnit, targetOutcome, eventLifecycle (not_recorded)
 
 ### events (goals+intent_blocks; athlete)
 1 goal event shown in goals above
@@ -274,12 +242,7 @@ endDate: 2026-12-14
 missing: lifecycle (not_applicable)
 
 ### constraints (constraints; athlete)
-#### no_barbell
-label: No barbell
-value: true
-severity: soft
-isActive: true
-category: equipment
+no_barbell: true [soft, equipment] — No barbell
 missing: description (not_recorded)
 
 missing: trainingDislikes (not_yet_supported)

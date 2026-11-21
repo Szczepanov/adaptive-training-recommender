@@ -1,7 +1,11 @@
-import { SUBJECTIVE_BASELINE_METRICS } from '../../../derived/baselines/subjectiveBaseline.ts';
 import { CHECKIN_BASELINE_KEYS, deltaKeyOf, RECOVERY_BASELINE_KEYS } from '../baselineDeltas.ts';
 import { text } from '../markdownText.ts';
 import type { DerivedMetric, LedgerValue } from '../schema.ts';
+import {
+    type BaselineTripletKeys,
+    CHECKIN_BASELINE_TRIPLETS,
+    RECOVERY_BASELINE_TRIPLETS,
+} from './baselineLines.ts';
 import {
     entryLines,
     fieldProvenance,
@@ -11,38 +15,40 @@ import {
     type FieldEntry,
 } from './compactLines.ts';
 
-interface BaselineTripletSpec {
+interface DerivedTripletSpec extends BaselineTripletKeys {
     label: string;
-    avg7d: string;
-    avg28d: string;
-    disp: string;
-    dispTag: string;
+    todayField: string;
 }
 
-const BIOMETRIC_TRIPLETS: readonly BaselineTripletSpec[] = [
-    { label: 'sleepScore', avg7d: 'sleepScore7dAvg', avg28d: 'sleepScore28dAvg', disp: 'sleepScore28dStdev', dispTag: 'sd' },
-    { label: 'restingHr', avg7d: 'restingHr7dAvg', avg28d: 'restingHr28dAvg', disp: 'restingHr28dStdev', dispTag: 'sd' },
-    { label: 'hrv', avg7d: 'hrv7dAvg', avg28d: 'hrv28dAvg', disp: 'hrv28dStdev', dispTag: 'sd' },
-    { label: 'respiration', avg7d: 'respiration7dAvg', avg28d: 'respiration28dAvg', disp: 'respiration28dMad', dispTag: 'mad' },
-];
+const BIOMETRIC_DISPLAY_LABELS: Readonly<Record<string, string>> = {
+    sleepScore: 'sleepScore',
+    restingHr: 'restingHr',
+    hrvOvernightAvg: 'hrv',
+    respirationAvg: 'respiration',
+};
 
-const SUBJECTIVE_TRIPLETS: readonly BaselineTripletSpec[] = SUBJECTIVE_BASELINE_METRICS.map(metric => ({
-    label: metric,
-    avg7d: `${metric}_recentAvg`,
-    avg28d: `${metric}_longAvg`,
-    disp: `${metric}_variability`,
-    dispTag: 'var',
+const BIOMETRIC_TRIPLETS: readonly DerivedTripletSpec[] = Object.entries(RECOVERY_BASELINE_TRIPLETS).map(([todayField, spec]) => ({
+    todayField,
+    label: BIOMETRIC_DISPLAY_LABELS[todayField] ?? todayField,
+    ...spec,
+}));
+
+const SUBJECTIVE_TRIPLETS: readonly DerivedTripletSpec[] = Object.entries(CHECKIN_BASELINE_TRIPLETS).map(([todayField, spec]) => ({
+    todayField,
+    label: todayField,
+    ...spec,
 }));
 
 const RECOVERY_DELTAS: ReadonlySet<string> = new Set(Object.keys(RECOVERY_BASELINE_KEYS).map(deltaKeyOf));
 const CHECKIN_DELTAS: ReadonlySet<string> = new Set(Object.keys(CHECKIN_BASELINE_KEYS).map(deltaKeyOf));
+const NO_FIELDS: ReadonlySet<string> = new Set();
 
 function isPresent<T>(value: LedgerValue<T> | undefined): value is LedgerValue<T> & { value: NonNullable<T> } {
     return value !== undefined && value.value !== null && value.value !== undefined;
 }
 
 function formatTriplet(
-    spec: BaselineTripletSpec,
+    spec: DerivedTripletSpec,
     metrics: Readonly<Record<string, LedgerValue<number>>>,
     group: string | undefined,
 ): string | null {
@@ -63,7 +69,7 @@ function formatTriplet(
     return `${text(spec.label)}: ${body}${unit}`;
 }
 
-function formatRecordedDays(
+function recordedDaysParts(
     metrics: Readonly<Record<string, LedgerValue<number>>>,
     group: string | undefined,
 ): string | null {
@@ -73,18 +79,23 @@ function formatRecordedDays(
         isPresent(recent) ? `7d ${formatValue(recent.value)}${fieldProvenance(recent, group)}` : '',
         isPresent(long) ? `28d ${formatValue(long.value)}${fieldProvenance(long, group)}` : '',
     ].filter(Boolean);
-    return parts.length ? `recordedDays: ${parts.join(', ')}` : null;
+    return parts.length ? parts.join(', ') : null;
 }
 
-/** Compact presentation for one derived metric, deduplicating 28d deltas already shown under Today. */
+/** Compact presentation for one derived metric, deduplicating baselines & deltas already shown under Today. */
 export function derivedMetricLines(
     metric: DerivedMetric,
     baselinedCollections: ReadonlySet<'recovery' | 'checkins'>,
+    baselinedFields: ReadonlySet<string> = NO_FIELDS,
 ): string[] {
     const group = metric.value.source;
     const omitContainerValue = metric.metrics !== undefined && !isPresent(metric.value) && metric.value.state === 'not_applicable';
-    const dedupedDeltas = metric.id === 'biometric_baselines' && baselinedCollections.has('recovery') ? RECOVERY_DELTAS
-        : metric.id === 'subjective_baselines' && baselinedCollections.has('checkins') ? CHECKIN_DELTAS
+    const collectionKey = metric.id === 'biometric_baselines' ? 'recovery'
+        : metric.id === 'subjective_baselines' ? 'checkins'
+            : null;
+    const todayRenderedCollection = collectionKey !== null && baselinedCollections.has(collectionKey);
+    const dedupedDeltas = collectionKey === 'recovery' && todayRenderedCollection ? RECOVERY_DELTAS
+        : collectionKey === 'checkins' && todayRenderedCollection ? CHECKIN_DELTAS
             : null;
     const metricEntries = Object.entries(metric.metrics ?? {}).filter(([key]) => !dedupedDeltas?.has(key));
     const filteredMetrics = Object.fromEntries(metricEntries);
@@ -101,14 +112,20 @@ export function derivedMetricLines(
             const keys = [spec.avg7d, spec.avg28d, spec.disp].filter(key => key in filteredMetrics);
             if (!keys.length) continue;
             keys.forEach(key => consumedKeys.add(key));
-            const line = formatTriplet(spec, filteredMetrics, group);
-            if (line) groupedLines.push(line);
+            const allTripletLeavesMissing = keys.every(key => !isPresent(filteredMetrics[key]));
+            const coveredByToday = todayRenderedCollection && (baselinedFields.has(spec.todayField) || allTripletLeavesMissing);
+            if (!coveredByToday) {
+                const line = formatTriplet(spec, filteredMetrics, group);
+                if (line) groupedLines.push(line);
+            }
         }
         if (metric.id === 'subjective_baselines' && ('recentRecordedDays' in filteredMetrics || 'longRecordedDays' in filteredMetrics)) {
             if ('recentRecordedDays' in filteredMetrics) consumedKeys.add('recentRecordedDays');
             if ('longRecordedDays' in filteredMetrics) consumedKeys.add('longRecordedDays');
-            const daysLine = formatRecordedDays(filteredMetrics, group);
-            if (daysLine) groupedLines.push(daysLine);
+            if (!todayRenderedCollection || groupedLines.length > 0) {
+                const parts = recordedDaysParts(filteredMetrics, group);
+                if (parts) groupedLines.push(`recordedDays: ${parts}`);
+            }
         }
     }
 
@@ -116,8 +133,16 @@ export function derivedMetricLines(
         .filter(([key, value]) => !consumedKeys.has(key) && isPresent(value))
         .flatMap(([name, value]) => entryLines([[name, value]], group));
     const missing = missingLine(allEntries, group);
-    const hasPresentValue = allEntries.some(([, value]) => isPresent(value));
 
+    if (metric.metrics && todayRenderedCollection && (omitContainerValue || isPresent(metric.value))
+        && groupedLines.length === 0 && extraPresent.length === 0) {
+        const days = metric.id === 'subjective_baselines' ? recordedDaysParts(filteredMetrics, group) : null;
+        const daysSuffix = days ? ` (recordedDays: ${days})` : '';
+        const missingSuffix = missing ? `; ${missing}` : '';
+        return [`${text(metric.id)}: shown in Today above${daysSuffix}${missingSuffix}`];
+    }
+
+    const hasPresentValue = allEntries.some(([, value]) => isPresent(value));
     return [
         `### ${text(metric.id)}${hasPresentValue ? ` (${groupLabel(undefined, group)})` : ''}`,
         `definition: ${text(metric.definition)}`,

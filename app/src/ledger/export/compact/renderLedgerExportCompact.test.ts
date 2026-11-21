@@ -75,9 +75,8 @@ describe('renderLedgerExportCompact', () => {
             flag('recovery_beyond_baseline', '2026-11-20'),
         ];
         const out = renderLedgerExportCompact(ledger);
-        expect(out).toContain('illness_anomaly: inactive 2026-11-18\n');
+        expect(out).toContain('illness_anomaly, recovery_beyond_baseline: inactive 2026-11-18\n');
         expect(out).not.toContain('2026-11-18…2026-11-20');
-        expect(out).toContain('recovery_beyond_baseline: inactive 2026-11-18\n');
         expect(out).toContain('#### recovery_beyond_baseline (2026-11-19)');
     });
 
@@ -233,22 +232,29 @@ describe('morning export deduplication and shortening', () => {
         };
 
         const withToday = renderLedgerExportCompact(ledger);
-        expect(withToday).toContain('sleepScore: 7d 86.9 (sd 8.5) score');
-        expect(withToday).toContain('restingHr: 7d 43.4 · 28d 42.6 (stale, 2026-11-20) (sd 1.2) bpm');
-        expect(withToday).toContain('hrv: 7d 63 · 28d 65.4 (sd 4.8) ms');
-        expect(withToday).toContain('respiration: 7d 12.1 · 28d 12 (mad 0.3) breaths/min');
-        expect(withToday).toContain('missing: sleepScore28dAvg (missing)');
-        expect(withToday).toContain('readiness: 7d 7.3 · 28d 7.5 (var 1) 1-10');
-        expect(withToday).toContain('recordedDays: 7d 6, 28d 27');
+        expect(withToday).toContain('readiness: 7 score_1_10 (7d 7.3 · 28d 7.5 ±1, −1.5)');
+        expect(withToday).toContain('sleepScore: 81 (7d 86.9 ±8.5, 28d baseline: missing)');
+        expect(withToday).toContain('restingHr: 48 bpm (7d 43.4 · 28d 42.6 (stale) ±1.2, +1.4)');
+        expect(withToday).toContain('hrvOvernightAvg: 62 ms (7d 63 · 28d 65.4 ±4.8, delta: unavailable)');
+        expect(withToday).toContain('respirationAvg: 14 breaths/min (7d 12.1 · 28d 12 ±0.3, delta: unavailable)');
+        expect(withToday).toContain('biometric_baselines: shown in Today above; missing: sleepScore28dAvg (missing)');
+        expect(withToday).toContain('subjective_baselines: shown in Today above (recordedDays: 7d 6, 28d 27)');
+        expect(withToday).toContain('not_yet_supported: d_minus_1_step_normalization, rolling_performed_training_load');
         expect(withToday).not.toContain('sleepScore_delta28d');
         expect(withToday).not.toContain('readiness_delta28d');
         expect(withToday).not.toContain('value (not_applicable)');
 
-        // Removing Today's recovery and check-in rows retains *_delta28d in Derived, and value (unavailable) stays visible.
+        // Removing Today's recovery and check-in rows keeps full Derived triplets and *_delta28d, and value (unavailable) stays visible.
         ledger.facts.recovery.items = ledger.facts.recovery.items.filter(r => r.observedOn !== ledger.asOfDate);
         ledger.facts.checkins.items = ledger.facts.checkins.items.filter(c => c.observedOn !== ledger.asOfDate);
         bio.value = { value: null, source: 'daily_recovery_snapshots', state: 'unavailable' };
         const withoutToday = renderLedgerExportCompact(ledger);
+        expect(withoutToday).toContain('sleepScore: 7d 86.9 (sd 8.5) score');
+        expect(withoutToday).toContain('restingHr: 7d 43.4 · 28d 42.6 (stale, 2026-11-20) (sd 1.2) bpm');
+        expect(withoutToday).toContain('hrv: 7d 63 · 28d 65.4 (sd 4.8) ms');
+        expect(withoutToday).toContain('respiration: 7d 12.1 · 28d 12 (mad 0.3) breaths/min');
+        expect(withoutToday).toContain('readiness: 7d 7.3 · 28d 7.5 (var 1) 1-10');
+        expect(withoutToday).toContain('recordedDays: 7d 6, 28d 27');
         expect(withoutToday).toContain('sleepScore_delta28d: -12.7 score');
         expect(withoutToday).toContain('readiness_delta28d: -1.5 score_1_10');
         expect(withoutToday).toContain('missing: value (unavailable); sleepScore28dAvg (missing)');
@@ -402,5 +408,115 @@ describe('morning export deduplication and shortening', () => {
         const ledger = buildLedgerExport(fullInput({ purpose: 'morning' }));
         const prev = mergeCheckpoint(undefined, userContextCheckpoint(ledger), '2026-11-19');
         expect(renderLedgerExportCompact(ledger, { previousContext: prev })).not.toContain('note: since, revisions');
+    });
+
+    it('keeps a baseline triplet in Derived when that specific Today field is missing/not_recorded', () => {
+        const ledger = buildLedgerExport(fullInput({ purpose: 'morning' }));
+        // Fixture Today check-in has soreness = null (not_recorded); ensure non-missing soreness baseline still renders in Derived.
+        const subj = ledger.derived.find(m => m.id === 'subjective_baselines')!;
+        subj.metrics = {
+            ...subj.metrics!,
+            soreness_recentAvg: num(3, '1-10', 'daily_subjective_checkins'),
+            soreness_longAvg: num(2.44, '1-10', 'daily_subjective_checkins'),
+            soreness_variability: num(1, '1-10', 'daily_subjective_checkins'),
+        };
+        const out = renderLedgerExportCompact(ledger);
+        expect(out).toContain('### subjective_baselines (daily_subjective_checkins)');
+        expect(out).toContain('soreness: 7d 3 · 28d 2.4 (var 1) 1-10');
+        expect(out).not.toContain('subjective_baselines: shown in Today above');
+    });
+
+    it('compacts recovery_beyond_baseline triggers and groups identical inactive flags', () => {
+        const ledger = buildLedgerExport(fullInput({ purpose: 'morning' }));
+        ledger.flags = [
+            flag('illness_anomaly', '2026-11-19', { active: null, state: 'not_recorded', definitionVersion: 'illness_anomaly-v1' }),
+            flag('illness_risk_symptom', '2026-11-19', { active: null, state: 'not_recorded', definitionVersion: 'illness_risk_symptom-v1' }),
+            flag('recovery_beyond_baseline', '2026-11-20', {
+                active: true,
+                definitionVersion: 'recovery_beyond_baseline-v1',
+                threshold: 'band check',
+                inputs: [
+                    { name: 'hrv', value: { value: 55, unit: 'ms', source: 'daily_recovery_snapshot', state: 'measured' } },
+                    { name: 'rhr', value: { value: 44, unit: 'bpm', source: 'daily_recovery_snapshot', state: 'measured' } },
+                    { name: 'sleep', value: { value: 74, unit: 'pts', source: 'daily_recovery_snapshot', state: 'measured' } },
+                    { name: 'hrv_delta7d', value: { value: -8, unit: 'ms', source: 'daily_recovery_snapshots', state: 'measured' } },
+                    { name: 'hrv_band', value: { value: 4.8, unit: 'ms', source: 'daily_recovery_snapshots', state: 'measured' } },
+                    { name: 'rhr_delta7d', value: { value: 0.6, unit: 'bpm', source: 'daily_recovery_snapshots', state: 'measured' } },
+                    { name: 'rhr_band', value: { value: 1.5, unit: 'bpm', source: 'daily_recovery_snapshots', state: 'measured' } },
+                    { name: 'sleep_delta7d', value: { value: -12.9, unit: 'pts', source: 'daily_recovery_snapshots', state: 'measured' } },
+                    { name: 'sleep_band', value: { value: 8.5, unit: 'pts', source: 'daily_recovery_snapshots', state: 'measured' } },
+                    { name: 'source_revision', value: { value: 'dde8183ef145aff4eb9299c4febf6df5e73985b9597308902fd11168e9e40a61', source: 'flag_capture', state: 'measured' } },
+                ],
+            }),
+        ];
+        const out = renderLedgerExportCompact(ledger);
+        expect(out).toContain('illness_anomaly, illness_risk_symptom: unknown (not_recorded) 2026-11-19 (definition v1)');
+        expect(out).toContain('triggers: hrv 55 ms (7d −8 vs band 4.8) · rhr 44 bpm (7d +0.6 vs band 1.5) · sleep 74 pts (7d −12.9 vs band 8.5)');
+        expect(out).toContain('source_revision: dde8183ef145… (source flag_capture)');
+    });
+
+    it('groups empty measured collections per section while keeping non-measured ones separate', () => {
+        const ledger = buildLedgerExport(fullInput({
+            purpose: 'morning',
+            records: {
+                ...fullInput().records,
+                performedOccurrences: [],
+                sessionResponses: [],
+                planBlocks: [],
+                fixedActivities: [],
+                scheduleWindows: [],
+                placements: [],
+                plannedToPerformed: [],
+                choiceOverrides: [],
+            },
+        }));
+        ledger.userContext.injuries.items = [];
+        ledger.userContext.injuries.state = 'unavailable';
+        const out = renderLedgerExportCompact(ledger);
+        expect(out).toContain('no rows (measured): performedTraining, sessionResponses, assessments, bodyComposition, events');
+        expect(out).toContain('injuries: unavailable, no rows (training_settings)');
+        expect(out).toContain('no rows (measured): travel, venueRestrictions, availability');
+        expect(out).toContain('no rows (measured): placements, overrides, plannedToPerformed');
+    });
+
+    it('compacts equipment, guardrails, preferences, constraints, and goals (sharing or separating missingness)', () => {
+        const ledger = buildLedgerExport(fullInput({
+            purpose: 'morning',
+            records: {
+                ...fullInput().records,
+                trainingSettings: {
+                    ...fullInput().records.trainingSettings!,
+                    guardrails: {
+                        avoid_high_impact: false,
+                        avoid_heavy_lower_body: false,
+                        avoid_overhead_pressing: false,
+                        avoid_heavy_spinal_loading: false,
+                    },
+                },
+                goals: [
+                    { id: 'g1', title: 'Race A', domain: 'endurance', status: 'active', priority: 2, targetDate: '2027-05-09', eventCategory: 'cycling_event', eventLifecycle: 'scheduled' },
+                    { id: 'g2', title: 'Race B', domain: 'endurance', status: 'active', priority: 4, targetDate: '2027-06-20', eventCategory: 'cycling_event', eventLifecycle: 'scheduled' },
+                ],
+                constraints: [
+                    { ...fullInput().records.constraints![0], key: 'c1', label: 'No Barbell', value: true, severity: 'soft', category: 'equipment', description: 'No Barbell' },
+                    { ...fullInput().records.constraints![0], key: 'c2', label: 'Free Weights', value: false, severity: 'hard', category: 'equipment', description: 'Access to dumbbells' },
+                ],
+            },
+        }));
+        const out = renderLedgerExportCompact(ledger);
+        expect(out).toContain('### equipment (athlete)\nyes: free_weights, indoor_bike · no: cable_machine, treadmill, pullup_bar');
+        expect(out).toContain('### guardrails (athlete)\nnone active');
+        expect(out).toContain('modalities: preferred: Cycling (none deprioritized/avoided)');
+        expect(out).toContain('c1: true [soft, equipment] — No Barbell\n');
+        expect(out).toContain('c2: false [hard, equipment] — Free Weights; Access to dumbbells\n');
+        expect(out).toContain('g1 (2027-05-09): Race A [P2, cycling_event, scheduled, endurance]');
+        expect(out).toContain('g2 (2027-06-20): Race B [P4, cycling_event, scheduled, endurance]');
+        expect(out).toContain('goals missing: description, performanceTarget, targetMetric, targetValue, targetUnit, targetOutcome, timing (not_recorded)');
+
+        // Differing goal missingness switches from shared `goals missing:` to per-goal `missing:`.
+        ledger.userContext.goals.items[1].fields.description = { value: 'National champs', source: 'athlete', state: 'measured' };
+        const diffGoalsOut = renderLedgerExportCompact(ledger);
+        expect(diffGoalsOut).not.toContain('goals missing:');
+        expect(diffGoalsOut).toContain('description: National champs');
     });
 });

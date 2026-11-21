@@ -1,10 +1,18 @@
 import { text } from '../markdownText.ts';
 import type {
-    ActivityCollection, ContextRecord, LedgerCollection, LedgerExport, LedgerRecord,
+    ActivityCollection, ContextRecord, DerivedMetric, LedgerCollection, LedgerExport, LedgerRecord,
     LedgerValue, SourceState,
 } from '../schema.ts';
 import { PLACEMENT_FORWARD_DAYS } from '../window.ts';
-import { collapsedLine, dominantSource, entryLines, type FieldEntry, groupLabel, missingLine } from './compactLines.ts';
+import {
+    collapsedLine,
+    dominantSource,
+    entryLines,
+    type FieldEntry,
+    formatValue,
+    groupLabel,
+    missingLine,
+} from './compactLines.ts';
 import { derivedMetricLines } from './derivedLines.ts';
 import { flagsSection } from './flagLines.ts';
 import {
@@ -35,6 +43,7 @@ export function purposeAlwaysRendersFullContext(purpose: LedgerExport['purpose']
 export type SkipIds = ReadonlySet<string>;
 const NO_SKIP: SkipIds = new Set();
 const NO_BASELINED: ReadonlySet<'recovery' | 'checkins'> = new Set();
+const NO_FIELDS: ReadonlySet<string> = new Set();
 
 interface RecordRenderOptions {
     stripUnsupportedMeta?: boolean;
@@ -93,6 +102,14 @@ function isActivityCollection<T extends LedgerRecord>(rows: LedgerCollection<T>)
     return 'truncated' in rows && 'totalInWindow' in rows;
 }
 
+function isEmptyMeasuredCollection(rows: LedgerCollection<LedgerRecord>): boolean {
+    return rows.items.length === 0
+        && rows.state === 'measured'
+        && rows.droppedUndated === 0
+        && (rows.droppedOutOfWindow ?? 0) === 0
+        && !(isActivityCollection(rows) && rows.truncated);
+}
+
 function renderCollection<T extends LedgerRecord>(
     name: string,
     rows: LedgerCollection<T>,
@@ -142,18 +159,93 @@ function sourceSection(sources: SourceState[]): string[] {
 }
 
 export function factsSection(ledger: LedgerExport, skipIds: SkipIds = NO_SKIP): string[] {
-    return ['## Facts', ...Object.entries(ledger.facts).flatMap(([name, rows]) => collectionLines(name, rows, skipIds))];
+    const emptyMeasured: string[] = [];
+    const lines: string[] = [];
+    for (const [name, rows] of Object.entries(ledger.facts)) {
+        if (isEmptyMeasuredCollection(rows)) emptyMeasured.push(name);
+        else lines.push(...collectionLines(name, rows, skipIds));
+    }
+    if (emptyMeasured.length) lines.push(`no rows (measured): ${emptyMeasured.map(text).join(', ')}`, '');
+    return ['## Facts', ...lines];
+}
+
+function isNotYetSupportedDerived(metric: DerivedMetric): boolean {
+    return metric.metrics === undefined
+        && (metric.value.value === null || metric.value.value === undefined)
+        && metric.value.state === 'not_yet_supported'
+        && metric.inputs.length === 0;
 }
 
 export function derivedSection(
     ledger: LedgerExport,
     baselinedCollections: ReadonlySet<'recovery' | 'checkins'> = NO_BASELINED,
+    baselinedFields: ReadonlySet<string> = NO_FIELDS,
 ): string[] {
-    return [
-        '## Derived',
-        ...(ledger.derived.length ? ledger.derived.flatMap(metric => derivedMetricLines(metric, baselinedCollections)) : ['derived: none']),
-        '',
-    ];
+    if (!ledger.derived.length) return ['## Derived', 'derived: none', ''];
+    const unsupported = ledger.derived.filter(isNotYetSupportedDerived);
+    const rendered = ledger.derived
+        .filter(metric => !isNotYetSupportedDerived(metric))
+        .flatMap(metric => derivedMetricLines(metric, baselinedCollections, baselinedFields));
+    if (unsupported.length) rendered.push(`not_yet_supported: ${unsupported.map(metric => text(metric.id)).join(', ')}`);
+    return ['## Derived', ...rendered, ''];
+}
+
+const MODALITY_FIELDS: readonly (readonly [string, string])[] = [
+    ['preferredModalities', 'preferred'],
+    ['deprioritizedModalities', 'deprioritized'],
+    ['avoidedModalities', 'avoided'],
+    ['unavailableModalities', 'unavailable'],
+];
+const MODALITY_LABELS = new Map(MODALITY_FIELDS);
+
+function isStringArray(value: unknown): value is string[] {
+    return Array.isArray(value) && value.every(item => typeof item === 'string');
+}
+
+function booleanSingletonBody(name: 'equipment' | 'guardrails', entries: readonly FieldEntry[], group: string | undefined): string[] | null {
+    const present = entries.filter(([, value]) => value.value !== null && value.value !== undefined);
+    if (!present.length) return null;
+    const allMeasuredBooleans = present.every(([key, value]) =>
+        key !== 'since' && key !== 'revisions'
+        && value.state === 'measured' && value.source === group && typeof value.value === 'boolean');
+    if (!allMeasuredBooleans) return null;
+    const missing = missingLine(entries, group);
+    if (name === 'equipment') {
+        const yes = present.filter(([, v]) => v.value === true).map(([k]) => text(k));
+        const no = present.filter(([, v]) => v.value === false).map(([k]) => text(k));
+        const summary = [yes.length ? `yes: ${yes.join(', ')}` : '', no.length ? `no: ${no.join(', ')}` : ''].filter(Boolean).join(' · ');
+        return [summary, ...(missing ? [missing] : [])];
+    }
+    const active = present.filter(([, v]) => v.value === true).map(([k]) => text(k));
+    const inactiveCount = present.length - active.length;
+    const line = active.length === 0
+        ? 'none active'
+        : inactiveCount > 0 ? `active: ${active.join(', ')} (others false)` : `active: ${active.join(', ')}`;
+    return [line, ...(missing ? [missing] : [])];
+}
+
+function preferencesBody(entries: readonly FieldEntry[], group: string | undefined): string[] | null {
+    const foldedKeys = new Set<string>();
+    const nonEmpty: string[] = [];
+    const emptyLabels: string[] = [];
+    for (const [key, value] of entries) {
+        const label = MODALITY_LABELS.get(key);
+        if (!label || value.state !== 'measured' || value.source !== group || !isStringArray(value.value)) continue;
+        foldedKeys.add(key);
+        if (value.value.length) nonEmpty.push(`${label}: ${value.value.map(item => text(item)).join(', ')}`);
+        else emptyLabels.push(label);
+    }
+    if (!foldedKeys.size) return null;
+    const restPresent = entries
+        .filter(([key, value]) => !foldedKeys.has(key) && value.value !== null && value.value !== undefined);
+    const presentLines = entryLines(restPresent, group);
+    const main = nonEmpty.join(' · ');
+    const noneNote = emptyLabels.length ? `none ${emptyLabels.join('/')}` : '';
+    const modalitiesLine = main && noneNote ? `modalities: ${main} (${noneNote})`
+        : main ? `modalities: ${main}`
+            : `modalities: ${noneNote}`;
+    const missing = missingLine(entries, group);
+    return [...presentLines, modalitiesLine, ...(missing ? [missing] : [])];
 }
 
 function singletonLines(name: string, row: ContextRecord, stripUnsupportedMeta: boolean): string[] {
@@ -162,7 +254,16 @@ function singletonLines(name: string, row: ContextRecord, stripUnsupportedMeta: 
     const collapsed = collapsedLine(name, entries, group);
     // The heading names the group source even when the record collapses (source per group).
     const heading = `### ${text(name)} (${groupLabel(undefined, group)})`;
-    return collapsed ? [heading, collapsed] : [heading, ...entryLines(entries, group)];
+    if (collapsed) return [heading, collapsed];
+    if (name === 'equipment' || name === 'guardrails') {
+        const compact = booleanSingletonBody(name, entries, group);
+        if (compact) return [heading, ...compact];
+    }
+    if (name === 'preferences') {
+        const compact = preferencesBody(entries, group);
+        if (compact) return [heading, ...compact];
+    }
+    return [heading, ...entryLines(entries, group)];
 }
 
 const codeUnitCompare = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
@@ -224,6 +325,91 @@ function availabilityLines(rows: LedgerCollection<ContextRecord>, skipIds: SkipI
                 compactLines.push(`schedule_window missing (${[...new Set(dates)].sort(codeUnitCompare).map(text).join(', ')}): ${summary}`);
             }
         }
+        return [...compactLines, ...rest.flatMap(row => recordLines(row, group, { stripUnsupportedMeta }))];
+    });
+}
+
+const CONSTRAINT_COMPACT_KEYS: ReadonlySet<string> = new Set(['label', 'value', 'severity', 'isActive', 'category', 'description']);
+
+function compactConstraintLines(row: ContextRecord, group: string | undefined, stripUnsupportedMeta: boolean): string[] | null {
+    const entries = recordEntries(row, stripUnsupportedMeta);
+    const { label, value, severity, isActive, category, description } = row.fields;
+    if (![label, value, severity, isActive, category].every(f => f?.state === 'measured' && f.source === group && f.value !== null && f.value !== undefined)) {
+        return null;
+    }
+    if (isActive.value !== true) return null;
+    if (description && description.value !== null && description.value !== undefined
+        && (description.state !== 'measured' || description.source !== group)) {
+        return null;
+    }
+    const hasUnexpectedPresent = entries.some(([key, val]) => !CONSTRAINT_COMPACT_KEYS.has(key) && val.value !== null && val.value !== undefined);
+    if (hasUnexpectedPresent) return null;
+    const descSuffix = description?.value !== null && description?.value !== undefined && description.value !== label.value
+        ? `; ${formatValue(description.value)}`
+        : '';
+    const line = `${text(row.id)}: ${formatValue(value.value)} [${text(severity.value)}, ${text(category.value)}] — ${formatValue(label.value)}${descSuffix}`;
+    const missing = missingLine(entries, group);
+    return missing ? [line, missing] : [line];
+}
+
+function constraintsLines(rows: LedgerCollection<ContextRecord>, skipIds: SkipIds, stripUnsupportedMeta: boolean): string[] {
+    return renderCollection('constraints', rows, skipIds, 'unchanged (listed above)', (items, group) =>
+        items.flatMap(row => compactConstraintLines(row, group, stripUnsupportedMeta) ?? recordLines(row, group, { stripUnsupportedMeta })));
+}
+
+interface CompactGoal {
+    lines: string[];
+    missing: string | null;
+}
+
+function asCompactGoal(row: ContextRecord, group: string | undefined, stripUnsupportedMeta: boolean): CompactGoal | null {
+    const { title, domain, status, priority, targetDate, eventCategory, eventLifecycle } = row.fields;
+    if (![title, domain, status, priority, targetDate].every(f => f?.state === 'measured' && f.source === group && f.value !== null && f.value !== undefined)) {
+        return null;
+    }
+    if (status.value !== 'active') return null;
+    if (row.observedOn !== null && row.observedOn !== targetDate.value) return null;
+
+    const ec = eventCategory?.state === 'measured' && eventCategory.source === group && eventCategory.value !== null && eventCategory.value !== undefined
+        ? formatValue(eventCategory.value) : '';
+    const el = eventLifecycle?.state === 'measured' && eventLifecycle.source === group && eventLifecycle.value !== null && eventLifecycle.value !== undefined
+        ? formatValue(eventLifecycle.value) : '';
+    const tags = [`P${formatValue(priority.value)}`, ec, el, formatValue(domain.value)].filter(Boolean).join(', ');
+    const head = `${text(row.id)} (${text(targetDate.value)}): ${formatValue(title.value)} [${tags}]`;
+
+    const consumed = new Set(['title', 'domain', 'status', 'priority', 'targetDate',
+        ...(ec ? ['eventCategory'] : []), ...(el ? ['eventLifecycle'] : [])]);
+    const entries = recordEntries(row, stripUnsupportedMeta);
+    const extraPresent = entries
+        .filter(([key, val]) => !consumed.has(key) && val.value !== null && val.value !== undefined)
+        .flatMap(([key, val]) => entryLines([[key, val]], group));
+    const missing = missingLine(entries, group);
+    return {
+        lines: [head, ...extraPresent],
+        missing: missing ? missing.slice('missing: '.length) : null,
+    };
+}
+
+function goalsLines(rows: LedgerCollection<ContextRecord>, skipIds: SkipIds, stripUnsupportedMeta: boolean): string[] {
+    return renderCollection('goals', rows, skipIds, 'unchanged (listed above)', (items, group) => {
+        const compact: CompactGoal[] = [];
+        const rest: ContextRecord[] = [];
+        for (const row of items) {
+            const goal = asCompactGoal(row, group, stripUnsupportedMeta);
+            if (goal) compact.push(goal);
+            else rest.push(row);
+        }
+
+        const missingSummaries = compact.map(goal => goal.missing).filter((m): m is string => m !== null);
+        const distinctMissing = new Set(missingSummaries);
+        const sharedMissing = distinctMissing.size === 1 && missingSummaries.length === compact.length
+            ? missingSummaries[0]
+            : null;
+
+        const compactLines = compact.flatMap(goal => (
+            sharedMissing === null && goal.missing ? [...goal.lines, `missing: ${goal.missing}`] : goal.lines
+        ));
+        if (sharedMissing) compactLines.push(`goals missing: ${sharedMissing}`);
         return [...compactLines, ...rest.flatMap(row => recordLines(row, group, { stripUnsupportedMeta }))];
     });
 }
@@ -308,21 +494,36 @@ export function userContextSection(ledger: LedgerExport, checkpoint?: PreviousCo
         return false;
     });
 
-    const body = Object.entries(ledger.userContext).flatMap(([name, context]): string[] => {
+    const emptyMeasured: string[] = [];
+    const lines: string[] = [];
+    let trailingDislikes: string[] = [];
+
+    for (const [name, context] of Object.entries(ledger.userContext)) {
         if ('items' in context) {
             const rows = context as LedgerCollection<ContextRecord>;
+            if (isEmptyMeasuredCollection(rows)) {
+                emptyMeasured.push(name);
+                continue;
+            }
             const skip = new Set(rows.items.filter(row => isUnchanged(`${name}/${row.id}`)).map(row => row.id));
-            if (name === 'availability') return availabilityLines(rows, skip, liftUnsupportedMeta);
-            if (name === 'events') return eventsLines(rows, skip, dedupedGoalEventIds, liftUnsupportedMeta);
-            return collectionLines(name, rows, skip, 'unchanged (listed above)', { stripUnsupportedMeta: liftUnsupportedMeta });
+            if (name === 'availability') lines.push(...availabilityLines(rows, skip, liftUnsupportedMeta));
+            else if (name === 'events') lines.push(...eventsLines(rows, skip, dedupedGoalEventIds, liftUnsupportedMeta));
+            else if (name === 'goals') lines.push(...goalsLines(rows, skip, liftUnsupportedMeta));
+            else if (name === 'constraints') lines.push(...constraintsLines(rows, skip, liftUnsupportedMeta));
+            else lines.push(...collectionLines(name, rows, skip, 'unchanged (listed above)', { stripUnsupportedMeta: liftUnsupportedMeta }));
+            continue;
         }
-        if (isUnchanged(name)) return [];
-        if ('fields' in context) return singletonLines(name, context, liftUnsupportedMeta);
-        return entryLines([[name, context as LedgerValue<unknown>]]);
-    });
+        if (isUnchanged(name)) continue;
+        if ('fields' in context) lines.push(...singletonLines(name, context, liftUnsupportedMeta));
+        else trailingDislikes = entryLines([[name, context as LedgerValue<unknown>]]);
+    }
+
+    if (emptyMeasured.length) lines.push(`no rows (measured): ${emptyMeasured.map(text).join(', ')}`, '');
+    lines.push(...trailingDislikes);
+
     const head = delta && previous ? unchangedLines(delta, previous) : [];
     const metaNote = liftUnsupportedMeta ? ['note: since, revisions are not_yet_supported (ledger) unless noted'] : [];
-    return ['## User context', ...head, ...metaNote, ...body, ''];
+    return ['## User context', ...head, ...metaNote, ...lines, ''];
 }
 
 function planRevisionsLines(ledger: LedgerExport, skipIds: SkipIds): string[] {
@@ -383,10 +584,15 @@ function planRevisionsLines(ledger: LedgerExport, skipIds: SkipIds): string[] {
 }
 
 export function coachingHistorySection(ledger: LedgerExport, skipIds: SkipIds = NO_SKIP): string[] {
-    const body = Object.entries(ledger.coachingHistory).flatMap(([name, rows]) => (
-        name === 'planRevisions' ? planRevisionsLines(ledger, skipIds) : collectionLines(name, rows, skipIds)
-    ));
-    return ['## Coaching history', ...body];
+    const emptyMeasured: string[] = [];
+    const lines: string[] = [];
+    for (const [name, rows] of Object.entries(ledger.coachingHistory)) {
+        if (isEmptyMeasuredCollection(rows)) emptyMeasured.push(name);
+        else if (name === 'planRevisions') lines.push(...planRevisionsLines(ledger, skipIds));
+        else lines.push(...collectionLines(name, rows, skipIds));
+    }
+    if (emptyMeasured.length) lines.push(`no rows (measured): ${emptyMeasured.map(text).join(', ')}`, '');
+    return ['## Coaching history', ...lines];
 }
 
 function header(ledger: LedgerExport): string[] {
@@ -412,7 +618,7 @@ export function renderLedgerExportCompact(ledger: LedgerExport, options?: Compac
         ...sourceSection(ledger.sources),
         ...flagsSection(ledger),
         ...factsSection(ledger, consumed),
-        ...derivedSection(ledger, today.baselinedCollections),
+        ...derivedSection(ledger, today.baselinedCollections, today.baselinedFields),
         ...userContextSection(ledger, purposeAlwaysRendersFullContext(ledger.purpose) ? undefined : options?.previousContext),
         ...coachingHistorySection(ledger, consumed),
     ];
