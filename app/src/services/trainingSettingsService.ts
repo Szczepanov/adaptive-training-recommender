@@ -92,7 +92,8 @@ export function mergeSettings(
             injury: NonNullable<TrainingSettings['injuries']>[number],
             old: NonNullable<TrainingSettings['injuries']>[number],
         ) => {
-            const id = old.id ?? injury.id;
+            // Backfill an id onto pre-#1261 rows on their first non-Undo write, so later edits keep one export id.
+            const id = old.id ?? injury.id ?? (update.injuryRestore ? undefined : createInjuryId());
             return {
                 ...stripMeta(injury),
                 ...(id !== undefined ? { id } : {}),

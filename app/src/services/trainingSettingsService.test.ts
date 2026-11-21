@@ -267,6 +267,36 @@ describe('stable injury ids (#1261)', () => {
         expect(customRestore.injuryHistory).toEqual([]);
     });
 
+    it('backfills a stable id onto id-less legacy injuries on the first write and keeps it through later edits and undo', () => {
+        let seq = 0;
+        const nextId = () => `injury-gen-${++seq}`;
+        const legacyKnee = { region: 'knee' as const, severity: 'limit' as const, createdAt: '2026-09-01' };
+        const legacyAnkle = { region: 'ankle' as const, severity: 'monitor' as const };
+        const initial = { ...createDefaultTrainingSettings('athlete'), injuries: [legacyKnee, legacyAnkle] };
+
+        const editUpdate: TrainingSettingsUpdate = {
+            injuries: [{ ...legacyKnee, severity: 'exclude' }, legacyAnkle],
+            injuryEditIndex: 0,
+        };
+        const edited = mergeSettings(initial, editUpdate, '2026-10-01', nextId);
+        expect(edited.injuries).toEqual([
+            { id: 'injury-gen-1', region: 'knee', severity: 'exclude', createdAt: '2026-09-01' },
+            { id: 'injury-gen-2', region: 'ankle', severity: 'monitor' },
+        ]);
+
+        // A second edit without the id in the draft keeps the backfilled id.
+        const editedAgain = mergeSettings(edited, {
+            injuries: [{ region: 'knee', severity: 'monitor' }, edited.injuries![1]],
+            injuryEditIndex: 0,
+        }, '2026-10-02', nextId);
+        expect(editedAgain.injuries?.map(i => i.id)).toEqual(['injury-gen-1', 'injury-gen-2']);
+
+        // Undo restores the previous field values without generating further ids.
+        const undone = mergeSettings(edited, buildRevertUpdate(initial, editUpdate)!, '2026-10-03', nextId);
+        expect(undone.injuries?.map(i => i.severity)).toEqual(['limit', 'monitor']);
+        expect(seq).toBe(2);
+    });
+
     it('claims explicit id matches before injuryEditIndex on out-of-order updates', () => {
         let seq = 0;
         const nextId = () => `injury-gen-${++seq}`;
