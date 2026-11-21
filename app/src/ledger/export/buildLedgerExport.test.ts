@@ -654,4 +654,27 @@ describe('buildLedgerExport stable injury ids (#1261)', () => {
         expect(resolvedAndDeleted.userContext.injuries.items.map(item => item.id))
             .toEqual(['injury-explicit-9', legacyAIds[0], legacyBId].sort());
     });
+
+    it('keeps identical legacy episodes on their ids when the active one is resolved or an old one leaves the window', () => {
+        const knee = { region: 'knee' as const, severity: 'limit' as const };
+        const idsOf = (injuries: typeof knee[], injuryHistory: Array<typeof knee & { resolvedAt: string }>, startDate?: string) => {
+            const out = buildLedgerExport(fullInput({
+                records: { trainingSettings: { ...settings, injuries, injuryHistory } },
+                ...(startDate ? { window: { startDate, endDate: fullInput().asOfDate } } : {}),
+            }));
+            return out.userContext.injuries.items.map(item => [item.id, item.fields.resolvedAt.value ?? null]);
+        };
+        const earlier = { ...knee, resolvedAt: '2026-11-10' };
+        const before = idsOf([knee], [earlier]);
+        const historyId = before.find(([, resolvedAt]) => resolvedAt === '2026-11-10')![0];
+        const activeId = before.find(([, resolvedAt]) => resolvedAt === null)![0];
+        expect(activeId).not.toBe(historyId);
+
+        // Resolving the active episode appends it after the older one; neither id moves.
+        const after = idsOf([], [earlier, { ...knee, resolvedAt: '2026-11-18' }]);
+        expect(after).toEqual(expect.arrayContaining([[historyId, '2026-11-10'], [activeId, '2026-11-18']]));
+
+        // The older episode leaving the export window does not hand its id to the active one.
+        expect(idsOf([knee], [earlier], '2026-11-15')).toEqual([[activeId, null]]);
+    });
 });

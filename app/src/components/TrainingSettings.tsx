@@ -64,6 +64,9 @@ export function TrainingSettings({ userId, onNavigate }: TrainingSettingsProps) 
   // Forces ProgressionReviewPanel to re-mount and reload its due-block list after the
   // editor saves a new/revised block, rather than the two components sharing state.
   const [progressionRefreshKey, setProgressionRefreshKey] = useState(0);
+  // A removal shifts row indices; while it saves, no other row may be opened for editing,
+  // or the post-save index adjustment would retarget a newer editor at the wrong injury.
+  const [injuryRemovalPending, setInjuryRemovalPending] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -145,6 +148,7 @@ export function TrainingSettings({ userId, onNavigate }: TrainingSettingsProps) 
   };
 
   const editInjury = (injury: InjuryConstraint, index: number) => {
+    if (injuryRemovalPending) return;
     setEditingInjuryIndex(index);
     setInjuryDraft({
       id: injury.id,
@@ -157,15 +161,20 @@ export function TrainingSettings({ userId, onNavigate }: TrainingSettingsProps) 
   };
 
   const removeInjury = async (index: number) => {
-    if (!settings) return;
+    if (!settings || injuryRemovalPending) return;
     const nextInjuries = (settings.injuries ?? []).filter((_, i) => i !== index);
-    if (await saveDestructive({ injuries: nextInjuries }, 'Injury constraint removed.')) {
-      if (editingInjuryIndex === index) {
-        setInjuryDraft(emptyInjuryDraft);
-        setEditingInjuryIndex(null);
-      } else if (editingInjuryIndex !== null && index < editingInjuryIndex) {
-        setEditingInjuryIndex(editingInjuryIndex - 1);
+    setInjuryRemovalPending(true);
+    try {
+      if (await saveDestructive({ injuries: nextInjuries }, 'Injury constraint removed.')) {
+        if (editingInjuryIndex === index) {
+          setInjuryDraft(emptyInjuryDraft);
+          setEditingInjuryIndex(null);
+        } else if (editingInjuryIndex !== null && index < editingInjuryIndex) {
+          setEditingInjuryIndex(editingInjuryIndex - 1);
+        }
       }
+    } finally {
+      setInjuryRemovalPending(false);
     }
   };
 
@@ -332,8 +341,8 @@ export function TrainingSettings({ userId, onNavigate }: TrainingSettingsProps) 
                   {inj.note && <span className="injury-card-note">Note: {inj.note}</span>}
                 </div>
                 <div className="injury-card-actions">
-                  <button type="button" className="btn-injury-action edit" onClick={() => editInjury(inj, index)}>Edit</button>
-                  <button type="button" className="btn-injury-action remove" onClick={() => void removeInjury(index)}>Remove</button>
+                  <button type="button" className="btn-injury-action edit" disabled={injuryRemovalPending} onClick={() => editInjury(inj, index)}>Edit</button>
+                  <button type="button" className="btn-injury-action remove" disabled={injuryRemovalPending} onClick={() => void removeInjury(index)}>Remove</button>
                 </div>
               </div>
             ))}

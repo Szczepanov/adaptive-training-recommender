@@ -483,7 +483,7 @@ describe('formatCompletedWorkoutMarkdown', () => {
         expect(md).toContain('under earlier choice: opt_id&#124;&#91;redacted&#93;');
         expect(md).toContain('\nref: pto-1\n');
 
-        // Response notes and techniqueNote are also redacted and escaped, while trailing ref stays unredacted.
+        // Response notes and techniqueNote are also redacted and escaped; the occurrence id appears only as the trailing ref.
         const withResponses = formatCompletedWorkoutMarkdown(
             { ...structuredView, performedOccurrenceId: 'pto-keep-me' },
             EXPORTED_AT,
@@ -493,8 +493,9 @@ describe('formatCompletedWorkoutMarkdown', () => {
         expect(withResponses).not.toContain('owner-uid-99');
         expect(withResponses).not.toContain('owner@example.com');
         expect(withResponses).toContain('technique: Cue&#92;u000a&#124; &#91;redacted&#93;');
-        expect(withResponses).toContain('note: Felt &#42;good&#42; &#91;redacted&#93; pto-keep-me');
+        expect(withResponses).toContain('note: Felt &#42;good&#42; &#91;redacted&#93; &#91;redacted&#93;');
         expect(withResponses.trimEnd().endsWith('ref: pto-keep-me')).toBe(true);
+        expect(withResponses.split('pto-keep-me')).toHaveLength(2);
 
         // Provider-only workout title (garmin.type) is redacted and escaped.
         const providerHostile: CompletedWorkoutView = {

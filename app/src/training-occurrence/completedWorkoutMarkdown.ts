@@ -308,6 +308,8 @@ export function formatCompletedWorkoutMarkdown(
     }
     if (view.garmin?.activityId) hidden.add(view.garmin.activityId);
     if (view.structured?.execution?.executionId) hidden.add(view.structured.execution.executionId);
+    // The occurrence id is kept only as the trailing `ref:` line (escaped, not redacted).
+    if (report.performedOccurrenceId) hidden.add(report.performedOccurrenceId);
     const safe = makeSafeText(hidden);
 
     const choices = choiceIndexOf(report);

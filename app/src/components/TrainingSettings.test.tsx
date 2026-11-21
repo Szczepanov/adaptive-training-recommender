@@ -186,4 +186,31 @@ describe('TrainingSettings injury id handling', () => {
       consoleError.mockRestore();
     }
   });
+
+  it('does not open another injury for editing while a removal is still saving', async () => {
+    const flush = () => new Promise<void>(resolve => setTimeout(resolve, 0));
+    let finishRemoval: (value: TrainingSettingsModel) => void = () => {};
+    mocks.updateTrainingSettings.mockReturnValueOnce(new Promise<TrainingSettingsModel>(resolve => { finishRemoval = resolve; }));
+
+    const tree = render();
+    tree.filter(el => el.type === 'button' && el.props.className === 'btn-injury-action edit')[1].props.onClick!();
+    render().filter(el => el.type === 'button' && el.props.className === 'btn-injury-action remove')[0].props.onClick!();
+
+    // While the removal is pending, Edit/Remove are disabled and Edit is a no-op.
+    const pendingTree = render();
+    const pendingEdit = pendingTree.filter(el => el.type === 'button' && el.props.className === 'btn-injury-action edit');
+    const pendingRemove = pendingTree.filter(el => el.type === 'button' && el.props.className === 'btn-injury-action remove');
+    expect(pendingEdit.every(button => (button.props as { disabled?: boolean }).disabled)).toBe(true);
+    expect(pendingRemove.every(button => (button.props as { disabled?: boolean }).disabled)).toBe(true);
+    pendingEdit[2].props.onClick!();
+    expect(mocks.slots[3]).toBe(1);
+    expect((mocks.slots[2] as { id?: string }).id).toBe('inj-2');
+
+    finishRemoval({ ...base, injuries: [base.injuries![1], base.injuries![2]] });
+    await flush();
+    expect(mocks.slots[3]).toBe(0);
+    expect((mocks.slots[2] as { id?: string }).id).toBe('inj-2');
+    const settledEdit = render().filter(el => el.type === 'button' && el.props.className === 'btn-injury-action edit');
+    expect(settledEdit.some(button => (button.props as { disabled?: boolean }).disabled)).toBe(false);
+  });
 });

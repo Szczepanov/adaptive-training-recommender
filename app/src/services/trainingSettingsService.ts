@@ -116,8 +116,16 @@ export function mergeSettings(
             const alreadyMatched = matched[index];
             if (alreadyMatched) return alreadyMatched;
             const byEditIndex = remaining.findIndex(item => item.index === update.injuryEditIndex && index === update.injuryEditIndex);
+            // An id-less incoming row (a legacy Undo snapshot) still matches a stored row whose id was
+            // backfilled after that snapshot was taken; mergeMatched then keeps the stored id.
+            const comparable = (stored: NonNullable<TrainingSettings['injuries']>[number]) => {
+                if (injury.id !== undefined) return stored;
+                const withoutId = { ...stored };
+                delete withoutId.id;
+                return withoutId;
+            };
             const selected = byEditIndex >= 0 ? byEditIndex
-                : remaining.findIndex(item => valuesEqual(item.injury, injury));
+                : remaining.findIndex(item => valuesEqual(comparable(item.injury), injury));
             if (selected >= 0) {
                 const [old] = remaining.splice(selected, 1);
                 return mergeMatched(injury, old.injury);

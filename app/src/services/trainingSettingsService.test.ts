@@ -291,10 +291,20 @@ describe('stable injury ids (#1261)', () => {
         }, '2026-10-02', nextId);
         expect(editedAgain.injuries?.map(i => i.id)).toEqual(['injury-gen-1', 'injury-gen-2']);
 
+        // Undoing an add keeps the id backfilled onto the id-less legacy row by that add.
+        const legacyOnly = { ...createDefaultTrainingSettings('athlete'), injuries: [legacyAnkle] };
+        const addUpdate: TrainingSettingsUpdate = { injuries: [legacyAnkle, { region: 'hip', severity: 'monitor' }] };
+        const added = mergeSettings(legacyOnly, addUpdate, '2026-10-01', nextId);
+        const backfilledId = added.injuries![0].id;
+        expect(backfilledId).toBeDefined();
+        const undoneAdd = mergeSettings(added, buildRevertUpdate(legacyOnly, addUpdate)!, '2026-10-02', nextId);
+        expect(undoneAdd.injuries).toEqual([{ ...legacyAnkle, id: backfilledId }]);
+
         // Undo restores the previous field values without generating further ids.
+        const idsBeforeUndo = seq;
         const undone = mergeSettings(edited, buildRevertUpdate(initial, editUpdate)!, '2026-10-03', nextId);
         expect(undone.injuries?.map(i => i.severity)).toEqual(['limit', 'monitor']);
-        expect(seq).toBe(2);
+        expect(seq).toBe(idsBeforeUndo);
     });
 
     it('claims explicit id matches before injuryEditIndex on out-of-order updates', () => {
