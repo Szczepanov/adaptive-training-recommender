@@ -3,8 +3,10 @@ import { collectionOf, type PreviousContext, type UserContextCheckpoint } from '
 
 export {
     CHECKPOINT_FORMAT_VERSION,
+    collectionOf,
     isCurrentFormat,
     mergeCheckpoint,
+    morningKeptRevisionIds,
     userContextCheckpoint,
     userContextItemHashes,
     type CollectionCheckpoint,
@@ -25,7 +27,7 @@ export interface ContextDelta {
     unchangedKeys: ReadonlySet<string>;
 }
 
-/** State per user-context name (a collection, a single record or `trainingDislikes`). */
+/** State per user-context name (a collection, a single record or `trainingDislikes`) plus `planRevisions`. */
 export function userContextStates(ledger: LedgerExport): Record<string, LedgerState> {
     const states: Record<string, LedgerState> = {};
     for (const [name, context] of Object.entries(ledger.userContext)) {
@@ -35,6 +37,7 @@ export function userContextStates(ledger: LedgerExport): Record<string, LedgerSt
             states[name] = fields.some(field => field.state === 'measured') || !fields.length ? 'measured' : fields[0].state;
         } else states[name] = (context as LedgerValue<string[]>).state;
     }
+    states.planRevisions = ledger.coachingHistory.planRevisions.state;
     return states;
 }
 
@@ -78,6 +81,17 @@ export function contextDelta(
         removed: of('removed'),
         unreadable: of('unreadable').map(key => ({ key, reason: reasonOf(key) })),
         outOfScope: of('outOfScope'),
+        unchangedKeys: new Set(unchanged),
+    };
+}
+
+export function filterDelta(delta: ContextDelta, predicate: (key: string) => boolean): ContextDelta {
+    const unchanged = delta.unchanged.filter(predicate);
+    return {
+        unchanged,
+        removed: delta.removed.filter(predicate),
+        unreadable: delta.unreadable.filter(({ key }) => predicate(key)),
+        outOfScope: delta.outOfScope.filter(predicate),
         unchangedKeys: new Set(unchanged),
     };
 }

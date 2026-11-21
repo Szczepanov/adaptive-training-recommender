@@ -1,7 +1,7 @@
 import { addDaysToLocalDateString } from '../../../utils/localDate.ts';
 import { text } from '../markdownText.ts';
 import type { LedgerExport, LedgerValue } from '../schema.ts';
-import { dominantSource, sourceTag } from './compactLines.ts';
+import { dominantSource, formatValue, sourceTag } from './compactLines.ts';
 
 const present = (value: LedgerValue<unknown>) => value.value !== null && value.value !== undefined;
 
@@ -39,8 +39,8 @@ function setsPart({ workSets, plannedSets, warmupSets }: Occurrence['fields']): 
         ...(present(plannedSets) ? [] : [`planned: ${absent(plannedSets)}`]),
         ...(present(warmupSets) ? [] : [`warm-up: ${absent(warmupSets)}`]),
     ];
-    const ratio = present(plannedSets) ? `${text(workSets.value)}/${text(plannedSets.value)}` : text(workSets.value);
-    const warmups = present(warmupSets) ? ` (+${text(warmupSets.value)} warm-up)` : '';
+    const ratio = present(plannedSets) ? `${formatValue(workSets.value)}/${formatValue(plannedSets.value)}` : formatValue(workSets.value);
+    const warmups = present(warmupSets) ? ` (+${formatValue(warmupSets.value)} warm-up)` : '';
     return `${ratio} work sets${warmups}${notes.length ? ` (${notes.join('; ')})` : ''}`;
 }
 
@@ -62,7 +62,7 @@ function rpePart(ledger: LedgerExport, linked: LedgerValue<unknown>, group: stri
     const values = ids.map(id => ledger.facts.sessionResponses.items.find(item => item.id === id)?.fields.sessionRpe)
         .filter((value): value is LedgerValue<unknown> => value !== undefined);
     const rpe = values.find(present);
-    if (rpe) return `sRPE ${text(rpe.value)}${rpeNotes(rpe, group)}`;
+    if (rpe) return `sRPE ${formatValue(rpe.value)}${rpeNotes(rpe, group)}`;
     const unread = values.find(value => value.state !== 'measured');
     return `sRPE: ${unread ? absent(unread) : 'not recorded'}`;
 }
@@ -71,7 +71,7 @@ function occurrenceLine(ledger: LedgerExport, row: Occurrence, consumed: Set<str
     const { modality, durationMin, executedDefinitions, workSets, linkedResponseIds } = row.fields;
     const parts = [
         present(modality) ? text(modality.value) : `modality: ${absent(modality)}`,
-        present(durationMin) ? `${text(durationMin.value)} min` : `durationMin: ${absent(durationMin)}`,
+        present(durationMin) ? `${formatValue(durationMin.value)} min` : `durationMin: ${absent(durationMin)}`,
         setsPart(row.fields),
         rpePart(ledger, linkedResponseIds, group),
         definitions(executedDefinitions) ?? `executedDefinition: ${absent(executedDefinitions)}`,
@@ -80,14 +80,40 @@ function occurrenceLine(ledger: LedgerExport, row: Occurrence, consumed: Set<str
     return [parts.join(' · '), ...(present(workSets) ? ['detail: copy the session report from History'] : [])];
 }
 
+function activitySummaryLine(row: LedgerExport['facts']['activities']['items'][number]): string {
+    const { type, durationMin, averageHr, maxHr, activityTrainingLoad, intensityTag, sessionCost } = row.fields;
+    const hr = present(averageHr) && present(maxHr)
+        ? `HR ${formatValue(averageHr.value)}/${formatValue(maxHr.value)} bpm`
+        : present(averageHr)
+            ? `HR ${formatValue(averageHr.value)} bpm`
+            : present(maxHr)
+                ? `maxHR ${formatValue(maxHr.value)} bpm`
+                : '';
+    const parts = [
+        present(type) ? text(type.value) : '',
+        present(durationMin) ? `${formatValue(durationMin.value)} min` : '',
+        hr,
+        present(activityTrainingLoad) ? `load ${formatValue(activityTrainingLoad.value)}` : '',
+        present(intensityTag) ? text(intensityTag.value) : '',
+        present(sessionCost) ? `cost ${text(sessionCost.value)}` : '',
+    ].filter(Boolean);
+    return parts.length
+        ? `activity (${text(row.id)}): ${parts.join(' · ')} (details in Facts)`
+        : `activity (${text(row.id)}): details in Facts`;
+}
+
 export function yesterdaySection(ledger: LedgerExport, consumed: Set<string>): string[] {
     const date = addDaysToLocalDateString(ledger.asOfDate, -1);
     const performed = ledger.facts.performedTraining;
     const rows = performed.items.filter(row => row.observedOn === date)
         .sort((a, b) => String(a.fields.startedAt.value ?? '').localeCompare(String(b.fields.startedAt.value ?? '')));
     const group = dominantSource(performed.items.flatMap(row => Object.entries(row.fields)));
+    const yesterdayActivities = rows.length ? [] : ledger.facts.activities.items.filter(row => row.observedOn === date);
     const body = rows.length
         ? rows.flatMap(row => occurrenceLine(ledger, row, consumed, group))
-        : [`performed: none recorded for ${text(date)} (${text(performed.state)})`];
+        : [
+            `performed: none recorded for ${text(date)} (${text(performed.state)})`,
+            ...yesterdayActivities.map(activitySummaryLine),
+        ];
     return [`## Yesterday (${text(date)})`, ...body, ''];
 }

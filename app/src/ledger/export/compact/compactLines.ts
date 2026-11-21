@@ -26,13 +26,39 @@ export function sourceTag(value: LedgerValue<unknown>, group: string | undefined
     return group !== undefined && value.source !== group ? ` (source ${text(value.source)})` : '';
 }
 
+/** Shorten floats while keeping integers exact and tiny non-zero values non-zero. */
+export function formatNumber(value: number): string {
+    if (!Number.isFinite(value) || Number.isInteger(value)) return Object.is(value, -0) ? '0' : String(value);
+    if (Math.abs(value) >= 0.1) {
+        const rounded = Math.round(value * 10) / 10;
+        return String(rounded === 0 ? 0 : rounded);
+    }
+    const rounded = Math.round(value * 100) / 100;
+    if (rounded !== 0) return String(rounded);
+    return String(Number(value.toPrecision(1)));
+}
+
+const LONG_HEX_HASH = /^(sha256:)?([0-9a-f]{40,})$/i;
+
+/** Compact formatting for numbers, long hex hashes, and string arrays, always Markdown-safe. */
+export function formatValue(value: unknown): string {
+    if (typeof value === 'number') return formatNumber(value);
+    if (typeof value === 'string') {
+        const match = LONG_HEX_HASH.exec(value);
+        if (match) return text(`${match[1] ?? ''}${match[2].slice(0, 12)}…`);
+    }
+    if (Array.isArray(value) && value.every(item => typeof item === 'string')) {
+        return value.length === 0 ? 'none' : value.map(item => text(item)).join(', ');
+    }
+    return text(value);
+}
+
 /**
- * `key: value unit` with the exceptions to the group default: the source when it differs from
- * `group`, the state when not measured, and the observed date of a stale value. Without a group the
- * source accompanies every non-measured state.
+ * Provenance suffix for a value: the source when it differs from `group`, the state when not
+ * measured, and the observed date of a stale value. Without a group the source accompanies every
+ * non-measured state.
  */
-export function fieldLine(name: string, value: LedgerValue<unknown>, group?: string): string {
-    const unit = value.unit ? ` ${text(value.unit)}` : '';
+export function fieldProvenance(value: LedgerValue<unknown>, group?: string): string {
     const notes = [
         group === undefined ? (value.state === 'measured' ? '' : text(value.source)) : (value.source === group ? '' : text(value.source)),
         value.state === 'measured' ? '' : text(value.state),
@@ -40,10 +66,24 @@ export function fieldLine(name: string, value: LedgerValue<unknown>, group?: str
     ].filter(Boolean);
     // A lone source exception reads `(source X)`; with a state alongside it is `(X, state)`.
     const lone = notes.length === 1 && value.state === 'measured';
-    const provenance = notes.length ? ` (${lone ? 'source ' : ''}${notes.join(', ')})` : '';
+    return notes.length ? ` (${lone ? 'source ' : ''}${notes.join(', ')})` : '';
+}
+
+/**
+ * `key: value unit` with the exceptions to the group default: the source when it differs from
+ * `group`, the state when not measured, and the observed date of a stale value. Without a group the
+ * source accompanies every non-measured state.
+ */
+export function fieldLine(name: string, value: LedgerValue<unknown>, group?: string): string {
+    const provenance = fieldProvenance(value, group);
+    if (name === 'sleepDurationSec' && !isMissing(value) && isFiniteNumber(value.value)
+        && (value.unit === 's' || value.unit === undefined)) {
+        return `sleepDuration: ${formatNumber(value.value / 3600)}h${provenance}`;
+    }
+    const unit = value.unit ? ` ${text(value.unit)}` : '';
     // I3 (ADR-0003): a snapshot's totalSteps is the previous completed day, not the record's date.
     const semantic = name === 'totalSteps' && !isMissing(value) ? ' (D-1)' : '';
-    return `${text(name)}: ${text(value.value)}${unit}${semantic}${provenance}`;
+    return `${text(name)}: ${formatValue(value.value)}${unit}${semantic}${provenance}`;
 }
 
 /** `state` (`, null` for a measured null) plus the field's source when it differs from `group`. */
@@ -78,9 +118,72 @@ export function collapsedLine(id: string, entries: readonly FieldEntry[], group?
     return `${text(id)}${dated}: missing ${entries.length} fields — ${missingGroups(entries, group)}`;
 }
 
+interface SegmentLike {
+    segmentIndex: unknown;
+    segmentType: unknown;
+    durationSeconds: unknown;
+    averagePowerWatts?: unknown;
+    averageHrBpm?: unknown;
+    maxHrBpm?: unknown;
+    evidenceConfidence: unknown;
+}
+
+const isFiniteNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
+
+function isSegmentRecord(item: unknown): item is SegmentLike {
+    return typeof item === 'object' && item !== null
+        && 'segmentIndex' in item
+        && 'segmentType' in item
+        && 'durationSeconds' in item
+        && 'evidenceConfidence' in item;
+}
+
+function formatSegmentLine(segment: SegmentLike, options: { omitType: boolean; omitConf: boolean }): string {
+    const index = isFiniteNumber(segment.segmentIndex) ? formatNumber(segment.segmentIndex) : text(segment.segmentIndex);
+    const kind = text(segment.segmentType);
+    const duration = isFiniteNumber(segment.durationSeconds)
+        ? `${formatNumber(segment.durationSeconds)}s`
+        : `${text(segment.durationSeconds)}s`;
+    const power = isFiniteNumber(segment.averagePowerWatts)
+        ? `${formatNumber(segment.averagePowerWatts)}W`
+        : '—W';
+    const hasAvgHr = isFiniteNumber(segment.averageHrBpm);
+    const hasMaxHr = isFiniteNumber(segment.maxHrBpm);
+    const hr = !hasAvgHr && !hasMaxHr
+        ? '—bpm'
+        : `${hasAvgHr ? formatNumber(segment.averageHrBpm as number) : '—'}/${hasMaxHr ? formatNumber(segment.maxHrBpm as number) : '—'}bpm`;
+    const confidence = text(segment.evidenceConfidence);
+    return [
+        `#${index}`,
+        ...(options.omitType ? [] : [kind]),
+        duration,
+        power,
+        hr,
+        ...(options.omitConf ? [] : [confidence]),
+    ].join(' ');
+}
+
+function fieldLines(name: string, value: LedgerValue<unknown>, group?: string): string[] {
+    if (name === 'segments' && Array.isArray(value.value) && value.value.length > 0 && value.value.every(isSegmentRecord)) {
+        const segments = value.value;
+        const types = segments.length > 1 ? new Set(segments.map(segment => text(segment.segmentType))) : null;
+        const confs = segments.length > 1 ? new Set(segments.map(segment => text(segment.evidenceConfidence))) : null;
+        const uniformType = types && types.size === 1 ? [...types][0] : null;
+        const uniformConf = confs && confs.size === 1 ? [...confs][0] : null;
+        const cols = ['#idx', ...(uniformType ? [] : ['type']), 'dur', 'power', 'hr/maxHr', ...(uniformConf ? [] : ['conf'])].join(' ');
+        const uniformNotes = [uniformType ? `type ${uniformType}` : '', uniformConf ? `conf ${uniformConf}` : ''].filter(Boolean).join(', ');
+        const provenance = fieldProvenance(value, group);
+        return [
+            `segments (${segments.length}${uniformNotes ? `; ${uniformNotes}` : ''}; ${cols})${provenance}:`,
+            ...segments.map(segment => formatSegmentLine(segment, { omitType: uniformType !== null, omitConf: uniformConf !== null })),
+        ];
+    }
+    return [fieldLine(name, value, group)];
+}
+
 /** Present fields first, then one `missing:` line; never prints 0 or false for an absent value. */
 export function entryLines(entries: readonly FieldEntry[], group?: string): string[] {
-    const lines = entries.filter(([, value]) => !isMissing(value)).map(([name, value]) => fieldLine(name, value, group));
+    const lines = entries.filter(([, value]) => !isMissing(value)).flatMap(([name, value]) => fieldLines(name, value, group));
     const missing = missingLine(entries, group);
     if (missing) lines.push(missing);
     return lines;

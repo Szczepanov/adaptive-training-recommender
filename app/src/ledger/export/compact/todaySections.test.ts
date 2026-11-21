@@ -5,18 +5,18 @@ import type { LedgerExport, LedgerFlag, LedgerValue } from '../schema.ts';
 import { renderLedgerExportCompact } from './renderLedgerExportCompact.ts';
 import { renderTodaySections } from './todaySections.ts';
 
-const num = (value: number): LedgerValue<number> => ({ value, source: 'adaptive', state: 'measured' });
+const num = (value: number, source = 'adaptive'): LedgerValue<number> => ({ value, source, state: 'measured' });
 
 function withBaselines(ledger: LedgerExport): LedgerExport {
     const subjective = ledger.derived.find(metric => metric.id === 'subjective_baselines');
     const biometric = ledger.derived.find(metric => metric.id === 'biometric_baselines');
     if (!subjective?.metrics || !biometric?.metrics) throw new Error('fixture lacks baseline metrics');
-    subjective.metrics.readiness_longAvg = num(7.2);
-    subjective.metrics.readiness_delta28d = num(-1.2);
-    biometric.metrics.sleepScore28dAvg = num(75);
-    biometric.metrics.sleepScore_delta28d = num(6);
-    biometric.metrics.hrv28dAvg = num(64);
-    biometric.metrics.hrvOvernightAvg_delta28d = num(-2);
+    subjective.metrics.readiness_longAvg = num(7.2, subjective.value.source);
+    subjective.metrics.readiness_delta28d = num(-1.2, subjective.value.source);
+    biometric.metrics.sleepScore28dAvg = num(75, biometric.value.source);
+    biometric.metrics.sleepScore_delta28d = num(6, biometric.value.source);
+    biometric.metrics.hrv28dAvg = num(64, biometric.value.source);
+    biometric.metrics.hrvOvernightAvg_delta28d = num(-2, biometric.value.source);
     return ledger;
 }
 
@@ -52,13 +52,21 @@ describe('renderTodaySections', () => {
         expect(lines.some(line => /^readiness: \d+ score_1_10 \(28d/.test(line))).toBe(true);
     });
 
-    it('labels a non-measured baseline with its state and prints the delta leaf state', () => {
+    it('labels a non-measured baseline with its state and preserves source and stale date exceptions', () => {
         const ledger = withBaselines(build());
-        const metrics = ledger.derived.find(metric => metric.id === 'subjective_baselines')!.metrics!;
-        metrics.readiness_longAvg = { value: 7.2, source: 'adaptive', state: 'stale' };
-        metrics.readiness_delta28d = { value: null, source: 'adaptive', state: 'stale' };
+        const subj = ledger.derived.find(metric => metric.id === 'subjective_baselines')!;
+        const metrics = subj.metrics!;
+        metrics.readiness_longAvg = { value: 7.2, source: subj.value.source, state: 'stale' };
+        metrics.readiness_delta28d = { value: null, source: subj.value.source, state: 'stale' };
         ledger.facts.checkins.items.find(row => row.observedOn === '2026-11-20')!.fields.readiness.value = 6;
         expect(renderTodaySections(ledger).lines).toContain('readiness: 6 score_1_10 (28d 7.2 (stale), delta: stale)');
+
+        metrics.readiness_recentAvg = { value: 6.5, source: 'manual', state: 'measured' };
+        metrics.readiness_longAvg = { value: 7.2, source: subj.value.source, state: 'stale', observedOn: '2026-11-18' };
+        metrics.readiness_variability = { value: 1.1, source: 'garmin', state: 'stale', observedOn: '2026-11-19' };
+        expect(renderTodaySections(ledger).lines).toContain(
+            'readiness: 6 score_1_10 (7d 6.5 (source manual) · 28d 7.2 (stale, 2026-11-18) ±1.1 (garmin, stale, 2026-11-19), delta: stale)',
+        );
     });
 
     it('reads the delta from the JSON leaf instead of computing it', () => {
@@ -236,8 +244,8 @@ describe('renderTodaySections', () => {
             todayFlag({ id: 'illness_anomaly', state: 'stale', definitionVersion: 'illness_anomaly-v2', evaluatedAt: '2026-11-20T06:00:00Z' }),
         ];
         expect(renderTodaySections(ledger).lines).toContain('flags: '
-            + 'injury_constraint_touches_session inactive (definition v1; session s-1; evaluated 2026-11-20T06:00:00Z); '
-            + 'injury_constraint_touches_session inactive (definition v1; session s-2; evaluated 2026-11-20T07:00:00Z); '
+            + 'injury_constraint_touches_session inactive (definition v1; session s-1; evaluated 06:00:00Z); '
+            + 'injury_constraint_touches_session inactive (definition v1; session s-2; evaluated 07:00:00Z); '
             + 'illness_anomaly inactive (stale; definition v2)');
     });
 
@@ -253,5 +261,23 @@ describe('renderTodaySections', () => {
         expect(yesterdayLine(linkedRpe(build(), { value: 6, source: 'athlete', state: 'stale' }))).toContain('· sRPE 6 (athlete, stale) ·');
         expect(yesterdayLine(linkedRpe(build(), { value: null, source: 'athlete', state: 'unavailable' }))).toContain('· sRPE: unavailable ·');
         expect(yesterdayLine(linkedRpe(build(), { value: null, source: 'athlete', state: 'measured' }))).toContain('· sRPE: not recorded ·');
+    });
+
+    it('surfaces yesterday provider activities when performedTraining has no row without consuming Facts', () => {
+        const withPerformed = build();
+        expect(renderTodaySections(withPerformed).lines.some(line => line.startsWith('activity ('))).toBe(false);
+
+        const ledger = build();
+        ledger.facts.performedTraining.items = [];
+        const result = renderTodaySections(ledger);
+        expect(result.lines).toContain('performed: none recorded for 2026-11-19 (measured)');
+        expect(result.lines).toContain('activity (act-001): cycling · 60 min · HR 140 bpm · load 80 · moderate · cost moderate (details in Facts)');
+        expect(result.consumedIds.has('act-001')).toBe(false);
+        expect(renderLedgerExportCompact(ledger)).toContain('#### act-001 (2026-11-19)');
+
+        ledger.facts.activities.items[0].fields.maxHr = { value: 165, unit: 'bpm', source: 'garmin', state: 'measured' };
+        expect(renderTodaySections(ledger).lines).toContain(
+            'activity (act-001): cycling · 60 min · HR 140/165 bpm · load 80 · moderate · cost moderate (details in Facts)',
+        );
     });
 });

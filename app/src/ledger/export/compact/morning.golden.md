@@ -24,7 +24,7 @@ sleepScore: 81 (28d baseline: missing)
 restingHr: 48 bpm (28d baseline: missing)
 hrvOvernightAvg: 62 ms (28d baseline: missing)
 respirationAvg: 14 breaths/min (28d baseline: missing)
-sleepDurationSec: 27000 s
+sleepDuration: 7.5h
 hrvStatus: BALANCED
 bodyBatteryWake: 70 score
 totalSteps: 0 steps (D-1)
@@ -53,24 +53,12 @@ missing: statusHistory (not_yet_supported)
 flag_evaluations: unavailable
 
 ## Flags
-illness_anomaly: unknown (unavailable) 2026-11-19 (definition v1)
-illness_risk_symptom: unknown (unavailable) 2026-11-19 (definition v1)
-injury_constraint_touches_session: unknown (unavailable) 2026-11-19 (definition v1)
-recovery_beyond_baseline: unknown (unavailable) 2026-11-19 (definition v1)
+illness_anomaly, illness_risk_symptom, injury_constraint_touches_session, recovery_beyond_baseline: unknown (unavailable) 2026-11-19 (definition v1)
 
 ## Facts
 ### recovery (daily_recovery_snapshots; garmin)
-#### recovery-2026-11-19 (2026-11-19)
-sleepScore: 81 score
-sleepDurationSec: 27000 s
-restingHr: 48 bpm
-hrvOvernightAvg: 62 ms
-hrvStatus: BALANCED
-respirationAvg: 14 breaths/min
-bodyBatteryWake: 70 score
-totalSteps: 0 steps (D-1)
-stressAvg: 25 score
-missing: weightKg, bodyFatPct (missing)
+2026-11-19: sleep 81 (7.5h), rhr 48 bpm, hrv 62 ms (BALANCED), resp 14, bb 70, steps 0 (D-1), stress 25
+recovery missing: weightKg, bodyFatPct (missing)
 
 ### checkins (daily_subjective_checkins; athlete)
 #### checkin-2026-11-19 (2026-11-19)
@@ -98,7 +86,7 @@ durationMin: 60 min
 plannedSets: 5 sets
 workSets: 4 sets
 warmupSets: 1 sets
-linkedResponseIds: &#91;"resp-1"&#93;
+linkedResponseIds: resp-1
 missing: executedDefinitions (unavailable); structuredEntries (not_yet_supported)
 
 ### sessionResponses (session_responses; athlete)
@@ -108,10 +96,6 @@ sourceSession: {"kind":"execution","id":"exec-1","date":"2026-11-19"}
 occurrenceId: occ-1
 sessionRpe: 6 rpe_0_10
 missing: completedFraction, unexpectedFatigue, techniqueNote, note (not_recorded)
-
-assessments: measured, no rows
-
-bodyComposition: measured, no rows
 
 ### nutrition (nutrition_days; garmin)
 #### nutrition-2026-11-19 (2026-11-19)
@@ -133,57 +117,37 @@ intensityTag: moderate
 sessionCost: moderate
 segmentCountTotal: 3
 segmentsTruncated: false
-segments: &#91;{"segmentIndex":0,"segmentType":"work","durationSeconds":60,"averagePowerWatts":250,"averageHrBpm":null,"maxHrBpm":null,"evidenceConfidence":"high"},{"segmentIndex":1,"segmentType":"work","durationSeconds":60,"averagePowerWatts":250,"averageHrBpm":null,"maxHrBpm":null,"evidenceConfidence":"high"},{"segmentIndex":2,"segmentType":"work","durationSeconds":60,"averagePowerWatts":250,"averageHrBpm":null,"maxHrBpm":null,"evidenceConfidence":"high"}&#93;
+segments (3; type work, conf high; #idx dur power hr/maxHr):
+#0 60s 250W —bpm
+#1 60s 250W —bpm
+#2 60s 250W —bpm
 missing: maxHr (missing)
 
-events: measured, no rows
+no rows (measured): assessments, bodyComposition, events
 
 ## Derived
-### biometric_baselines
-definition: Rolling biometric baselines (ADR-0024)
-window: 7d,28d
-missing: value (not_applicable); sleepScore7dAvg, sleepScore28dAvg, sleepScore28dStdev, restingHr7dAvg, restingHr28dAvg, restingHr28dStdev, hrv7dAvg, hrv28dAvg, hrv28dStdev, respiration7dAvg, respiration28dAvg, respiration28dMad, sleepScore_delta28d, restingHr_delta28d, hrvOvernightAvg_delta28d, respirationAvg_delta28d (missing)
-### subjective_baselines (daily_subjective_checkins)
-definition: Subjective baseline averages and variability
-window: 7d,28d
-recentRecordedDays: 0 days
-longRecordedDays: 0 days
-missing: value (not_applicable); readiness_recentAvg, readiness_longAvg, readiness_variability, sleepQuality_recentAvg, sleepQuality_longAvg, sleepQuality_variability, fatigue_recentAvg, fatigue_longAvg, fatigue_variability, soreness_recentAvg, soreness_longAvg, soreness_variability, mentalStress_recentAvg, mentalStress_longAvg, mentalStress_variability, motivation_recentAvg, motivation_longAvg, motivation_variability, readiness_delta28d, sleepQuality_delta28d, fatigue_delta28d, soreness_delta28d, mentalStress_delta28d, motivation_delta28d (missing)
-### d_minus_1_step_normalization
-definition: D-1 step normalization (I3, ADR-0003)
-window: 7d,28d
-missing: value (not_yet_supported)
-### rolling_performed_training_load
-definition: Rolling performed-training load and exposure ledgers (#813)
-window: 7d,28d
-missing: value (not_yet_supported)
+biometric_baselines: shown in Today above; missing: sleepScore7dAvg, sleepScore28dAvg, sleepScore28dStdev, restingHr7dAvg, restingHr28dAvg, restingHr28dStdev, hrv7dAvg, hrv28dAvg, hrv28dStdev, respiration7dAvg, respiration28dAvg, respiration28dMad (missing)
+subjective_baselines: shown in Today above (recordedDays: 7d 0, 28d 0); missing: readiness_recentAvg, readiness_longAvg, readiness_variability, sleepQuality_recentAvg, sleepQuality_longAvg, sleepQuality_variability, fatigue_recentAvg, fatigue_longAvg, fatigue_variability, soreness_recentAvg, soreness_longAvg, soreness_variability, mentalStress_recentAvg, mentalStress_longAvg, mentalStress_variability, motivation_recentAvg, motivation_longAvg, motivation_variability (missing)
+not_yet_supported: d_minus_1_step_normalization, rolling_performed_training_load
 
 ## User context
+note: since, revisions are not_yet_supported (ledger) unless noted
 ### injuries (training_settings; athlete)
 #### injury-001
 region: knee
 severity: limit
 reviewBy: 2026-12-01
 note: patellar tendon
-missing: restrictedModalities, since (not_recorded); resolvedAt (not_applicable); revisions (not_yet_supported, ledger)
+missing: restrictedModalities, since (not_recorded); resolvedAt (not_applicable)
 
 ### equipment (athlete)
-free_weights: true
-cable_machine: false
-treadmill: false
-indoor_bike: true
-pullup_bar: false
-missing: outdoor_bike, swim_access (missing); since, revisions (not_yet_supported, ledger)
+yes: free_weights, indoor_bike · no: cable_machine, treadmill, pullup_bar
+missing: outdoor_bike, swim_access (missing)
 ### environment (athlete)
-defaultEnvironment: either
-weekdayMaxMinutes: 60 min
-missing: weekendMaxMinutes (not_recorded); since, revisions (not_yet_supported, ledger)
+default: either · max: 60 min weekday
+missing: weekendMaxMinutes (not_recorded)
 ### guardrails (athlete)
-avoid_high_impact: false
-avoid_heavy_lower_body: false
-avoid_overhead_pressing: true
-avoid_heavy_spinal_loading: false
-missing: since, revisions (not_yet_supported, ledger)
+active: avoid_overhead_pressing (others false)
 ### travel (plan_blocks; athlete)
 #### block-1 (2026-11-25)
 startDate: 2026-11-25
@@ -191,81 +155,54 @@ endDate: 2026-11-28
 volumeScale: 0.5
 intensityScale: 0.8
 since: 2026-11-25
-missing: revisions (not_yet_supported, ledger)
 
 ### venueRestrictions (fixed_activities; athlete)
 #### fx-1 (2026-11-26)
-date: 2026-11-26
 title: Hotel gym
 environment: indoor
-equipment: &#91;"free_weights"&#93;
-missing: since, revisions (not_yet_supported, ledger)
+equipment: free_weights
 
 ### availability (fixed_activities+schedule_windows; athlete)
-#### window-win-1 (2026-11-21)
-date: 2026-11-21
-kind: schedule_window
-startLocal: 06:00
-endLocal: 07:30
-missing: durationMin, fixed, availabilityContextOverride, availabilityOverrideMin, environment, equipment (not_applicable); title (not_recorded); since, revisions (not_yet_supported, ledger)
+2026-11-21: 06:00–07:30
+schedule_window missing: durationMin, fixed, availabilityContextOverride, availabilityOverrideMin, environment, equipment (not_applicable); title (not_recorded)
 #### fixed-fx-1 (2026-11-26)
-date: 2026-11-26
 kind: fixed_activity
 durationMin: 45 min
 title: Hotel gym
 fixed: true
 availabilityContextOverride: {"environment":"indoor","equipment":&#91;"free_weights"&#93;}
-missing: startLocal (missing); endLocal, availabilityOverrideMin, environment, equipment (not_applicable); since, revisions (not_yet_supported, ledger)
+missing: startLocal (missing); endLocal, availabilityOverrideMin, environment, equipment (not_applicable)
 
 ### preferences (athlete)
-preferredRecoveryStyle: mixed
-defaultWeekdayTimeMin: 60
-defaultWeekendTimeMin: 90
-preferredTimeOfDay: morning
-preferredModalities: &#91;"Cycling"&#93;
-deprioritizedModalities: &#91;&#93;
-avoidedModalities: &#91;&#93;
-missing: unavailableModalities (missing); since, revisions (not_yet_supported, ledger)
+recovery: mixed · timeOfDay: morning · defaultTime: 60 min weekday, 90 min weekend
+modalities: preferred: Cycling (none deprioritized/avoided)
+missing: unavailableModalities (missing)
 ### goals (goals; athlete)
-#### goal-1 (2027-04-18)
-title: Spring gran fondo
-domain: endurance
-status: active
-priority: 4
-targetDate: 2027-04-18
-eventCategory: race
+goal-1 (2027-04-18): Spring gran fondo [P4, race, endurance]
 timing: {"earliestDate":"2027-04-18","latestDate":"2027-04-18","planningDate":"2027-04-18"}
-missing: description, performanceTarget, targetMetric, targetValue, targetUnit, targetOutcome, eventLifecycle (not_recorded); since, revisions (not_yet_supported, ledger)
+goals missing: description, performanceTarget, targetMetric, targetValue, targetUnit, targetOutcome, eventLifecycle (not_recorded)
 
 ### events (goals+intent_blocks; athlete)
 #### block-ib-1 (2026-11-17)
 title: Base block
 startDate: 2026-11-17
 endDate: 2026-12-14
-missing: lifecycle (not_applicable); since, revisions (not_yet_supported, ledger)
+missing: lifecycle (not_applicable)
 #### goal-goal-1 (2027-04-18)
 title: Spring gran fondo
 startDate: 2027-04-18
 endDate: 2027-04-18
 lifecycle: scheduled
-missing: since, revisions (not_yet_supported, ledger)
 
 ### constraints (constraints; athlete)
-#### no_barbell
-label: No barbell
-value: true
-severity: soft
-isActive: true
-category: equipment
-missing: description (not_recorded); since, revisions (not_yet_supported, ledger)
+no_barbell: true [soft, equipment] — No barbell
+missing: description (not_recorded)
 
 missing: trainingDislikes (not_yet_supported)
 
 ## Coaching history
 ### planRevisions (external_plan_revisions; adaptive)
 #### plan-1@2 (2026-11-10)
-planId: plan-1
-revision: 2
 contentHash: sha256:abc
 importedAt: 2026-11-10T08:00:00Z
 schema: adaptive-training-recommender/external-plan@6
@@ -278,7 +215,6 @@ planId: plan-1
 revision: 2
 sessionId: s1
 status: completed
-date: 2026-11-19
 title: Endurance ride
 priority: key
 summary: Steady Z2 for 60 min
@@ -290,7 +226,6 @@ missing: statusHistory (not_yet_supported); stepNotes, fallback (not_recorded)
 planId: plan-1
 sessionId: s1
 kind: swapped
-date: 2026-11-19
 reason: Knee felt tight
 step: Back Squat
 replacement: Goblet Squat

@@ -73,11 +73,11 @@ describe('consecutive morning exports', () => {
             scheduleWindows: (records.scheduleWindows ?? []).map(row => ({ ...row, endLocal: '08:00' })),
         }));
         partial.userContext.availability.droppedUndated = 1;
-        expect(userContext(partial, confirmed)).toContain('endLocal: 08:00');
+        expect(userContext(partial, confirmed)).toContain('2026-11-21: 06:00–08:00');
         const afterPartial = confirm(partial, confirmed);
         const reverted = morning(DAY_3);
         const out = userContext(reverted, afterPartial);
         expect(out).not.toMatch(new RegExp(`unchanged since.*${key}`));
-        expect(out).toContain('endLocal: 07:30');
+        expect(out).toContain('2026-11-21: 06:00–07:30');
     });
 });
