@@ -3,10 +3,13 @@ import { buildLedgerExport } from '../buildLedgerExport.ts';
 import { fullInput } from '../ledgerExportFixtures.testSupport.ts';
 import {
     CHECKPOINT_FORMAT_VERSION,
+    contextDelta,
     mergeCheckpoint,
+    morningOmittedRevisionKeys,
     type PreviousContext,
     userContextCheckpoint,
     userContextItemHashes,
+    userContextStates,
 } from './previousContext.ts';
 import { renderLedgerExportCompact } from './renderLedgerExportCompact.ts';
 
@@ -206,5 +209,73 @@ describe('previousContext', () => {
         };
         const hostileOut = renderLedgerExportCompact(ledger, { previousContext: hostilePrior });
         expect(hostileOut).toContain('removed: planRevisions/rev&#124;&#91;bad&#93;');
+    });
+
+    it('treats morning-omitted existing revisions as out of scope once, not removed, and prints removed only when deleted', () => {
+        const day1 = build();
+        const rev1 = structuredClone(day1.coachingHistory.planRevisions.items[0]);
+        rev1.id = 'a@1';
+        rev1.observedOn = '2026-11-19';
+        rev1.fields.planId = { value: 'a', source: 'adaptive', state: 'measured' };
+        rev1.fields.revision = { value: 1, source: 'adaptive', state: 'measured' };
+        rev1.fields.importedAt = { value: '2026-11-19T08:00:00Z', source: 'adaptive', state: 'measured' };
+        rev1.fields.authorRationale = { value: 'Initial a@1 block.', source: 'adaptive', state: 'measured' };
+        day1.coachingHistory.planRevisions.items.push(rev1);
+        const day1Cp = previousOf(day1);
+        expect(day1Cp.itemHashes['planRevisions/a@1']).toBeDefined();
+
+        // Day 2: a@2 becomes latest and rotates unreferenced a@1 out of morning scope while a@1 remains in the ledger.
+        const day2 = structuredClone(day1);
+        const rev2 = structuredClone(rev1);
+        rev2.id = 'a@2';
+        rev2.observedOn = '2026-11-20';
+        rev2.fields.revision = { value: 2, source: 'adaptive', state: 'measured' };
+        rev2.fields.importedAt = { value: '2026-11-20T08:00:00Z', source: 'adaptive', state: 'measured' };
+        rev2.fields.authorRationale = { value: 'Updated a@2 block.', source: 'adaptive', state: 'measured' };
+        day2.coachingHistory.planRevisions.items.push(rev2);
+
+        const day2History = renderLedgerExportCompact(day2, { previousContext: day1Cp })
+            .slice(renderLedgerExportCompact(day2, { previousContext: day1Cp }).indexOf('## Coaching history'));
+        expect(day2History).toContain('out of scope now: planRevisions/a@1');
+        expect(day2History).not.toContain('removed: planRevisions/a@1');
+        expect(day2History).toContain('#### a@2');
+
+        // Confirming Day 2 drops a@1 from the stored checkpoint; referencing a@1 on Day 3 prints it in full.
+        const day2Cp = mergeCheckpoint(day1Cp, userContextCheckpoint(day2), '2026-11-20');
+        expect(day2Cp.itemHashes['planRevisions/a@1']).toBeUndefined();
+        const day3 = structuredClone(day2);
+        const refPlacement = structuredClone(day3.coachingHistory.placements.items[0]);
+        refPlacement.id = 'a@1:s1';
+        refPlacement.fields.planId = { value: 'a', source: 'adaptive', state: 'measured' };
+        refPlacement.fields.revision = { value: 1, source: 'adaptive', state: 'measured' };
+        day3.coachingHistory.placements.items.push(refPlacement);
+        const day3History = renderLedgerExportCompact(day3, { previousContext: day2Cp })
+            .slice(renderLedgerExportCompact(day3, { previousContext: day2Cp }).indexOf('## Coaching history'));
+        expect(day3History).toContain('#### a@1');
+        expect(day3History).toContain('authorRationale: Initial a@1 block.');
+        expect(day3History).not.toContain('out of scope now: planRevisions/a@1');
+        expect(day3History).toContain('unchanged since 2026-11-20: 2 revisions');
+
+        // Genuinely deleting a@1 from planRevisions.items on a complete read reports removed.
+        const deleted = structuredClone(day2);
+        deleted.coachingHistory.planRevisions.items = deleted.coachingHistory.planRevisions.items.filter(row => row.id !== 'a@1');
+        const deletedHistory = renderLedgerExportCompact(deleted, { previousContext: day1Cp })
+            .slice(renderLedgerExportCompact(deleted, { previousContext: day1Cp }).indexOf('## Coaching history'));
+        expect(deletedHistory).toContain('removed: planRevisions/a@1');
+        expect(deletedHistory).not.toContain('out of scope now: planRevisions/a@1');
+
+        // Helper returns omitted keys only on morning exports, and incomplete reads stay unreadable.
+        expect([...morningOmittedRevisionKeys(day2)]).toEqual(['planRevisions/a@1']);
+        expect([...morningOmittedRevisionKeys({ ...day2, purpose: 'planning' })]).toEqual([]);
+        const incomplete = structuredClone(day2);
+        incomplete.coachingHistory.planRevisions.droppedUndated = 1;
+        const incompleteDelta = contextDelta(
+            userContextCheckpoint(incomplete),
+            day1Cp,
+            userContextStates(incomplete),
+            morningOmittedRevisionKeys(incomplete),
+        );
+        expect(incompleteDelta.unreadable).toContainEqual({ key: 'planRevisions/a@1', reason: 'incomplete' });
+        expect(incompleteDelta.outOfScope).not.toContain('planRevisions/a@1');
     });
 });

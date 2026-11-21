@@ -280,4 +280,21 @@ describe('renderTodaySections', () => {
             'activity (act-001): cycling · 60 min · HR 140/165 bpm · load 80 · moderate · cost moderate (details in Facts)',
         );
     });
+
+    it('records renderedDeltas only when both the Today field and its 28d baseline have non-null values', () => {
+        expect([...renderTodaySections(build()).renderedDeltas]).toEqual([]);
+
+        const ledger = withBaselines(build());
+        const subjective = ledger.derived.find(metric => metric.id === 'subjective_baselines')!.metrics!;
+        // Present baseline for a null (not_recorded) Today field still does not print an inline delta.
+        subjective.soreness_longAvg = num(2.5, subjective.readiness_longAvg.source);
+        // Missing 28d baseline for a present Today field does not print an inline delta.
+        subjective.sleepQuality_longAvg = { value: null, source: subjective.readiness_longAvg.source, state: 'missing' };
+
+        expect([...renderTodaySections(ledger).renderedDeltas].sort()).toEqual([
+            'hrvOvernightAvg_delta28d',
+            'readiness_delta28d',
+            'sleepScore_delta28d',
+        ]);
+    });
 });
