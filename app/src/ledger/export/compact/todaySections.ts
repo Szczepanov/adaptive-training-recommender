@@ -12,6 +12,8 @@ export interface TodaySections {
     lines: string[];
     /** Record ids already shown here; later sections skip them so nothing is printed twice. */
     consumedIds: ReadonlySet<string>;
+    /** Fact collections whose baselined fields and 28d deltas were rendered under Today. */
+    baselinedCollections: ReadonlySet<'recovery' | 'checkins'>;
 }
 
 /** `<id> <active|inactive|unknown> (<state>; definition v; session s; evaluated t)`, notes as in Flags. */
@@ -69,6 +71,9 @@ function upcomingSection(ledger: LedgerExport, consumed: Set<string>): string[] 
 /** Today, Yesterday and Upcoming: what the athlete needs first; sets the ids they consumed. */
 export function renderTodaySections(ledger: LedgerExport): TodaySections {
     const consumed = new Set<string>();
+    const baselinedCollections = new Set<'recovery' | 'checkins'>();
+    if (ledger.facts.checkins.items.some(row => row.observedOn === ledger.asOfDate)) baselinedCollections.add('checkins');
+    if (ledger.facts.recovery.items.some(row => row.observedOn === ledger.asOfDate)) baselinedCollections.add('recovery');
     const group = placementGroup(ledger);
     const todays = placementDate(ledger, ledger.asOfDate);
     todays.forEach(row => consumed.add(row.id));
@@ -83,5 +88,5 @@ export function renderTodaySections(ledger: LedgerExport): TodaySections {
         ...yesterdaySection(ledger, consumed),
         ...upcomingSection(ledger, consumed),
     ];
-    return { lines, consumedIds: consumed };
+    return { lines, consumedIds: consumed, baselinedCollections };
 }

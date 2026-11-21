@@ -1,7 +1,7 @@
 import { addDaysToLocalDateString } from '../../../utils/localDate.ts';
 import { text } from '../markdownText.ts';
 import type { LedgerExport, LedgerValue } from '../schema.ts';
-import { dominantSource, sourceTag } from './compactLines.ts';
+import { dominantSource, formatValue, sourceTag } from './compactLines.ts';
 
 const present = (value: LedgerValue<unknown>) => value.value !== null && value.value !== undefined;
 
@@ -39,8 +39,8 @@ function setsPart({ workSets, plannedSets, warmupSets }: Occurrence['fields']): 
         ...(present(plannedSets) ? [] : [`planned: ${absent(plannedSets)}`]),
         ...(present(warmupSets) ? [] : [`warm-up: ${absent(warmupSets)}`]),
     ];
-    const ratio = present(plannedSets) ? `${text(workSets.value)}/${text(plannedSets.value)}` : text(workSets.value);
-    const warmups = present(warmupSets) ? ` (+${text(warmupSets.value)} warm-up)` : '';
+    const ratio = present(plannedSets) ? `${formatValue(workSets.value)}/${formatValue(plannedSets.value)}` : formatValue(workSets.value);
+    const warmups = present(warmupSets) ? ` (+${formatValue(warmupSets.value)} warm-up)` : '';
     return `${ratio} work sets${warmups}${notes.length ? ` (${notes.join('; ')})` : ''}`;
 }
 
@@ -62,7 +62,7 @@ function rpePart(ledger: LedgerExport, linked: LedgerValue<unknown>, group: stri
     const values = ids.map(id => ledger.facts.sessionResponses.items.find(item => item.id === id)?.fields.sessionRpe)
         .filter((value): value is LedgerValue<unknown> => value !== undefined);
     const rpe = values.find(present);
-    if (rpe) return `sRPE ${text(rpe.value)}${rpeNotes(rpe, group)}`;
+    if (rpe) return `sRPE ${formatValue(rpe.value)}${rpeNotes(rpe, group)}`;
     const unread = values.find(value => value.state !== 'measured');
     return `sRPE: ${unread ? absent(unread) : 'not recorded'}`;
 }
@@ -71,7 +71,7 @@ function occurrenceLine(ledger: LedgerExport, row: Occurrence, consumed: Set<str
     const { modality, durationMin, executedDefinitions, workSets, linkedResponseIds } = row.fields;
     const parts = [
         present(modality) ? text(modality.value) : `modality: ${absent(modality)}`,
-        present(durationMin) ? `${text(durationMin.value)} min` : `durationMin: ${absent(durationMin)}`,
+        present(durationMin) ? `${formatValue(durationMin.value)} min` : `durationMin: ${absent(durationMin)}`,
         setsPart(row.fields),
         rpePart(ledger, linkedResponseIds, group),
         definitions(executedDefinitions) ?? `executedDefinition: ${absent(executedDefinitions)}`,
