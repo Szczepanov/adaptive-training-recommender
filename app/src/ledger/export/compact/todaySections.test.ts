@@ -5,18 +5,18 @@ import type { LedgerExport, LedgerFlag, LedgerValue } from '../schema.ts';
 import { renderLedgerExportCompact } from './renderLedgerExportCompact.ts';
 import { renderTodaySections } from './todaySections.ts';
 
-const num = (value: number): LedgerValue<number> => ({ value, source: 'adaptive', state: 'measured' });
+const num = (value: number, source = 'adaptive'): LedgerValue<number> => ({ value, source, state: 'measured' });
 
 function withBaselines(ledger: LedgerExport): LedgerExport {
     const subjective = ledger.derived.find(metric => metric.id === 'subjective_baselines');
     const biometric = ledger.derived.find(metric => metric.id === 'biometric_baselines');
     if (!subjective?.metrics || !biometric?.metrics) throw new Error('fixture lacks baseline metrics');
-    subjective.metrics.readiness_longAvg = num(7.2);
-    subjective.metrics.readiness_delta28d = num(-1.2);
-    biometric.metrics.sleepScore28dAvg = num(75);
-    biometric.metrics.sleepScore_delta28d = num(6);
-    biometric.metrics.hrv28dAvg = num(64);
-    biometric.metrics.hrvOvernightAvg_delta28d = num(-2);
+    subjective.metrics.readiness_longAvg = num(7.2, subjective.value.source);
+    subjective.metrics.readiness_delta28d = num(-1.2, subjective.value.source);
+    biometric.metrics.sleepScore28dAvg = num(75, biometric.value.source);
+    biometric.metrics.sleepScore_delta28d = num(6, biometric.value.source);
+    biometric.metrics.hrv28dAvg = num(64, biometric.value.source);
+    biometric.metrics.hrvOvernightAvg_delta28d = num(-2, biometric.value.source);
     return ledger;
 }
 
@@ -52,13 +52,21 @@ describe('renderTodaySections', () => {
         expect(lines.some(line => /^readiness: \d+ score_1_10 \(28d/.test(line))).toBe(true);
     });
 
-    it('labels a non-measured baseline with its state and prints the delta leaf state', () => {
+    it('labels a non-measured baseline with its state and preserves source and stale date exceptions', () => {
         const ledger = withBaselines(build());
-        const metrics = ledger.derived.find(metric => metric.id === 'subjective_baselines')!.metrics!;
-        metrics.readiness_longAvg = { value: 7.2, source: 'adaptive', state: 'stale' };
-        metrics.readiness_delta28d = { value: null, source: 'adaptive', state: 'stale' };
+        const subj = ledger.derived.find(metric => metric.id === 'subjective_baselines')!;
+        const metrics = subj.metrics!;
+        metrics.readiness_longAvg = { value: 7.2, source: subj.value.source, state: 'stale' };
+        metrics.readiness_delta28d = { value: null, source: subj.value.source, state: 'stale' };
         ledger.facts.checkins.items.find(row => row.observedOn === '2026-11-20')!.fields.readiness.value = 6;
         expect(renderTodaySections(ledger).lines).toContain('readiness: 6 score_1_10 (28d 7.2 (stale), delta: stale)');
+
+        metrics.readiness_recentAvg = { value: 6.5, source: 'manual', state: 'measured' };
+        metrics.readiness_longAvg = { value: 7.2, source: subj.value.source, state: 'stale', observedOn: '2026-11-18' };
+        metrics.readiness_variability = { value: 1.1, source: 'garmin', state: 'stale', observedOn: '2026-11-19' };
+        expect(renderTodaySections(ledger).lines).toContain(
+            'readiness: 6 score_1_10 (7d 6.5 (source manual) · 28d 7.2 (stale, 2026-11-18) ±1.1 (garmin, stale, 2026-11-19), delta: stale)',
+        );
     });
 
     it('reads the delta from the JSON leaf instead of computing it', () => {

@@ -234,7 +234,7 @@ describe('morning export deduplication and shortening', () => {
         const withToday = renderLedgerExportCompact(ledger);
         expect(withToday).toContain('readiness: 7 score_1_10 (7d 7.3 · 28d 7.5 ±1, −1.5)');
         expect(withToday).toContain('sleepScore: 81 (7d 86.9 ±8.5, 28d baseline: missing)');
-        expect(withToday).toContain('restingHr: 48 bpm (7d 43.4 · 28d 42.6 (stale) ±1.2, +1.4)');
+        expect(withToday).toContain('restingHr: 48 bpm (7d 43.4 · 28d 42.6 (stale, 2026-11-20) ±1.2, +1.4)');
         expect(withToday).toContain('hrvOvernightAvg: 62 ms (7d 63 · 28d 65.4 ±4.8, delta: unavailable)');
         expect(withToday).toContain('respirationAvg: 14 breaths/min (7d 12.1 · 28d 12 ±0.3, delta: unavailable)');
         expect(withToday).toContain('biometric_baselines: shown in Today above; missing: sleepScore28dAvg (missing)');
@@ -243,6 +243,11 @@ describe('morning export deduplication and shortening', () => {
         expect(withToday).not.toContain('sleepScore_delta28d');
         expect(withToday).not.toContain('readiness_delta28d');
         expect(withToday).not.toContain('value (not_applicable)');
+
+        // Inline baseline leaves also keep source exceptions when differing from the derived group source.
+        bio.metrics.sleepScore7dAvg = { ...bio.metrics.sleepScore7dAvg, source: 'manual' };
+        expect(renderLedgerExportCompact(ledger)).toContain('sleepScore: 81 (7d 86.9 (source manual) ±8.5, 28d baseline: missing)');
+        bio.metrics.sleepScore7dAvg = { ...bio.metrics.sleepScore7dAvg, source: 'daily_recovery_snapshots' };
 
         // Removing Today's recovery and check-in rows keeps full Derived triplets and *_delta28d, and value (unavailable) stays visible.
         ledger.facts.recovery.items = ledger.facts.recovery.items.filter(r => r.observedOn !== ledger.asOfDate);
@@ -279,11 +284,16 @@ describe('morning export deduplication and shortening', () => {
         expect(out).toContain('environment: indoor');
         expect(out).not.toContain('#### window-w-pm');
 
-        // Differing missingness across compact windows keeps date-qualified missing lines.
+        // Differing missingness across compact windows keeps date-qualified missing lines, and same-day conflicts qualify with the slot.
         ledger.userContext.availability.items.find(row => row.id === 'window-w-next')!.fields.title.state = 'not_applicable';
         const diffMissingOut = renderLedgerExportCompact(ledger);
         expect(diffMissingOut).toContain('schedule_window missing (2026-11-23):');
         expect(diffMissingOut).toContain('schedule_window missing (2026-11-24):');
+
+        ledger.userContext.availability.items.find(row => row.id === 'window-w-pm')!.fields.title.state = 'not_applicable';
+        const conflictOut = renderLedgerExportCompact(ledger);
+        expect(conflictOut).toContain('schedule_window missing (2026-11-23 06:00–08:30):');
+        expect(conflictOut).toContain('schedule_window missing (2026-11-23 11:30–15:00, 2026-11-24):');
 
         // Consecutive calendar dates with identical sorted slot sets collapse to a range, broken by gaps or differing slots.
         const rangeLedger = buildLedgerExport(fullInput({
@@ -305,15 +315,16 @@ describe('morning export deduplication and shortening', () => {
         expect(rangeOut).toContain('2026-11-23…2026-11-24: 06:00–08:30, 11:30–15:00\n2026-11-25: 06:00–08:30\n2026-11-27: 06:00–08:30');
     });
 
-    it('deduplicates goal-* events against rendered goals and keeps them when goals were abbreviated as unchanged', () => {
+    it('deduplicates goal-* events against rendered goals and preserves measured event lifecycle when goal lifecycle is not_recorded', () => {
+        const scheduledGoal = { ...fullInput().records.goals![0], eventLifecycle: 'scheduled' as const };
         const ledger = buildLedgerExport(fullInput({
             purpose: 'morning',
             records: {
                 ...fullInput().records,
                 intentBlocks: [],
                 goals: [
-                    ...fullInput().records.goals!,
-                    { id: 'goal-2', title: 'Autumn TT', domain: 'endurance', status: 'active', priority: 2, targetDate: '2027-09-12', eventCategory: 'race' },
+                    scheduledGoal,
+                    { id: 'goal-2', title: 'Autumn TT', domain: 'endurance', status: 'active', priority: 2, targetDate: '2027-09-12', eventCategory: 'race', eventLifecycle: 'scheduled' },
                 ],
             },
         }));
@@ -321,11 +332,19 @@ describe('morning export deduplication and shortening', () => {
         expect(fullOut).toContain('events: 2 shown in goals above');
         expect(fullOut).not.toContain('#### goal-goal-1');
 
-        // Also check mixed intentBlocks + goals renders the remaining block and the count note.
-        const mixedLedger = buildLedgerExport(fullInput({ purpose: 'morning' }));
+        // Also check mixed intentBlocks + goals renders the remaining block and the count note when lifecycles match.
+        const mixedLedger = buildLedgerExport(fullInput({
+            purpose: 'morning',
+            records: { ...fullInput().records, goals: [scheduledGoal] },
+        }));
         const mixedOut = renderLedgerExportCompact(mixedLedger);
         expect(mixedOut).toContain('### events (goals+intent_blocks; athlete)\n1 goal event shown in goals above\n#### block-ib-1');
         expect(mixedOut).not.toContain('#### goal-goal-1');
+
+        // When goal eventLifecycle is not_recorded, keep the matching event visible so its measured lifecycle is not lost.
+        const unrecordedGoalOut = renderLedgerExportCompact(buildLedgerExport(fullInput({ purpose: 'morning' })));
+        expect(unrecordedGoalOut).toContain('#### goal-goal-1 (2027-04-18)');
+        expect(unrecordedGoalOut).toContain('lifecycle: scheduled');
 
         // When one goal is rendered and the other event was unchanged in previousContext, both skip counts stay distinct.
         const mixedSkipPrior = { ...userContextCheckpoint(ledger), exportedOn: '2026-11-19' };
@@ -447,9 +466,9 @@ describe('morning export deduplication and shortening', () => {
         expect(out).not.toContain('subjective_baselines: shown in Today above');
     });
 
-    it('compacts recovery_beyond_baseline triggers, omits Today-matching values, and groups identical inactive flags', () => {
+    it('compacts recovery_beyond_baseline triggers, preserves provenance, and groups identical inactive flags', () => {
         const ledger = buildLedgerExport(fullInput({ purpose: 'morning' }));
-        // Matching Today values (hrvOvernightAvg=62, restingHr=48, sleepScore=81 in fullInput fixture): omit repeated value+unit.
+        // Matching Today values & dominant group source omit repeated value+unit.
         ledger.flags = [
             flag('illness_anomaly', '2026-11-19', { active: null, state: 'not_recorded', definitionVersion: 'illness_anomaly-v1' }),
             flag('illness_risk_symptom', '2026-11-19', { active: null, state: 'not_recorded', definitionVersion: 'illness_risk_symptom-v1' }),
@@ -458,9 +477,9 @@ describe('morning export deduplication and shortening', () => {
                 definitionVersion: 'recovery_beyond_baseline-v1',
                 threshold: 'band check',
                 inputs: [
-                    { name: 'hrv', value: { value: 62, unit: 'ms', source: 'daily_recovery_snapshot', state: 'measured' } },
-                    { name: 'rhr', value: { value: 48, unit: 'bpm', source: 'daily_recovery_snapshot', state: 'measured' } },
-                    { name: 'sleep', value: { value: 81, unit: 'pts', source: 'daily_recovery_snapshot', state: 'measured' } },
+                    { name: 'hrv', value: { value: 62, unit: 'ms', source: 'daily_recovery_snapshots', state: 'measured' } },
+                    { name: 'rhr', value: { value: 48, unit: 'bpm', source: 'daily_recovery_snapshots', state: 'measured' } },
+                    { name: 'sleep', value: { value: 81, unit: 'pts', source: 'daily_recovery_snapshots', state: 'measured' } },
                     { name: 'hrv_delta7d', value: { value: -8, unit: 'ms', source: 'daily_recovery_snapshots', state: 'measured' } },
                     { name: 'hrv_band', value: { value: 4.8, unit: 'ms', source: 'daily_recovery_snapshots', state: 'measured' } },
                     { name: 'rhr_delta7d', value: { value: 0.6, unit: 'bpm', source: 'daily_recovery_snapshots', state: 'measured' } },
@@ -476,10 +495,17 @@ describe('morning export deduplication and shortening', () => {
         expect(matchingOut).toContain('triggers: hrv 7d −8 vs band 4.8 · rhr 7d +0.6 vs band 1.5 · sleep 7d −12.9 vs band 8.5');
         expect(matchingOut).toContain('source_revision: dde8183ef145… (source flag_capture)');
 
-        // Differing Today values (post-flag sync) or non-Today flags keep value+unit explicit.
-        ledger.flags[2].inputs[0].value = { value: 55, unit: 'ms', source: 'daily_recovery_snapshot', state: 'measured' };
-        ledger.flags[2].inputs[1].value = { value: 44, unit: 'bpm', source: 'daily_recovery_snapshot', state: 'measured' };
-        ledger.flags[2].inputs[2].value = { value: 74, unit: 'pts', source: 'daily_recovery_snapshot', state: 'measured' };
+        // Differing source or older observedOn keeps the value and provenance visible even if numbers match Today.
+        ledger.flags[2].inputs[0].value = { value: 62, unit: 'ms', source: 'daily_recovery_snapshot', state: 'measured' };
+        ledger.flags[2].inputs[1].value = { value: 48, unit: 'bpm', source: 'daily_recovery_snapshots', state: 'measured', observedOn: '2026-11-19' };
+        const provOut = renderLedgerExportCompact(ledger);
+        expect(provOut).toContain('hrv 62 ms (source daily_recovery_snapshot) (7d −8 vs band 4.8)');
+        expect(provOut).toContain('rhr 48 bpm (2026-11-19) (7d +0.6 vs band 1.5)');
+
+        // Differing Today values (post-flag sync) keep value+unit explicit.
+        ledger.flags[2].inputs[0].value = { value: 55, unit: 'ms', source: 'daily_recovery_snapshots', state: 'measured' };
+        ledger.flags[2].inputs[1].value = { value: 44, unit: 'bpm', source: 'daily_recovery_snapshots', state: 'measured' };
+        ledger.flags[2].inputs[2].value = { value: 74, unit: 'pts', source: 'daily_recovery_snapshots', state: 'measured' };
         const diffOut = renderLedgerExportCompact(ledger);
         expect(diffOut).toContain('triggers: hrv 55 ms (7d −8 vs band 4.8) · rhr 44 bpm (7d +0.6 vs band 1.5) · sleep 74 pts (7d −12.9 vs band 8.5)');
 
@@ -488,7 +514,7 @@ describe('morning export deduplication and shortening', () => {
             ...ledger.flags[2],
             observedOn: '2026-11-19',
             inputs: [
-                { name: 'hrv', value: { value: 62, unit: 'ms', source: 'daily_recovery_snapshot', state: 'measured' } },
+                { name: 'hrv', value: { value: 62, unit: 'ms', source: 'daily_recovery_snapshots', state: 'measured' } },
                 { name: 'hrv_delta7d', value: { value: -8, unit: 'ms', source: 'daily_recovery_snapshots', state: 'measured' } },
                 { name: 'hrv_band', value: { value: 4.8, unit: 'ms', source: 'daily_recovery_snapshots', state: 'measured' } },
             ],

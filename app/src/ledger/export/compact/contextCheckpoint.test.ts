@@ -27,9 +27,25 @@ describe('userContextCheckpoint', () => {
         expect(checkpoint.collections.injuries).toEqual({ scope: `active+resolved-from:${start}`, complete: true, from: start });
         expect(checkpoint.collections.goals).toEqual({ scope: 'all-active', complete: true });
         expect(checkpoint.collections.equipment).toEqual({ scope: 'current', complete: true });
-        expect(checkpoint.collections.planRevisions).toEqual({ scope: 'all', complete: true });
+        expect(checkpoint.collections.planRevisions).toEqual({ scope: 'morning-active', complete: true });
         expect(checkpoint.itemHashes['planRevisions/plan-1@2']).toMatch(/^[0-9a-f]{8}$/);
         expect(checkpoint.itemHashes).toEqual(userContextItemHashes(ledger));
+
+        // Omitted older morning revisions are excluded from morning-active hashes, whereas diagnostic/planning hash all revisions.
+        const withOld = build();
+        const older = structuredClone(withOld.coachingHistory.planRevisions.items[0]);
+        older.id = 'plan-0@1';
+        older.fields.planId = { value: 'plan-0', source: 'adaptive', state: 'measured' };
+        older.fields.importedAt = { value: '2026-09-01T08:00:00Z', source: 'adaptive', state: 'measured' };
+        older.fields.revision = { value: 1, source: 'adaptive', state: 'measured' };
+        withOld.coachingHistory.planRevisions.items.push(older);
+        const morningCp = userContextCheckpoint(withOld);
+        expect(morningCp.itemHashes['planRevisions/plan-0@1']).toBeUndefined();
+        expect(morningCp.itemHashes['planRevisions/plan-1@2']).toMatch(/^[0-9a-f]{8}$/);
+        withOld.purpose = 'diagnostic';
+        const diagCp = userContextCheckpoint(withOld);
+        expect(diagCp.collections.planRevisions.scope).toBe('all');
+        expect(diagCp.itemHashes['planRevisions/plan-0@1']).toMatch(/^[0-9a-f]{8}$/);
     });
 
     it('stores the date each windowed item is selected by, and none for unbounded items', () => {

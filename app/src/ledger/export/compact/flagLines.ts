@@ -1,7 +1,7 @@
 import { addDaysToLocalDateString } from '../../../utils/localDate.ts';
 import { text } from '../markdownText.ts';
 import type { LedgerExport, LedgerFlag, LedgerValue } from '../schema.ts';
-import { dominantSource, entryLines, formatNumber, type FieldEntry } from './compactLines.ts';
+import { dominantSource, entryLines, fieldProvenance, formatNumber, type FieldEntry } from './compactLines.ts';
 
 function dateRange(dates: string[]): string {
     return dates.length === 1 ? text(dates[0]) : `${text(dates[0])}…${text(dates[dates.length - 1])}`;
@@ -26,9 +26,12 @@ const TRIGGER_TO_RECOVERY_FIELD = [
 
 const NO_TODAY_VALUES: ReadonlyMap<string, number> = new Map();
 
-function formatEvaluatedAt(evaluatedAt: string, observedOn: string): string {
+function formatEvaluatedAt(evaluatedAt: string, observedOn: string, preserveFractional = false): string {
     if (evaluatedAt.startsWith(`${observedOn}T`)) {
-        const time = evaluatedAt.slice(observedOn.length + 1).replace(/\.\d+(?=(?:Z|[+-]\d{2}:\d{2})$)/, '');
+        const rawTime = evaluatedAt.slice(observedOn.length + 1);
+        const time = preserveFractional
+            ? rawTime.replace(/\.0+(?=(?:Z|[+-]\d{2}:\d{2})$)/, '')
+            : rawTime.replace(/\.\d+(?=(?:Z|[+-]\d{2}:\d{2})$)/, '');
         return text(time);
     }
     return text(evaluatedAt);
@@ -48,24 +51,34 @@ function todayRecoveryMetricValues(ledger: LedgerExport): ReadonlyMap<string, nu
     return values;
 }
 
+function triggerLeafNotes(leaf: LedgerValue<number>, group: string | undefined, observedOn: string): string {
+    const prov = fieldProvenance(leaf, group);
+    if (!leaf.observedOn || leaf.observedOn === observedOn || leaf.state === 'stale') return prov;
+    const base = prov ? prov.slice(2, -1) : '';
+    const inner = base ? `${base}, ${text(leaf.observedOn)}` : text(leaf.observedOn);
+    return ` (${inner})`;
+}
+
 function formatTrigger(
     metric: string,
     val: LedgerValue<number>,
     delta: LedgerValue<number>,
     band: LedgerValue<number>,
     todayValues: ReadonlyMap<string, number>,
+    group: string | undefined,
+    observedOn: string,
 ): string {
-    const valState = val.state === 'measured' ? '' : ` (${text(val.state)})`;
-    const deltaState = delta.state === 'measured' ? '' : ` (${text(delta.state)})`;
-    const bandState = band.state === 'measured' ? '' : ` (${text(band.state)})`;
+    const valNotes = triggerLeafNotes(val, group, observedOn);
+    const deltaNotes = triggerLeafNotes(delta, group, observedOn);
+    const bandNotes = triggerLeafNotes(band, group, observedOn);
     const unit = val.unit ? ` ${text(val.unit)}` : '';
     const d = delta.value as number;
     const signed = d > 0 ? `+${formatNumber(d)}` : d < 0 ? `\u2212${formatNumber(Math.abs(d))}` : '0';
-    const bandPart = `7d ${signed}${deltaState} vs band ${formatNumber(band.value as number)}${bandState}`;
-    if (val.state === 'measured' && todayValues.get(metric) === val.value) {
+    const bandPart = `7d ${signed}${deltaNotes} vs band ${formatNumber(band.value as number)}${bandNotes}`;
+    if (val.state === 'measured' && valNotes === '' && todayValues.get(metric) === val.value) {
         return `${text(metric)} ${bandPart}`;
     }
-    return `${text(metric)} ${formatNumber(val.value as number)}${unit}${valState} (${bandPart})`;
+    return `${text(metric)} ${formatNumber(val.value as number)}${unit}${valNotes} (${bandPart})`;
 }
 
 function activeFlagInputLines(
@@ -86,7 +99,7 @@ function activeFlagInputLines(
             consumed.add(metric);
             consumed.add(`${metric}_delta7d`);
             consumed.add(`${metric}_band`);
-            triggers.push(formatTrigger(metric, val, delta, band, todayValues));
+            triggers.push(formatTrigger(metric, val, delta, band, todayValues, group, flag.observedOn));
         }
     }
     const remaining = entries.filter(([name]) => !consumed.has(name));
@@ -125,7 +138,7 @@ export function flagScopeParts(flag: LedgerFlag, sameDayRepeat: boolean): string
         flag.definitionVersion ? `definition ${text(shortVersion(flag))}` : '',
         flag.sessionRef ? `session ${text(flag.sessionRef)}` : '',
         // Same-day re-evaluations stay separate, told apart by their persisted instant.
-        sameDayRepeat ? `evaluated ${flag.evaluatedAt ? formatEvaluatedAt(flag.evaluatedAt, flag.observedOn) : 'time not persisted'}` : '',
+        sameDayRepeat ? `evaluated ${flag.evaluatedAt ? formatEvaluatedAt(flag.evaluatedAt, flag.observedOn, true) : 'time not persisted'}` : '',
     ].filter(Boolean);
 }
 
@@ -139,12 +152,13 @@ function scopeNotes(run: Run): string {
  * and session scope, grouping flag ids that share the exact same state/range/scope.
  */
 function inactiveFlagLines(flags: LedgerFlag[]): string[] {
-    const grouped = new Map<string, string[]>();
+    const grouped = new Map<string, { suffix: string; ids: string[] }>();
     const addRun = (id: string, run: Run) => {
         const suffix = `${text(run.label)} ${dateRange(run.dates)}${scopeNotes(run)}`;
-        const ids = grouped.get(suffix) ?? [];
-        if (!ids.includes(id)) ids.push(id);
-        grouped.set(suffix, ids);
+        const entryId = run.single ? `${suffix}\u0000${run.flag.evaluatedAt ?? ''}` : suffix;
+        const entry = grouped.get(entryId) ?? { suffix, ids: [] };
+        if (!entry.ids.includes(id)) entry.ids.push(id);
+        grouped.set(entryId, entry);
     };
     for (const id of new Set(flags.map(flag => flag.id))) {
         const own = flags.filter(flag => flag.id === id)
@@ -172,7 +186,7 @@ function inactiveFlagLines(flags: LedgerFlag[]): string[] {
         }
         flush();
     }
-    return [...grouped].map(([suffix, ids]) => `${ids.map(text).join(', ')}: ${suffix}`);
+    return [...grouped.values()].map(({ suffix, ids }) => `${ids.map(text).join(', ')}: ${suffix}`);
 }
 
 export function flagsSection(ledger: LedgerExport): string[] {

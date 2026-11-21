@@ -90,6 +90,52 @@ function isRecord(context: ContextEntry): context is ContextRecord {
     return 'fields' in context;
 }
 
+/** Revision ids rendered on `morning` exports (latest by `importedAt` plus any referenced by placements/overrides). */
+export function morningKeptRevisionIds(ledger: LedgerExport): ReadonlySet<string> {
+    const items = ledger.coachingHistory.planRevisions.items;
+    if (!items.length) return new Set();
+
+    const referencedRevisions = new Set<string>();
+    const referencedPlans = new Set<string>();
+    for (const row of [...ledger.coachingHistory.placements.items, ...ledger.coachingHistory.plannedToPerformed.items]) {
+        const planId = row.fields.planId?.value;
+        const revision = row.fields.revision?.value;
+        if (planId !== null && planId !== undefined && revision !== null && revision !== undefined) {
+            referencedRevisions.add(`${planId}@${revision}`);
+        }
+    }
+    for (const row of ledger.coachingHistory.overrides.items) {
+        const planId = row.fields.planId?.value;
+        if (planId === null || planId === undefined) continue;
+        const match = /^(.+)@(\d+):/.exec(row.id);
+        if (match && match[1] === String(planId)) referencedRevisions.add(`${match[1]}@${match[2]}`);
+        else referencedPlans.add(String(planId));
+    }
+
+    let latestId: string | null = null;
+    let latestImportedAt = '';
+    for (const row of items) {
+        const importedAt = typeof row.fields.importedAt?.value === 'string' ? row.fields.importedAt.value : '';
+        if (latestId === null || (importedAt !== '' ? importedAt >= latestImportedAt : latestImportedAt === '')) {
+            latestId = row.id;
+            if (importedAt !== '') latestImportedAt = importedAt;
+        }
+    }
+
+    const kept = new Set<string>();
+    for (const row of items) {
+        const planId = row.fields.planId?.value;
+        if (
+            row.id === latestId
+            || referencedRevisions.has(row.id)
+            || (planId !== null && planId !== undefined && referencedPlans.has(String(planId)))
+        ) {
+            kept.add(row.id);
+        }
+    }
+    return kept;
+}
+
 /** `<collection>/<id>` for collection items, `<name>` for single records and `trainingDislikes`. */
 export function userContextItemHashes(ledger: LedgerExport): Record<string, string> {
     const hashes: Record<string, string> = {};
@@ -102,7 +148,9 @@ export function userContextItemHashes(ledger: LedgerExport): Record<string, stri
             hashes[name] = hashOf(context);
         }
     }
+    const keptRevisions = ledger.purpose === 'morning' ? morningKeptRevisionIds(ledger) : null;
     for (const row of ledger.coachingHistory.planRevisions.items) {
+        if (keptRevisions && !keptRevisions.has(row.id)) continue;
         hashes[`planRevisions/${row.id}`] = hashOf({ observedOn: row.observedOn, fields: row.fields });
     }
     return hashes;
@@ -200,7 +248,7 @@ export function userContextCheckpoint(ledger: LedgerExport): UserContextCheckpoi
     }
     const revisions = ledger.coachingHistory.planRevisions;
     collections.planRevisions = {
-        scope: 'all',
+        scope: ledger.purpose === 'morning' ? 'morning-active' : 'all',
         complete: revisions.state === 'measured' && revisions.droppedUndated === 0,
     };
     return {

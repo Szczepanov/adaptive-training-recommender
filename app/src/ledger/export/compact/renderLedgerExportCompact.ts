@@ -22,6 +22,7 @@ import {
     contextDelta,
     filterDelta,
     isCurrentFormat,
+    morningKeptRevisionIds,
     type PreviousContext,
     unchangedLines,
     userContextCheckpoint,
@@ -488,10 +489,10 @@ function availabilityLines(rows: LedgerCollection<ContextRecord>, skipIds: SkipI
         }
 
         const byDate = new Map<string, CompactWindow[]>();
-        const missingGroups = new Map<string, string[]>();
+        const missingGroups = new Map<string, CompactWindow[]>();
         for (const win of compact) {
             byDate.set(win.date, [...(byDate.get(win.date) ?? []), win]);
-            if (win.missing) missingGroups.set(win.missing, [...(missingGroups.get(win.missing) ?? []), win.date]);
+            if (win.missing) missingGroups.set(win.missing, [...(missingGroups.get(win.missing) ?? []), win]);
         }
 
         interface WindowRun {
@@ -515,12 +516,24 @@ function availabilityLines(rows: LedgerCollection<ContextRecord>, skipIds: SkipI
                 ? `${text(run.startDate)}: ${run.slots}`
                 : `${text(run.startDate)}…${text(run.endDate)}: ${run.slots}`
         ));
-        const [[onlySummary, onlyDates]] = missingGroups.size === 1 ? [...missingGroups] : [['', []]];
-        if (missingGroups.size === 1 && onlyDates.length === compact.length) {
+        const [[onlySummary, onlyWindows]] = missingGroups.size === 1 ? [...missingGroups] : [['', []]];
+        if (missingGroups.size === 1 && onlyWindows.length === compact.length) {
             compactLines.push(`schedule_window missing: ${onlySummary}`);
         } else if (missingGroups.size >= 1) {
-            for (const [summary, dates] of missingGroups) {
-                compactLines.push(`schedule_window missing (${[...new Set(dates)].sort(codeUnitCompare).map(text).join(', ')}): ${summary}`);
+            const datesPerSummary = new Map<string, number>();
+            for (const wins of missingGroups.values()) {
+                for (const date of new Set(wins.map(w => w.date))) {
+                    datesPerSummary.set(date, (datesPerSummary.get(date) ?? 0) + 1);
+                }
+            }
+            const conflictingDates = new Set(
+                [...datesPerSummary].filter(([, count]) => count > 1).map(([date]) => date),
+            );
+            for (const [summary, wins] of missingGroups) {
+                const labels = [...new Set(wins.map(w => (
+                    conflictingDates.has(w.date) ? `${text(w.date)} ${text(w.start)}–${text(w.end)}` : text(w.date)
+                )))].sort(codeUnitCompare);
+                compactLines.push(`schedule_window missing (${labels.join(', ')}): ${summary}`);
             }
         }
         return [...compactLines, ...rest.flatMap(row => recordLines(row, group, { stripUnsupportedMeta }))];
@@ -684,10 +697,9 @@ function isDuplicateGoalEvent(goal: ContextRecord, event: ContextRecord, eventsG
     if (goalTitle?.state !== 'measured' || goalTitle.value !== title.value) return false;
     if (goalDate?.state !== 'measured' || goalDate.value !== startDate.value || goalDate.value !== endDate.value) return false;
     if (event.observedOn !== goalDate.value) return false;
-    const expectedLifecycle = goalLifecycle?.state === 'measured' && goalLifecycle.value !== null
-        ? goalLifecycle.value
-        : (goalLifecycle?.state === 'not_recorded' ? 'scheduled' : null);
-    if (expectedLifecycle === null || lifecycle.value !== expectedLifecycle) return false;
+    if (goalLifecycle?.state !== 'measured' || goalLifecycle.value === null || lifecycle.value !== goalLifecycle.value) {
+        return false;
+    }
     return metaMatches(goal.since, event.since) && metaMatches(goal.revisions, event.revisions);
 }
 
@@ -790,47 +802,17 @@ function planRevisionsLines(
 ): string[] {
     const rows = ledger.coachingHistory.planRevisions;
     const options: RecordRenderOptions = { omitPlanRevisionHeaderFields: true };
+    const keptIds = ledger.purpose === 'morning' ? morningKeptRevisionIds(ledger) : null;
     return renderCollection('planRevisions', rows, skipIds, skippedLabel, (items, group) => {
         const extra = unchangedNote ? [unchangedNote] : [];
-        if (ledger.purpose !== 'morning') {
+        if (!keptIds) {
             return [...items.flatMap(row => recordLines(row, group, options)), ...extra];
-        }
-
-        const referencedRevisions = new Set<string>();
-        const referencedPlans = new Set<string>();
-        for (const row of [...ledger.coachingHistory.placements.items, ...ledger.coachingHistory.plannedToPerformed.items]) {
-            const planId = row.fields.planId?.value;
-            const revision = row.fields.revision?.value;
-            if (planId !== null && planId !== undefined && revision !== null && revision !== undefined) {
-                referencedRevisions.add(`${planId}@${revision}`);
-            }
-        }
-        for (const row of ledger.coachingHistory.overrides.items) {
-            const planId = row.fields.planId?.value;
-            if (planId === null || planId === undefined) continue;
-            const match = /^(.+)@(\d+):/.exec(row.id);
-            if (match && match[1] === String(planId)) referencedRevisions.add(`${match[1]}@${match[2]}`);
-            else referencedPlans.add(String(planId));
-        }
-
-        let latestId: string | null = null;
-        let latestImportedAt = '';
-        for (const row of items) {
-            const importedAt = typeof row.fields.importedAt?.value === 'string' ? row.fields.importedAt.value : '';
-            if (latestId === null || (importedAt !== '' ? importedAt >= latestImportedAt : latestImportedAt === '')) {
-                latestId = row.id;
-                if (importedAt !== '') latestImportedAt = importedAt;
-            }
         }
 
         const kept: LedgerRecord[] = [];
         const older: LedgerRecord[] = [];
         for (const row of items) {
-            const planId = row.fields.planId?.value;
-            const isKept = row.id === latestId
-                || referencedRevisions.has(row.id)
-                || (planId !== null && planId !== undefined && referencedPlans.has(String(planId)));
-            if (isKept) kept.push(row);
+            if (keptIds.has(row.id)) kept.push(row);
             else older.push(row);
         }
 
@@ -847,7 +829,7 @@ export function coachingHistorySection(
     skipIds: SkipIds = NO_SKIP,
     checkpoint?: PreviousContext,
 ): string[] {
-    const previous = isCurrentFormat(checkpoint) ? checkpoint : undefined;
+    const previous = ledger.purpose === 'morning' && isCurrentFormat(checkpoint) ? checkpoint : undefined;
     const revDelta = previous
         ? filterDelta(contextDelta(userContextCheckpoint(ledger), previous, userContextStates(ledger)), key => collectionOf(key) === 'planRevisions')
         : null;
@@ -858,8 +840,8 @@ export function coachingHistorySection(
     );
     const revHead = revDelta && previous
         ? [
-            ...revDelta.removed.map(key => `removed: ${key}`),
-            ...revDelta.unreadable.map(({ key, reason }) => `not readable now: ${key} (${reason})`),
+            ...revDelta.removed.map(key => `removed: ${text(key)}`),
+            ...revDelta.unreadable.map(({ key, reason }) => `not readable now: ${text(key)} (${text(reason)})`),
         ]
         : [];
     const revSkippedLabel = previous && revUnchangedIds.size > 0
@@ -908,7 +890,7 @@ export function renderLedgerExportCompact(ledger: LedgerExport, options?: Compac
         ...factsSection(ledger, consumed),
         ...derivedSection(ledger, today.baselinedCollections, today.baselinedFields),
         ...userContextSection(ledger, checkpoint),
-        ...coachingHistorySection(ledger, consumed, checkpoint),
+        ...coachingHistorySection(ledger, consumed, ledger.purpose === 'morning' ? checkpoint : undefined),
     ];
     if (ledger.legacyEngine !== null) lines.push('', '## Legacy engine (opt-in opinions)', text(ledger.legacyEngine));
     return `${lines.join('\n').replace(/\n{3,}/g, '\n\n').trimEnd()}\n`;

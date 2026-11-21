@@ -221,12 +221,16 @@ timing: {"earliestDate":"2027-04-18","latestDate":"2027-04-18","planningDate":"2
 goals missing: description, performanceTarget, targetMetric, targetValue, targetUnit, targetOutcome, eventLifecycle (not_recorded)
 
 ### events (goals+intent_blocks; athlete)
-1 goal event shown in goals above
 #### block-ib-1 (2026-11-17)
 title: Base block
 startDate: 2026-11-17
 endDate: 2026-12-14
 missing: lifecycle (not_applicable)
+#### goal-goal-1 (2027-04-18)
+title: Spring gran fondo
+startDate: 2027-04-18
+endDate: 2027-04-18
+lifecycle: scheduled
 
 ### constraints (constraints; athlete)
 no_barbell: true [soft, equipment] — No barbell

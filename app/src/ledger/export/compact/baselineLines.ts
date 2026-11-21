@@ -46,10 +46,9 @@ function deltaText(delta: LedgerValue<number> | null): string {
     return `, ${signed(delta.value)}${delta.state === 'measured' ? '' : ` (${text(delta.state)})`}`;
 }
 
-function numericLeafText(leaf: LedgerValue<number> | null): string {
+function numericLeafText(leaf: LedgerValue<number> | null, derivedGroup: string | undefined): string {
     if (!leaf || typeof leaf.value !== 'number') return '';
-    const state = leaf.state === 'measured' ? '' : ` (${text(leaf.state)})`;
-    return `${formatNumber(leaf.value)}${state}`;
+    return `${formatNumber(leaf.value)}${fieldProvenance(leaf, derivedGroup)}`;
 }
 
 function baselineSuffix(
@@ -57,30 +56,31 @@ function baselineSuffix(
     baseline: LedgerValue<number> | null,
     disp: LedgerValue<number> | null,
     delta: LedgerValue<number> | null,
+    derivedGroup: string | undefined,
 ): string {
-    const avg7dText = numericLeafText(avg7d);
-    const dispText = numericLeafText(disp);
+    const avg7dText = numericLeafText(avg7d, derivedGroup);
+    const dispText = numericLeafText(disp, derivedGroup);
     if (baseline === null || baseline.value === null || baseline.value === undefined) {
         const missing = baseline === null ? '28d baseline: unavailable' : `28d baseline: ${text(baseline.state)}`;
         const extra = [avg7dText ? `7d ${avg7dText}` : '', dispText ? `±${dispText}` : ''].filter(Boolean).join(' ');
         return extra ? ` (${extra}, ${missing})` : ` (${missing})`;
     }
-    const state = baseline.state === 'measured' ? '' : ` (${text(baseline.state)})`;
+    const provenance = fieldProvenance(baseline, derivedGroup);
     const prefix = avg7dText ? `7d ${avg7dText} · ` : '';
     const spread = dispText ? ` ±${dispText}` : '';
-    return ` (${prefix}28d ${formatNumber(baseline.value)}${state}${spread}${deltaText(delta)})`;
+    return ` (${prefix}28d ${formatNumber(baseline.value)}${provenance}${spread}${deltaText(delta)})`;
 }
 
 /** `readiness: 6 (28d 7.2, −1.2)`; a missing value prints its state and stays in the missing line. */
 function baselineLine(
     name: string, value: LedgerValue<unknown>,
     avg7d: LedgerValue<number> | null, baseline: LedgerValue<number> | null, disp: LedgerValue<number> | null,
-    delta: LedgerValue<number> | null, group: string | undefined,
+    delta: LedgerValue<number> | null, group: string | undefined, derivedGroup: string | undefined,
 ): string {
     if (value.value === null || value.value === undefined) return `${text(name)}: ${text(value.state)}`;
     const unit = value.unit && value.unit !== 'score' ? ` ${text(value.unit)}` : '';
     const provenance = fieldProvenance(value, group);
-    return `${text(name)}: ${formatValue(value.value)}${unit}${baselineSuffix(avg7d, baseline, disp, delta)}${provenance}`;
+    return `${text(name)}: ${formatValue(value.value)}${unit}${baselineSuffix(avg7d, baseline, disp, delta, derivedGroup)}${provenance}`;
 }
 
 /** A record's fields: baselined fields with value + 7d/28d/±sd + delta, then the rest and one missing line. */
@@ -92,6 +92,7 @@ export function baselinedRecordLines(
     const withBaseline = entries.filter(([name]) => name in triplets);
     const rest: FieldEntry[] = entries.filter(([name]) => !(name in triplets));
     const missingBaselined: FieldEntry[] = withBaseline.filter(([, value]) => value.value === null || value.value === undefined);
+    const derivedGroup = ledger.derived.find(metric => metric.id === derivedId)?.value.source;
     return [
         ...withBaseline.map(([name, value]) => {
             const spec = triplets[name];
@@ -103,6 +104,7 @@ export function baselinedRecordLines(
                 baselineOf(ledger, derivedId, spec.disp),
                 baselineOf(ledger, derivedId, deltaKeyOf(name)),
                 group,
+                derivedGroup,
             );
         }),
         ...entryLines([...rest, ...missingBaselined], group),

@@ -6,6 +6,7 @@ export {
     collectionOf,
     isCurrentFormat,
     mergeCheckpoint,
+    morningKeptRevisionIds,
     userContextCheckpoint,
     userContextItemHashes,
     type CollectionCheckpoint,

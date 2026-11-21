@@ -170,5 +170,41 @@ describe('previousContext', () => {
         // Planning exports always ignore the checkpoint for planRevisions as well.
         const planning = build('planning');
         expect(renderLedgerExportCompact(planning, { previousContext: previous })).toContain('authorRationale: Build aerobic base first.');
+
+        // Diagnostic exports also retain full planRevisions when passed a checkpoint.
+        const diagnostic = buildLedgerExport(fullInput({ purpose: 'diagnostic' }));
+        expect(renderLedgerExportCompact(diagnostic, { previousContext: previous })).toContain('authorRationale: Build aerobic base first.');
+
+        // An older revision omitted on Day 1 morning is not in the checkpoint and renders in full once referenced on Day 2.
+        const day1 = build();
+        const older = structuredClone(day1.coachingHistory.planRevisions.items[0]);
+        older.id = 'old-plan@1';
+        older.fields.planId = { value: 'old-plan', source: 'adaptive', state: 'measured' };
+        older.fields.revision = { value: 1, source: 'adaptive', state: 'measured' };
+        older.fields.importedAt = { value: '2026-09-01T08:00:00Z', source: 'adaptive', state: 'measured' };
+        older.fields.authorRationale = { value: 'Older omitted rationale.', source: 'adaptive', state: 'measured' };
+        day1.coachingHistory.planRevisions.items.push(older);
+        const day1Cp = mergeCheckpoint(undefined, userContextCheckpoint(day1), '2026-11-20');
+        expect(day1Cp.itemHashes['planRevisions/old-plan@1']).toBeUndefined();
+
+        const day2 = structuredClone(day1);
+        const refPlacement = structuredClone(day2.coachingHistory.placements.items[0]);
+        refPlacement.id = 'old-plan@1:s1';
+        refPlacement.fields.planId = { value: 'old-plan', source: 'adaptive', state: 'measured' };
+        refPlacement.fields.revision = { value: 1, source: 'adaptive', state: 'measured' };
+        day2.coachingHistory.placements.items.push(refPlacement);
+        const day2Revisions = renderLedgerExportCompact(day2, { previousContext: day1Cp })
+            .slice(0);
+        expect(day2Revisions).toContain('#### old-plan@1');
+        expect(day2Revisions).toContain('authorRationale: Older omitted rationale.');
+        expect(day2Revisions).toContain('unchanged since 2026-11-20: 1 revision');
+
+        // Markdown punctuation in removed revision keys is escaped.
+        const hostilePrior = {
+            ...previous,
+            itemHashes: { ...previous.itemHashes, 'planRevisions/rev|[bad]': 'deadbeef' },
+        };
+        const hostileOut = renderLedgerExportCompact(ledger, { previousContext: hostilePrior });
+        expect(hostileOut).toContain('removed: planRevisions/rev&#124;&#91;bad&#93;');
     });
 });
