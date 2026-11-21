@@ -87,6 +87,7 @@ export function derivedMetricLines(
     metric: DerivedMetric,
     baselinedCollections: ReadonlySet<'recovery' | 'checkins'>,
     baselinedFields: ReadonlySet<string> = NO_FIELDS,
+    renderedDeltas?: ReadonlySet<string>,
 ): string[] {
     const group = metric.value.source;
     const omitContainerValue = metric.metrics !== undefined && !isPresent(metric.value) && metric.value.state === 'not_applicable';
@@ -94,9 +95,11 @@ export function derivedMetricLines(
         : metric.id === 'subjective_baselines' ? 'checkins'
             : null;
     const todayRenderedCollection = collectionKey !== null && baselinedCollections.has(collectionKey);
-    const dedupedDeltas = collectionKey === 'recovery' && todayRenderedCollection ? RECOVERY_DELTAS
-        : collectionKey === 'checkins' && todayRenderedCollection ? CHECKIN_DELTAS
-            : null;
+    const dedupedDeltas = !todayRenderedCollection ? null
+        : renderedDeltas !== undefined ? renderedDeltas
+            : collectionKey === 'recovery' ? RECOVERY_DELTAS
+                : collectionKey === 'checkins' ? CHECKIN_DELTAS
+                    : null;
     const metricEntries = Object.entries(metric.metrics ?? {}).filter(([key]) => !dedupedDeltas?.has(key));
     const filteredMetrics = Object.fromEntries(metricEntries);
     const allEntries: FieldEntry[] = [

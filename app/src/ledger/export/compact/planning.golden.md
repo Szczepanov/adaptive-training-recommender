@@ -164,8 +164,8 @@ placing: 4
 missing: fieldSize, elapsedSeconds, distanceM, summary (not_recorded)
 
 ## Derived
-biometric_baselines: shown in Today above; missing: sleepScore7dAvg, sleepScore28dAvg, sleepScore28dStdev, restingHr7dAvg, restingHr28dAvg, restingHr28dStdev, hrv7dAvg, hrv28dAvg, hrv28dStdev, respiration7dAvg, respiration28dAvg, respiration28dMad (missing)
-subjective_baselines: shown in Today above (recordedDays: 7d 0, 28d 0); missing: readiness_recentAvg, readiness_longAvg, readiness_variability, sleepQuality_recentAvg, sleepQuality_longAvg, sleepQuality_variability, fatigue_recentAvg, fatigue_longAvg, fatigue_variability, soreness_recentAvg, soreness_longAvg, soreness_variability, mentalStress_recentAvg, mentalStress_longAvg, mentalStress_variability, motivation_recentAvg, motivation_longAvg, motivation_variability (missing)
+biometric_baselines: shown in Today above; missing: sleepScore7dAvg, sleepScore28dAvg, sleepScore28dStdev, restingHr7dAvg, restingHr28dAvg, restingHr28dStdev, hrv7dAvg, hrv28dAvg, hrv28dStdev, respiration7dAvg, respiration28dAvg, respiration28dMad, sleepScore_delta28d, restingHr_delta28d, hrvOvernightAvg_delta28d, respirationAvg_delta28d (missing)
+subjective_baselines: shown in Today above (recordedDays: 7d 0, 28d 0); missing: readiness_recentAvg, readiness_longAvg, readiness_variability, sleepQuality_recentAvg, sleepQuality_longAvg, sleepQuality_variability, fatigue_recentAvg, fatigue_longAvg, fatigue_variability, soreness_recentAvg, soreness_longAvg, soreness_variability, mentalStress_recentAvg, mentalStress_longAvg, mentalStress_variability, motivation_recentAvg, motivation_longAvg, motivation_variability, readiness_delta28d, sleepQuality_delta28d, fatigue_delta28d, soreness_delta28d, mentalStress_delta28d, motivation_delta28d (missing)
 not_yet_supported: d_minus_1_step_normalization, rolling_performed_training_load
 
 ## User context

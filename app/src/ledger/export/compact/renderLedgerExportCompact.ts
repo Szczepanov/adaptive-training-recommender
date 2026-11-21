@@ -23,6 +23,7 @@ import {
     filterDelta,
     isCurrentFormat,
     morningKeptRevisionIds,
+    morningOmittedRevisionKeys,
     type PreviousContext,
     unchangedLines,
     userContextCheckpoint,
@@ -291,12 +292,13 @@ export function derivedSection(
     ledger: LedgerExport,
     baselinedCollections: ReadonlySet<'recovery' | 'checkins'> = NO_BASELINED,
     baselinedFields: ReadonlySet<string> = NO_FIELDS,
+    renderedDeltas?: ReadonlySet<string>,
 ): string[] {
     if (!ledger.derived.length) return ['## Derived', 'derived: none', ''];
     const unsupported = ledger.derived.filter(isNotYetSupportedDerived);
     const rendered = ledger.derived
         .filter(metric => !isNotYetSupportedDerived(metric))
-        .flatMap(metric => derivedMetricLines(metric, baselinedCollections, baselinedFields));
+        .flatMap(metric => derivedMetricLines(metric, baselinedCollections, baselinedFields, renderedDeltas));
     if (unsupported.length) rendered.push(`not_yet_supported: ${unsupported.map(metric => text(metric.id)).join(', ')}`);
     return ['## Derived', ...rendered, ''];
 }
@@ -831,7 +833,10 @@ export function coachingHistorySection(
 ): string[] {
     const previous = ledger.purpose === 'morning' && isCurrentFormat(checkpoint) ? checkpoint : undefined;
     const revDelta = previous
-        ? filterDelta(contextDelta(userContextCheckpoint(ledger), previous, userContextStates(ledger)), key => collectionOf(key) === 'planRevisions')
+        ? filterDelta(
+            contextDelta(userContextCheckpoint(ledger), previous, userContextStates(ledger), morningOmittedRevisionKeys(ledger)),
+            key => collectionOf(key) === 'planRevisions',
+        )
         : null;
     const revUnchangedIds = new Set(
         ledger.coachingHistory.planRevisions.items
@@ -842,6 +847,7 @@ export function coachingHistorySection(
         ? [
             ...revDelta.removed.map(key => `removed: ${text(key)}`),
             ...revDelta.unreadable.map(({ key, reason }) => `not readable now: ${text(key)} (${text(reason)})`),
+            ...revDelta.outOfScope.map(key => `out of scope now: ${text(key)}`),
         ]
         : [];
     const revSkippedLabel = previous && revUnchangedIds.size > 0
@@ -888,7 +894,7 @@ export function renderLedgerExportCompact(ledger: LedgerExport, options?: Compac
         ...sourceSection(ledger.sources),
         ...flagsSection(ledger),
         ...factsSection(ledger, consumed),
-        ...derivedSection(ledger, today.baselinedCollections, today.baselinedFields),
+        ...derivedSection(ledger, today.baselinedCollections, today.baselinedFields, today.renderedDeltas),
         ...userContextSection(ledger, checkpoint),
         ...coachingHistorySection(ledger, consumed, ledger.purpose === 'morning' ? checkpoint : undefined),
     ];

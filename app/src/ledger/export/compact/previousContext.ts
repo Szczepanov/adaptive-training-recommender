@@ -7,6 +7,7 @@ export {
     isCurrentFormat,
     mergeCheckpoint,
     morningKeptRevisionIds,
+    morningOmittedRevisionKeys,
     userContextCheckpoint,
     userContextItemHashes,
     type CollectionCheckpoint,
@@ -49,12 +50,18 @@ type GoneKind = 'removed' | 'unreadable' | 'outOfScope';
  * on or after the new lower bound (a key with no selection date was not date-bounded). A key
  * dated before the new bound left by date: out of scope.
  */
-function classifyGone(key: string, current: UserContextCheckpoint, previous: PreviousContext): GoneKind {
+function classifyGone(
+    key: string,
+    current: UserContextCheckpoint,
+    previous: PreviousContext,
+    omittedExistingKeys?: ReadonlySet<string>,
+): GoneKind {
     const name = collectionOf(key);
     const now = current.collections[name];
     const before = previous.collections[name];
     if (now && !now.complete) return 'unreadable';
     if (!now || !before?.complete) return 'outOfScope';
+    if (omittedExistingKeys?.has(key)) return 'outOfScope';
     if (before.scope === now.scope) return 'removed';
     if (now.from === undefined) return 'outOfScope';
     const date = previous.selectionDates[key];
@@ -64,14 +71,17 @@ function classifyGone(key: string, current: UserContextCheckpoint, previous: Pre
 /** Compares this export with the confirmed checkpoint. Removal needs a complete read and a key
  * still within the current selection; anything less is unknown or out of scope (spec 2c). */
 export function contextDelta(
-    current: UserContextCheckpoint, previous: PreviousContext, states: Readonly<Record<string, LedgerState>>,
+    current: UserContextCheckpoint,
+    previous: PreviousContext,
+    states: Readonly<Record<string, LedgerState>>,
+    omittedExistingKeys?: ReadonlySet<string>,
 ): ContextDelta {
     // A failed read is never abbreviated as unchanged, whatever its hash.
     const readable = (key: string) => states[collectionOf(key)] !== 'unavailable';
     const unchanged = Object.keys(current.itemHashes)
         .filter(key => readable(key) && previous.itemHashes[key] === current.itemHashes[key]).sort();
     const gone = Object.keys(previous.itemHashes).filter(key => !(key in current.itemHashes)).sort();
-    const of = (kind: GoneKind) => gone.filter(key => classifyGone(key, current, previous) === kind);
+    const of = (kind: GoneKind) => gone.filter(key => classifyGone(key, current, previous, omittedExistingKeys) === kind);
     const reasonOf = (key: string) => {
         const state = states[collectionOf(key)];
         return state && state !== 'measured' ? state : 'incomplete';

@@ -87,6 +87,7 @@ function baselineLine(
 export function baselinedRecordLines(
     ledger: LedgerExport, row: LedgerRecord, derivedId: string, triplets: Readonly<Record<string, BaselineTripletKeys>>,
     group: string | undefined,
+    renderedDeltas?: Set<string>,
 ): string[] {
     const entries = Object.entries(row.fields);
     const withBaseline = entries.filter(([name]) => name in triplets);
@@ -96,11 +97,18 @@ export function baselinedRecordLines(
     return [
         ...withBaseline.map(([name, value]) => {
             const spec = triplets[name];
+            const baseline = baselineOf(ledger, derivedId, spec.avg28d);
+            if (
+                value.value !== null && value.value !== undefined
+                && baseline !== null && baseline.value !== null && baseline.value !== undefined
+            ) {
+                renderedDeltas?.add(deltaKeyOf(name));
+            }
             return baselineLine(
                 name,
                 value,
                 baselineOf(ledger, derivedId, spec.avg7d),
-                baselineOf(ledger, derivedId, spec.avg28d),
+                baseline,
                 baselineOf(ledger, derivedId, spec.disp),
                 baselineOf(ledger, derivedId, deltaKeyOf(name)),
                 group,
