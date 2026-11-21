@@ -1,6 +1,6 @@
 # Strength session logging, 1RM self-calibration, and engine integration
 
-* **Status:** `In progress (default-off)` — all numbered S tasks are built and reviewed; activation remains evidence-gated.
+* **Status:** `Implemented` (logging & history) — all numbered S tasks are built and reviewed. Manual strength load costing (engine cost authority) is parked under ADR-0052; logged strength history is ledger data, with integrity tracked in #895.
 * **Blocked by:** nothing for the delivered logger/calibration path. Enabling manual strength load remains deferred until a real logged-history comparison supports it, per [ADR-0021](../adr/0021-strength-session-logging-and-intensity-gauges.md).
 * **Unlocks:** progressive-overload history; self-calibrating strength prescription; strength work finally costing `lowerBody` / `neuromuscular` fatigue.
 * **Source analysis:** [`2026-08-17-strength-logging-gap.md`](../analysis/2026-08-17-strength-logging-gap.md) — findings referenced below as `A2.1`–`A4.1`.

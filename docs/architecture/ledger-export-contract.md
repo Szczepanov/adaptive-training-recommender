@@ -210,7 +210,8 @@ prior it stores nothing for the collection. An unreadable item is therefore neve
 as unchanged. A complete read in a moved window advances the checkpoint to it: out-of-scope keys are
 reported once as `out of scope now` and not carried, since carrying them would accumulate stale keys;
 an item that reappears prints in full. This implements the Phase 2c checkpoint rules in
-`contextCheckpoint.ts` and `previousContext.ts`.
+`contextCheckpoint.ts` and `previousContext.ts`; the incomplete-read rule is an agent ruling the
+owner has yet to confirm.
 
 The brief screen (`DataView`, `components/useBriefCheckpoint.ts`) advances nothing on copy or
 download. In ledger mode `ContextBriefService.build` returns the export's `contextCheckpoint` and
@@ -248,8 +249,8 @@ toggle describe, so a copy can never carry the wrong variant.
 | Layer | Contents | Authority and gaps |
 | --- | --- | --- |
 | `facts` | Recovery, check-ins, canonical performed occurrences, session responses, current assessment observation heads, body mass, nutrition, bounded activity detail, competition outcomes | Recorded facts only; provider activity rows are provenance and never added to canonical totals |
-| `derived` | Biometric and subjective baseline metrics with units, readiness and source states | D−1 step normalization and performed-load slots remain `not_yet_supported` pending #1166; no engine derivations are called |
-| `flags` | The closed four D-FLAGS ids with immutable evaluation metadata and inputs | Persisted versions pass through in deterministic date/session/time order; uncaptured dates remain `not_recorded`; under HA7 `visible-v1` ([ADR-0054](../adr/0054-ha7-visible-early-warning-release-gate.md), `#1263`), `illness_anomaly` exports `evaluateIllnessAnomalyFlag` from the latest persisted health-anomaly assessment (revisions captured before the unlock keep `null / not_yet_supported` with reason `ha7_release_gate_unmet`; raw shadow payloads stay excluded) |
+| `derived` | Biometric and subjective baseline metrics with units, readiness and source states | D−1 step normalization and performed-load slots remain `not_yet_supported`; no engine derivations are called |
+| `flags` | The closed four D-FLAGS ids with immutable evaluation metadata and inputs | Persisted versions pass through in deterministic date/session/time order; uncaptured dates remain `not_recorded`; under HA7 `visible-v1` ([ADR-0054](../adr/0054-ha7-visible-early-warning-release-gate.md), `#1263`), `illness_anomaly` passes through the revisions `flagCaptureService` captured via `evaluateIllnessAnomalyFlag` from the latest persisted health-anomaly assessment (revisions captured before the unlock keep `null / not_yet_supported` with reason `ha7_release_gate_unmet`; raw shadow payloads stay excluded) |
 | `userContext` | Current active goals/constraints, settings/equipment, active injuries and resolved injury periods overlapping the window, preferences, travel, venue restrictions, availability and intent-block events | Injury `since` and `resolvedAt` use recorded dates; legacy onset stays unknown. Other unsupported effective dates and revision history stay explicit; `updatedAt` does not establish field-level history |
 | `coachingHistory` | Immutable external-plan revision headers/rationale, as-of placements with a derived past `outcome`, immutable placement events, moved/dropped placement overrides plus in-session swaps/omissions (with the athlete's choice reason), canonical planned→performed links | Drop/move reasons on changes saved before Phase 3C, and unrecorded legacy history, remain `not_yet_supported` |
 
