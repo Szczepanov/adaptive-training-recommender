@@ -94,6 +94,52 @@ describe('activity segments in entryLines', () => {
         ]);
     });
 
+    it('factors uniform segment type and/or confidence into the header while keeping single-segment arrays verbose', () => {
+        expect(entryLines([
+            ['segments', measured([
+                {
+                    segmentIndex: 1, segmentType: 'unknown', durationSeconds: 181,
+                    averagePowerWatts: 123.6, averageHrBpm: 107.4, maxHrBpm: 116, evidenceConfidence: 'low',
+                },
+                {
+                    segmentIndex: 2, segmentType: 'unknown', durationSeconds: 60,
+                    averagePowerWatts: 143.9, averageHrBpm: 114.8, maxHrBpm: 120, evidenceConfidence: 'low',
+                },
+            ], 'garmin')],
+        ], 'garmin')).toEqual([
+            'segments (2; type unknown, conf low; #idx dur power hr/maxHr):',
+            '#1 181s 123.6W 107.4/116bpm',
+            '#2 60s 143.9W 114.8/120bpm',
+        ]);
+
+        expect(entryLines([
+            ['segments', measured([
+                {
+                    segmentIndex: 1, segmentType: 'warmup', durationSeconds: 120,
+                    averagePowerWatts: 130, averageHrBpm: 110, maxHrBpm: 118, evidenceConfidence: 'high',
+                },
+                {
+                    segmentIndex: 2, segmentType: 'work', durationSeconds: 300,
+                    averagePowerWatts: 250, averageHrBpm: 155, maxHrBpm: 165, evidenceConfidence: 'high',
+                },
+            ], 'garmin')],
+        ], 'garmin')).toEqual([
+            'segments (2; conf high; #idx type dur power hr/maxHr):',
+            '#1 warmup 120s 130W 110/118bpm',
+            '#2 work 300s 250W 155/165bpm',
+        ]);
+    });
+
+    it('formats sleepDurationSec as human-readable hours while preserving provenance', () => {
+        expect(entryLines([
+            ['sleepDurationSec', { value: 22620, unit: 's', source: 'garmin', state: 'measured' }],
+        ], 'garmin')).toEqual(['sleepDuration: 6.3h']);
+
+        expect(entryLines([
+            ['sleepDurationSec', { value: 27000, unit: 's', source: 'manual', state: 'stale', observedOn: '2026-11-19' }],
+        ], 'garmin')).toEqual(['sleepDuration: 7.5h (manual, stale, 2026-11-19)']);
+    });
+
     it('renders empty segments as none and preserves non-default provenance on the header', () => {
         expect(entryLines([['segments', measured([], 'garmin')]], 'garmin')).toEqual(['segments: none']);
         expect(entryLines([

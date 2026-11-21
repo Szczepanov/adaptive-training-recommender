@@ -24,7 +24,7 @@ sleepScore: 81 (28d baseline: missing)
 restingHr: 48 bpm (28d baseline: missing)
 hrvOvernightAvg: 62 ms (28d baseline: missing)
 respirationAvg: 14 breaths/min (28d baseline: missing)
-sleepDurationSec: 27000 s
+sleepDuration: 7.5h
 hrvStatus: BALANCED
 bodyBatteryWake: 70 score
 totalSteps: 0 steps (D-1)
@@ -117,10 +117,10 @@ intensityTag: moderate
 sessionCost: moderate
 segmentCountTotal: 3
 segmentsTruncated: false
-segments (3; #idx type dur power hr/maxHr conf):
-#0 work 60s 250W —bpm high
-#1 work 60s 250W —bpm high
-#2 work 60s 250W —bpm high
+segments (3; type work, conf high; #idx dur power hr/maxHr):
+#0 60s 250W —bpm
+#1 60s 250W —bpm
+#2 60s 250W —bpm
 missing: maxHr (missing)
 
 no rows (measured): assessments, bodyComposition, events

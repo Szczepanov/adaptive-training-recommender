@@ -492,10 +492,27 @@ function availabilityLines(rows: LedgerCollection<ContextRecord>, skipIds: SkipI
             if (win.missing) missingGroups.set(win.missing, [...(missingGroups.get(win.missing) ?? []), win.date]);
         }
 
-        const compactLines = [...byDate.keys()].sort(codeUnitCompare).map(date => {
+        interface WindowRun {
+            startDate: string;
+            endDate: string;
+            slots: string;
+        }
+        const runs: WindowRun[] = [];
+        for (const date of [...byDate.keys()].sort(codeUnitCompare)) {
             const windows = byDate.get(date)!.sort((a, b) => codeUnitCompare(a.start, b.start) || codeUnitCompare(a.end, b.end));
-            return `${text(date)}: ${windows.map(win => `${text(win.start)}–${text(win.end)}`).join(', ')}`;
-        });
+            const slots = windows.map(win => `${text(win.start)}–${text(win.end)}`).join(', ');
+            const last = runs[runs.length - 1];
+            if (last && last.slots === slots && addDaysToLocalDateString(last.endDate, 1) === date) {
+                last.endDate = date;
+            } else {
+                runs.push({ startDate: date, endDate: date, slots });
+            }
+        }
+        const compactLines = runs.map(run => (
+            run.startDate === run.endDate
+                ? `${text(run.startDate)}: ${run.slots}`
+                : `${text(run.startDate)}…${text(run.endDate)}: ${run.slots}`
+        ));
         const [[onlySummary, onlyDates]] = missingGroups.size === 1 ? [...missingGroups] : [['', []]];
         if (missingGroups.size === 1 && onlyDates.length === compact.length) {
             compactLines.push(`schedule_window missing: ${onlySummary}`);

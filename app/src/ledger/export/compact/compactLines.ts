@@ -75,8 +75,12 @@ export function fieldProvenance(value: LedgerValue<unknown>, group?: string): st
  * source accompanies every non-measured state.
  */
 export function fieldLine(name: string, value: LedgerValue<unknown>, group?: string): string {
-    const unit = value.unit ? ` ${text(value.unit)}` : '';
     const provenance = fieldProvenance(value, group);
+    if (name === 'sleepDurationSec' && !isMissing(value) && isFiniteNumber(value.value)
+        && (value.unit === 's' || value.unit === undefined)) {
+        return `sleepDuration: ${formatNumber(value.value / 3600)}h${provenance}`;
+    }
+    const unit = value.unit ? ` ${text(value.unit)}` : '';
     // I3 (ADR-0003): a snapshot's totalSteps is the previous completed day, not the record's date.
     const semantic = name === 'totalSteps' && !isMissing(value) ? ' (D-1)' : '';
     return `${text(name)}: ${formatValue(value.value)}${unit}${semantic}${provenance}`;
@@ -134,7 +138,7 @@ function isSegmentRecord(item: unknown): item is SegmentLike {
         && 'evidenceConfidence' in item;
 }
 
-function formatSegmentLine(segment: SegmentLike): string {
+function formatSegmentLine(segment: SegmentLike, options: { omitType: boolean; omitConf: boolean }): string {
     const index = isFiniteNumber(segment.segmentIndex) ? formatNumber(segment.segmentIndex) : text(segment.segmentIndex);
     const kind = text(segment.segmentType);
     const duration = isFiniteNumber(segment.durationSeconds)
@@ -149,15 +153,29 @@ function formatSegmentLine(segment: SegmentLike): string {
         ? '—bpm'
         : `${hasAvgHr ? formatNumber(segment.averageHrBpm as number) : '—'}/${hasMaxHr ? formatNumber(segment.maxHrBpm as number) : '—'}bpm`;
     const confidence = text(segment.evidenceConfidence);
-    return `#${index} ${kind} ${duration} ${power} ${hr} ${confidence}`;
+    return [
+        `#${index}`,
+        ...(options.omitType ? [] : [kind]),
+        duration,
+        power,
+        hr,
+        ...(options.omitConf ? [] : [confidence]),
+    ].join(' ');
 }
 
 function fieldLines(name: string, value: LedgerValue<unknown>, group?: string): string[] {
     if (name === 'segments' && Array.isArray(value.value) && value.value.length > 0 && value.value.every(isSegmentRecord)) {
+        const segments = value.value;
+        const types = segments.length > 1 ? new Set(segments.map(segment => text(segment.segmentType))) : null;
+        const confs = segments.length > 1 ? new Set(segments.map(segment => text(segment.evidenceConfidence))) : null;
+        const uniformType = types && types.size === 1 ? [...types][0] : null;
+        const uniformConf = confs && confs.size === 1 ? [...confs][0] : null;
+        const cols = ['#idx', ...(uniformType ? [] : ['type']), 'dur', 'power', 'hr/maxHr', ...(uniformConf ? [] : ['conf'])].join(' ');
+        const uniformNotes = [uniformType ? `type ${uniformType}` : '', uniformConf ? `conf ${uniformConf}` : ''].filter(Boolean).join(', ');
         const provenance = fieldProvenance(value, group);
         return [
-            `segments (${value.value.length}; #idx type dur power hr/maxHr conf)${provenance}:`,
-            ...value.value.map(formatSegmentLine),
+            `segments (${segments.length}${uniformNotes ? `; ${uniformNotes}` : ''}; ${cols})${provenance}:`,
+            ...segments.map(segment => formatSegmentLine(segment, { omitType: uniformType !== null, omitConf: uniformConf !== null })),
         ];
     }
     return [fieldLine(name, value, group)];

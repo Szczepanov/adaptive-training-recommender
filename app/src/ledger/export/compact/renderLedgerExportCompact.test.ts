@@ -284,6 +284,25 @@ describe('morning export deduplication and shortening', () => {
         const diffMissingOut = renderLedgerExportCompact(ledger);
         expect(diffMissingOut).toContain('schedule_window missing (2026-11-23):');
         expect(diffMissingOut).toContain('schedule_window missing (2026-11-24):');
+
+        // Consecutive calendar dates with identical sorted slot sets collapse to a range, broken by gaps or differing slots.
+        const rangeLedger = buildLedgerExport(fullInput({
+            purpose: 'morning',
+            records: {
+                ...fullInput().records,
+                fixedActivities: [],
+                scheduleWindows: [
+                    { id: 'r1', date: '2026-11-23', startLocal: '06:00', endLocal: '08:30' },
+                    { id: 'r1b', date: '2026-11-23', startLocal: '11:30', endLocal: '15:00' },
+                    { id: 'r2', date: '2026-11-24', startLocal: '06:00', endLocal: '08:30' },
+                    { id: 'r2b', date: '2026-11-24', startLocal: '11:30', endLocal: '15:00' },
+                    { id: 'r3', date: '2026-11-25', startLocal: '06:00', endLocal: '08:30' },
+                    { id: 'r4', date: '2026-11-27', startLocal: '06:00', endLocal: '08:30' },
+                ],
+            },
+        }));
+        const rangeOut = renderLedgerExportCompact(rangeLedger);
+        expect(rangeOut).toContain('2026-11-23…2026-11-24: 06:00–08:30, 11:30–15:00\n2026-11-25: 06:00–08:30\n2026-11-27: 06:00–08:30');
     });
 
     it('deduplicates goal-* events against rendered goals and keeps them when goals were abbreviated as unchanged', () => {
