@@ -1,10 +1,10 @@
 # MS — Multisource Health & Recovery Ingestion
 
-* **Status:** `In progress`
+* **Status:** `Archived (personal-use Testing Mode; #643 closed 2026-11-22)`
 * **Proposed:** 2026-08-27
-* **Blocked by:** `MS17` activation gates — Google Restricted Scope App Verification/CASA for
-  Google Health transport, verified in-app health-data disclosure and explicit user consent,
-  sufficient prospective/incremental evidence, and a rollback flag.
+* **Blocked by:** none — archived `2026-11-22` (`#643` closed as not planned). The owner elected
+  to keep Google Health OAuth in personal-use Google Cloud Testing Mode (no Google Restricted Scope
+  App Verification / CASA pursued); per-metric fusion remains parked under ADR-0052.
 * **Unlocks:** source-aware Google Health ingestion, Eight Sleep source validation,
   transport-equivalence measurement, and evidence-gated multisource recovery fusion.
 * **Source analysis:**
@@ -134,7 +134,7 @@ This plan does not initially:
 | MS14 | 35–45-night prospective shadow study (60d backfilled) | `[x]` (re-run for real post-fix 2026-08-27: 42/18/0/0 night split and baselines reproduced closely; new cross-source sleep-duration correlation 0.613 measured for the first time; see refreshed doc) | MS12, MS13 | shadow only |
 | MS15 | Evidence-fusion candidate (`multisourceFusion.ts`) | `[x]` | MS14 | default-off |
 | MS16 | Replay/simulation comparison (`multisourceComparison.ts`) | `[x]` (doesn't depend on real account data — synthetic-scenario/invariant testing; re-ran `multisourceComparison.test.ts` directly 2026-08-27, 5/5 pass) | MS15 | default-off |
-| MS17 | Metric-by-metric production activation decision | `[ ]` (Restricted Scope Verification / required CASA security assessment confirmed NOT done — checked directly in Google Cloud Console 2026-08-27; see note above) | MS16 + prospective/incremental evidence + Restricted Scope/CASA + disclosure/consent + rollback | granular config |
+| MS17 | Metric-by-metric production activation decision | `[ ]` — **Closed as not planned `2026-11-22` (`#643` closed)** (Restricted Scope Verification / required CASA security assessment confirmed NOT done — checked directly in Google Cloud Console 2026-08-27, see note above; on `2026-11-22` owner elected to keep Google Health OAuth in personal-use Testing Mode with no Restricted Scope App Verification / CASA pursued and per-metric fusion parked under ADR-0052) | none (archived `2026-11-22`) | granular config (off) |
 | MS18 | Optional direct Eight Sleep adapter | `[x]` (implemented via PR #275 / [ES plan](./eight-sleep-direct-recovery-ingestion.md) & ADR-0030) | MS11 | none |
 | MS19 | Living architecture / ops reconciliation | `[x]` | corresponding code landed | documentation |
 
@@ -795,6 +795,11 @@ Hard invariant:
 ---
 
 # MS17 — Metric-by-metric activation decision
+
+> **Disposition (`2026-11-22`):** Archived (`#643` closed as not planned). The owner elected to
+> keep Google Health OAuth in personal-use Google Cloud Testing Mode without pursuing Google
+> Restricted Scope App Verification / CASA, and per-metric fusion stays parked under ADR-0052.
+> Historical activation criteria below are preserved as the audit record.
 
 Activation is not one switch for “Eight Sleep.”
 

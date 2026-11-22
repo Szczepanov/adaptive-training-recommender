@@ -1,9 +1,12 @@
 # ADR-0052 D-EVAL criteria: does the ledger + external-AI loop justify retiring the engine?
 
-- **Status:** **Owner-approved 2026-10-25; in force from its merge commit.** OD1–OD5, OD7 and
-  OD8 were approved as proposed. OD6 was replaced by per-protocol schedules (§3). C2 can be
-  evaluated only once the §3 protocol schedule table is filled in, which must happen before the
-  block starts. The thresholds are frozen for the block they judge (ADR-0052 D-EVAL).
+- **Status:** **Owner-approved 2026-10-25; pre-block prerequisites completed 2026-11-22; criteria frozen for the qualifying block.**
+  OD1–OD5, OD7 and OD8 were approved on `2026-10-25`, with OD6 replaced by per-protocol
+  schedules (§3). On `2026-11-22`, the owner completed all pre-block prerequisites (§3 goal-bound
+  protocol table, `90d`/`180d` schedules, cited `literature_reference` `cv_pct` measurement noise,
+  Oct 19–25 `"before"` baseline, `[OD4]`/`[OD5]` adherence baseline rule, and `OD9`–`OD10` including
+  live `illness_anomaly` under ADR-0054 in `C3`/`OD8`), freezing the criteria for the qualifying
+  block (ADR-0052 D-EVAL).
 - **Decision source:** [ADR-0052](../adr/0052-user-ledger-and-external-ai-planning-authority.md), sections D-EVAL and D-ENGINE.
 - **Companion:** [`../plans/2026-10-25-issue-1145-ledger-export-v1.md`](../plans/2026-10-25-issue-1145-ledger-export-v1.md). ADR-0052 requires both to merge together, before Phase 2.
 - **Result document (written after the block):** `docs/analysis/<date>-adr-0052-d-eval-result.md`, using the template at the end of this document.
@@ -77,7 +80,7 @@ Warsaw dates for grouping and recorded timestamps for elapsed hours. If only dat
 available, include the next three calendar dates conservatively and report that limit.
 Missing follow-up evidence cannot establish the absence of an adverse outcome.
 
-## 3. Baselines (candidates until confirmed)
+## 3. Baselines (owner-confirmed 2026-11-22)
 
 **Adherence baseline.** The previous 28 dates before the block start count as the comparison
 block only if both of these hold:
@@ -89,22 +92,34 @@ evidence fails comparability rather than being treated as completion.
 That earlier block ran with engine adjudication on, so the comparison is *loop vs loop*, not a
 controlled experiment. The result document must say so. If the earlier block fails either test,
 the adherence criterion uses the absolute threshold **≥ 75% [OD5]**.
+On `2026-11-22`, the owner confirmed using `[OD4]`/`[OD5]` automatically against the pre-block
+28-day window.
 
-**Benchmark baseline: each protocol on its own schedule [OD6, owner decision 2026-10-25].**
-Goal-bound tests keep their usual retest schedule; some are roughly quarterly, others yearly. No
-extra testing is required for the block. The code records no retest interval, so the owner
-declares one per goal-bound protocol in the table below, before the block starts:
+**Benchmark baseline: each protocol on its own schedule [OD6, owner decision 2026-10-25; table confirmed 2026-11-22].**
+Goal-bound tests keep their usual retest schedule; some are roughly quarterly, others
+semi-annual. No extra testing is required for the block. The code records no retest interval, so
+on `2026-11-22` the owner declared each protocol's goal-bound status, retest interval, and
+stated measurement noise below:
 
-| Protocol (`physicalCapitalProtocols.ts` id) | Goal-bound? | Retest interval |
-|---|---|---|
-| `strength-back-squat-1rm` | *owner* | *owner, e.g. quarterly* |
-| `strength-bench-press-1rm` | *owner* | *owner* |
-| `strength-back-squat-fixed-load-velocity` | *owner* | *owner* |
-| `strength-bench-press-fixed-load-velocity` | *owner* | *owner* |
-| `field-standing-broad-jump` | *owner* | *owner* |
-| `field-wall-touch-cmj` | *owner* | *owner* |
-| `field-seated-medball-chest-throw-3kg` | *owner* | *owner* |
-| `cycling-6s-seated-sprint` | *owner* | *owner* |
+| Protocol (`physicalCapitalProtocols.ts` id) | Goal-bound? | Retest interval | Stated measurement noise (literature reference) |
+|---|---|---|---|
+| `strength-back-squat-1rm` | **Yes** | Semi-annual (180d) | `4.2% CV` — Grgic J et al., *Sports Med Open* 2020;6(1):31 (PMID `32681399`, `GRGIC-2020-1RM-RELIABILITY` in `goalFeasibilityKnowledge.ts`; median CV `4.2%`, pooled n = 1,595) |
+| `strength-bench-press-1rm` | **Yes** | Semi-annual (180d) | `4.2% CV` — Grgic J et al., *Sports Med Open* 2020;6(1):31 (PMID `32681399`, `GRGIC-2020-1RM-RELIABILITY`) |
+| `strength-back-squat-fixed-load-velocity` | No | — | — |
+| `strength-bench-press-fixed-load-velocity` | No | — | — |
+| `field-standing-broad-jump` | **Yes** | Quarterly (90d) | `3.8% CV` — Washif JA et al., *Biol Sport* 2024;41(3):231–241 (PMID `38952920` / PMC `11167475`, Table 2 standing long jump `Distance, best (cm)` between-session CV `3.8%`, matching `max_valid` reducer) |
+| `field-wall-touch-cmj` | **Yes** | Quarterly (90d) | `4.6% CV` — Markovic G et al., *J Strength Cond Res* 2004;18(3):551–555 (PMID `15320660`, n = 93, upper bound of `2.4–4.6%` within-subject CV across Sargent/CMJ jump tests) |
+| `field-seated-medball-chest-throw-3kg` | **Yes** | Quarterly (90d) | `5.1% CV` — Riemann BL et al., *Int J Sports Phys Ther* 2023;18(5):1166–1175 (PMID `37795324` / PMC `10547086`, Table 3 `SMBCPT` between-session CV `5.1%` males / `4.5%` females) |
+| `cycling-6s-seated-sprint` | **Yes** | Quarterly (90d) | `3.0% CV` (1 s peak & 5 s mean power) — Wehbe G et al., *J Strength Cond Res* 2015;29(7):2050–2055 (PMID `25559911`, 6-s cycle peak power between-session CV `3.0%`, 90% CI `2.5–3.8%`; corroborated by Mendez-Villanueva et al., *J Sci Med Sport* 2007;10(5):323–326, PMID `16949868`, `2.8%` peak / `2.9%` mean) |
+
+These declared `literature_reference` (`cv_pct`) thresholds satisfy `C2`'s stated-noise
+requirement (aligned with `ReliabilityEstimate` in `observations/models.ts` and `deriveProgress`
+in `observations/progress.ts`) without mutating immutable protocol revisions in
+`physicalCapitalProtocols.ts`; personal close-spaced repeatability (`OV4.4`) supersedes the
+literature reference if later collected.
+
+On `2026-11-22`, the owner confirmed **19–25 Oct 2026** as the `"before"` baseline for
+goal-bound protocols tested in that window (`90d`/`180d` intervals both span to block start).
 
 For each goal-bound protocol:
 - **Before:** the most recent comparable completed attempt (`assessment_attempts`,
@@ -119,10 +134,11 @@ For each goal-bound protocol:
   period.
 
 Consequence, accepted by the owner: **C2, and therefore the overall go/no-go, may resolve
-months after the block ends** when a goal-bound test is yearly. Until then the result
-document records C2 as `pending` with each protocol's due date, and Phase 3 cannot start.
-The October 2026 assessment window (19–25 Oct) can serve as "before" for any protocol whose
-interval reaches the block start.
+months after the block ends** when a goal-bound test is yearly or semi-annual. Until then the
+result document records C2 as `pending` with each protocol's due date, and Phase 3 cannot start.
+As confirmed on `2026-11-22`, the October 2026 assessment window (19–25 Oct) serves as
+`"before"` for goal-bound protocols tested in that window (`90d`/`180d` both reach the block
+start).
 
 ## 4. Criteria
 
@@ -158,7 +174,7 @@ These are inputs for #1145 Part B and for Phase 2. Without them the criteria can
   periods in `trainingSettings.injuryHistory`. C3 can use these dates as well as check-ins;
   legacy constraints with unknown creation dates remain unknown and must not be backdated.
 
-## 6. Owner decisions (recorded 2026-10-25)
+## 6. Owner decisions (recorded 2026-10-25; updated 2026-11-22)
 
 | ID | Decision | Owner decision | Why |
 |---|---|---|---|
@@ -170,6 +186,8 @@ These are inputs for #1145 Part B and for Phase 2. Without them the criteria can
 | OD6 | Benchmark recency and after-window | **Each protocol on its own retest schedule** (replaces the proposed ≤ 28 d before / ≤ 7 d after); the interval table in §3 is to be filled in before the block | Some tests are quarterly, some yearly; no extra testing for the block. The owner accepted that C2 may resolve late |
 | OD7 | Adherence tolerance | **5 percentage points** (approved) | About 1 session in 20; sampling noise at this volume |
 | OD8 | Flag-source availability for C3 | **Inconclusive if missing, unavailable or invalid on ≥ 3 dates** (approved) | Too many blind dates make "zero adverse outcomes" meaningless |
+| OD9 | Live `illness_anomaly` flag in `C3` / `OD8` | **Included in both `C3` and `OD8` (approved 2026-11-22)** | Under ADR-0054 (`visible-v1`, `#1263`), `evaluateIllnessAnomalyFlag` raises `active: true` only on `possible_illness_or_systemic_stress`; `no_assessment` / `no_core_signals` count toward `OD8`'s `>= 3` blind-date gate |
+| OD10 | Goal-bound §3 protocol schedule, literature noise & Oct baseline | **6-protocol battery (`90d`/`180d`), cited PubMed/PMC `cv_pct` noise, Oct 19–25 `"before"` baseline, and auto `[OD4]`/`[OD5]` rule (approved 2026-11-22)** | Fixed-load velocity marked non-goal-bound; avoids forcing an unnecessary pre-block retest while holding non-decline checks to published typical-error CVs |
 
 ## 7. Result template (for the result document)
 

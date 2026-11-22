@@ -284,7 +284,7 @@ It is not exposed in the UI by default.
   it has no selection date (for example an active injury). It is `out of scope now`, reported
   once and then dropped from the checkpoint, when its date fell before the new window start.
   Do not abbreviate unreadable items as unchanged.
-  _Agent ruling during Phase 2 implementation (2026-11-14); owner to confirm in PR review._
+  _Agent ruling during Phase 2 implementation (2026-11-14); confirmed by owner 2026-11-22._
 - Without `previousContext`, everything prints in full.
 - The JSON always carries the full user context. Only the Markdown is abbreviated.
 - Copying or downloading alone never advances the checkpoint. After pasting into the
