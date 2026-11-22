@@ -6,9 +6,8 @@ import {
   APP_DIR,
   ROOT_DIR,
   SPAWN_OWN_PROCESS_GROUP,
+  awaitChildWithSignalShutdown,
   killProcessTree,
-  signalExitCode,
-  stopChild,
 } from './runWithEmulators.mjs';
 
 export function parsePortCliArgs(argv) {
@@ -75,46 +74,23 @@ export async function runWithPort({
   };
 
   const commandStr = serializeShellCommand(command);
-  let childProc = null;
 
-  const cleanup = () => {
-    if (childProc && childProc.pid) {
-      killProcessTree(childProc.pid);
-    }
-    releasePortBlock(lease);
-  };
-
-  let stopping = false;
-  const handleSignal = async (signal) => {
-    if (stopping) return;
-    stopping = true;
-    await stopChild(childProc);
-    cleanup();
-    process.exit(signalExitCode(signal));
-  };
-  process.on('SIGINT', handleSignal);
-  process.on('SIGTERM', handleSignal);
-
-  try {
-    const exitCode = await new Promise((res, rej) => {
-      childProc = spawn(commandStr, {
+  return awaitChildWithSignalShutdown({
+    spawnChild: () =>
+      spawn(commandStr, {
         cwd,
         stdio,
         shell: true,
         env: injectedEnv,
         detached: SPAWN_OWN_PROCESS_GROUP,
-      });
-      childProc.on('error', rej);
-      childProc.on('close', (code, signal) => {
-        res(code ?? (signal ? 1 : 0));
-      });
-    });
-    return exitCode;
-  } finally {
-    process.off('SIGINT', handleSignal);
-    process.off('SIGTERM', handleSignal);
-    cleanup();
-  }
+      }),
+    onCleanup: (childProc) => {
+      if (childProc && childProc.pid) {
+        killProcessTree(childProc.pid);
+      }
+      releasePortBlock(lease);
+    },
+  });
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

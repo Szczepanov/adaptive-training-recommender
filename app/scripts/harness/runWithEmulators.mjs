@@ -44,23 +44,113 @@ export const GRACEFUL_STOP_MS = 10_000;
 // SIGINT, so firebase-tools can stop the emulator JVM it starts in a separate session and delete
 // its hub locator; a straight SIGKILL to the group would orphan that JVM. Whatever is left after
 // the grace period is killed. On Windows `taskkill /T` reaches the whole tree directly.
-export async function stopChild(child, { graceMs = GRACEFUL_STOP_MS } = {}) {
-  if (!child?.pid || child.exitCode !== null || child.signalCode !== null) return;
-  if (SPAWN_OWN_PROCESS_GROUP) {
-    const closed = new Promise((res) => child.once('close', res));
+export async function stopChild(
+  child,
+  {
+    graceMs = GRACEFUL_STOP_MS,
+    useProcessGroup = SPAWN_OWN_PROCESS_GROUP,
+    killGroupFn = (pid, sig) => process.kill(-pid, sig),
+    killTreeFn = killProcessTree,
+  } = {},
+) {
+  if (!child?.pid || child.exitCode != null || child.signalCode != null) return;
+  if (useProcessGroup) {
+    let timer = null;
+    let closedHandler = null;
     try {
-      process.kill(-child.pid, 'SIGINT');
-    } catch {
-      // Group already gone.
+      const closed = new Promise((res) => {
+        closedHandler = res;
+        child.once('close', closedHandler);
+      });
+      try {
+        killGroupFn(child.pid, 'SIGINT');
+      } catch {
+        // Group already gone.
+      }
+      await Promise.race([
+        closed,
+        new Promise((res) => {
+          timer = setTimeout(res, graceMs);
+        }),
+      ]);
+    } finally {
+      clearTimeout(timer);
+      if (closedHandler) child.off('close', closedHandler);
     }
-    await Promise.race([closed, new Promise((res) => setTimeout(res, graceMs))]);
   }
-  killProcessTree(child.pid);
+  killTreeFn(child.pid);
 }
 
 // 128 + signal number, as a shell reports a process killed by that signal.
 export function signalExitCode(signal) {
   return signal === 'SIGTERM' ? 143 : 130;
+}
+
+/**
+ * Runs a spawned child to completion while handling SIGINT/SIGTERM teardown cleanly.
+ *
+ * `if (stopping) return;` guards against the POSIX shutdown race: while `stopChildFn` awaits the
+ * graceful SIGINT window, the child emits `close` (often with code 0 or signal SIGTERM). Without
+ * guarding `close`/`error`, the outer promise would resolve and let the caller exit 0/1 before
+ * `stopChildFn` finishes tearing down the tree and calling `exitFn(signalExitCode(signal))`.
+ */
+export async function awaitChildWithSignalShutdown({
+  spawnChild,
+  onCleanup,
+  stopChildFn = stopChild,
+  exitFn = (code) => process.exit(code),
+  signalTarget = process,
+}) {
+  let stopping = false;
+  let cleanedUp = false;
+  let childProc = null;
+
+  const cleanupOnce = () => {
+    if (cleanedUp) return;
+    cleanedUp = true;
+    onCleanup(childProc);
+  };
+
+  let handleSignal;
+  const onSigint = () => {
+    void handleSignal('SIGINT');
+  };
+  const onSigterm = () => {
+    void handleSignal('SIGTERM');
+  };
+
+  const detachSignals = () => {
+    signalTarget.off('SIGINT', onSigint);
+    signalTarget.off('SIGTERM', onSigterm);
+  };
+
+  handleSignal = async (signal) => {
+    if (stopping) return;
+    stopping = true;
+    detachSignals();
+    await stopChildFn(childProc);
+    cleanupOnce();
+    exitFn(signalExitCode(signal));
+  };
+
+  signalTarget.on('SIGINT', onSigint);
+  signalTarget.on('SIGTERM', onSigterm);
+
+  try {
+    return await new Promise((res, rej) => {
+      childProc = spawnChild();
+      childProc.on('error', (err) => {
+        if (!stopping) rej(err);
+      });
+      childProc.on('close', (code, signal) => {
+        if (stopping) return;
+        res(code ?? (signal ? 1 : 0));
+      });
+    });
+  } finally {
+    detachSignals();
+    cleanupOnce();
+  }
 }
 
 export function buildHarnessFirebaseConfig({
@@ -199,49 +289,26 @@ export async function runWithEmulators({
     commandStr,
   ];
 
-  let childProc = null;
-  const cleanup = () => {
-    if (childProc && childProc.pid) {
-      killProcessTree(childProc.pid);
-    }
-    try {
-      rmSync(configPath, { force: true });
-    } catch {
-      // Ignore
-    }
-    releasePortBlock(lease);
-  };
-
-  let stopping = false;
-  const handleSignal = async (signal) => {
-    if (stopping) return;
-    stopping = true;
-    await stopChild(childProc);
-    cleanup();
-    process.exit(signalExitCode(signal));
-  };
-  process.on('SIGINT', handleSignal);
-  process.on('SIGTERM', handleSignal);
-
-  try {
-    const exitCode = await new Promise((res, rej) => {
-      childProc = spawn(process.execPath, args, {
+  return awaitChildWithSignalShutdown({
+    spawnChild: () =>
+      spawn(process.execPath, args, {
         cwd,
         stdio,
         env: injectedEnv,
         detached: SPAWN_OWN_PROCESS_GROUP,
-      });
-      childProc.on('error', rej);
-      childProc.on('close', (code, signal) => {
-        res(code ?? (signal ? 1 : 0));
-      });
-    });
-    return exitCode;
-  } finally {
-    process.off('SIGINT', handleSignal);
-    process.off('SIGTERM', handleSignal);
-    cleanup();
-  }
+      }),
+    onCleanup: (childProc) => {
+      if (childProc && childProc.pid) {
+        killProcessTree(childProc.pid);
+      }
+      try {
+        rmSync(configPath, { force: true });
+      } catch {
+        // Ignore
+      }
+      releasePortBlock(lease);
+    },
+  });
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
