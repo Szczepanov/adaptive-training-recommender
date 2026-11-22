@@ -80,6 +80,21 @@ Warsaw dates for grouping and recorded timestamps for elapsed hours. If only dat
 available, include the next three calendar dates conservatively and report that limit.
 Missing follow-up evidence cannot establish the absence of an adverse outcome.
 
+**Attribution of editable follow-up records (owner clarification `2026-11-22`).** This
+clarifies how the rule above applies to records that can be edited without a versioned history.
+It changes no threshold or decision. It does not reopen the frozen criteria.
+- *Illness outcome* (`health_anomaly_outcomes`): a labelled symptom-onset date dates the illness.
+  Without one, the outcome counts from when it was first recorded (`createdAt`). A later edit
+  (`updatedAt`), including a note-only edit, never establishes an adverse outcome on its own.
+- *Check-in*: it counts from when it was submitted (`submittedAt`).
+- *Ambiguous edits*: an edit inside a follow-up window to a record created or submitted outside
+  it may be the moment an adverse value was recorded, such as a relabel to illness or a later
+  tissue follow-up. Such an edit makes that follow-up incomplete. It is neither a pass nor a
+  fail.
+- *Readouts taken before the result is final*: evidence recorded or edited after the readout's
+  as-of point is not used and counts as incomplete follow-up. The same applies to date-only
+  evidence dated on the as-of date when the as-of point is a timestamp.
+
 ## 3. Baselines (owner-confirmed 2026-11-22)
 
 **Adherence baseline.** The previous 28 dates before the block start count as the comparison
