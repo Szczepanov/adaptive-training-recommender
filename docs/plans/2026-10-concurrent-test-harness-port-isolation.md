@@ -291,7 +291,7 @@ first candidate if that needs fixing.
 | Vite env precedence differs from the assumption in Vite 8.3 | P0 verifies it; fallback is a generated `--mode` env file per lease, cleaned up with the config |
 | Probe-then-bind race with a non-harness process | Exclusive leases remove races between harness runs; a non-harness process binding a leased port between probe and emulator start still fails that run with `port taken` (no automatic retry) |
 | Excluded/reserved port ranges change after boot (Hyper-V, WSL, Docker) | Every port is probed at lease time; ranges are never cached |
-| Reaper kills a legitimate process | Reap acts only on leases whose recorded owner pid is dead, re-checked under the block lock immediately before acting, only on that lease's ports, and is dry-run by default. `preview:stop` kills only when the lease still names its live supervisor |
+| Reaper kills a legitimate process | Reap acts only on leases whose recorded owner pid is dead, re-checked under the block lock immediately before acting, only on that lease's ports, and is dry-run by default. `preview:stop` kills only when the lease, re-read under the block lock that it holds through the sweep and lease deletion, still names its live supervisor |
 | Per-run project ids leave Auth/Firestore state behind | Emulators are in-memory with `emulators:exec`; nothing persists past the run |
 | CI regressions from dynamic ports | CI runs the same launcher; dynamic ports on a fresh runner are always free. `test:rules` and E2E CI jobs gate the change |
 

@@ -73,6 +73,45 @@ describe('stopChild', () => {
   });
 });
 
+describe('stopChild with an exited leader', () => {
+  it.each([
+    { exitCode: 0, signalCode: null },
+    { exitCode: null, signalCode: 'SIGTERM' },
+  ])(
+    'skips the graceful wait but still cleans the group (exitCode=$exitCode, signalCode=$signalCode)',
+    async ({ exitCode, signalCode }) => {
+      const child = Object.assign(createFakeChild(6262), { exitCode, signalCode });
+      const killGroupCalls = [];
+      const killTreeCalls = [];
+
+      await stopChild(child, {
+        graceMs: 60_000,
+        useProcessGroup: true,
+        killGroupFn: (pid, sig) => {
+          killGroupCalls.push([pid, sig]);
+        },
+        killTreeFn: (pid) => {
+          killTreeCalls.push(pid);
+        },
+      });
+
+      expect(killGroupCalls).toEqual([]);
+      expect(killTreeCalls).toEqual([6262]);
+      expect(child.listenerCount('close')).toBe(0);
+    },
+  );
+
+  it('does nothing for a child that never got a pid', async () => {
+    const killTreeCalls = [];
+    await stopChild(Object.assign(createFakeChild(), { pid: undefined }), {
+      useProcessGroup: true,
+      killGroupFn: () => {},
+      killTreeFn: (pid) => killTreeCalls.push(pid),
+    });
+    expect(killTreeCalls).toEqual([]);
+  });
+});
+
 describe('awaitChildWithSignalShutdown', () => {
   it.each([
     { signal: 'SIGTERM', expectedExitCode: 143, closeArgs: [null, 'SIGTERM'] },
@@ -126,11 +165,15 @@ describe('awaitChildWithSignalShutdown', () => {
       expect(outerOutcome).toBe(pending);
       expect(cleanupCount).toBe(0);
       expect(exitCalls).toEqual([]);
-      expect(signalTarget.listenerCount('SIGINT')).toBe(0);
-      expect(signalTarget.listenerCount('SIGTERM')).toBe(0);
+      // Handlers stay installed during teardown so a repeated signal cannot fall through to the
+      // default POSIX action and kill the runner mid-cleanup.
+      expect(signalTarget.listenerCount('SIGINT')).toBe(1);
+      expect(signalTarget.listenerCount('SIGTERM')).toBe(1);
 
       // A duplicate signal during teardown must be ignored.
       signalTarget.emit(signal);
+      for (let i = 0; i < 5; i += 1) await Promise.resolve();
+      expect(stopCalls).toBe(1);
 
       releaseStop();
       for (let i = 0; i < 10; i += 1) await Promise.resolve();
@@ -138,6 +181,8 @@ describe('awaitChildWithSignalShutdown', () => {
       expect(outerOutcome).toBe(pending);
       expect(cleanupCount).toBe(1);
       expect(exitCalls).toEqual([expectedExitCode]);
+      expect(signalTarget.listenerCount('SIGINT')).toBe(0);
+      expect(signalTarget.listenerCount('SIGTERM')).toBe(0);
     },
   );
 

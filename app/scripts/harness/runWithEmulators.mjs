@@ -53,8 +53,12 @@ export async function stopChild(
     killTreeFn = killProcessTree,
   } = {},
 ) {
-  if (!child?.pid || child.exitCode != null || child.signalCode != null) return;
-  if (useProcessGroup) {
+  if (!child?.pid) return;
+  // An exited leader can leave live descendants behind (a shell's Vite or firebase-tools'
+  // emulator JVM), so its tree or group is still cleaned; only the graceful wait is skipped,
+  // because no further `close` will arrive.
+  const leaderExited = child.exitCode != null || child.signalCode != null;
+  if (useProcessGroup && !leaderExited) {
     let timer = null;
     let closedHandler = null;
     try {
@@ -127,9 +131,15 @@ export async function awaitChildWithSignalShutdown({
   handleSignal = async (signal) => {
     if (stopping) return;
     stopping = true;
-    detachSignals();
-    await stopChildFn(childProc);
-    cleanupOnce();
+    // Handlers stay installed (repeats are ignored via `stopping`) until teardown finishes:
+    // removing the last listener restores the default POSIX action, so a second signal in the
+    // grace period would kill the runner before the child tree and lease are cleaned up.
+    try {
+      await stopChildFn(childProc);
+      cleanupOnce();
+    } finally {
+      detachSignals();
+    }
     exitFn(signalExitCode(signal));
   };
 

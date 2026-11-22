@@ -308,6 +308,37 @@ describe('portLease lifecycle', () => {
     }
   });
 
+  it('probes every port a stale lease recorded, not only the requested ones', async () => {
+    const staleFile = resolve(tmpDir, '27500.json');
+    const stale = serializeLease({
+      pid: DEAD_PID,
+      worktree: '/dead',
+      suite: 'dead-emulators',
+      blockBase: 27500,
+      ports: portsForBlock(27500, 8),
+    });
+    writeFileSync(staleFile, stale);
+    // The orphan sits on offset 5, outside the two ports the new acquisition asks for.
+    const orphan = net.createServer();
+    await new Promise((res) => orphan.listen({ port: 27505, host: '127.0.0.1' }, res));
+
+    try {
+      const lease = await acquirePortBlock({
+        leaseDir: tmpDir,
+        minPort: 27500,
+        maxPort: 27520,
+        step: 10,
+        size: 2,
+        probePorts: true,
+      });
+
+      expect(lease.blockBase).toBe(27510);
+      expect(readFileSync(staleFile, 'utf8')).toBe(stale);
+    } finally {
+      await new Promise((res) => orphan.close(res));
+    }
+  });
+
   describe('concurrent acquirers in separate processes', () => {
     const ACQUIRERS = 6;
 

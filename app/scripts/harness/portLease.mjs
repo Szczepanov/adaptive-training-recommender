@@ -253,11 +253,17 @@ export async function acquirePortBlock({
 
     let acquired = createFileExclusive(leaseFile, content);
     if (!acquired) {
-      if (readLeaseState(leaseFile, isPidAliveFn).state === 'live') continue;
+      const existing = readLeaseState(leaseFile, isPidAliveFn);
+      if (existing.state === 'live') continue;
       // A stale lease whose ports are still held marks an orphan (a hard-killed run's emulator).
       // Leave that record for `harness:reap` instead of replacing it and losing track of the
-      // orphan.
-      if (probePorts && !(await probeBlockPorts(leaseData.ports))) continue;
+      // orphan. Probe every port the stale lease recorded, not only the ones requested now: a
+      // two-port acquisition must not replace an eight-port lease with an orphan on offset 5.
+      const recordedPorts = Array.isArray(existing.lease?.ports)
+        ? existing.lease.ports
+        : portsForBlock(blockBase);
+      const portsToCheck = [...new Set([...recordedPorts, ...leaseData.ports])];
+      if (probePorts && !(await probeBlockPorts(portsToCheck))) continue;
       acquired = tryReclaimLease(leaseFile, content, isPidAliveFn);
     }
     if (!acquired) continue;
