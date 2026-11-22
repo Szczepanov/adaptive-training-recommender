@@ -38,6 +38,131 @@ export function harnessConfigPath(worktree, blockBase) {
   return resolve(worktree, 'app', `.harness-${blockBase}.firebase.json`);
 }
 
+export const GRACEFUL_STOP_MS = 10_000;
+
+// Stops a launcher child on SIGINT/SIGTERM. Off Windows the child's process group first gets
+// SIGINT, so firebase-tools can stop the emulator JVM it starts in a separate session and delete
+// its hub locator; a straight SIGKILL to the group would orphan that JVM. Whatever is left after
+// the grace period is killed. On Windows `taskkill /T` reaches the whole tree directly.
+export async function stopChild(
+  child,
+  {
+    graceMs = GRACEFUL_STOP_MS,
+    useProcessGroup = SPAWN_OWN_PROCESS_GROUP,
+    killGroupFn = (pid, sig) => process.kill(-pid, sig),
+    killTreeFn = killProcessTree,
+  } = {},
+) {
+  if (!child?.pid) return;
+  // An exited leader can leave live descendants behind (a shell's Vite or firebase-tools'
+  // emulator JVM), so its tree or group is still cleaned; only the graceful wait is skipped,
+  // because no further `close` will arrive.
+  const leaderExited = child.exitCode != null || child.signalCode != null;
+  if (useProcessGroup && !leaderExited) {
+    let timer = null;
+    let closedHandler = null;
+    try {
+      const closed = new Promise((res) => {
+        closedHandler = res;
+        child.once('close', closedHandler);
+      });
+      try {
+        killGroupFn(child.pid, 'SIGINT');
+      } catch {
+        // Group already gone.
+      }
+      await Promise.race([
+        closed,
+        new Promise((res) => {
+          timer = setTimeout(res, graceMs);
+        }),
+      ]);
+    } finally {
+      clearTimeout(timer);
+      if (closedHandler) child.off('close', closedHandler);
+    }
+  }
+  killTreeFn(child.pid);
+}
+
+// 128 + signal number, as a shell reports a process killed by that signal.
+export function signalExitCode(signal) {
+  return signal === 'SIGTERM' ? 143 : 130;
+}
+
+/**
+ * Runs a spawned child to completion while handling SIGINT/SIGTERM teardown cleanly.
+ *
+ * `if (stopping) return;` guards against the POSIX shutdown race: while `stopChildFn` awaits the
+ * graceful SIGINT window, the child emits `close` (often with code 0 or signal SIGTERM). Without
+ * guarding `close`/`error`, the outer promise would resolve and let the caller exit 0/1 before
+ * `stopChildFn` finishes tearing down the tree and calling `exitFn(signalExitCode(signal))`.
+ */
+export async function awaitChildWithSignalShutdown({
+  spawnChild,
+  onCleanup,
+  stopChildFn = stopChild,
+  exitFn = (code) => process.exit(code),
+  signalTarget = process,
+}) {
+  let stopping = false;
+  let cleanedUp = false;
+  let childProc = null;
+
+  const cleanupOnce = () => {
+    if (cleanedUp) return;
+    cleanedUp = true;
+    onCleanup(childProc);
+  };
+
+  let handleSignal;
+  const onSigint = () => {
+    void handleSignal('SIGINT');
+  };
+  const onSigterm = () => {
+    void handleSignal('SIGTERM');
+  };
+
+  const detachSignals = () => {
+    signalTarget.off('SIGINT', onSigint);
+    signalTarget.off('SIGTERM', onSigterm);
+  };
+
+  handleSignal = async (signal) => {
+    if (stopping) return;
+    stopping = true;
+    // Handlers stay installed (repeats are ignored via `stopping`) until teardown finishes:
+    // removing the last listener restores the default POSIX action, so a second signal in the
+    // grace period would kill the runner before the child tree and lease are cleaned up.
+    try {
+      await stopChildFn(childProc);
+      cleanupOnce();
+    } finally {
+      detachSignals();
+    }
+    exitFn(signalExitCode(signal));
+  };
+
+  signalTarget.on('SIGINT', onSigint);
+  signalTarget.on('SIGTERM', onSigterm);
+
+  try {
+    return await new Promise((res, rej) => {
+      childProc = spawnChild();
+      childProc.on('error', (err) => {
+        if (!stopping) rej(err);
+      });
+      childProc.on('close', (code, signal) => {
+        if (stopping) return;
+        res(code ?? (signal ? 1 : 0));
+      });
+    });
+  } finally {
+    detachSignals();
+    cleanupOnce();
+  }
+}
+
 export function buildHarnessFirebaseConfig({
   lease,
   only = 'firestore',
@@ -174,45 +299,26 @@ export async function runWithEmulators({
     commandStr,
   ];
 
-  let childProc = null;
-  const cleanup = () => {
-    if (childProc && childProc.pid) {
-      killProcessTree(childProc.pid);
-    }
-    try {
-      rmSync(configPath, { force: true });
-    } catch {
-      // Ignore
-    }
-    releasePortBlock(lease);
-  };
-
-  const handleSignal = () => {
-    cleanup();
-    process.exit(130);
-  };
-  process.on('SIGINT', handleSignal);
-  process.on('SIGTERM', handleSignal);
-
-  try {
-    const exitCode = await new Promise((res, rej) => {
-      childProc = spawn(process.execPath, args, {
+  return awaitChildWithSignalShutdown({
+    spawnChild: () =>
+      spawn(process.execPath, args, {
         cwd,
         stdio,
         env: injectedEnv,
         detached: SPAWN_OWN_PROCESS_GROUP,
-      });
-      childProc.on('error', rej);
-      childProc.on('close', (code, signal) => {
-        res(code ?? (signal ? 1 : 0));
-      });
-    });
-    return exitCode;
-  } finally {
-    process.off('SIGINT', handleSignal);
-    process.off('SIGTERM', handleSignal);
-    cleanup();
-  }
+      }),
+    onCleanup: (childProc) => {
+      if (childProc && childProc.pid) {
+        killProcessTree(childProc.pid);
+      }
+      try {
+        rmSync(configPath, { force: true });
+      } catch {
+        // Ignore
+      }
+      releasePortBlock(lease);
+    },
+  });
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
