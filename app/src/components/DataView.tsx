@@ -1,39 +1,20 @@
-import { useState, useEffect, useCallback } from 'react';
-import type { DataState } from '../engine/dataState';
-import type { DailyDecisionInput, NormalizedGarminActivity, ActivityOverride } from '../engine/models';
-import { activityService } from '../services/activityService';
-import { activityOverrideService } from '../services/activityOverrideService';
+import { useEffect, useState } from 'react';
+import type { CapabilityMaintenanceResult } from '../engine/capabilityMaintenance';
+import type { DailyDecisionInput } from '../engine/models';
 import { recommendationService } from '../services/recommendationService';
-import { type ContextBriefResult } from '../services/contextBriefService';
-import { briefPurposeFor, briefWindowDaysFor, type BriefWindowPreset } from '../engine/contextBrief';
-import { purposeAlwaysRendersFullContext } from '../ledger/export/compact/renderLedgerExportCompact';
-import { BriefPresetToggle } from './BriefPresetToggle';
-import { BriefFullContextToggle } from './BriefFullContextToggle';
-import { BriefChatInput, BriefConfirmChat } from './BriefChatCheckpoint';
-import { useBriefCheckpoint } from './useBriefCheckpoint';
-import { isBriefStale } from './briefStaleness';
-import { buildBriefForPreset, loadStoredBriefPreset, persistBriefPreset } from './briefPreset';
-import { addDaysToLocalDateString, getLocalDateString } from '../utils/localDate';
-import {
-  downloadActivitiesJsonFile,
-  exportActivitiesBundleToJson,
-} from '../utils/activityJsonExport';
-import { ActivityTelemetry } from './ActivityTelemetry';
-import { ActivityReclassificationModal } from './ActivityReclassificationModal';
-import { StrengthOverloadHistory } from './StrengthOverloadHistory';
-import { CanonicalActivitiesPanel } from './CanonicalActivitiesPanel';
-import { linkCompletedWorkoutSources, unlinkCompletedWorkoutSource } from './completedWorkoutActions';
+import { SCREEN_LABELS } from '../types/navigation';
 import { BodyCompositionPanel } from './anthropometry/BodyCompositionPanel';
 import { NutritionPanel } from './nutrition/NutritionPanel';
-import { configuredActivitiesReadModelPolicy } from '../training-occurrence/activitiesReadModelPolicy';
-import { loadCanonicalActivitiesWindow } from '../training-occurrence/canonicalActivitiesWindow';
-import type { CompletedWorkoutView, ReconciliationSweepStatus } from '../training-occurrence/completedWorkoutView';
-import { SCREEN_LABELS } from '../types/navigation';
+import { StrengthOverloadHistory } from './StrengthOverloadHistory';
+import { ActivitiesTab } from './dataView/ActivitiesTab';
+import { AdherenceTab, CheckinTab } from './dataView/CheckinAndAdherenceTabs';
+import { ContextBriefTab } from './dataView/ContextBriefTab';
+import type { AdherenceStats, DataViewTab } from './dataView/dataViewFormat';
+import { ConstraintsTab, GoalsTab, PreferencesTab } from './dataView/ProfileDataTabs';
+import { RecoveryTab } from './dataView/RecoveryTab';
+import { useActivitiesTabState } from './dataView/useActivitiesTabState';
+import { useContextBriefState } from './dataView/useContextBriefState';
 import './DataView.css';
-import type { CapabilityMaintenanceResult } from '../engine/capabilityMaintenance';
-import { downloadContextBriefFile, type ContextBriefExportFormat } from '../utils/contextBriefExport';
-import { ContextBriefExportActions } from './ContextBriefExportActions';
-import { LedgerExportButton } from './LedgerExportButton';
 
 interface DataViewProps {
   decisionInput: DailyDecisionInput | null;
@@ -53,97 +34,28 @@ interface DataViewProps {
   capabilityMaintenance?: CapabilityMaintenanceResult | null;
 }
 
-type DataViewTab = 'recovery' | 'activities' | 'strength' | 'nutrition' | 'body' | 'checkin' | 'goals' | 'constraints' | 'preferences' | 'adherence' | 'brief';
-
-type AdherenceStats = Awaited<ReturnType<typeof recommendationService.getAdherenceStats>>;
-
-function describeSourceState(status: 'MISSING' | 'INVALID' | 'UNAVAILABLE'): string {
-  if (status === 'MISSING') return 'No record exists for this date yet.';
-  if (status === 'INVALID') return 'The stored record is malformed and needs repair.';
-  return 'The data source is temporarily unavailable. Retry the dashboard refresh.';
-}
-
-function formatCandidateNumber(value: number | null | undefined): string {
-  return typeof value === 'number' && Number.isFinite(value) ? String(value) : 'N/A';
-}
-
-function formatCandidateDelta(value: number | null | undefined): string {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return 'N/A';
-  return value > 0 ? `+${value}` : String(value);
-}
-
-function formatSleepStageMinutes(seconds: number | null | undefined): string {
-  return typeof seconds === 'number' && Number.isFinite(seconds)
-    ? `${Math.round(seconds / 60)}m`
-    : 'N/A';
-}
-
-function formatCandidateBaseline(
-  median7d: number | null | undefined,
-  median28d: number | null | undefined,
-  mad28d: number | null | undefined,
-  delta7d: number | null | undefined,
-  delta28d: number | null | undefined,
-): string {
-  return `7d med ${formatCandidateNumber(median7d)} · 28d med ${formatCandidateNumber(median28d)} · MAD ${formatCandidateNumber(mad28d)} · Δ7 ${formatCandidateDelta(delta7d)} · Δ28 ${formatCandidateDelta(delta28d)}`;
-}
-
-// A schema/algorithm rollout gate on the account, not a fact about the athlete's own data --
-// naming the internal version number ("requires baseline v4") tells the reader nothing
-// actionable, so every gated field uses this one neutral label instead.
-const VERSION_GATED_NOT_AVAILABLE = 'Not available yet';
-
 export function DataView({ decisionInput, userId, initialTab = 'recovery', onNavigateToBrief, onRetry, onBack, capabilityMaintenance }: DataViewProps) {
   const [activeTab, setActiveTab] = useState<DataViewTab>(initialTab);
-  const [brief, setBrief] = useState<ContextBriefResult | null>(null);
-  const [briefCapabilityMaintenanceKey, setBriefCapabilityMaintenanceKey] = useState<string | null>(null);
-  // Tagged with the date it belongs to, so a failure for one date is not rendered
-  // against another. Deriving visibility this way avoids clearing state from inside
-  // the effect body, which react-hooks/set-state-in-effect correctly rejects.
-  const [briefError, setBriefError] = useState<{ date: string; message: string } | null>(null);
-  const [briefCopied, setBriefCopied] = useState(false);
-  const [briefPreset, setBriefPreset] = useState<BriefWindowPreset>(loadStoredBriefPreset);
-  // Per-view, never persisted: forces the ledger Markdown export to render unchanged context in full.
-  const [briefFullContext, setBriefFullContext] = useState(false);
-  // What the brief on screen was built with; a mismatch means it is stale and must not be copied.
-  const [builtVariant, setBuiltVariant] = useState({ fullContext: false, chat: '' });
-  // The planning export starts a new chat, so it is always rendered in full (Phase 4).
-  const briefFullContextLocked = purposeAlwaysRendersFullContext(briefPurposeFor(briefPreset));
-  const effectiveBriefFullContext = briefFullContext || briefFullContextLocked;
-  const checkpoint = useBriefCheckpoint(userId, briefPurposeFor(briefPreset), effectiveBriefFullContext);
   // null doubles as "not loaded yet" -- once getAdherenceStats resolves it's always a
   // real (possibly all-zero) stats object, so this alone distinguishes loading from an
   // answer of "nothing recorded yet" without a separate loading flag.
   const [adherenceStats, setAdherenceStats] = useState<AdherenceStats | null>(null);
-  const [activityWindow, setActivityWindow] = useState<{
-    userId: string;
-    asOfDate: string;
-    state: DataState<NormalizedGarminActivity[]>;
-  } | null>(null);
-  const [reclassifyModalOpen, setReclassifyModalOpen] = useState(false);
-  const [activityOverrides, setActivityOverrides] = useState<Record<string, ActivityOverride>>({});
-  // ADR-0034 PR2: canonical Activities read model, gated by VITE_TRAINING_OCCURRENCE_ACTIVITIES_POLICY.
-  // Default 'off' leaves activityWindow/ActivityTelemetry above as the sole, unchanged
-  // production path -- this state and its effect are inert unless explicitly enabled.
-  const activitiesReadModelPolicy = configuredActivitiesReadModelPolicy();
-  const [canonicalWorkoutWindow, setCanonicalWorkoutWindow] = useState<{
-    userId: string;
-    asOfDate: string;
-    workouts: CompletedWorkoutView[] | null;
-    reconciliationSweep?: ReconciliationSweepStatus;
-    /** Set when the canonical read itself rejected -- `workouts` stays null so the UI can
-     * tell "still loading" (canonicalWorkoutWindow is null/stale) apart from "read failed"
-     * (this flag set) instead of showing an indefinite loading state for a real failure. */
-    error?: boolean;
-  } | null>(null);
+  const briefDate = decisionInput?.date;
 
-  const loadOverrides = useCallback(() => {
-    activityOverrideService.getAllOverrides(userId).then(setActivityOverrides);
-  }, [userId]);
+  const briefState = useContextBriefState({
+    active: activeTab === 'brief',
+    userId,
+    briefDate,
+    decisionInputDate: decisionInput?.date,
+    onNavigateToBrief,
+    capabilityMaintenance,
+  });
 
-  useEffect(() => {
-    loadOverrides();
-  }, [loadOverrides]);
+  const activitiesState = useActivitiesTabState({
+    active: activeTab === 'activities',
+    userId,
+    briefDate,
+  });
 
   useEffect(() => {
     if (activeTab !== 'adherence' || adherenceStats) return;
@@ -154,158 +66,12 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery', onNav
     return () => { cancelled = true; };
   }, [activeTab, userId, adherenceStats]);
 
-  const handleActivityDetailsFetched = useCallback(() => {
-    setActivityWindow(null);
-    setCanonicalWorkoutWindow(null);
-  }, []);
-
-  const briefDate = decisionInput?.date;
-  const canonicalWindowIsCurrent = canonicalWorkoutWindow !== null
-    && canonicalWorkoutWindow.userId === userId
-    && canonicalWorkoutWindow.asOfDate === briefDate;
-  const capabilityMaintenanceKey = JSON.stringify(capabilityMaintenance ?? null);
-  useEffect(() => {
-    // Both userId and asOfDate must match the cached window, or a user switch on the same
-    // calendar date would skip the fetch and later render the previous user's activities.
-    if (activeTab !== 'activities' || !briefDate
-      || (activityWindow?.userId === userId && activityWindow.asOfDate === briefDate)) return;
-    let cancelled = false;
-    const startInclusive = addDaysToLocalDateString(briefDate, -6);
-    const throughExclusive = addDaysToLocalDateString(briefDate, 1);
-    activityService.getActivitiesInRange(userId, startInclusive, throughExclusive).then((state) => {
-      if (!cancelled) setActivityWindow({ userId, asOfDate: briefDate, state });
-    });
-    return () => { cancelled = true; };
-  }, [activeTab, userId, briefDate, activityWindow?.userId, activityWindow?.asOfDate]);
-
-  // ADR-0034 PR2 dual-read: only runs when the cutover flag is explicitly enabled. Mirrors
-  // the raw-activity window above so the (if enabled) canonical UI covers the exact same
-  // 7-day window. Comparison recording lives solely in getCompletedWorkoutsInRange
-  // itself now -- it already has the exact-range Garmin snapshot it hydrated from, so a
-  // second UI-level comparison against this view's separately-fetched activityWindow
-  // could log a false difference caused by the two fetches' timing, not by the read
-  // models actually disagreeing.
-  useEffect(() => {
-    if (activitiesReadModelPolicy === 'off' || activeTab !== 'activities' || !briefDate
-      || (canonicalWorkoutWindow?.userId === userId && canonicalWorkoutWindow.asOfDate === briefDate)) return;
-    let cancelled = false;
-    const startInclusive = addDaysToLocalDateString(briefDate, -6);
-    const throughExclusive = addDaysToLocalDateString(briefDate, 1);
-    loadCanonicalActivitiesWindow(userId, startInclusive, throughExclusive).then((window) => {
-      if (cancelled) return;
-      setCanonicalWorkoutWindow(window.status === 'available'
-        ? { userId, asOfDate: briefDate, workouts: window.workouts, reconciliationSweep: window.reconciliationSweep }
-        : { userId, asOfDate: briefDate, workouts: null, error: true, reconciliationSweep: window.reconciliationSweep });
-    }).catch(err => {
-      console.warn('[training-occurrence] canonical activities read failed', err);
-      if (!cancelled) setCanonicalWorkoutWindow({ userId, asOfDate: briefDate, workouts: null, error: true });
-    });
-    return () => { cancelled = true; };
-  }, [activitiesReadModelPolicy, activeTab, userId, briefDate, canonicalWorkoutWindow?.userId, canonicalWorkoutWindow?.asOfDate]);
-
-  useEffect(() => {
-    // Keyed on the date the brief was built for and on the active preset, not merely on
-    // presence: a scenario switch or a midnight rollover changes `briefDate`, and toggling
-    // daily/full changes what should be on screen for the *same* date -- a presence-only
-    // guard would leave the previous day's (or previous preset's) brief and range on
-    // screen indefinitely.
-    // `briefDate` must be defined for the comparison to settle: passing undefined lets the
-    // service default to today, whose asOfDate would never equal undefined and would
-    // re-trigger this effect on every render.
-    // When this view only links to the canonical export surface (#491), never fetch
-    // the brief here -- the `brief` screen builds it.
-    if (onNavigateToBrief || activeTab !== 'brief' || !briefDate
-      || (brief?.asOfDate === briefDate && brief.preset === briefPreset
-        && briefCapabilityMaintenanceKey === capabilityMaintenanceKey
-        && builtVariant.fullContext === effectiveBriefFullContext && builtVariant.chat === checkpoint.chat)) return;
-    let cancelled = false;
-    buildBriefForPreset(
-      userId,
-      briefDate,
-      briefPreset,
-      undefined,
-      decisionInput?.date === briefDate ? capabilityMaintenance : undefined,
-      { previousContext: checkpoint.previousContext, fullContext: effectiveBriefFullContext },
-    )
-      .then(result => {
-        if (!cancelled) {
-          setBrief(result);
-          setBriefCapabilityMaintenanceKey(capabilityMaintenanceKey);
-          setBuiltVariant({ fullContext: effectiveBriefFullContext, chat: checkpoint.chat });
-          setBriefError(null);
-        }
-      })
-      .catch(() => {
-        if (cancelled) return;
-        // Drop the stale result rather than leaving the previous date's brief and range on
-        // screen under an error banner -- Copy would otherwise hand the athlete yesterday's
-        // window while the page claims today's.
-        setBrief(null);
-        setBriefCopied(false);
-        setBriefError({ date: briefDate, message: 'Could not assemble the brief. Retry the dashboard refresh.' });
-      });
-    return () => { cancelled = true; };
-  }, [onNavigateToBrief, activeTab, userId, brief?.asOfDate, brief?.preset, briefDate, briefPreset, effectiveBriefFullContext, builtVariant, checkpoint.chat, checkpoint.previousContext, briefCapabilityMaintenanceKey, capabilityMaintenanceKey, capabilityMaintenance, decisionInput?.date]);
-
-  const selectBriefPreset = (preset: BriefWindowPreset) => {
-    setBriefPreset(preset);
-    persistBriefPreset(preset);
-  };
-
-  const briefStale = isBriefStale({
-    brief, briefDate, briefPreset, builtVariant,
-    fullContext: effectiveBriefFullContext, chat: checkpoint.chat, checkpointPending: checkpoint.pending,
-    builtCapabilityKey: briefCapabilityMaintenanceKey, capabilityKey: capabilityMaintenanceKey,
-  });
-
-  const copyBrief = async () => {
-    if (!brief || briefStale) return;
-    try {
-      await navigator.clipboard.writeText(brief.text);
-      checkpoint.recordExport(brief);
-      setBriefError(null);
-      setBriefCopied(true);
-      window.setTimeout(() => setBriefCopied(false), 2000);
-    } catch {
-      // Clipboard permission can be denied; the textarea below is always selectable.
-      setBriefCopied(false);
-      setBriefError({ date: brief.asOfDate, message: 'Copy was blocked. Select the text below and copy it manually.' });
-    }
-  };
-
-  const downloadBrief = (format: ContextBriefExportFormat) => {
-    if (!brief || (briefStale && format === 'markdown')) return;
-    try {
-      downloadContextBriefFile(brief, format);
-      if (format === 'markdown') checkpoint.recordExport(brief);
-      setBriefError(null);
-    } catch {
-      setBriefError({
-        date: brief.asOfDate,
-        message: 'Download could not start. Try Copy to clipboard or select the text below.',
-      });
-    }
-  };
-
   const openCanonicalBrief = () => {
     if (onNavigateToBrief) {
       onNavigateToBrief();
       return;
     }
     setActiveTab('brief');
-  };
-
-  const handleDownloadActivities = () => {
-    if (!activityWindow || activityWindow.state.status !== 'AVAILABLE' || activityWindow.state.data.length === 0) return;
-    const startInclusive = addDaysToLocalDateString(briefDate ?? getLocalDateString(), -6);
-    const throughDateExclusive = addDaysToLocalDateString(briefDate ?? getLocalDateString(), 1);
-    const bundle = exportActivitiesBundleToJson(activityWindow.state.data, {
-      userId,
-      startDateInclusive: startInclusive,
-      throughDateExclusive,
-    });
-    const filename = `activities_${userId}_${startInclusive}_to_${throughDateExclusive}`;
-    downloadActivitiesJsonFile(filename, bundle);
   };
 
   if (!decisionInput) {
@@ -331,741 +97,6 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery', onNav
       </div>
     );
   }
-
-  const recoverySnapshot = decisionInput.recoverySnapshot;
-  const baselineVersion = recoverySnapshot?.derived.baselineComputationVersion ?? 0;
-
-  const renderRecoveryData = () => (
-    <div className="data-section">
-      <h3>Recovery Snapshot</h3>
-      {decisionInput.sourceStates?.recoverySnapshot.status !== undefined
-        && decisionInput.sourceStates.recoverySnapshot.status !== 'AVAILABLE' && (
-          <p className="data-state-notice">{describeSourceState(decisionInput.sourceStates.recoverySnapshot.status)}</p>
-        )}
-      <div className="data-grid">
-        <div className="data-group">
-          <h4>Raw Metrics</h4>
-          <div className="data-item">
-            <span className="data-label">Date:</span>
-            <span className="data-value">{recoverySnapshot?.date || 'N/A'}</span>
-          </div>
-          <div className="data-item">
-            <span className="data-label">Sleep Score:</span>
-            <span className="data-value">{recoverySnapshot?.raw.sleepScore ?? 'N/A'}</span>
-          </div>
-          <div className="data-item">
-            <span className="data-label">Sleep Duration:</span>
-            <span className="data-value">
-              {recoverySnapshot?.raw.sleepDurationSec
-                ? `${Math.round(recoverySnapshot.raw.sleepDurationSec / 60)} min`
-                : 'N/A'
-              }
-            </span>
-          </div>
-          {recoverySnapshot?.raw.deepSleepSec != null && (
-            <div className="data-item">
-              <span className="data-label">Sleep Stages (Deep / REM / Light / Awake):</span>
-              <span className="data-value">
-                {formatSleepStageMinutes(recoverySnapshot.raw.deepSleepSec)} / {formatSleepStageMinutes(recoverySnapshot.raw.remSleepSec)} / {formatSleepStageMinutes(recoverySnapshot.raw.lightSleepSec)} / {formatSleepStageMinutes(recoverySnapshot.raw.awakeSleepSec)}
-              </span>
-            </div>
-          )}
-          {recoverySnapshot?.raw.restlessMomentsCount != null && (
-            <div className="data-item">
-              <span className="data-label">Restless Moments:</span>
-              <span className="data-value">{recoverySnapshot.raw.restlessMomentsCount}</span>
-            </div>
-          )}
-          <div className="data-item">
-            <span className="data-label">Resting HR:</span>
-            <span className="data-value">{recoverySnapshot?.raw.restingHr ?? 'N/A'}</span>
-          </div>
-          <div className="data-item">
-            <span className="data-label">HRV Overnight Avg:</span>
-            <span className="data-value">{recoverySnapshot?.raw.hrvOvernightAvg ?? 'N/A'}</span>
-          </div>
-          <div className="data-item">
-            <span className="data-label">HRV Status:</span>
-            <span className="data-value">{recoverySnapshot?.raw.hrvStatus ?? 'N/A'}</span>
-          </div>
-          <div className="data-item">
-            <span className="data-label">Respiration Avg:</span>
-            <span className="data-value">{recoverySnapshot?.raw.respirationAvg ?? 'N/A'}</span>
-          </div>
-          <div className="data-item">
-            <span className="data-label">Body Battery Wake:</span>
-            <span className="data-value">{recoverySnapshot?.raw.bodyBatteryWake ?? 'N/A'}</span>
-          </div>
-          <div className="data-item">
-            <span className="data-label">Stress Avg / Max:</span>
-            <span className="data-value">{recoverySnapshot?.raw.stress?.avg ?? 'N/A'} / {recoverySnapshot?.raw.stress?.max ?? 'N/A'}</span>
-          </div>
-          <div className="data-item">
-            <span className="data-label">Training Readiness:</span>
-            <span className="data-value">
-              {recoverySnapshot?.raw.trainingReadiness?.score ?? 'N/A'}
-              {recoverySnapshot?.raw.trainingReadiness?.level ? ` (${recoverySnapshot.raw.trainingReadiness.level})` : ''}
-            </span>
-          </div>
-          <div className="data-item">
-            <span className="data-label">Garmin Recovery Time:</span>
-            <span className="data-value">{recoverySnapshot?.raw.recoveryTimeHours != null ? `${recoverySnapshot.raw.recoveryTimeHours} hrs` : 'N/A'}</span>
-          </div>
-          <div className="data-item">
-            <span className="data-label">Total Steps:</span>
-            <span className="data-value">{recoverySnapshot?.raw.totalSteps ?? 'N/A'}</span>
-          </div>
-          <div className="data-item">
-            <span className="data-label">SpO2 (Avg / Min):</span>
-            <span className="data-value">
-              {recoverySnapshot?.raw.spo2?.avgPct != null ? `${recoverySnapshot.raw.spo2.avgPct}%` : 'N/A'}
-              {recoverySnapshot?.raw.spo2?.minPct != null ? ` / min ${recoverySnapshot.raw.spo2.minPct}%` : ''}
-            </span>
-          </div>
-          <div className="data-item">
-            <span className="data-label">SpO2 (Sleep Avg):</span>
-            <span className="data-value">
-              {recoverySnapshot?.raw.spo2?.sleepAvgPct != null ? `${recoverySnapshot.raw.spo2.sleepAvgPct}%` : 'N/A'}
-            </span>
-          </div>
-          <div className="data-item">
-            <span className="data-label">Skin Temp Deviation:</span>
-            <span className="data-value">
-              {recoverySnapshot?.raw.skinTempDeviationCelsius != null
-                ? `${recoverySnapshot.raw.skinTempDeviationCelsius > 0 ? '+' : ''}${recoverySnapshot.raw.skinTempDeviationCelsius}°C`
-                : 'N/A'}
-            </span>
-          </div>
-        </div>
-
-        <div className="data-group">
-          <h4>Derived Metrics</h4>
-          <div className="data-item">
-            <span className="data-label">Baseline Computation Version:</span>
-            <span className="data-value">{baselineVersion || 'N/A'}</span>
-          </div>
-          <div className="data-item">
-            <span className="data-label">Sleep Score 7d Avg:</span>
-            <span className="data-value">{recoverySnapshot?.derived.sleepScore7dAvg ?? 'N/A'}</span>
-          </div>
-          <div className="data-item">
-            <span className="data-label">Sleep Score 28d Avg:</span>
-            <span className="data-value">{recoverySnapshot?.derived.sleepScore28dAvg ?? 'N/A'}</span>
-          </div>
-          <div className="data-item">
-            <span className="data-label">Resting HR 7d Avg:</span>
-            <span className="data-value">{recoverySnapshot?.derived.restingHr7dAvg ?? 'N/A'}</span>
-          </div>
-          <div className="data-item">
-            <span className="data-label">Resting HR 28d Avg:</span>
-            <span className="data-value">{recoverySnapshot?.derived.restingHr28dAvg ?? 'N/A'}</span>
-          </div>
-          <div className="data-item">
-            <span className="data-label">HRV 7d Avg:</span>
-            <span className="data-value">{recoverySnapshot?.derived.hrv7dAvg ?? 'N/A'}</span>
-          </div>
-          <div className="data-item">
-            <span className="data-label">HRV 28d Avg:</span>
-            <span className="data-value">{recoverySnapshot?.derived.hrv28dAvg ?? 'N/A'}</span>
-          </div>
-          <div className="data-item">
-            <span className="data-label">HRV 28d Stdev:</span>
-            <span className="data-value">{recoverySnapshot?.derived.hrv28dStdev ?? 'N/A'}</span>
-          </div>
-          <div className="data-item">
-            <span className="data-label">Resting HR 28d Stdev:</span>
-            <span className="data-value">{recoverySnapshot?.derived.restingHr28dStdev ?? 'N/A'}</span>
-          </div>
-          <div className="data-item">
-            <span className="data-label">Sleep Score 28d Stdev:</span>
-            <span className="data-value">{recoverySnapshot?.derived.sleepScore28dStdev ?? 'N/A'}</span>
-          </div>
-          <div className="data-item">
-            <span className="data-label">Steps 7d Avg:</span>
-            <span className="data-value">{recoverySnapshot?.derived.steps7dAvg ?? 'N/A'}</span>
-          </div>
-          <div className="data-item">
-            <span className="data-label">Steps 28d Avg:</span>
-            <span className="data-value">{recoverySnapshot?.derived.steps28dAvg ?? 'N/A'}</span>
-          </div>
-          <div className="data-item">
-            <span className="data-label">Steps 28d Stdev:</span>
-            <span className="data-value">{recoverySnapshot?.derived.steps28dStdev ?? 'N/A'}</span>
-          </div>
-          <div className="data-item">
-            <span className="data-label">{baselineVersion >= 3 ? 'Respiration 7d Median:' : 'Respiration 7d Avg:'}</span>
-            <span className="data-value">{recoverySnapshot?.derived.respiration7dAvg ?? 'N/A'}</span>
-          </div>
-          <div className="data-item">
-            <span className="data-label">{baselineVersion >= 3 ? 'Respiration 28d Median:' : 'Respiration 28d Avg:'}</span>
-            <span className="data-value">{recoverySnapshot?.derived.respiration28dAvg ?? 'N/A'}</span>
-          </div>
-          <div className="data-item">
-            <span className="data-label">Respiration 28d MAD:</span>
-            <span className="data-value">{baselineVersion >= 3 ? recoverySnapshot?.derived.respiration28dMad ?? 'N/A' : VERSION_GATED_NOT_AVAILABLE}</span>
-          </div>
-          <div className="data-item">
-            <span className="data-label">Respiration Scoring:</span>
-            <span className="data-value">Off by default; comparison/replay only</span>
-          </div>
-        </div>
-
-        <div className="data-group">
-          <h4>Observation-only Candidate Baselines</h4>
-          <div className="data-item">
-            <span className="data-label">Interpretation:</span>
-            <span className="data-value">Inspection/export only; these are not additional engine strain inputs.</span>
-          </div>
-          <div className="data-item">
-            <span className="data-label">Sleep Score:</span>
-            <span className="data-value">
-              {baselineVersion >= 4
-                ? formatCandidateBaseline(recoverySnapshot?.derived.sleepScore7dMedian, recoverySnapshot?.derived.sleepScore28dMedian, recoverySnapshot?.derived.sleepScore28dMad, recoverySnapshot?.derived.deltas.sleepScoreVs7dMedian, recoverySnapshot?.derived.deltas.sleepScoreVs28dMedian)
-                : VERSION_GATED_NOT_AVAILABLE}
-            </span>
-          </div>
-          <div className="data-item">
-            <span className="data-label">Resting HR:</span>
-            <span className="data-value">
-              {baselineVersion >= 4
-                ? formatCandidateBaseline(recoverySnapshot?.derived.restingHr7dMedian, recoverySnapshot?.derived.restingHr28dMedian, recoverySnapshot?.derived.restingHr28dMad, recoverySnapshot?.derived.deltas.restingHrVs7dMedian, recoverySnapshot?.derived.deltas.restingHrVs28dMedian)
-                : VERSION_GATED_NOT_AVAILABLE}
-            </span>
-          </div>
-          <div className="data-item">
-            <span className="data-label">HRV:</span>
-            <span className="data-value">
-              {baselineVersion >= 4
-                ? formatCandidateBaseline(recoverySnapshot?.derived.hrv7dMedian, recoverySnapshot?.derived.hrv28dMedian, recoverySnapshot?.derived.hrv28dMad, recoverySnapshot?.derived.deltas.hrvVs7dMedian, recoverySnapshot?.derived.deltas.hrvVs28dMedian)
-                : VERSION_GATED_NOT_AVAILABLE}
-            </span>
-          </div>
-          <div className="data-item">
-            <span className="data-label">Steps:</span>
-            <span className="data-value">
-              {baselineVersion >= 4
-                ? formatCandidateBaseline(recoverySnapshot?.derived.steps7dMedian, recoverySnapshot?.derived.steps28dMedian, recoverySnapshot?.derived.steps28dMad, recoverySnapshot?.derived.deltas.stepsVs7dMedian, recoverySnapshot?.derived.deltas.stepsVs28dMedian)
-                : VERSION_GATED_NOT_AVAILABLE}
-            </span>
-          </div>
-          <div className="data-item">
-            <span className="data-label">Body Battery Wake:</span>
-            <span className="data-value">
-              {baselineVersion >= 5
-                ? formatCandidateBaseline(recoverySnapshot?.derived.bodyBatteryWake7dMedian, recoverySnapshot?.derived.bodyBatteryWake28dMedian, recoverySnapshot?.derived.bodyBatteryWake28dMad, recoverySnapshot?.derived.deltas.bodyBatteryWakeVs7dMedian, recoverySnapshot?.derived.deltas.bodyBatteryWakeVs28dMedian)
-                : VERSION_GATED_NOT_AVAILABLE}
-            </span>
-          </div>
-          <div className="data-item">
-            <span className="data-label">Stress Avg:</span>
-            <span className="data-value">
-              {baselineVersion >= 5
-                ? formatCandidateBaseline(recoverySnapshot?.derived.stressAvg7dMedian, recoverySnapshot?.derived.stressAvg28dMedian, recoverySnapshot?.derived.stressAvg28dMad, recoverySnapshot?.derived.deltas.stressAvgVs7dMedian, recoverySnapshot?.derived.deltas.stressAvgVs28dMedian)
-                : VERSION_GATED_NOT_AVAILABLE}
-            </span>
-          </div>
-          <div className="data-item">
-            <span className="data-label">Stress Max:</span>
-            <span className="data-value">
-              {baselineVersion >= 5
-                ? formatCandidateBaseline(recoverySnapshot?.derived.stressMax7dMedian, recoverySnapshot?.derived.stressMax28dMedian, recoverySnapshot?.derived.stressMax28dMad, recoverySnapshot?.derived.deltas.stressMaxVs7dMedian, recoverySnapshot?.derived.deltas.stressMaxVs28dMedian)
-                : VERSION_GATED_NOT_AVAILABLE}
-            </span>
-          </div>
-          <div className="data-item">
-            <span className="data-label">Training Readiness Score:</span>
-            <span className="data-value">
-              {baselineVersion >= 5
-                ? formatCandidateBaseline(recoverySnapshot?.derived.trainingReadinessScore7dMedian, recoverySnapshot?.derived.trainingReadinessScore28dMedian, recoverySnapshot?.derived.trainingReadinessScore28dMad, recoverySnapshot?.derived.deltas.trainingReadinessScoreVs7dMedian, recoverySnapshot?.derived.deltas.trainingReadinessScoreVs28dMedian)
-                : VERSION_GATED_NOT_AVAILABLE}
-            </span>
-          </div>
-          <div className="data-item">
-            <span className="data-label">Composite-signal caution:</span>
-            <span className="data-value">Body Battery, stress and Training Readiness overlap with HRV/sleep/recovery physiology; do not treat them as independent additive evidence.</span>
-          </div>
-        </div>
-
-        <div className="data-group">
-          <h4>Deltas</h4>
-          <div className="data-item">
-            <span className="data-label">Sleep Score vs 7d:</span>
-            <span className="data-value">
-              {recoverySnapshot?.derived.deltas.sleepScoreVs7d !== null && recoverySnapshot?.derived.deltas.sleepScoreVs7d !== undefined
-                ? `${recoverySnapshot.derived.deltas.sleepScoreVs7d > 0 ? '+' : ''}${recoverySnapshot.derived.deltas.sleepScoreVs7d}`
-                : 'N/A'
-              }
-            </span>
-          </div>
-          <div className="data-item">
-            <span className="data-label">Sleep Score vs 28d:</span>
-            <span className="data-value">
-              {recoverySnapshot?.derived.deltas.sleepScoreVs28d !== null && recoverySnapshot?.derived.deltas.sleepScoreVs28d !== undefined
-                ? `${recoverySnapshot.derived.deltas.sleepScoreVs28d > 0 ? '+' : ''}${recoverySnapshot.derived.deltas.sleepScoreVs28d}`
-                : 'N/A'
-              }
-            </span>
-          </div>
-          <div className="data-item">
-            <span className="data-label">Resting HR vs 7d:</span>
-            <span className="data-value">
-              {recoverySnapshot?.derived.deltas.restingHrVs7d !== null && recoverySnapshot?.derived.deltas.restingHrVs7d !== undefined
-                ? `${recoverySnapshot.derived.deltas.restingHrVs7d > 0 ? '+' : ''}${recoverySnapshot.derived.deltas.restingHrVs7d}`
-                : 'N/A'
-              }
-            </span>
-          </div>
-          <div className="data-item">
-            <span className="data-label">Resting HR vs 28d:</span>
-            <span className="data-value">
-              {recoverySnapshot?.derived.deltas.restingHrVs28d !== null && recoverySnapshot?.derived.deltas.restingHrVs28d !== undefined
-                ? `${recoverySnapshot.derived.deltas.restingHrVs28d > 0 ? '+' : ''}${recoverySnapshot.derived.deltas.restingHrVs28d}`
-                : 'N/A'
-              }
-            </span>
-          </div>
-          <div className="data-item">
-            <span className="data-label">HRV vs 7d:</span>
-            <span className="data-value">
-              {recoverySnapshot?.derived.deltas.hrvVs7d !== null && recoverySnapshot?.derived.deltas.hrvVs7d !== undefined
-                ? `${recoverySnapshot.derived.deltas.hrvVs7d > 0 ? '+' : ''}${recoverySnapshot.derived.deltas.hrvVs7d}`
-                : 'N/A'
-              }
-            </span>
-          </div>
-          <div className="data-item">
-            <span className="data-label">HRV vs 28d:</span>
-            <span className="data-value">
-              {recoverySnapshot?.derived.deltas.hrvVs28d !== null && recoverySnapshot?.derived.deltas.hrvVs28d !== undefined
-                ? `${recoverySnapshot.derived.deltas.hrvVs28d > 0 ? '+' : ''}${recoverySnapshot.derived.deltas.hrvVs28d}`
-                : 'N/A'
-              }
-            </span>
-          </div>
-          <div className="data-item">
-            <span className="data-label">Steps vs 7d:</span>
-            <span className="data-value">
-              {recoverySnapshot?.derived.deltas.stepsVs7d !== null && recoverySnapshot?.derived.deltas.stepsVs7d !== undefined
-                ? `${recoverySnapshot.derived.deltas.stepsVs7d > 0 ? '+' : ''}${recoverySnapshot.derived.deltas.stepsVs7d}`
-                : 'N/A'
-              }
-            </span>
-          </div>
-          <div className="data-item">
-            <span className="data-label">Steps vs 28d:</span>
-            <span className="data-value">
-              {recoverySnapshot?.derived.deltas.stepsVs28d !== null && recoverySnapshot?.derived.deltas.stepsVs28d !== undefined
-                ? `${recoverySnapshot.derived.deltas.stepsVs28d > 0 ? '+' : ''}${recoverySnapshot.derived.deltas.stepsVs28d}`
-                : 'N/A'
-              }
-            </span>
-          </div>
-        </div>
-
-        <div className="data-group">
-          <h4>Data Quality</h4>
-          <div className="data-item">
-            <span className="data-label">Sleep Score Available:</span>
-            <span className="data-value">{recoverySnapshot?.dataQuality.sleepScoreAvailable ? 'Yes' : 'No'}</span>
-          </div>
-          <div className="data-item">
-            <span className="data-label">Resting HR Available:</span>
-            <span className="data-value">{recoverySnapshot?.dataQuality.restingHrAvailable ? 'Yes' : 'No'}</span>
-          </div>
-          <div className="data-item">
-            <span className="data-label">HRV Available:</span>
-            <span className="data-value">{recoverySnapshot?.dataQuality.hrvAvailable ? 'Yes' : 'No'}</span>
-          </div>
-          <div className="data-item">
-            <span className="data-label">Baseline 7d Ready:</span>
-            <span className="data-value">{recoverySnapshot?.dataQuality.baseline7dReady ? 'Yes' : 'No'}</span>
-          </div>
-          <div className="data-item">
-            <span className="data-label">Baseline 28d Ready:</span>
-            <span className="data-value">{recoverySnapshot?.dataQuality.baseline28dReady ? 'Yes' : 'No'}</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-
-  const renderCheckinData = () => (
-    <div className="data-section">
-      <h3>Daily Check-in</h3>
-      {decisionInput.sourceStates?.subjectiveCheckin.status !== undefined
-        && decisionInput.sourceStates.subjectiveCheckin.status !== 'AVAILABLE' && (
-          <p className="data-state-notice">{describeSourceState(decisionInput.sourceStates.subjectiveCheckin.status)}</p>
-        )}
-      {decisionInput.subjectiveCheckin ? (
-        <div className="data-grid">
-          <div className="data-group">
-            <h4>Subjective Metrics</h4>
-            <div className="data-item">
-              <span className="data-label">Readiness:</span>
-              <span className="data-value">{decisionInput.subjectiveCheckin.readiness ?? 'N/A'}</span>
-            </div>
-            <div className="data-item">
-              <span className="data-label">Sleep Quality:</span>
-              <span className="data-value">{decisionInput.subjectiveCheckin.sleepQuality ?? 'N/A'}</span>
-            </div>
-            <div className="data-item">
-              <span className="data-label">Fatigue:</span>
-              <span className="data-value">{decisionInput.subjectiveCheckin.fatigue ?? 'N/A'}</span>
-            </div>
-            <div className="data-item">
-              <span className="data-label">Soreness:</span>
-              <span className="data-value">{decisionInput.subjectiveCheckin.soreness ?? 'N/A'}</span>
-            </div>
-            <div className="data-item">
-              <span className="data-label">Mental Stress:</span>
-              <span className="data-value">{decisionInput.subjectiveCheckin.mentalStress ?? 'N/A'}</span>
-            </div>
-            <div className="data-item">
-              <span className="data-label">Motivation:</span>
-              <span className="data-value">{decisionInput.subjectiveCheckin.motivation ?? 'N/A'}</span>
-            </div>
-          </div>
-
-          <div className="data-group">
-            <h4>Health Flags</h4>
-            <div className="data-item">
-              <span className="data-label">Pain/Injury:</span>
-              <span className="data-value">{decisionInput.subjectiveCheckin.painOrInjury ? 'Yes' : 'No'}</span>
-            </div>
-            <div className="data-item">
-              <span className="data-label">Illness Symptoms:</span>
-              <span className="data-value">{decisionInput.subjectiveCheckin.illnessSymptoms ? 'Yes' : 'No'}</span>
-            </div>
-            <div className="data-item">
-              <span className="data-label">Unusually Limited Time:</span>
-              <span className="data-value">{decisionInput.subjectiveCheckin.unusuallyLimitedTime ? 'Yes' : 'No'}</span>
-            </div>
-          </div>
-
-          <div className="data-group">
-            <h4>Availability</h4>
-            <div className="data-item">
-              <span className="data-label">Time Available (min):</span>
-              <span className="data-value">{decisionInput.subjectiveCheckin.availability?.timeAvailableMin ?? 'N/A'}</span>
-            </div>
-            <div className="data-item">
-              <span className="data-label">Preferred Modality:</span>
-              <span className="data-value">{decisionInput.subjectiveCheckin.availability?.preferredModalityToday ?? 'None'}</span>
-            </div>
-            <div className="data-item">
-              <span className="data-label">Indoor Only:</span>
-              <span className="data-value">{decisionInput.subjectiveCheckin.availability?.indoorOnly ? 'Yes' : 'No'}</span>
-            </div>
-          </div>
-
-          <div className="data-group">
-            <h4>Data Quality</h4>
-            <div className="data-item">
-              <span className="data-label">Is Complete:</span>
-              <span className="data-value">{decisionInput.subjectiveCheckin.dataQuality.isComplete ? 'Yes' : 'No'}</span>
-            </div>
-            <div className="data-item">
-              <span className="data-label">Missing Fields:</span>
-              <span className="data-value">
-                {decisionInput.subjectiveCheckin.dataQuality.missingFields.join(', ') || 'None'}
-              </span>
-            </div>
-          </div>
-        </div>
-      ) : (
-        <p>No check-in data available</p>
-      )}
-    </div>
-  );
-
-  const renderGoalsData = () => (
-    <div className="data-section">
-      <h3>Active Goals</h3>
-      {decisionInput.activeGoals.length > 0 ? (
-        <div className="goals-list">
-          {decisionInput.activeGoals.map((goal, index) => (
-            <div key={`${goal.category}-${index}`} className="goal-detail">
-              <h4>{goal.title}</h4>
-              <div className="data-item">
-                <span className="data-label">Category:</span>
-                <span className="data-value">{goal.category}</span>
-              </div>
-              <div className="data-item">
-                <span className="data-label">Domain:</span>
-                <span className="data-value">{goal.domain}</span>
-              </div>
-              <div className="data-item">
-                <span className="data-label">Priority:</span>
-                <span className="data-value">{goal.priority}</span>
-              </div>
-              <div className="data-item">
-                <span className="data-label">Status:</span>
-                <span className="data-value">{goal.status}</span>
-              </div>
-              {goal.description && (
-                <div className="data-item">
-                  <span className="data-label">Description:</span>
-                  <span className="data-value">{goal.description}</span>
-                </div>
-              )}
-              {goal.targetMetric && (
-                <>
-                  <div className="data-item">
-                    <span className="data-label">Target Metric:</span>
-                    <span className="data-value">{goal.targetMetric}</span>
-                  </div>
-                  <div className="data-item">
-                    <span className="data-label">Target Value:</span>
-                    <span className="data-value">{goal.targetValue} {goal.targetUnit || ''}</span>
-                  </div>
-                </>
-              )}
-            </div>
-          ))}
-        </div>
-      ) : (
-        <p>No active goals</p>
-      )}
-    </div>
-  );
-
-  const renderConstraintsData = () => (
-    <div className="data-section">
-      <h3>{SCREEN_LABELS.constraints}</h3>
-      <div className="constraints-list">
-        <div className="constraint-detail">
-          <h4>Available equipment</h4>
-          <span className="data-value">{Object.entries(decisionInput.trainingSettings.equipment).filter(([, enabled]) => enabled).map(([name]) => name.replaceAll('_', ' ')).join(', ') || 'None configured'}</span>
-        </div>
-        <div className="constraint-detail">
-          <h4>Safety limits</h4>
-          <span className="data-value">{Object.entries(decisionInput.trainingSettings.guardrails).filter(([, enabled]) => enabled).map(([name]) => name.replace('avoid_', 'Block ').replaceAll('_', ' ')).join(', ') || 'None configured'}</span>
-        </div>
-        <div className="constraint-detail">
-          <h4>Time & location</h4>
-          <span className="data-value">Weekdays: {decisionInput.trainingSettings.defaults.weekdayMaxMinutes ?? 'No limit'} min; weekends: {decisionInput.trainingSettings.defaults.weekendMaxMinutes ?? 'No limit'} min; {decisionInput.trainingSettings.defaults.environment}</span>
-        </div>
-      </div>
-    </div>
-  );
-
-  const renderPreferencesData = () => (
-    <div className="data-section">
-      <h3>User Preferences</h3>
-      {decisionInput.preferences ? (
-        <div className="data-grid">
-          <div className="data-group">
-            <h4>Recovery Preferences</h4>
-            <div className="data-item">
-              <span className="data-label">Preferred Recovery Style:</span>
-              <span className="data-value">{decisionInput.preferences.preferredRecoveryStyle}</span>
-            </div>
-          </div>
-
-          <div className="data-group">
-            <h4>Time Preferences</h4>
-            <div className="data-item">
-              <span className="data-label">Default Weekday Time:</span>
-              <span className="data-value">{decisionInput.preferences.defaultWeekdayTimeMin} min</span>
-            </div>
-            <div className="data-item">
-              <span className="data-label">Default Weekend Time:</span>
-              <span className="data-value">{decisionInput.preferences.defaultWeekendTimeMin} min</span>
-            </div>
-            <div className="data-item">
-              <span className="data-label">Preferred Time of Day:</span>
-              <span className="data-value">{decisionInput.preferences.preferredTimeOfDay}</span>
-            </div>
-          </div>
-
-          <div className="data-group">
-            <h4>Modality Preferences</h4>
-            <div className="data-item">
-              <span className="data-label">Preferred Modalities:</span>
-              <span className="data-value">
-                {decisionInput.preferences.preferredModalities.length > 0
-                  ? decisionInput.preferences.preferredModalities.join(', ')
-                  : 'None specified'
-                }
-              </span>
-            </div>
-            <div className="data-item">
-              <span className="data-label">Avoided Modalities:</span>
-              <span className="data-value">
-                {decisionInput.preferences.avoidedModalities.length > 0
-                  ? decisionInput.preferences.avoidedModalities.join(', ')
-                  : 'None specified'
-                }
-              </span>
-            </div>
-          </div>
-
-          <div className="data-group">
-            <h4>UI Preferences</h4>
-            <div className="data-item">
-              <span className="data-label">Explanation Verbosity:</span>
-              <span className="data-value">{decisionInput.preferences.explanationVerbosity}</span>
-            </div>
-          </div>
-
-          <div className="data-group">
-            <h4>Units</h4>
-            <div className="data-item">
-              <span className="data-label">Distance:</span>
-              <span className="data-value">{decisionInput.preferences.preferredUnits.distance}</span>
-            </div>
-            <div className="data-item">
-              <span className="data-label">Weight:</span>
-              <span className="data-value">{decisionInput.preferences.preferredUnits.weight}</span>
-            </div>
-            <div className="data-item">
-              <span className="data-label">Temperature:</span>
-              <span className="data-value">{decisionInput.preferences.preferredUnits.temperature}</span>
-            </div>
-          </div>
-        </div>
-      ) : (
-        <p>No preferences set</p>
-      )}
-    </div>
-  );
-
-  const visibleBriefError = briefError && briefError.date === briefDate ? briefError.message : null;
-
-  const renderContextBrief = () => {
-    // Deep-link fallback: the Context-brief tab navigates to the canonical export
-    // surface directly (#491), so this branch is only reachable if the tab is active
-    // while a navigate handler is set.
-    if (onNavigateToBrief) {
-      return (
-        <div className="data-section">
-          <h3>Context brief</h3>
-          <p className="brief-intro">
-            Export for AI lives in one place now — open {SCREEN_LABELS.brief} for the
-            canonical daily (2-day), planning (14-day) or diagnostic (14-day) brief with char and token counts.
-            {' '}Read-only: generating it changes nothing.
-          </p>
-          <div className="brief-actions">
-            <button className="brief-copy" onClick={onNavigateToBrief}>
-              Open {SCREEN_LABELS.brief}
-            </button>
-          </div>
-        </div>
-      );
-    }
-    const approxTokens = brief ? Math.ceil(brief.text.length / 4) : null;
-    return (
-      <div className="data-section">
-        <h3>Context brief</h3>
-        <p className="brief-intro">
-          {briefPreset === 'daily'
-            ? "High-signal briefing for your daily chat with an external AI coach — includes yesterday's closed loop, today's recovery, and today's full session prescription."
-            : briefPreset === 'full'
-              ? `Use this export when starting a new chat. Compact ${briefWindowDaysFor('full')}-day planning context with the full user context (never shortened against an earlier chat) and the sessions planned for the next 14 days.`
-              : `Full ${briefWindowDaysFor('diagnostic')}-day forensic export — per-lap and per-zone activity telemetry plus observation-only candidate baselines, for debugging ingestion or analysing a workout. Not needed for planning.`}
-          {' '}Read-only: generating it changes nothing.
-        </p>
-        <BriefPresetToggle preset={briefPreset} onSelect={selectBriefPreset} />
-        <BriefFullContextToggle checked={briefFullContext} onChange={setBriefFullContext} locked={briefFullContextLocked} />
-        <BriefChatInput value={checkpoint.chatInput} onChange={checkpoint.setChatInput} onCommit={checkpoint.commitChat} />
-        {visibleBriefError && <p className="data-state-notice">{visibleBriefError}</p>}
-        {(!brief || briefStale) && !visibleBriefError && <p role="status">Assembling...</p>}
-        {brief && (
-          <>
-            {brief.unavailableSources.length > 0 && (
-              <p className="data-state-notice">
-                Could not read: {brief.unavailableSources.join(', ')}. The brief below is incomplete.
-              </p>
-            )}
-            <div className="brief-actions">
-              <ContextBriefExportActions
-                copied={briefCopied}
-                markdownDisabled={briefStale}
-                onCopy={copyBrief}
-                onDownloadMarkdown={() => downloadBrief('markdown')}
-                onDownloadJson={() => downloadBrief('json')}
-              >
-                {brief.asOfDate === briefDate && brief.preset === briefPreset && <LedgerExportButton
-                  key={`${userId}:${brief.asOfDate}:${briefPreset}`}
-                  userId={userId}
-                  asOfDate={brief.asOfDate}
-                  purpose={brief.purpose}
-                  window={{ startDate: brief.startDate, endDate: brief.asOfDate }}
-                />}
-              </ContextBriefExportActions>
-              {/* The new-chat refresh export never reads a checkpoint, so confirming it would save nothing useful. */}
-              {!briefFullContextLocked && <BriefConfirmChat
-                canConfirm={!briefStale && checkpoint.canConfirm(brief)}
-                blocked={checkpoint.confirmBlock(brief, briefStale)}
-                status={checkpoint.confirmStatus(brief)}
-                onConfirm={checkpoint.confirm}
-              />}
-              <span className="brief-range">{brief.startDate} → {brief.asOfDate}</span>
-              <span className="brief-size">
-                {brief.text.length.toLocaleString()} chars · ~{approxTokens?.toLocaleString()} tokens
-              </span>
-            </div>
-            <textarea className="brief-text" readOnly value={brief.text} rows={24} spellCheck={false} />
-          </>
-        )}
-      </div>
-    );
-  };
-
-  const renderAdherenceData = () => (
-    <div className="data-section">
-      <h3>Adherence (last 30 days)</h3>
-      {adherenceStats === null ? (
-        <p>Loading...</p>
-      ) : adherenceStats.totalRecommendations > 0 ? (
-        <div className="data-grid">
-          <div className="data-group">
-            <h4>Overall</h4>
-            <div className="data-item">
-              <span className="data-label">Recommendations Generated:</span>
-              <span className="data-value">{adherenceStats.totalRecommendations}</span>
-            </div>
-            <div className="data-item">
-              <span className="data-label">Answered:</span>
-              <span className="data-value">{adherenceStats.answered}</span>
-            </div>
-            <div className="data-item">
-              <span className="data-label">Awaiting Response:</span>
-              <span className="data-value">{adherenceStats.awaitingResponse}</span>
-            </div>
-            <div className="data-item">
-              <span className="data-label">Followed Rate:</span>
-              <span className="data-value">
-                {adherenceStats.answered > 0 ? `${adherenceStats.followedRate}%` : 'N/A (no answers yet)'}
-              </span>
-            </div>
-            <div className="data-item">
-              <span className="data-label">Followed / Modified / Skipped:</span>
-              <span className="data-value">
-                {adherenceStats.followedCount} / {adherenceStats.modifiedCount} / {adherenceStats.skippedCount}
-              </span>
-            </div>
-          </div>
-
-          <div className="data-group">
-            <h4>Followed Rate by Mode</h4>
-            {(['train', 'modify', 'recover'] as const).map(mode => (
-              <div className="data-item" key={mode}>
-                <span className="data-label">{mode.charAt(0).toUpperCase() + mode.slice(1)}:</span>
-                <span className="data-value">
-                  {adherenceStats.byMode[mode].total > 0
-                    ? `${adherenceStats.byMode[mode].followedRate}% (n=${adherenceStats.byMode[mode].total})`
-                    : 'N/A'}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : (
-        <p>No recommendations recorded yet -- this fills in as the dashboard generates and you answer the daily "did you follow this?" prompt.</p>
-      )}
-    </div>
-  );
 
   return (
     <div className="data-view-container">
@@ -1146,88 +177,30 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery', onNav
       </div>
 
       <div className="data-view-content">
-        {activeTab === 'recovery' && renderRecoveryData()}
+        {activeTab === 'recovery' && (
+          <RecoveryTab
+            recoverySnapshot={decisionInput.recoverySnapshot}
+            sourceStateStatus={decisionInput.sourceStates?.recoverySnapshot.status}
+          />
+        )}
         {activeTab === 'activities' && (
-          <div className="data-section">
-            <div className="activities-tab-header">
-              <div>
-                <h3 style={{ margin: 0 }}>Recent activity telemetry</h3>
-                <p className="activities-tab-subtitle">
-                  Inspect detailed Garmin telemetry. Use the canonical context brief for AI planning; JSON download remains a data export.
-                </p>
-              </div>
-              {activityWindow?.state.status === 'AVAILABLE' && activityWindow.state.data.length > 0 && (
-                <div className="activities-header-actions">
-                  <button
-                    type="button"
-                    className="quick-action-btn secondary"
-                    style={{ width: 'auto', padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}
-                    onClick={openCanonicalBrief}
-                    title="Open the canonical Export Context for AI surface for AI planning export"
-                  >
-                    📋 Export via {SCREEN_LABELS.brief}
-                  </button>
-                  <button
-                    type="button"
-                    className="quick-action-btn secondary"
-                    style={{ width: 'auto', padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}
-                    onClick={handleDownloadActivities}
-                    title="Download recent activities JSON bundle file"
-                  >
-                    💾 Download JSON
-                  </button>
-                  <button
-                    type="button"
-                    className="quick-action-btn secondary"
-                    style={{ width: 'auto', padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}
-                    onClick={() => setReclassifyModalOpen(true)}
-                  >
-                    ✏️ Correct / Reclassify
-                  </button>
-                </div>
-              )}
-            </div>
-            {activitiesReadModelPolicy === 'canonical-v1' ? (
-              <CanonicalActivitiesPanel
-                onDetailsFetched={handleActivityDetailsFetched}
-                userId={userId}
-                activityOverrides={activityOverrides}
-                workouts={canonicalWindowIsCurrent ? canonicalWorkoutWindow.workouts : null}
-                failed={canonicalWindowIsCurrent && !!canonicalWorkoutWindow.error}
-                reconciliationSweep={canonicalWindowIsCurrent ? canonicalWorkoutWindow.reconciliationSweep : undefined}
-                range={briefDate ? { from: addDaysToLocalDateString(briefDate, -6), toExclusive: addDaysToLocalDateString(briefDate, 1) } : null}
-                onReclassify={() => setReclassifyModalOpen(true)}
-                onUnlinkSource={(performedOccurrenceId, sourceKey) => {
-                  unlinkCompletedWorkoutSource(userId, performedOccurrenceId, sourceKey, userId)
-                    .then(() => setCanonicalWorkoutWindow(null))
-                    .catch(err => console.warn('[training-occurrence] unlink failed', err));
-                }}
-                onLinkSources={(structuredOccurrenceId, providerOccurrenceId) => {
-                  linkCompletedWorkoutSources(userId, structuredOccurrenceId, providerOccurrenceId, userId)
-                    .then(() => setCanonicalWorkoutWindow(null))
-                    .catch(err => console.warn('[training-occurrence] manual link failed', err));
-                }}
-              />
-            ) : (
-              <ActivityTelemetry
-                onDetailsFetched={handleActivityDetailsFetched}
-                userId={userId}
-                activityOverrides={activityOverrides}
-                state={activityWindow && activityWindow.userId === userId && activityWindow.asOfDate === briefDate ? activityWindow.state : null}
-                onReclassify={() => setReclassifyModalOpen(true)}
-              />
-            )}
-            {activityWindow?.state.status === 'AVAILABLE' && reclassifyModalOpen && (
-              <ActivityReclassificationModal
-                userId={userId}
-                activities={activityWindow.state.data}
-                existingOverrides={activityOverrides}
-                isOpen={reclassifyModalOpen}
-                onClose={() => setReclassifyModalOpen(false)}
-                onSaved={loadOverrides}
-              />
-            )}
-          </div>
+          <ActivitiesTab
+            userId={userId}
+            briefDate={briefDate}
+            activityWindow={activitiesState.activityWindow}
+            activityOverrides={activitiesState.activityOverrides}
+            activitiesReadModelPolicy={activitiesState.activitiesReadModelPolicy}
+            canonicalWorkoutWindow={activitiesState.canonicalWorkoutWindow}
+            canonicalWindowIsCurrent={activitiesState.canonicalWindowIsCurrent}
+            reclassifyModalOpen={activitiesState.reclassifyModalOpen}
+            onSetReclassifyModalOpen={activitiesState.setReclassifyModalOpen}
+            onOpenCanonicalBrief={openCanonicalBrief}
+            onDownloadActivities={activitiesState.handleDownloadActivities}
+            onDetailsFetched={activitiesState.handleActivityDetailsFetched}
+            onLoadOverrides={activitiesState.loadOverrides}
+            onUnlinkSource={activitiesState.handleUnlinkSource}
+            onLinkSources={activitiesState.handleLinkSources}
+          />
         )}
         {activeTab === 'strength' && (
           <div className="data-section">
@@ -1240,12 +213,35 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery', onNav
         {activeTab === 'body' && (
           <BodyCompositionPanel userId={userId} asOfDate={briefDate} />
         )}
-        {activeTab === 'checkin' && renderCheckinData()}
-        {activeTab === 'goals' && renderGoalsData()}
-        {activeTab === 'constraints' && renderConstraintsData()}
-        {activeTab === 'adherence' && renderAdherenceData()}
-        {activeTab === 'preferences' && renderPreferencesData()}
-        {activeTab === 'brief' && renderContextBrief()}
+        {activeTab === 'checkin' && (
+          <CheckinTab
+            subjectiveCheckin={decisionInput.subjectiveCheckin}
+            sourceStateStatus={decisionInput.sourceStates?.subjectiveCheckin.status}
+          />
+        )}
+        {activeTab === 'goals' && <GoalsTab activeGoals={decisionInput.activeGoals} />}
+        {activeTab === 'constraints' && <ConstraintsTab trainingSettings={decisionInput.trainingSettings} />}
+        {activeTab === 'adherence' && <AdherenceTab adherenceStats={adherenceStats} />}
+        {activeTab === 'preferences' && <PreferencesTab preferences={decisionInput.preferences} />}
+        {activeTab === 'brief' && (
+          <ContextBriefTab
+            userId={userId}
+            briefDate={briefDate}
+            onNavigateToBrief={onNavigateToBrief}
+            brief={briefState.brief}
+            briefCopied={briefState.briefCopied}
+            briefPreset={briefState.briefPreset}
+            briefFullContext={briefState.briefFullContext}
+            briefFullContextLocked={briefState.briefFullContextLocked}
+            briefStale={briefState.briefStale}
+            visibleBriefError={briefState.visibleBriefError}
+            checkpoint={briefState.checkpoint}
+            onSelectPreset={briefState.selectBriefPreset}
+            onChangeFullContext={briefState.setBriefFullContext}
+            onCopy={briefState.copyBrief}
+            onDownload={briefState.downloadBrief}
+          />
+        )}
       </div>
     </div>
   );
