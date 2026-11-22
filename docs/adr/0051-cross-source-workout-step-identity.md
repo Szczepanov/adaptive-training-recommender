@@ -1,6 +1,6 @@
 # ADR-0051: Cross-source workout-step identity for activity-response segments
 
-- **Status:** Accepted (implementation gated by D7)
+- **Status:** Deferred (2026-11-22 — #919 closed per 2026-11-17 D7 timebox; reopenable if Garmin interval-to-step alignment is later needed)
 - **Date:** 2026-10-17
 - **Related:** ADR-0023, ADR-0026, ADR-0031, ADR-0034, issues #814, #850, #895, #919, PR #917
 
@@ -222,3 +222,12 @@ and tests land **together**. The persisted-value guard stays either way (D5).
   and for timestamps that are close but share no reference.
 - If D7 fails, `docs/architecture/activity-response-telemetry.md` and the status board record
   the concrete missing capability, and this ADR moves to Rejected.
+
+## Disposition note (2026-11-22)
+
+On `2026-11-22`, the owner deferred implementation and closed `#919` as not planned per the
+`2026-11-17` D7 timebox: the qualifying D7 real-data diagnostic (`fitWorkoutIdentityCounts`) and
+repeat-group Garmin recording were not pursued because step-level FIT alignment is not needed
+for the ledger/external-AI workflow. Existing fail-closed hydration in `trainingHistory.ts`
+(rejecting `reconciled_workout_step`) remains in force per D5, and this ADR may be reopened if
+Garmin interval-to-step alignment is later needed.

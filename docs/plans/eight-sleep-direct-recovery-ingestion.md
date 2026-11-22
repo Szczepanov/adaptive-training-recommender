@@ -1,14 +1,14 @@
 # ES — Direct Eight Sleep Recovery Ingestion
 
-* **Status:** `In progress (default-off)`
+* **Status:** `Archived (default-off; #645 closed 2026-11-22)`
 * **Date:** 2026-08-28
-* **Blocked by:** ES9's tooling is implemented, its daily backfill is scheduled, and a full
-  year of real data has been backfilled and compared (314 real paired nights vs Garmin
-  Direct — see [`docs/analysis/2026-08-28-garmin-eight-sleep-cross-device-agreement.md`](../analysis/2026-08-28-garmin-eight-sleep-cross-device-agreement.md)).
-  ES10 needs continued accumulation plus a separate, deliberate activation review — this
-  first read is evidence, not a promotion decision.
+* **Blocked by:** none — archived `2026-11-22` (`#645` closed as not planned). ES0–ES9 direct
+  connector (`EIGHT_SLEEP_DIRECT_ENABLED=false`), daily backfill, and transport-comparison CLI
+  remain intact and default-off (with 314 real paired nights vs Garmin Direct compared in
+  [`docs/analysis/2026-08-28-garmin-eight-sleep-cross-device-agreement.md`](../analysis/2026-08-28-garmin-eight-sleep-cross-device-agreement.md));
+  reopenable if Eight Sleep is later wanted as a labelled ledger/export source.
 * **Decision authority:** none.
-* **Governing ADRs:** accepted ADR-0027 and ADR-0030; ES10 activation remains a separate decision.
+* **Governing ADRs:** accepted ADR-0027 and ADR-0030; ES10 closed 2026-11-22 (`#645`, default-off, reopenable if Eight Sleep is later wanted as a labelled ledger/export source).
 
 ## Goal
 Replace unreliable Google Health transport for Eight Sleep with a repository-owned read-only connector emitting existing `CanonicalHealthObservation`s.
@@ -25,7 +25,7 @@ Replace unreliable Google Health transport for Eight Sleep with a repository-own
 | ES7 | Unit tests | implemented |
 | ES8 | Provision secrets + run real-account probe | implemented — real-account probe ran 2026-08-28, authenticated and returned 9 real observations (`hrv_rmssd_ms`, `sleep_stage_*`, `sleeping_heart_rate_bpm`, etc.) across a 3-day window |
 | ES9 | Shadow direct-vs-Google comparison | implemented and run for real — persistence path (`backfill-eight-sleep-direct`, daily-scheduled) and comparator (`compare-eight-sleep-transports`, reusing MS10's generalized `TransportEquivalenceAnalyzer`) landed; full year backfilled (365 days, 314 real paired nights), see [`docs/analysis/2026-08-28-garmin-eight-sleep-cross-device-agreement.md`](../analysis/2026-08-28-garmin-eight-sleep-cross-device-agreement.md) for the Garmin-vs-Eight-Sleep-Direct cross-device evidence (MS14 generalized) this produced |
-| ES10 | Baseline/fusion activation decision | blocked by continued ES9 accumulation and a separate activation review — see the analysis doc above for the current evidence read |
+| ES10 | Baseline/fusion activation decision | closed as not planned `2026-11-22` (`#645` closed; ES0–ES9 direct connector and transport-comparison CLI remain intact and default-off; reopenable if Eight Sleep is later wanted as a labelled ledger/export source) |
 
 Runtime config: `EIGHT_SLEEP_DIRECT_ENABLED=false`, `EIGHT_SLEEP_EMAIL`, `EIGHT_SLEEP_PASSWORD`, `EIGHT_SLEEP_CLIENT_ID`, `EIGHT_SLEEP_CLIENT_SECRET`, optional `EIGHT_SLEEP_USER_ID`, timezone/retry/timeout overrides. Do not commit values.
 

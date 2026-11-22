@@ -215,8 +215,7 @@ prior it stores nothing for the collection. An unreadable item is therefore neve
 as unchanged. A complete read in a moved window advances the checkpoint to it: out-of-scope keys are
 reported once as `out of scope now` and not carried, since carrying them would accumulate stale keys;
 an item that reappears prints in full. This implements the Phase 2c checkpoint rules in
-`contextCheckpoint.ts` and `previousContext.ts`; the incomplete-read rule is an agent ruling the
-owner has yet to confirm.
+`contextCheckpoint.ts` and `previousContext.ts`; the incomplete-read rule was confirmed by the owner on 2026-11-22.
 
 The brief screen (`DataView`, `components/useBriefCheckpoint.ts`) advances nothing on copy or
 download. In ledger mode `ContextBriefService.build` returns the export's `contextCheckpoint` and
