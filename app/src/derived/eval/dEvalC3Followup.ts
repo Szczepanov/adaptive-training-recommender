@@ -52,7 +52,10 @@ export const ADVERSE_WINDOW_MS = DEVAL_ADVERSE_WINDOW_HOURS * 60 * 60 * 1000;
 
 /**
  * Attribution timestamp of a check-in: when it was submitted, falling back to its last update and
- * then its creation. The same timestamp drives both the 72h window and the as-of cutoff.
+ * then its creation. Some writers (e.g. tissue follow-ups) can add adverse fields to an already
+ * submitted check-in, and writes are not versioned. So a check-in whose later `updatedAt` falls in a
+ * session's window while its attribution time does not is reported as incomplete follow-up, and
+ * one updated after the as-of cutoff is excluded as unknown at the cutoff (see `dEvalC3.ts`).
  */
 export function checkinAttributionMs(checkin: DailySubjectiveCheckin): number | null {
     return parseUtcTimestampMs(checkin.submittedAt)
@@ -142,7 +145,22 @@ export function collectCheckinOutcomes(
                 || (checkin.date === ctx.session.performedDate && sessionLinked)
             );
         }
-        if (!inWindow) continue;
+        if (!inWindow) {
+            const updatedMs = parseUtcTimestampMs(checkin.updatedAt);
+            if (
+                ctx.sessionMs !== null
+                && checkinMs !== null
+                && updatedMs !== null
+                && updatedMs > checkinMs
+                && updatedMs >= ctx.sessionMs
+                && updatedMs <= ctx.sessionMs + ADVERSE_WINDOW_MS
+                && isAdverseCheckin(checkin)
+            ) {
+                // Its adverse fields may have been written inside the window; edits are not versioned.
+                incomplete.push(`checkin_edited_in_window:${checkin.date}`);
+            }
+            continue;
+        }
         const reason = isAdverseCheckin(checkin);
         if (reason) {
             adverse.push({

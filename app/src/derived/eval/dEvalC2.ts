@@ -28,7 +28,12 @@ import {
  *   comparable to an eligible after attempt under the same protocol revision, comparison series,
  *   canonicalization version and unit. Until a comparable after attempt exists, the most recent
  *   pre-block record is reported as the provisional reference.
- * - `asOfDate` is the information cutoff: records observed after it are ignored.
+ * - `asOfDate` is the information cutoff: records observed after it are ignored, and so are
+ *   observations whose attempt has a `completedAt` on a later Warsaw date (an attempt completed on
+ *   the cutoff date counts). A `completedAt` that is present but not a valid offset timestamp
+ *   cannot be placed before the cutoff, so its attempt is excluded. Legacy attempts without
+ *   `completedAt` stay eligible and are dated by their observation's `observedAt`, which the
+ *   before/after windows already bound by the cutoff (same policy as `assessmentHistoryService`).
  */
 export interface DEvalC2Input {
     observations: readonly CurrentObservation[];
@@ -80,6 +85,13 @@ export interface DEvalC2Result {
     pendingDueDates: readonly string[];
     reasons: readonly string[];
     knownLimits: readonly string[];
+}
+
+function isCompletedByAsOf(attempt: AssessmentAttempt | undefined, asOfDate: string): boolean {
+    if (attempt?.state !== 'completed') return false;
+    if (attempt.completedAt === undefined) return true;
+    const completedMs = parseUtcTimestampMs(attempt.completedAt);
+    return completedMs !== null && getLocalDateString(new Date(completedMs)) <= asOfDate;
 }
 
 function isCurrentValidObservation(observation: CurrentObservation): boolean {
@@ -203,7 +215,7 @@ function evaluateProtocolMetric(params: {
     const eligible = observations
         .filter(isCurrentValidObservation)
         .filter(obs => obs.revision.protocolRef.id === protocol.protocolId && obs.revision.metricId === metricId)
-        .filter(obs => attemptById.get(obs.revision.assessmentAttemptId)?.state === 'completed')
+        .filter(obs => isCompletedByAsOf(attemptById.get(obs.revision.assessmentAttemptId), asOfDate))
         .map(toDatedObservation)
         .filter((entry): entry is DatedObservation => entry !== null)
         .sort(compareObservations);

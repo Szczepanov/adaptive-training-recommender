@@ -1143,4 +1143,72 @@ describe('review regressions (PR #1284)', () => {
         expect(editedAfterCutoff.status).toBe('inconclusive');
         expect(editedAfterCutoff.incompleteFollowUps).toContain('illness_outcome_edited_after_cutoff:ep-1');
     });
+
+    it('C3 treats same-day date-only evidence at a timestamp cutoff as incomplete, not adverse', () => {
+        const result = evaluateC3FlaggedOutcomes({
+            ...flaggedHardC3,
+            ...COMPLETE_FOLLOW_UP,
+            asOfDate: '2026-12-02',
+            asOfTimestamp: '2026-12-02T08:00:00Z',
+            injuries: [{ id: 'inj-same-day', severity: 'limit', since: '2026-12-02' }],
+        });
+        expect(result.adverseOutcomes).toHaveLength(0);
+        expect(result.status).toBe('inconclusive');
+        expect(result.incompleteFollowUps).toContain('injury_same_day_date_only_at_cutoff:inj-same-day');
+
+        // Without a timestamp cutoff the whole as-of date is known, so the same injury is attributed.
+        const dateCutoff = evaluateC3FlaggedOutcomes({
+            ...flaggedHardC3,
+            ...COMPLETE_FOLLOW_UP,
+            asOfDate: '2026-12-05',
+            asOfTimestamp: null,
+            injuries: [{ id: 'inj-same-day', severity: 'limit', since: '2026-12-02' }],
+        });
+        expect(dateCutoff.status).toBe('fail');
+    });
+
+    it('C3 does not attribute adverse fields written to a submitted check-in by a later update', () => {
+        // Submitted before the session, then updated inside the window with pain: ambiguous.
+        const editedInWindow = evaluateC3FlaggedOutcomes({
+            ...flaggedHardC3,
+            ...COMPLETE_FOLLOW_UP,
+            checkins: [makeCheckin('2026-12-01', {
+                painOrInjury: true,
+                submittedAt: '2026-12-01T06:00:00Z',
+                updatedAt: '2026-12-01T18:00:00Z',
+            })],
+        });
+        expect(editedInWindow.adverseOutcomes).toHaveLength(0);
+        expect(editedInWindow.status).toBe('inconclusive');
+        expect(editedInWindow.incompleteFollowUps).toContain('checkin_edited_in_window:2026-12-01');
+
+        // Submitted in-window before the cutoff but updated after it: unknown at the cutoff.
+        const editedAfterCutoff = evaluateC3FlaggedOutcomes({
+            ...flaggedHardC3,
+            ...COMPLETE_FOLLOW_UP,
+            checkins: [makeCheckin('2026-12-02', {
+                painOrInjury: true,
+                submittedAt: '2026-12-02T06:00:00Z',
+                updatedAt: '2026-12-06T06:00:00Z',
+            })],
+        });
+        expect(editedAfterCutoff.adverseOutcomes).toHaveLength(0);
+        expect(editedAfterCutoff.status).toBe('inconclusive');
+        expect(editedAfterCutoff.incompleteFollowUps).toContain('checkin_edited_after_cutoff:2026-12-02');
+    });
+
+    it('C2 excludes attempts completed after the as-of date and keeps those completed on it or without completedAt', () => {
+        const obs = [jump('b', '2026-10-22T09:00:00Z', 240), jump('a', '2027-01-15T09:00:00Z', 200)];
+        const withAfterCompletedAt = (completedAt: string | undefined) => evaluateC2Benchmarks(c2Input(obs, {
+            protocols: broadJumpOnly,
+            asOfDate: '2027-01-20',
+            attemptRecords: completedAttempts(obs).map(attempt => (
+                attempt.id === 'attempt-a' && completedAt !== undefined ? { ...attempt, completedAt } : attempt
+            )),
+        })).status;
+        expect(withAfterCompletedAt('2027-01-21T09:00:00Z')).toBe('pending');
+        expect(withAfterCompletedAt('2027-01-20T20:00:00Z')).toBe('fail');
+        expect(withAfterCompletedAt(undefined)).toBe('fail');
+        expect(withAfterCompletedAt('not-a-timestamp')).toBe('pending');
+    });
 });

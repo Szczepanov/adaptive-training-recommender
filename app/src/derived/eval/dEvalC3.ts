@@ -55,7 +55,9 @@ export interface DEvalC3FlagSourceState {
  *   recording timestamp: check-ins `submittedAt` -> `updatedAt` -> `createdAt` (date-only:
  *   `date`); injuries `createdAt` -> `since`; illness outcomes `createdAt`. An illness outcome
  *   created before the cutoff but edited after it cannot be read as of the cutoff (edits are not
- *   versioned), so it is excluded and reported as incomplete follow-up.
+ *   versioned), so it is excluded and reported as incomplete follow-up; the same applies to a
+ *   check-in whose `updatedAt` is after the cutoff, and to date-only evidence dated on `asOfDate`
+ *   when `asOfTimestamp` is set (its date cannot show it preceded the cutoff instant).
  * - Follow-up completeness: when at least one flagged hard session exists, C3 can pass only if
  *   `followUpSourcesComplete` is explicitly `true`, every follow-up source state (`checkins`,
  *   `injuries`, `healthAnomalyOutcomes`) is `measured`, and all three follow-up arrays are
@@ -104,12 +106,20 @@ export interface DEvalC3Result {
 const BLIND_STATES: ReadonlySet<LedgerState> = new Set(['missing', 'unavailable', 'invalid']);
 const FOLLOW_UP_SOURCES = ['checkins', 'injuries', 'healthAnomalyOutcomes'] as const;
 
-/** True when evidence with this attribution time/date was knowable at the as-of cutoff. */
-function knownByCutoff(asOfMs: number | null, asOfDate: string, evidenceMs: number | null, evidenceDate: string | null): boolean {
+type CutoffStatus = 'known' | 'after' | 'ambiguous';
+
+/**
+ * Whether evidence with this recording time/date was knowable at the as-of cutoff. Date-only
+ * evidence dated on `asOfDate` is `ambiguous` against a timestamp cutoff: its date alone cannot
+ * show it was recorded before the cutoff instant.
+ */
+function cutoffStatus(asOfMs: number | null, asOfDate: string, evidenceMs: number | null, evidenceDate: string | null): CutoffStatus {
     if (evidenceMs !== null) {
-        return asOfMs !== null ? evidenceMs <= asOfMs : getLocalDateString(new Date(evidenceMs)) <= asOfDate;
+        const known = asOfMs !== null ? evidenceMs <= asOfMs : getLocalDateString(new Date(evidenceMs)) <= asOfDate;
+        return known ? 'known' : 'after';
     }
-    return evidenceDate !== null && isLocalCalendarDate(evidenceDate) && evidenceDate <= asOfDate;
+    if (evidenceDate === null || !isLocalCalendarDate(evidenceDate) || evidenceDate > asOfDate) return 'after';
+    return asOfMs !== null && evidenceDate === asOfDate ? 'ambiguous' : 'known';
 }
 
 function missingFollowUpEvidence(input: DEvalC3Input): string[] {
@@ -199,22 +209,39 @@ export function evaluateC3FlaggedOutcomes(input: DEvalC3Input): DEvalC3Result {
     }
 
     // Information cutoff: evidence recorded after the as-of point is not attributable yet.
+    // Evidence that may or may not have been known at the cutoff is excluded and, when a flagged
+    // hard session exists, reported as incomplete follow-up instead of silently dropped.
+    const cutoffGaps: string[] = [];
+    const admit = (status: CutoffStatus, gap: string): boolean => {
+        if (status === 'ambiguous') cutoffGaps.push(gap);
+        return status === 'known';
+    };
+    const editedAfterCutoff = (updatedAt: string | undefined, gap: string): boolean => {
+        const updatedMs = parseUtcTimestampMs(updatedAt);
+        if (updatedMs === null || cutoffStatus(asOfMs, input.asOfDate, updatedMs, null) === 'known') return false;
+        cutoffGaps.push(gap);
+        return true;
+    };
     const checkins = (input.checkins ?? []).filter(checkin =>
-        knownByCutoff(asOfMs, input.asOfDate, checkinAttributionMs(checkin), checkin.date));
+        admit(
+            cutoffStatus(asOfMs, input.asOfDate, checkinAttributionMs(checkin), checkin.date),
+            `checkin_same_day_date_only_at_cutoff:${checkin.date}`,
+        )
+        // Every check-in write stamps `updatedAt`; a later write may have changed its adverse fields.
+        && !editedAfterCutoff(checkin.updatedAt, `checkin_edited_after_cutoff:${checkin.date}`));
     const injuries = (input.injuries ?? []).filter(injury => {
         const recordedAt = injuryRecordedAt(injury);
-        return recordedAt === null || knownByCutoff(asOfMs, input.asOfDate, parseUtcTimestampMs(recordedAt), recordedAt);
+        return recordedAt === null || admit(
+            cutoffStatus(asOfMs, input.asOfDate, parseUtcTimestampMs(recordedAt), recordedAt),
+            `injury_same_day_date_only_at_cutoff:${injury.id ?? recordedAt}`,
+        );
     });
-    const editedAfterCutoff: string[] = [];
-    const outcomes = (input.healthAnomalyOutcomes ?? []).filter(outcome => {
-        if (!knownByCutoff(asOfMs, input.asOfDate, illnessOutcomeRecordedMs(outcome), outcome.createdAt)) return false;
-        const updatedMs = parseUtcTimestampMs(outcome.updatedAt);
-        if (updatedMs !== null && !knownByCutoff(asOfMs, input.asOfDate, updatedMs, null)) {
-            editedAfterCutoff.push(`illness_outcome_edited_after_cutoff:${outcome.episodeId}`);
-            return false;
-        }
-        return true;
-    });
+    const outcomes = (input.healthAnomalyOutcomes ?? []).filter(outcome =>
+        admit(
+            cutoffStatus(asOfMs, input.asOfDate, illnessOutcomeRecordedMs(outcome), outcome.createdAt),
+            `illness_outcome_same_day_date_only_at_cutoff:${outcome.episodeId}`,
+        )
+        && !editedAfterCutoff(outcome.updatedAt, `illness_outcome_edited_after_cutoff:${outcome.episodeId}`));
     let usedCalendarDateFallback = false;
     let matchedSameDayDateOnlyInjury = false;
     const flaggedHardSessions: DEvalC3Result['flaggedHardSessions'][number][] = [];
@@ -268,7 +295,7 @@ export function evaluateC3FlaggedOutcomes(input: DEvalC3Input): DEvalC3Result {
     }
 
     if (flaggedHardSessions.length > 0) {
-        incompleteFollowUps.push(...missingFollowUpEvidence(input), ...editedAfterCutoff);
+        incompleteFollowUps.push(...missingFollowUpEvidence(input), ...cutoffGaps);
     }
 
     const knownLimits: string[] = [];
