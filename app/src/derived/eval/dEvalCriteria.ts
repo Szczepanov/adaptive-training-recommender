@@ -111,16 +111,23 @@ export const DEVAL_GOAL_BOUND_PROTOCOLS: readonly DEvalGoalBoundProtocol[] = [
 ] as const;
 
 const LOCAL_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
-const UTC_OFFSET_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})$/;
+const UTC_OFFSET_TIMESTAMP_PATTERN =
+    /^(\d{4}-\d{2}-\d{2})T(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z|[+-](?:[01]\d|2[0-3]):?[0-5]\d)$/;
 
 /** Validates a real `YYYY-MM-DD` calendar date via a Warsaw/calendar round trip. */
 export function isLocalCalendarDate(value: unknown): value is string {
     return typeof value === 'string' && LOCAL_DATE_PATTERN.test(value) && addDaysToLocalDateString(value, 0) === value;
 }
 
-/** Parses an ISO-8601 timestamp string requiring an explicit `Z` or numeric UTC offset into epoch ms. */
+/**
+ * Parses an ISO-8601 timestamp string requiring an explicit `Z` or numeric UTC offset into epoch ms.
+ * The calendar date prefix must be a real date: `Date.parse` silently rolls impossible dates such
+ * as `2026-02-30` forward, so they are rejected before parsing.
+ */
 export function parseUtcTimestampMs(value: unknown): number | null {
-    if (typeof value !== 'string' || !UTC_OFFSET_TIMESTAMP_PATTERN.test(value)) return null;
+    if (typeof value !== 'string') return null;
+    const match = UTC_OFFSET_TIMESTAMP_PATTERN.exec(value);
+    if (!match || !isLocalCalendarDate(match[1])) return null;
     const ms = Date.parse(value);
     return Number.isFinite(ms) ? ms : null;
 }

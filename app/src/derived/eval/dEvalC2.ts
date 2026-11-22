@@ -11,10 +11,25 @@ import { addDaysToLocalDateString, getLocalDateString } from '../../utils/localD
 import {
     DEVAL_GOAL_BOUND_PROTOCOLS,
     isLocalCalendarDate,
+    parseUtcTimestampMs,
     type DEvalC2Status,
     type DEvalGoalBoundProtocol,
 } from './dEvalCriteria.ts';
 
+/**
+ * C2 input contract.
+ *
+ * - `attemptRecords` is the completion evidence for §3 "completed attempt". When it is omitted,
+ *   no observation can be confirmed as coming from a completed attempt and every protocol is
+ *   inconclusive (`attempt_records_unavailable`). Pass an empty array only when the attempt
+ *   collection was read and is genuinely empty.
+ * - Comparability reference: the after attempt pins the series. "Before" is the most recent
+ *   pre-block record (inside one retest interval, strictly before `blockStartDate`) that is
+ *   comparable to an eligible after attempt under the same protocol revision, comparison series,
+ *   canonicalization version and unit. Until a comparable after attempt exists, the most recent
+ *   pre-block record is reported as the provisional reference.
+ * - `asOfDate` is the information cutoff: records observed after it are ignored.
+ */
 export interface DEvalC2Input {
     observations: readonly CurrentObservation[];
     attemptRecords?: readonly AssessmentAttempt[];
@@ -76,18 +91,48 @@ function isCurrentValidObservation(observation: CurrentObservation): boolean {
         && revision.validity === 'valid';
 }
 
-function observationLocalDate(observation: CurrentObservation): string | null {
-    const ms = Date.parse(observation.revision.observedAt);
-    if (!Number.isFinite(ms)) return null;
-    return getLocalDateString(new Date(ms));
+interface DatedObservation {
+    obs: CurrentObservation;
+    date: string;
+    ms: number;
 }
 
-function compareObservations(a: CurrentObservation, b: CurrentObservation): number {
-    const time = a.revision.observedAt.localeCompare(b.revision.observedAt);
-    if (time !== 0) return time;
-    return a.revision.observationKey < b.revision.observationKey
-        ? -1
-        : a.revision.observationKey > b.revision.observationKey ? 1 : 0;
+function toDatedObservation(obs: CurrentObservation): DatedObservation | null {
+    const ms = parseUtcTimestampMs(obs.revision.observedAt);
+    if (ms === null) return null;
+    return { obs, date: getLocalDateString(new Date(ms)), ms };
+}
+
+/** Orders by instant (not timestamp text, which differs across UTC offsets), then observationKey. */
+function compareObservations(a: DatedObservation, b: DatedObservation): number {
+    if (a.ms !== b.ms) return a.ms - b.ms;
+    const keyA = a.obs.revision.observationKey;
+    const keyB = b.obs.revision.observationKey;
+    return keyA < keyB ? -1 : keyA > keyB ? 1 : 0;
+}
+
+function isComparablePair(a: CurrentObservation, b: CurrentObservation): boolean {
+    return a.revision.protocolRef.revision === b.revision.protocolRef.revision
+        && a.revision.comparisonSeriesKey === b.revision.comparisonSeriesKey
+        && a.revision.comparisonCanonicalizationVersion === b.revision.comparisonCanonicalizationVersion
+        && a.revision.unit === b.revision.unit;
+}
+
+/**
+ * Picks the most recent pre-block record that has a comparable later after attempt, paired with
+ * the earliest such after attempt. Falls back to the most recent pre-block record with no pair.
+ */
+function selectBeforeAndAfter(
+    beforeCandidates: readonly DatedObservation[],
+    afterCandidates: readonly DatedObservation[],
+): { before: DatedObservation | null; after: DatedObservation | null } {
+    for (let i = beforeCandidates.length - 1; i >= 0; i -= 1) {
+        const before = beforeCandidates[i]!;
+        const after = afterCandidates.find(entry =>
+            compareObservations(entry, before) > 0 && isComparablePair(entry.obs, before.obs));
+        if (after) return { before, after };
+    }
+    return { before: beforeCandidates.at(-1) ?? null, after: null };
 }
 
 function toObservationSummary(observation: CurrentObservation, date: string): DEvalC2ObservationSummary {
@@ -130,7 +175,7 @@ function evaluateProtocolMetric(params: {
     protocol: DEvalGoalBoundProtocol;
     metricId: string;
     observations: readonly CurrentObservation[];
-    attemptById: ReadonlyMap<string, AssessmentAttempt> | null;
+    attemptById: ReadonlyMap<string, AssessmentAttempt>;
     blockStartDate: string;
     blockEndDate: string;
     asOfDate: string;
@@ -158,14 +203,19 @@ function evaluateProtocolMetric(params: {
     const eligible = observations
         .filter(isCurrentValidObservation)
         .filter(obs => obs.revision.protocolRef.id === protocol.protocolId && obs.revision.metricId === metricId)
-        .filter(obs => attemptById === null || attemptById.get(obs.revision.assessmentAttemptId)?.state === 'completed')
-        .map(obs => ({ obs, date: observationLocalDate(obs) }))
-        .filter((entry): entry is { obs: CurrentObservation; date: string } => entry.date !== null)
-        .sort((a, b) => compareObservations(a.obs, b.obs));
+        .filter(obs => attemptById.get(obs.revision.assessmentAttemptId)?.state === 'completed')
+        .map(toDatedObservation)
+        .filter((entry): entry is DatedObservation => entry !== null)
+        .sort(compareObservations);
 
-    const beforeEntry = eligible
-        .filter(entry => entry.date >= beforeWindowStart && entry.date <= blockStartDate)
-        .at(-1) ?? null;
+    // Before window: inclusive lower bound, exclusive upper bound (the block start date is in the block).
+    const beforeCandidates = eligible.filter(entry => entry.date >= beforeWindowStart && entry.date < blockStartDate);
+    // After window ends at the earlier of the due date and the as-of information cutoff.
+    const afterWindowEnd = asOfDate < dueDate ? asOfDate : dueDate;
+    const afterWindowCandidates = eligible.filter(
+        entry => entry.date >= afterWindowStart && entry.date <= afterWindowEnd,
+    );
+    const { before: beforeEntry, after: comparableAfter } = selectBeforeAndAfter(beforeCandidates, afterWindowCandidates);
 
     const makeResult = (
         status: DEvalC2Status,
@@ -191,20 +241,8 @@ function evaluateProtocolMetric(params: {
     }
 
     const beforeSummary = toObservationSummary(beforeEntry.obs, beforeEntry.date);
-    const afterCandidates = eligible.filter(
-        entry => entry.date >= afterWindowStart
-            && entry.date <= dueDate
-            && compareObservations(entry.obs, beforeEntry.obs) > 0,
-    );
-
-    const isComparableToBefore = (candidate: CurrentObservation): boolean =>
-        candidate.revision.protocolRef.revision === beforeEntry.obs.revision.protocolRef.revision
-        && candidate.revision.comparisonSeriesKey === beforeEntry.obs.revision.comparisonSeriesKey
-        && candidate.revision.comparisonCanonicalizationVersion === beforeEntry.obs.revision.comparisonCanonicalizationVersion
-        && candidate.revision.unit === beforeEntry.obs.revision.unit;
-
-    const comparableAfter = afterCandidates.find(entry => isComparableToBefore(entry.obs)) ?? null;
-    const nonComparableAfters = afterCandidates.filter(entry => !isComparableToBefore(entry.obs));
+    const afterCandidates = afterWindowCandidates.filter(entry => compareObservations(entry, beforeEntry) > 0);
+    const nonComparableAfters = afterCandidates.filter(entry => !isComparablePair(entry.obs, beforeEntry.obs));
     const nonComparableAttemptsObserved = nonComparableAfters.length > 0;
 
     if (!comparableAfter) {
@@ -217,7 +255,8 @@ function evaluateProtocolMetric(params: {
                 : [];
 
         const missingExtras = { before: beforeSummary, nonComparableAttemptsObserved };
-        if (isRollbackAffectingWindow(hasRollback, rollbackAtDate, blockStartDate, null)) {
+        // No after attempt by the as-of date: a rollback on or before it precedes the eventual after attempt.
+        if (isRollbackAffectingWindow(hasRollback, rollbackAtDate, blockStartDate, asOfDate)) {
             return makeResult(
                 'inconclusive',
                 nonComparableAttemptsObserved ? 'non_comparable' : 'missing_after',
@@ -320,9 +359,23 @@ export function evaluateC2Benchmarks(input: DEvalC2Input): DEvalC2Result {
         };
     }
 
-    const attemptById = input.attemptRecords !== undefined
-        ? new Map(input.attemptRecords.map(attempt => [attempt.id, attempt] as const))
-        : null;
+    if (input.attemptRecords === undefined) {
+        return {
+            status: 'inconclusive',
+            protocols: protocols.map(protocol => ({
+                protocolId: protocol.protocolId,
+                retestIntervalDays: protocol.retestIntervalDays,
+                dueDate: addDaysToLocalDateString(input.blockEndDate, protocol.retestIntervalDays),
+                status: 'inconclusive' as const,
+                metrics: [],
+                reasons: ['attempt_records_unavailable'],
+            })),
+            pendingDueDates: [],
+            reasons: ['attempt_records_unavailable'],
+            knownLimits: ['Assessment attempt records were not supplied, so no observation could be confirmed as a completed attempt.'],
+        };
+    }
+    const attemptById = new Map(input.attemptRecords.map(attempt => [attempt.id, attempt] as const));
     const hasRollback = input.rollbackBeforeAfterAttempt === true
         || (input.rollbackBeforeAfterAttempt === undefined && Boolean(input.rollbackAtDate));
     const callerReliability = input.reliabilityEstimates ?? [];

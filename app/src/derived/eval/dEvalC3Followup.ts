@@ -51,6 +51,46 @@ export interface SessionWindowContext {
 export const ADVERSE_WINDOW_MS = DEVAL_ADVERSE_WINDOW_HOURS * 60 * 60 * 1000;
 
 /**
+ * Attribution timestamp of a check-in: when it was submitted, falling back to its last update and
+ * then its creation. The same timestamp drives both the 72h window and the as-of cutoff.
+ */
+export function checkinAttributionMs(checkin: DailySubjectiveCheckin): number | null {
+    return parseUtcTimestampMs(checkin.submittedAt)
+        ?? parseUtcTimestampMs(checkin.updatedAt)
+        ?? parseUtcTimestampMs(checkin.createdAt);
+}
+
+/** Attribution onset of an injury constraint: `since`, falling back to `createdAt`. */
+export function injuryOnset(injury: DEvalC3InjuryInput): string | null {
+    return injury.since ?? injury.createdAt ?? null;
+}
+
+/**
+ * When an injury constraint became known: `createdAt`, falling back to `since`. Used for the
+ * as-of cutoff, so a `since` backdated after the cutoff cannot pull a later record in.
+ */
+export function injuryRecordedAt(injury: DEvalC3InjuryInput): string | null {
+    return injury.createdAt ?? injury.since ?? null;
+}
+
+/**
+ * Attribution timestamp of an illness outcome: `createdAt`, when the outcome was first recorded.
+ * `updatedAt` never establishes attribution, so a note-only edit cannot move an existing record
+ * into a session's adverse window. Because the record is editable (e.g. relabelled to
+ * `illness_symptoms`) and edits are not versioned, an edit inside the window on a record created
+ * outside it is ambiguous; it is reported as incomplete follow-up rather than as pass or fail.
+ */
+export function illnessOutcomeRecordedMs(outcome: HealthAnomalyEpisodeOutcome): number | null {
+    return parseUtcTimestampMs(outcome.createdAt);
+}
+
+function isEditedAfterCreation(outcome: HealthAnomalyEpisodeOutcome): boolean {
+    const createdMs = parseUtcTimestampMs(outcome.createdAt);
+    const updatedMs = parseUtcTimestampMs(outcome.updatedAt);
+    return updatedMs !== null && (createdMs === null || updatedMs > createdMs);
+}
+
+/**
  * Pure copy of `engine/injuryPolicy.ts` `deriveTissueSeverity`, retained here so `derived/`
  * never imports from `engine/` (ADR-0052). Parity is verified by `dEvalReadout.test.ts`.
  */
@@ -90,9 +130,7 @@ export function collectCheckinOutcomes(
 ): boolean {
     let usedFallback = false;
     for (const checkin of checkins) {
-        const checkinMs = parseUtcTimestampMs(checkin.submittedAt)
-            ?? parseUtcTimestampMs(checkin.updatedAt)
-            ?? parseUtcTimestampMs(checkin.createdAt);
+        const checkinMs = checkinAttributionMs(checkin);
         let inWindow: boolean;
         if (ctx.sessionMs !== null && checkinMs !== null) {
             inWindow = checkinMs >= ctx.sessionMs && checkinMs <= ctx.sessionMs + ADVERSE_WINDOW_MS;
@@ -133,25 +171,27 @@ export function collectInjuryOutcomes(
     let usedFallback = false;
     let matchedSameDayDateOnly = false;
     for (const injury of injuries) {
-        const onset = injury.since ?? injury.createdAt ?? null;
+        const onset = injuryOnset(injury);
         if (!onset) continue;
         const onsetMs = parseUtcTimestampMs(onset);
         let inWindow = false;
-        let onsetDate = onset;
+        // A timestamped onset still yields a Warsaw calendar date for the date-only fallback.
+        const onsetDate = onsetMs !== null
+            ? getLocalDateString(new Date(onsetMs))
+            : isLocalCalendarDate(onset) ? onset : null;
         if (ctx.sessionMs !== null && onsetMs !== null) {
             inWindow = onsetMs >= ctx.sessionMs && onsetMs <= ctx.sessionMs + ADVERSE_WINDOW_MS;
-            onsetDate = getLocalDateString(new Date(onsetMs));
-        } else if (isLocalCalendarDate(onset)) {
+        } else if (onsetDate !== null) {
             usedFallback = true;
-            inWindow = onset >= ctx.session.performedDate && onset <= ctx.conservativeEndDate;
-            if (inWindow && onset === ctx.session.performedDate) {
+            inWindow = onsetDate >= ctx.session.performedDate && onsetDate <= ctx.conservativeEndDate;
+            if (inWindow && onsetDate === ctx.session.performedDate) {
                 matchedSameDayDateOnly = true;
             }
         }
         if (inWindow) {
             adverse.push({
                 source: 'injury_constraint',
-                date: onsetDate,
+                date: onsetDate ?? onset,
                 timestamp: onsetMs !== null ? onset : null,
                 sessionId: ctx.session.sessionId,
                 sessionDate: ctx.session.performedDate,
@@ -162,44 +202,61 @@ export function collectInjuryOutcomes(
     return { usedFallback, matchedSameDayDateOnly };
 }
 
+function isInSessionWindow(ctx: SessionWindowContext, ms: number | null, date: string | null): boolean {
+    if (ctx.sessionMs !== null && ms !== null) {
+        return ms >= ctx.sessionMs && ms <= ctx.sessionMs + ADVERSE_WINDOW_MS;
+    }
+    const localDate = ms !== null ? getLocalDateString(new Date(ms)) : date;
+    return localDate !== null && isLocalCalendarDate(localDate)
+        && localDate >= ctx.session.performedDate && localDate <= ctx.conservativeEndDate;
+}
+
 export function collectIllnessOutcomeRecords(
     ctx: SessionWindowContext,
     outcomes: readonly HealthAnomalyEpisodeOutcome[],
     adverse: DEvalC3AdverseOutcome[],
+    incomplete: string[],
 ): boolean {
     let usedFallback = false;
     for (const outcome of outcomes) {
         const isIllness = outcome.explanation === 'illness_symptoms' || outcome.respiratoryTest?.result === 'positive';
         if (!isIllness) continue;
         const onsetDate = outcome.symptomOnset?.date ?? null;
-        const updatedMs = parseUtcTimestampMs(outcome.updatedAt);
+        const recordedMs = illnessOutcomeRecordedMs(outcome);
         let inWindow = false;
         let recordDate = outcome.sourceAssessment.date;
         if (onsetDate !== null && isLocalCalendarDate(onsetDate)) {
-            const preSessionUpdate = ctx.sessionMs !== null && updatedMs !== null && updatedMs < ctx.sessionMs;
-            if (!preSessionUpdate) {
-                if (ctx.sessionMs !== null) usedFallback = true;
-                inWindow = onsetDate >= ctx.session.performedDate && onsetDate <= ctx.conservativeEndDate;
-                recordDate = onsetDate;
-            }
-        } else if (ctx.sessionMs !== null && updatedMs !== null) {
-            inWindow = updatedMs >= ctx.sessionMs && updatedMs <= ctx.sessionMs + ADVERSE_WINDOW_MS;
-            recordDate = getLocalDateString(new Date(updatedMs));
+            // A labelled symptom onset dates the illness itself, whenever the record was created or edited.
+            if (ctx.sessionMs !== null) usedFallback = true;
+            inWindow = onsetDate >= ctx.session.performedDate && onsetDate <= ctx.conservativeEndDate;
+            recordDate = onsetDate;
+        } else if (ctx.sessionMs !== null && recordedMs !== null) {
+            inWindow = recordedMs >= ctx.sessionMs && recordedMs <= ctx.sessionMs + ADVERSE_WINDOW_MS;
+            recordDate = getLocalDateString(new Date(recordedMs));
         } else {
-            const fallbackDate = updatedMs !== null
-                ? getLocalDateString(new Date(updatedMs))
-                : isLocalCalendarDate(outcome.updatedAt) ? outcome.updatedAt : null;
+            const fallbackDate = recordedMs !== null
+                ? getLocalDateString(new Date(recordedMs))
+                : isLocalCalendarDate(outcome.createdAt) ? outcome.createdAt : null;
             if (fallbackDate) {
                 usedFallback = true;
                 recordDate = fallbackDate;
                 inWindow = fallbackDate >= ctx.session.performedDate && fallbackDate <= ctx.conservativeEndDate;
             }
         }
+        if (
+            !inWindow
+            && (onsetDate === null || !isLocalCalendarDate(onsetDate))
+            && isEditedAfterCreation(outcome)
+            && isInSessionWindow(ctx, parseUtcTimestampMs(outcome.updatedAt), null)
+        ) {
+            // Possibly relabelled to illness inside the window; edits are not versioned.
+            incomplete.push(`illness_outcome_edited_in_window:${outcome.episodeId}`);
+        }
         if (inWindow) {
             adverse.push({
                 source: 'health_anomaly_outcome',
                 date: recordDate,
-                timestamp: updatedMs !== null ? outcome.updatedAt : null,
+                timestamp: recordedMs !== null ? outcome.createdAt : null,
                 sessionId: ctx.session.sessionId,
                 sessionDate: ctx.session.performedDate,
                 reason: outcome.respiratoryTest?.result === 'positive'

@@ -3,13 +3,16 @@ import {
     type DEvalPlannedSessionInput,
     type DEvalSessionOutcome,
 } from '../placements/placementOutcome.ts';
+import { addDaysToLocalDateString } from '../../utils/localDate.ts';
 import {
     DEVAL_ABSOLUTE_ADHERENCE_FLOOR,
     DEVAL_ADHERENCE_TOLERANCE,
     DEVAL_MAX_BLOCK_UNKNOWN_RATIO,
     DEVAL_MIN_BASELINE_DETERMINABLE_RATIO,
+    DEVAL_MIN_BLOCK_DAYS,
     DEVAL_MIN_ELIGIBLE_SESSIONS,
     DEVAL_PARTIAL_WEIGHT,
+    isLocalCalendarDate,
     type DEvalCriterionStatus,
 } from './dEvalCriteria.ts';
 
@@ -23,9 +26,23 @@ export interface DEvalC1BlockInput {
     unplannedCount?: number;
 }
 
+/**
+ * C1 input contract.
+ *
+ * `baseline` must be the §3 adherence baseline: the planned sessions of the 28 Warsaw dates
+ * immediately before `blockStartDate` (`blockStartDate - 28` through `blockStartDate - 1`).
+ * The evaluator does not select that window; it validates it. Every baseline session must have
+ * an `assignedDate` inside the window and carry the window itself as its own
+ * `blockStartDate`/`blockEndDate` (so `moved` is judged against the baseline block). A baseline
+ * supplied without a valid `blockStartDate`, or with any session that fails these checks, is not
+ * comparable and C1 falls back to the OD5 absolute floor. Validating rather than filtering keeps a
+ * miss from silently leaving the baseline denominator.
+ */
 export interface DEvalC1Input {
     block: DEvalC1BlockInput;
     baseline?: DEvalC1BlockInput | null;
+    /** First Warsaw date of the qualifying block; required for a comparable baseline. */
+    blockStartDate?: string | null;
 }
 
 export interface DEvalC1ReducedBreakdown {
@@ -215,13 +232,47 @@ function isBaselineComparable(summary: DEvalC1BlockSummary): { comparable: boole
     return { comparable: true, reason: 'baseline_comparable_od4' };
 }
 
+function checkBaselineWindow(
+    baseline: DEvalC1BlockInput,
+    blockStartDate: string | null | undefined,
+): { comparable: true } | { comparable: false; reason: string } {
+    if (!isLocalCalendarDate(blockStartDate)) {
+        return { comparable: false, reason: 'baseline_window_unconfirmed_no_block_start' };
+    }
+    const windowStart = addDaysToLocalDateString(blockStartDate, -DEVAL_MIN_BLOCK_DAYS);
+    const windowEnd = addDaysToLocalDateString(blockStartDate, -1);
+    const outside = baseline.plannedSessions.some(session =>
+        !isLocalCalendarDate(session.assignedDate)
+        || session.assignedDate < windowStart
+        || session.assignedDate > windowEnd
+        || session.blockStartDate !== windowStart
+        || session.blockEndDate !== windowEnd);
+    return outside
+        ? { comparable: false, reason: 'baseline_outside_pre_block_28_day_window' }
+        : { comparable: true };
+}
+
+/**
+ * Best-case adherence if every `unknown` session turned out eligible and fully completed.
+ * When even this bound misses the threshold, the failure is observed regardless of how the
+ * unknown sessions resolve (§4: an observed failure takes precedence over missing evidence).
+ */
+function bestCaseAdherence(block: DEvalC1BlockSummary): number | null {
+    const denominator = block.eligible + block.unknown;
+    if (block.eligible <= 0 || denominator <= 0) return null;
+    return (block.completed + block.moved + DEVAL_PARTIAL_WEIGHT * block.partial + block.unknown) / denominator;
+}
+
 /** Evaluates ADR-0052 D-EVAL Criterion C1 (adherence) with optional OD4 baseline comparison. */
 export function evaluateC1Adherence(input: DEvalC1Input): DEvalC1Result {
     const block = summarizeC1Block(input.block);
     const baselineSummary = input.baseline ? summarizeC1Block(input.baseline) : null;
-    const baselineEval = baselineSummary
-        ? isBaselineComparable(baselineSummary)
-        : { comparable: false, reason: 'baseline_not_provided' };
+    const baselineWindow = input.baseline ? checkBaselineWindow(input.baseline, input.blockStartDate) : null;
+    const baselineEval = !baselineSummary
+        ? { comparable: false, reason: 'baseline_not_provided' }
+        : baselineWindow && !baselineWindow.comparable
+            ? baselineWindow
+            : isBaselineComparable(baselineSummary);
 
     const comparableBaseline = baselineSummary !== null && baselineEval.comparable && baselineSummary.adherenceRate !== null;
     const thresholdSource = comparableBaseline ? 'baseline_minus_tolerance' : 'absolute_floor';
@@ -249,14 +300,27 @@ export function evaluateC1Adherence(input: DEvalC1Input): DEvalC1Result {
     const unknownExceedsMax = block.planned > 0
         && block.unknown * 10 > block.planned * Math.round(DEVAL_MAX_BLOCK_UNKNOWN_RATIO * 10);
 
+    const meetsThreshold = (rate: number): boolean => rate + ADHERENCE_FLOAT_EPSILON >= threshold;
+    // With >= 8 eligible sessions the sample-size gate is met however the unknowns resolve, so a
+    // best-case rate below threshold is an observed failure even when unknown exceeds 10%.
+    const bestCase = bestCaseAdherence(block);
+    const observedFailureDespiteUnknown = unknownExceedsMax
+        && block.eligible >= DEVAL_MIN_ELIGIBLE_SESSIONS
+        && bestCase !== null
+        && !meetsThreshold(bestCase);
+
     let status: DEvalCriterionStatus;
-    if (block.planned === 0 || block.eligible <= 0 || block.eligible < DEVAL_MIN_ELIGIBLE_SESSIONS || unknownExceedsMax) {
+    if (observedFailureDespiteUnknown) {
+        status = 'fail';
+        reasons.push('adherence_below_threshold');
+        knownLimits.push('C1 failed on best-case adherence (every unknown session counted as eligible and completed).');
+    } else if (block.planned === 0 || block.eligible <= 0 || block.eligible < DEVAL_MIN_ELIGIBLE_SESSIONS || unknownExceedsMax) {
         status = 'inconclusive';
         if (block.planned === 0) reasons.push('no_planned_sessions');
         if (block.eligible <= 0) reasons.push('zero_eligible_denominator');
         else if (block.eligible < DEVAL_MIN_ELIGIBLE_SESSIONS) reasons.push('fewer_than_8_eligible_sessions');
         if (unknownExceedsMax) reasons.push('unknown_exceeds_10_percent');
-    } else if (block.adherenceRate !== null && block.adherenceRate + ADHERENCE_FLOAT_EPSILON >= threshold) {
+    } else if (block.adherenceRate !== null && meetsThreshold(block.adherenceRate)) {
         status = 'pass';
         reasons.push('adherence_meets_threshold');
     } else {

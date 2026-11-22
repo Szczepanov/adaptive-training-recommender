@@ -70,6 +70,51 @@ function plannedSession(
     };
 }
 
+const BASELINE_START = '2026-10-26';
+const BASELINE_END = '2026-11-22';
+
+/** A planned session inside the §3 pre-block baseline window (the 28 dates before BLOCK_START). */
+function baselineSession(index: number, overrides: Partial<DEvalC1PlannedSessionInput> = {}): DEvalC1PlannedSessionInput {
+    const assignedDate = `2026-11-${String(1 + index).padStart(2, '0')}`;
+    return plannedSession(index, {
+        sessionKey: `base-${index}`,
+        assignedDate,
+        performedDate: assignedDate,
+        performedOccurrenceId: `base-occ-${index}`,
+        blockStartDate: BASELINE_START,
+        blockEndDate: BASELINE_END,
+        ...overrides,
+    });
+}
+
+function completedAttempts(observations: readonly CurrentObservation[]): AssessmentAttempt[] {
+    return observations.map(obs => ({
+        id: obs.revision.assessmentAttemptId,
+        protocolRef: { id: obs.revision.protocolRef.id, revision: obs.revision.protocolRef.revision },
+        state: 'completed' as const,
+        purpose: 'baseline' as const,
+    }));
+}
+
+function c2Input(observations: CurrentObservation[], overrides: Partial<Parameters<typeof evaluateC2Benchmarks>[0]> = {}) {
+    return {
+        observations,
+        attemptRecords: completedAttempts(observations),
+        blockStartDate: BLOCK_START,
+        blockEndDate: BLOCK_END,
+        asOfDate: '2027-01-20',
+        ...overrides,
+    };
+}
+
+const COMPLETE_FOLLOW_UP = {
+    followUpSourcesComplete: true,
+    followUpSourceStates: { checkins: 'measured', injuries: 'measured', healthAnomalyOutcomes: 'measured' },
+    checkins: [],
+    injuries: [],
+    healthAnomalyOutcomes: [],
+} as const;
+
 function makeObservation(params: {
     observationKey: string;
     protocolId: string;
@@ -299,8 +344,8 @@ describe('evaluateC1Adherence', () => {
     it('uses baseline - 5pp when OD4 holds (handles IEEE-754 0.8 - 0.05 boundary cleanly) and falls back to 75% otherwise', () => {
         // Comparable baseline: 8 completed, 2 missed -> 80% adherence, 10 eligible, 100% determinable
         const baselineSessions = [
-            ...Array.from({ length: 8 }, (_, i) => plannedSession(i)),
-            ...Array.from({ length: 2 }, (_, i) => plannedSession(8 + i, {
+            ...Array.from({ length: 8 }, (_, i) => baselineSession(i)),
+            ...Array.from({ length: 2 }, (_, i) => baselineSession(8 + i, {
                 linked: false, performedOccurrenceId: null, performedDate: null, linkedExecution: null,
             })),
         ];
@@ -312,6 +357,7 @@ describe('evaluateC1Adherence', () => {
             })),
         ];
         const passRes = evaluateC1Adherence({
+            blockStartDate: BLOCK_START,
             block: { plannedSessions: blockSessions },
             baseline: { plannedSessions: baselineSessions },
         });
@@ -323,10 +369,11 @@ describe('evaluateC1Adherence', () => {
 
         // Non-comparable baseline: 2 of 10 unknown (80% determinable < 90% OD4) -> falls back to 75%
         const nonCompBaseline = [
-            ...Array.from({ length: 8 }, (_, i) => plannedSession(i)),
-            ...Array.from({ length: 2 }, (_, i) => plannedSession(8 + i, { evidenceComplete: false })),
+            ...Array.from({ length: 8 }, (_, i) => baselineSession(i)),
+            ...Array.from({ length: 2 }, (_, i) => baselineSession(8 + i, { evidenceComplete: false })),
         ];
         const fallbackRes = evaluateC1Adherence({
+            blockStartDate: BLOCK_START,
             block: { plannedSessions: blockSessions },
             baseline: { plannedSessions: nonCompBaseline },
         });
@@ -370,12 +417,68 @@ describe('evaluateC1Adherence', () => {
         const failRes = evaluateC1Adherence({ block: { plannedSessions: belowFloor } });
         expect(failRes.status).toBe('fail');
     });
+
+    it('rejects a baseline that is not the 28 dates before the block start', () => {
+        const blockSessions = Array.from({ length: 10 }, (_, i) => plannedSession(i, {
+            ...(i >= 8 ? { linked: false, performedOccurrenceId: null, performedDate: null, linkedExecution: null } : {}),
+        }));
+        // The current block's own sessions supplied as the "baseline" (100% adherence) must not set a 95% threshold.
+        const selfBaseline = evaluateC1Adherence({
+            blockStartDate: BLOCK_START,
+            block: { plannedSessions: blockSessions },
+            baseline: { plannedSessions: Array.from({ length: 8 }, (_, i) => plannedSession(i)) },
+        });
+        expect(selfBaseline.baseline.comparable).toBe(false);
+        expect(selfBaseline.baseline.reason).toBe('baseline_outside_pre_block_28_day_window');
+        expect(selfBaseline.threshold).toBe(DEVAL_ABSOLUTE_ADHERENCE_FLOOR);
+        expect(selfBaseline.status).toBe('pass');
+
+        // Without a block start date the window cannot be confirmed.
+        const noStart = evaluateC1Adherence({
+            block: { plannedSessions: blockSessions },
+            baseline: { plannedSessions: Array.from({ length: 10 }, (_, i) => baselineSession(i)) },
+        });
+        expect(noStart.baseline.comparable).toBe(false);
+        expect(noStart.baseline.reason).toBe('baseline_window_unconfirmed_no_block_start');
+    });
+
+    it('lets an observed adherence failure take precedence over excess unknown evidence', () => {
+        const missed = { linked: false, performedOccurrenceId: null, performedDate: null, linkedExecution: null };
+        // 4 completed, 6 missed, 2 unknown: best case (4 + 2) / 12 = 50% < 75% -> fail despite unknown > 10%.
+        const observedFail = evaluateC1Adherence({ block: { plannedSessions: [
+            ...Array.from({ length: 4 }, (_, i) => plannedSession(i)),
+            ...Array.from({ length: 6 }, (_, i) => plannedSession(4 + i, missed)),
+            plannedSession(10, { evidenceComplete: false }),
+            plannedSession(11, { evidenceComplete: false }),
+        ] } });
+        expect(observedFail.status).toBe('fail');
+        expect(observedFail.reasons).toContain('adherence_below_threshold');
+
+        // 7 completed, 3 missed, 2 unknown: best case 9 / 12 = 75% meets the floor -> stays inconclusive.
+        const couldPass = evaluateC1Adherence({ block: { plannedSessions: [
+            ...Array.from({ length: 7 }, (_, i) => plannedSession(i)),
+            ...Array.from({ length: 3 }, (_, i) => plannedSession(7 + i, missed)),
+            plannedSession(10, { evidenceComplete: false }),
+            plannedSession(11, { evidenceComplete: false }),
+        ] } });
+        expect(couldPass.status).toBe('inconclusive');
+        expect(couldPass.reasons).toContain('unknown_exceeds_10_percent');
+
+        // Fewer than 8 eligible stays inconclusive: unknowns could resolve to excluded outcomes.
+        const smallSample = evaluateC1Adherence({ block: { plannedSessions: [
+            ...Array.from({ length: 7 }, (_, i) => plannedSession(i, missed)),
+            plannedSession(7, { evidenceComplete: false }),
+            plannedSession(8, { evidenceComplete: false }),
+        ] } });
+        expect(smallSample.status).toBe('inconclusive');
+    });
 });
 
 describe('evaluateC2Benchmarks', () => {
     it('passes when all 6 goal-bound protocols remain within or above noise bounds', () => {
         const result = evaluateC2Benchmarks({
             observations: makeProtocolBaselineAndAfter(),
+            attemptRecords: completedAttempts(makeProtocolBaselineAndAfter()),
             blockStartDate: BLOCK_START,
             blockEndDate: BLOCK_END,
             asOfDate: '2027-01-20',
@@ -390,6 +493,7 @@ describe('evaluateC2Benchmarks', () => {
         // 234 vs 240 is -2.5%: within 3.8% literature CV -> pass, but exceeds 2.0% personal CV -> fail!
         const litResult = evaluateC2Benchmarks({
             observations: obs,
+            attemptRecords: completedAttempts(obs),
             blockStartDate: BLOCK_START,
             blockEndDate: BLOCK_END,
             asOfDate: '2027-01-20',
@@ -398,6 +502,7 @@ describe('evaluateC2Benchmarks', () => {
 
         const personalResult = evaluateC2Benchmarks({
             observations: obs,
+            attemptRecords: completedAttempts(obs),
             blockStartDate: BLOCK_START,
             blockEndDate: BLOCK_END,
             asOfDate: '2027-01-20',
@@ -413,6 +518,7 @@ describe('evaluateC2Benchmarks', () => {
         const onlyBefore = makeProtocolBaselineAndAfter({}, { includeAfter: false });
         const pendingRes = evaluateC2Benchmarks({
             observations: onlyBefore,
+            attemptRecords: completedAttempts(onlyBefore),
             blockStartDate: BLOCK_START,
             blockEndDate: BLOCK_END,
             asOfDate: '2027-03-20', // <= 90d dueDate 2027-03-20!
@@ -422,6 +528,7 @@ describe('evaluateC2Benchmarks', () => {
 
         const overdue90d = evaluateC2Benchmarks({
             observations: onlyBefore,
+            attemptRecords: completedAttempts(onlyBefore),
             blockStartDate: BLOCK_START,
             blockEndDate: BLOCK_END,
             asOfDate: '2027-03-21', // 1 day past 90d dueDate!
@@ -442,6 +549,7 @@ describe('evaluateC2Benchmarks', () => {
         ];
         const failBeatsPending = evaluateC2Benchmarks({
             observations: declinePlusPending,
+            attemptRecords: completedAttempts(declinePlusPending),
             blockStartDate: BLOCK_START,
             blockEndDate: BLOCK_END,
             asOfDate: '2027-01-20',
@@ -463,6 +571,7 @@ describe('evaluateC2Benchmarks', () => {
         }));
         const pendingRev = evaluateC2Benchmarks({
             observations: revChangedObs,
+            attemptRecords: completedAttempts(revChangedObs),
             blockStartDate: BLOCK_START,
             blockEndDate: BLOCK_END,
             asOfDate: '2027-01-20',
@@ -474,6 +583,7 @@ describe('evaluateC2Benchmarks', () => {
         // Rollback between blockEndDate and afterDate -> inconclusive (even if improvement)
         const rollbackBeforeAfter = evaluateC2Benchmarks({
             observations: makeProtocolBaselineAndAfter(),
+            attemptRecords: completedAttempts(makeProtocolBaselineAndAfter()),
             blockStartDate: BLOCK_START,
             blockEndDate: BLOCK_END,
             asOfDate: '2027-01-20',
@@ -485,6 +595,7 @@ describe('evaluateC2Benchmarks', () => {
         // Rollback strictly AFTER an already-completed after-attempt -> passes!
         const rollbackAfterCleanTest = evaluateC2Benchmarks({
             observations: makeProtocolBaselineAndAfter({}, { afterDate: '2027-01-10' }),
+            attemptRecords: completedAttempts(makeProtocolBaselineAndAfter({}, { afterDate: '2027-01-10' })),
             blockStartDate: BLOCK_START,
             blockEndDate: BLOCK_END,
             asOfDate: '2027-01-20',
@@ -514,6 +625,7 @@ describe('evaluateC2Benchmarks', () => {
         // Zero protocols declared -> inconclusive
         expect(evaluateC2Benchmarks({
             observations: [],
+            attemptRecords: [],
             blockStartDate: BLOCK_START,
             blockEndDate: BLOCK_END,
             asOfDate: AS_OF_POST_BLOCK,
@@ -526,6 +638,7 @@ describe('evaluateC2Benchmarks', () => {
         );
         const noNoiseRes = evaluateC2Benchmarks({
             observations: noNoiseObs,
+            attemptRecords: completedAttempts(noNoiseObs),
             blockStartDate: BLOCK_START,
             blockEndDate: BLOCK_END,
             asOfDate: '2027-01-20',
@@ -637,6 +750,7 @@ describe('evaluateC3FlaggedOutcomes and deriveTissueSeverity parity', () => {
                 performedAt: sessionAt,
                 performedIntensity: 'hard' as const,
             }],
+            ...COMPLETE_FOLLOW_UP,
         };
 
         // Reduced session using easy intensity on flagged day -> not a flagged hard session!
@@ -774,9 +888,10 @@ describe('evaluateC4Rollback, evaluateDEvalBlock, and renderDEvalResultMarkdown'
                 unplannedCount: 1,
             },
         },
-        c2: {
-            observations: makeProtocolBaselineAndAfter(),
-        },
+        c2: (() => {
+            const observations = makeProtocolBaselineAndAfter();
+            return { observations, attemptRecords: completedAttempts(observations) };
+        })(),
         c3: {
             flags: [{ id: 'illness_anomaly' as const, observedOn: '2026-12-01', active: false, state: 'measured' as const }],
             performedSessions: [],
@@ -800,7 +915,10 @@ describe('evaluateC4Rollback, evaluateDEvalBlock, and renderDEvalResultMarkdown'
             ...cleanBlockInput(),
             asOfDate: '2026-12-25',
             asOfTimestamp: '2026-12-25T12:00:00Z',
-            c2: { observations: makeProtocolBaselineAndAfter({}, { includeAfter: false }) },
+            c2: (() => {
+                const observations = makeProtocolBaselineAndAfter({}, { includeAfter: false });
+                return { observations, attemptRecords: completedAttempts(observations) };
+            })(),
         });
         expect(pendingResult.c2.status).toBe('pending');
         expect(pendingResult.overall).toBe('PENDING');
@@ -827,7 +945,10 @@ describe('evaluateC4Rollback, evaluateDEvalBlock, and renderDEvalResultMarkdown'
             ...cleanBlockInput(),
             asOfDate: '2026-12-25',
             asOfTimestamp: '2026-12-25T12:00:00Z',
-            c2: { observations: makeProtocolBaselineAndAfter({}, { includeAfter: false }) },
+            c2: (() => {
+                const observations = makeProtocolBaselineAndAfter({}, { includeAfter: false });
+                return { observations, attemptRecords: completedAttempts(observations) };
+            })(),
         });
         const md = renderDEvalResultMarkdown(pendingResult);
         expect(md).toContain('# ADR-0052 D-EVAL result: 2026-11-23 – 2026-12-20');
@@ -836,5 +957,190 @@ describe('evaluateC4Rollback, evaluateDEvalBlock, and renderDEvalResultMarkdown'
         expect(md).toContain('| C3 | pass |');
         expect(md).toContain('| C4 | pass |');
         expect(md).toContain('**Overall: PENDING (C2 after-attempts due 2027-03-20, 2027-06-18)**');
+    });
+});
+
+describe('review regressions (PR #1284)', () => {
+    const broadJumpOnly = DEVAL_GOAL_BOUND_PROTOCOLS.filter(p => p.protocolId === 'field-standing-broad-jump');
+    const jump = (key: string, observedAt: string, value: number, extra: { seriesKey?: string } = {}) =>
+        makeObservation({
+            observationKey: key,
+            protocolId: 'field-standing-broad-jump',
+            metricId: 'standing_broad_jump_distance_cm',
+            value,
+            unit: 'cm',
+            observedAt,
+            ...extra,
+        });
+
+    it('parseUtcTimestampMs rejects impossible calendar dates and out-of-range times', () => {
+        expect(parseUtcTimestampMs('2026-02-30T10:00:00Z')).toBeNull();
+        expect(parseUtcTimestampMs('2026-13-01T10:00:00Z')).toBeNull();
+        expect(parseUtcTimestampMs('2026-12-01T24:00:00Z')).toBeNull();
+        expect(parseUtcTimestampMs('2028-02-29T10:00:00+01:00')).toBe(Date.parse('2028-02-29T09:00:00Z'));
+    });
+
+    it('C2 is inconclusive when attempt records are omitted', () => {
+        const result = evaluateC2Benchmarks({
+            observations: makeProtocolBaselineAndAfter(),
+            blockStartDate: BLOCK_START,
+            blockEndDate: BLOCK_END,
+            asOfDate: '2027-01-20',
+        });
+        expect(result.status).toBe('inconclusive');
+        expect(result.reasons).toContain('attempt_records_unavailable');
+    });
+
+    it('C2 excludes a before-attempt on the block start date', () => {
+        const obs = [jump('b-on-start', `${BLOCK_START}T09:00:00Z`, 240), jump('a', '2027-01-15T09:00:00Z', 240)];
+        const result = evaluateC2Benchmarks(c2Input(obs, { protocols: broadJumpOnly }));
+        expect(result.status).toBe('inconclusive');
+        expect(result.protocols[0]?.metrics[0]?.comparability).toBe('missing_before');
+    });
+
+    it('C2 does not let a newer non-comparable pre-block record hide a comparable baseline', () => {
+        const obs = [
+            jump('b-old', '2026-10-20T09:00:00Z', 240),
+            jump('b-new-other-series', '2026-10-22T09:00:00Z', 250, { seriesKey: 'field-standing-broad-jump:series-2' }),
+            jump('a', '2027-01-15T09:00:00Z', 241),
+        ];
+        const result = evaluateC2Benchmarks(c2Input(obs, { protocols: broadJumpOnly }));
+        expect(result.status).toBe('pass');
+        expect(result.protocols[0]?.metrics[0]?.before?.observationKey).toBe('b-old');
+    });
+
+    it('C2 orders observations by instant, not timestamp text, across UTC offsets', () => {
+        // '11:00+02:00' (09:00Z) sorts after '09:30Z' as text but happened 30 minutes earlier.
+        const obs = [
+            jump('b-early', '2026-10-22T11:00:00+02:00', 200),
+            jump('b-late', '2026-10-22T09:30:00Z', 240),
+            jump('a', '2027-01-15T09:00:00Z', 240),
+        ];
+        const result = evaluateC2Benchmarks(c2Input(obs, { protocols: broadJumpOnly }));
+        expect(result.protocols[0]?.metrics[0]?.before?.observationKey).toBe('b-late');
+        expect(result.status).toBe('pass');
+    });
+
+    it('C2 ignores retests after the as-of date and only counts rollbacks on or before it', () => {
+        const obs = [jump('b', '2026-10-22T09:00:00Z', 240), jump('a-future', '2027-01-25T09:00:00Z', 200)];
+        expect(evaluateC2Benchmarks(c2Input(obs, { protocols: broadJumpOnly, asOfDate: '2027-01-20' })).status).toBe('pending');
+        expect(evaluateC2Benchmarks(c2Input(obs, { protocols: broadJumpOnly, asOfDate: '2027-01-25' })).status).toBe('fail');
+
+        const onlyBefore = [jump('b', '2026-10-22T09:00:00Z', 240)];
+        const rollbackOn = (rollbackAtDate: string) => evaluateC2Benchmarks(c2Input(onlyBefore, {
+            protocols: broadJumpOnly,
+            asOfDate: '2027-01-20',
+            rollbackBeforeAfterAttempt: true,
+            rollbackAtDate,
+        })).status;
+        expect(rollbackOn('2027-02-01')).toBe('pending');
+        expect(rollbackOn('2027-01-20')).toBe('inconclusive');
+    });
+
+    const flaggedHardC3 = {
+        blockStartDate: BLOCK_START,
+        blockEndDate: BLOCK_END,
+        asOfDate: '2026-12-05',
+        asOfTimestamp: '2026-12-05T12:00:00Z',
+        flags: [{ id: 'illness_anomaly' as const, observedOn: '2026-12-01', active: true, state: 'measured' as const }],
+        performedSessions: [{
+            sessionId: 's-hard',
+            performedDate: '2026-12-01',
+            performedAt: '2026-12-01T10:00:00Z',
+            performedIntensity: 'hard' as const,
+        }],
+    };
+
+    it('C3 treats omitted follow-up completeness as inconclusive only when a flagged hard session exists', () => {
+        const omitted = evaluateC3FlaggedOutcomes(flaggedHardC3);
+        expect(omitted.status).toBe('inconclusive');
+        expect(omitted.incompleteFollowUps).toContain('follow_up_completeness_unconfirmed');
+
+        expect(evaluateC3FlaggedOutcomes({ ...flaggedHardC3, ...COMPLETE_FOLLOW_UP }).status).toBe('pass');
+        expect(evaluateC3FlaggedOutcomes({ ...flaggedHardC3, performedSessions: [] }).status).toBe('pass');
+    });
+
+    it('C3 ignores evidence recorded after the as-of cutoff', () => {
+        const result = evaluateC3FlaggedOutcomes({
+            ...flaggedHardC3,
+            ...COMPLETE_FOLLOW_UP,
+            asOfDate: '2026-12-02',
+            asOfTimestamp: '2026-12-02T08:00:00Z',
+            checkins: [makeCheckin('2026-12-02', { illnessSymptoms: true, submittedAt: '2026-12-02T09:00:00Z' })],
+            injuries: [{ id: 'inj', severity: 'limit', since: '2026-12-03' }],
+            healthAnomalyOutcomes: [makeOutcome({ createdAt: '2026-12-02T10:00:00Z' })],
+        });
+        expect(result.adverseOutcomes).toHaveLength(0);
+        expect(result.status).toBe('inconclusive');
+        expect(result.reasons).toContain('followup_72h_window_still_open');
+    });
+
+    it('C3 attributes a timestamped injury onset by Warsaw date when the session has no timestamp', () => {
+        const result = evaluateC3FlaggedOutcomes({
+            ...flaggedHardC3,
+            ...COMPLETE_FOLLOW_UP,
+            performedSessions: [{ sessionId: 's-notime', performedDate: '2026-12-01', performedIntensity: 'hard' }],
+            injuries: [{ id: 'inj-ts', severity: 'limit', since: '2026-12-02T15:00:00Z' }],
+        });
+        expect(result.status).toBe('fail');
+        expect(result.adverseOutcomes[0]?.date).toBe('2026-12-02');
+    });
+
+    it('C3 attributes illness outcomes by createdAt; an in-window edit of an older record is ambiguous, not pass or fail', () => {
+        const editedInWindow = evaluateC3FlaggedOutcomes({
+            ...flaggedHardC3,
+            ...COMPLETE_FOLLOW_UP,
+            healthAnomalyOutcomes: [makeOutcome({ createdAt: '2026-11-25T08:00:00Z', updatedAt: '2026-12-02T08:00:00Z' })],
+        });
+        expect(editedInWindow.adverseOutcomes).toHaveLength(0);
+        expect(editedInWindow.status).toBe('inconclusive');
+        expect(editedInWindow.incompleteFollowUps).toContain('illness_outcome_edited_in_window:ep-1');
+
+        // Edited outside the window: an old record stays unattributed and C3 passes.
+        const editedOutside = evaluateC3FlaggedOutcomes({
+            ...flaggedHardC3,
+            ...COMPLETE_FOLLOW_UP,
+            healthAnomalyOutcomes: [makeOutcome({ createdAt: '2026-11-25T08:00:00Z', updatedAt: '2026-11-26T08:00:00Z' })],
+        });
+        expect(editedOutside.status).toBe('pass');
+    });
+
+    it('C3 counts a pre-session record relabelled with a post-session symptom onset as adverse', () => {
+        const relabelled = evaluateC3FlaggedOutcomes({
+            ...flaggedHardC3,
+            ...COMPLETE_FOLLOW_UP,
+            healthAnomalyOutcomes: [makeOutcome({
+                createdAt: '2026-11-30T08:00:00Z',
+                updatedAt: '2026-12-03T08:00:00Z',
+                symptomOnset: { date: '2026-12-03', precision: 'day' },
+            })],
+        });
+        expect(relabelled.status).toBe('fail');
+        expect(relabelled.adverseOutcomes[0]?.date).toBe('2026-12-03');
+    });
+
+    it('C3 excludes evidence first recorded or edited after the as-of cutoff', () => {
+        const atCutoff = {
+            ...flaggedHardC3,
+            ...COMPLETE_FOLLOW_UP,
+            asOfDate: '2026-12-05',
+            asOfTimestamp: '2026-12-05T12:00:00Z',
+        };
+        // Injury created after the cutoff with a backdated `since` must not be attributed.
+        const backdatedInjury = evaluateC3FlaggedOutcomes({
+            ...atCutoff,
+            injuries: [{ id: 'inj-late', severity: 'limit', since: '2026-12-02', createdAt: '2026-12-06T09:00:00Z' }],
+        });
+        expect(backdatedInjury.adverseOutcomes).toHaveLength(0);
+        expect(backdatedInjury.status).toBe('pass');
+
+        // Illness record created in-window but edited after the cutoff: current label is post-cutoff information.
+        const editedAfterCutoff = evaluateC3FlaggedOutcomes({
+            ...atCutoff,
+            healthAnomalyOutcomes: [makeOutcome({ createdAt: '2026-12-02T08:00:00Z', updatedAt: '2026-12-06T08:00:00Z' })],
+        });
+        expect(editedAfterCutoff.adverseOutcomes).toHaveLength(0);
+        expect(editedAfterCutoff.status).toBe('inconclusive');
+        expect(editedAfterCutoff.incompleteFollowUps).toContain('illness_outcome_edited_after_cutoff:ep-1');
     });
 });

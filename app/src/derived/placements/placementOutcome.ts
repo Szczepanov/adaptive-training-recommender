@@ -130,16 +130,12 @@ export function classifyDEvalSessionOutcome(input: DEvalPlannedSessionInput): DE
         if (hasAmbiguousCompletion) {
             return 'unknown';
         }
-        if (
-            input.activeFlagOnAssignedDate === null
-            || input.activeFlagOnAssignedDate === undefined
-            || input.redFlagOnAssignedDate === null
-            || input.redFlagOnAssignedDate === undefined
-        ) {
-            return 'unknown';
-        }
+        // One confirmed flag is enough for `flag_skip`; both must be known false before `missed`.
         if (input.activeFlagOnAssignedDate === true || input.redFlagOnAssignedDate === true) {
             return 'flag_skip';
+        }
+        if (input.activeFlagOnAssignedDate !== false || input.redFlagOnAssignedDate !== false) {
+            return 'unknown';
         }
         return 'missed';
     }
@@ -199,10 +195,13 @@ export function classifyDEvalSessionOutcome(input: DEvalPlannedSessionInput): DE
         return 'unknown';
     }
 
-    if (input.status === 'moved') {
-        return input.performedDate >= input.blockStartDate && input.performedDate <= input.blockEndDate
-            ? 'moved'
-            : 'missed';
+    // `moved` matches only when performed inside the block; otherwise the `completed` rule applies next.
+    if (
+        input.status === 'moved'
+        && input.performedDate >= input.blockStartDate
+        && input.performedDate <= input.blockEndDate
+    ) {
+        return 'moved';
     }
 
     if (Math.abs(getDayDiff(input.performedDate, input.assignedDate)) <= 1) {

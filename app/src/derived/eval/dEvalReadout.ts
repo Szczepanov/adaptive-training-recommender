@@ -114,18 +114,10 @@ export interface DEvalBlockInput {
     criteriaCommit?: string | null;
     phase2Commit?: string | null;
     rollbackSettingState?: string | null;
-    c1: DEvalC1Input;
-    c2: Omit<DEvalC2Input, 'blockStartDate' | 'blockEndDate' | 'asOfDate'> & {
-        blockStartDate?: string;
-        blockEndDate?: string;
-        asOfDate?: string;
-    };
-    c3: Omit<DEvalC3Input, 'blockStartDate' | 'blockEndDate' | 'asOfDate' | 'asOfTimestamp'> & {
-        blockStartDate?: string;
-        blockEndDate?: string;
-        asOfDate?: string;
-        asOfTimestamp?: string | null;
-    };
+    /** Criterion inputs share the block's single date scope; they cannot override it. */
+    c1: Omit<DEvalC1Input, 'blockStartDate'>;
+    c2: Omit<DEvalC2Input, 'blockStartDate' | 'blockEndDate' | 'asOfDate'>;
+    c3: Omit<DEvalC3Input, 'blockStartDate' | 'blockEndDate' | 'asOfDate' | 'asOfTimestamp'>;
     c4: DEvalC4Input | DEvalRollbackUsage;
     extraKnownLimits?: readonly string[];
 }
@@ -150,19 +142,20 @@ export function evaluateDEvalBlock(input: DEvalBlockInput): DEvalBlockResult {
     const meetsMinBlockDays = validDates && blockDays >= DEVAL_MIN_BLOCK_DAYS;
     const blockCompletedAsOfDate = validDates && input.asOfDate >= input.blockEndDate;
 
-    const c1 = evaluateC1Adherence(input.c1);
+    // One date scope for the whole block: the outer dates always win over anything spread in.
+    const c1 = evaluateC1Adherence({ ...input.c1, blockStartDate: input.blockStartDate });
     const c2 = evaluateC2Benchmarks({
         ...input.c2,
-        blockStartDate: input.c2.blockStartDate ?? input.blockStartDate,
-        blockEndDate: input.c2.blockEndDate ?? input.blockEndDate,
-        asOfDate: input.c2.asOfDate ?? input.asOfDate,
+        blockStartDate: input.blockStartDate,
+        blockEndDate: input.blockEndDate,
+        asOfDate: input.asOfDate,
     });
     const c3 = evaluateC3FlaggedOutcomes({
         ...input.c3,
-        blockStartDate: input.c3.blockStartDate ?? input.blockStartDate,
-        blockEndDate: input.c3.blockEndDate ?? input.blockEndDate,
-        asOfDate: input.c3.asOfDate ?? input.asOfDate,
-        asOfTimestamp: input.c3.asOfTimestamp !== undefined ? input.c3.asOfTimestamp : input.asOfTimestamp,
+        blockStartDate: input.blockStartDate,
+        blockEndDate: input.blockEndDate,
+        asOfDate: input.asOfDate,
+        asOfTimestamp: input.asOfTimestamp ?? null,
     });
     const c4 = evaluateC4Rollback(input.c4);
 

@@ -225,7 +225,7 @@ describe('classifyDEvalSessionOutcome (ADR-0052 D-EVAL §2)', () => {
         })).toBe('partial');
     });
 
-    it('classifies moved before completed when status is moved inside the block, and missed if outside the block', () => {
+    it('classifies moved before completed when status is moved inside the block, and falls through to completed/missed outside it', () => {
         expect(classifyDEval({
             linked: true,
             status: 'moved',
@@ -240,12 +240,21 @@ describe('classifyDEvalSessionOutcome (ADR-0052 D-EVAL §2)', () => {
             performedDate: '2026-11-28',
             linkedExecution: { state: 'completed', completedFraction: 1 },
         })).toBe('moved');
-        // Even if assigned on blockEndDate and performed +1 day (inside ±1d), moved outside the block is missed.
+        // Assigned on blockEndDate and performed +1 day outside the block: `moved` does not match,
+        // so the next rule (`completed`, assigned date ±1) applies.
         expect(classifyDEval({
             linked: true,
             status: 'moved',
             assignedDate: '2026-11-28',
             performedDate: '2026-11-29',
+            linkedExecution: { state: 'completed', completedFraction: 1 },
+        })).toBe('completed');
+        // Outside the block and outside ±1 day -> missed.
+        expect(classifyDEval({
+            linked: true,
+            status: 'moved',
+            assignedDate: '2026-11-27',
+            performedDate: '2026-11-30',
             linkedExecution: { state: 'completed', completedFraction: 1 },
         })).toBe('missed');
     });
@@ -280,5 +289,9 @@ describe('classifyDEvalSessionOutcome (ADR-0052 D-EVAL §2)', () => {
         expect(classifyDEval({ executions: [{ state: 'completed' }] })).toBe('unknown');
         expect(classifyDEval({ activeFlagOnAssignedDate: null })).toBe('unknown');
         expect(classifyDEval({ redFlagOnAssignedDate: undefined })).toBe('unknown');
+        // One confirmed flag is sufficient for flag_skip even when the other signal is unknown.
+        expect(classifyDEval({ activeFlagOnAssignedDate: true, redFlagOnAssignedDate: null })).toBe('flag_skip');
+        expect(classifyDEval({ activeFlagOnAssignedDate: undefined, redFlagOnAssignedDate: true })).toBe('flag_skip');
+        expect(classifyDEval({ activeFlagOnAssignedDate: false, redFlagOnAssignedDate: null })).toBe('unknown');
     });
 });

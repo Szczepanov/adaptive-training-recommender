@@ -4,10 +4,13 @@ import { addDaysToLocalDateString, getLocalDateString } from '../../utils/localD
 import type { HealthAnomalyEpisodeOutcome } from '../flags/illnessAnomaly/healthAnomalyOutcome.ts';
 import {
     ADVERSE_WINDOW_MS,
+    checkinAttributionMs,
     collectCheckinOutcomes,
     collectIllnessOutcomeRecords,
     collectInjuryOutcomes,
     deriveTissueSeverity,
+    illnessOutcomeRecordedMs,
+    injuryRecordedAt,
     type DEvalC3AdverseOutcome,
     type DEvalC3InjuryInput,
     type DEvalC3PerformedSessionInput,
@@ -44,6 +47,21 @@ export interface DEvalC3FlagSourceState {
     source?: string;
 }
 
+/**
+ * C3 input contract.
+ *
+ * - Information cutoff: `asOfTimestamp` (or, without it, the end of the Warsaw `asOfDate`) bounds
+ *   what C3 may know. Evidence recorded after the cutoff is ignored, using each source's
+ *   recording timestamp: check-ins `submittedAt` -> `updatedAt` -> `createdAt` (date-only:
+ *   `date`); injuries `createdAt` -> `since`; illness outcomes `createdAt`. An illness outcome
+ *   created before the cutoff but edited after it cannot be read as of the cutoff (edits are not
+ *   versioned), so it is excluded and reported as incomplete follow-up.
+ * - Follow-up completeness: when at least one flagged hard session exists, C3 can pass only if
+ *   `followUpSourcesComplete` is explicitly `true`, every follow-up source state (`checkins`,
+ *   `injuries`, `healthAnomalyOutcomes`) is `measured`, and all three follow-up arrays are
+ *   supplied. Anything omitted is unknown, and missing follow-up evidence cannot establish the
+ *   absence of an adverse outcome.
+ */
 export interface DEvalC3Input {
     blockStartDate: string;
     blockEndDate: string;
@@ -84,6 +102,26 @@ export interface DEvalC3Result {
 }
 
 const BLIND_STATES: ReadonlySet<LedgerState> = new Set(['missing', 'unavailable', 'invalid']);
+const FOLLOW_UP_SOURCES = ['checkins', 'injuries', 'healthAnomalyOutcomes'] as const;
+
+/** True when evidence with this attribution time/date was knowable at the as-of cutoff. */
+function knownByCutoff(asOfMs: number | null, asOfDate: string, evidenceMs: number | null, evidenceDate: string | null): boolean {
+    if (evidenceMs !== null) {
+        return asOfMs !== null ? evidenceMs <= asOfMs : getLocalDateString(new Date(evidenceMs)) <= asOfDate;
+    }
+    return evidenceDate !== null && isLocalCalendarDate(evidenceDate) && evidenceDate <= asOfDate;
+}
+
+function missingFollowUpEvidence(input: DEvalC3Input): string[] {
+    const missing: string[] = [];
+    if (input.followUpSourcesComplete !== true) missing.push('follow_up_completeness_unconfirmed');
+    for (const source of FOLLOW_UP_SOURCES) {
+        const state = input.followUpSourceStates?.[source];
+        if (state !== 'measured') missing.push(`source_${source}_${state ?? 'unknown'}`);
+        if (input[source] === undefined) missing.push(`source_${source}_not_supplied`);
+    }
+    return missing;
+}
 
 function resolveSessionIntensity(session: DEvalC3PerformedSessionInput): DEvalSessionIntensity | null {
     if (session.performedIntensity !== null && session.performedIntensity !== undefined) return session.performedIntensity;
@@ -160,9 +198,23 @@ export function evaluateC3FlaggedOutcomes(input: DEvalC3Input): DEvalC3Result {
         if (state && BLIND_STATES.has(state)) incompleteFollowUps.push(`source_${name}_${state}`);
     }
 
-    const checkins = input.checkins ?? [];
-    const injuries = input.injuries ?? [];
-    const outcomes = input.healthAnomalyOutcomes ?? [];
+    // Information cutoff: evidence recorded after the as-of point is not attributable yet.
+    const checkins = (input.checkins ?? []).filter(checkin =>
+        knownByCutoff(asOfMs, input.asOfDate, checkinAttributionMs(checkin), checkin.date));
+    const injuries = (input.injuries ?? []).filter(injury => {
+        const recordedAt = injuryRecordedAt(injury);
+        return recordedAt === null || knownByCutoff(asOfMs, input.asOfDate, parseUtcTimestampMs(recordedAt), recordedAt);
+    });
+    const editedAfterCutoff: string[] = [];
+    const outcomes = (input.healthAnomalyOutcomes ?? []).filter(outcome => {
+        if (!knownByCutoff(asOfMs, input.asOfDate, illnessOutcomeRecordedMs(outcome), outcome.createdAt)) return false;
+        const updatedMs = parseUtcTimestampMs(outcome.updatedAt);
+        if (updatedMs !== null && !knownByCutoff(asOfMs, input.asOfDate, updatedMs, null)) {
+            editedAfterCutoff.push(`illness_outcome_edited_after_cutoff:${outcome.episodeId}`);
+            return false;
+        }
+        return true;
+    });
     let usedCalendarDateFallback = false;
     let matchedSameDayDateOnlyInjury = false;
     const flaggedHardSessions: DEvalC3Result['flaggedHardSessions'][number][] = [];
@@ -212,7 +264,11 @@ export function evaluateC3FlaggedOutcomes(input: DEvalC3Input): DEvalC3Result {
         const injuryOutcome = collectInjuryOutcomes(ctx, injuries, adverseOutcomes);
         if (injuryOutcome.usedFallback) usedCalendarDateFallback = true;
         if (injuryOutcome.matchedSameDayDateOnly) matchedSameDayDateOnlyInjury = true;
-        if (collectIllnessOutcomeRecords(ctx, outcomes, adverseOutcomes)) usedCalendarDateFallback = true;
+        if (collectIllnessOutcomeRecords(ctx, outcomes, adverseOutcomes, incompleteFollowUps)) usedCalendarDateFallback = true;
+    }
+
+    if (flaggedHardSessions.length > 0) {
+        incompleteFollowUps.push(...missingFollowUpEvidence(input), ...editedAfterCutoff);
     }
 
     const knownLimits: string[] = [];
