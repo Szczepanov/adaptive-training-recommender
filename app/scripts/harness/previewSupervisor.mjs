@@ -3,7 +3,7 @@ import { readFileSync, rmSync, appendFileSync, mkdirSync, openSync } from 'node:
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 import { deserializeLease, releasePortBlock } from './portLease.mjs';
-import { APP_DIR, SPAWN_OWN_PROCESS_GROUP, buildHarnessEnv, killProcessTree } from './runWithEmulators.mjs';
+import { APP_DIR, SPAWN_OWN_PROCESS_GROUP, buildHarnessEnv, stopChild } from './runWithEmulators.mjs';
 
 const [, , leaseFile, configPath, previewFilePath] = process.argv;
 
@@ -34,7 +34,9 @@ process.on('unhandledRejection', (err) => {
 
 let lease;
 try {
-  lease = deserializeLease(readFileSync(leaseFile, 'utf8'));
+  // previewStart rewrites the lease's pid to this supervisor's right after spawning it, possibly
+  // after this read; record the pid the file ends up holding so the release below matches it.
+  lease = { ...deserializeLease(readFileSync(leaseFile, 'utf8')), pid: process.pid };
 } catch (err) {
   log(`Failed to load lease: ${err}`);
   process.exit(1);
@@ -52,19 +54,19 @@ let emulatorsProc = null;
 let viteProc = null;
 let cleanedUp = false;
 
-function cleanup() {
+async function shutdown(code) {
   if (cleanedUp) return;
   cleanedUp = true;
   log('Supervisor cleaning up processes...');
-  if (viteProc && viteProc.pid) killProcessTree(viteProc.pid);
-  if (emulatorsProc && emulatorsProc.pid) killProcessTree(emulatorsProc.pid);
+  await Promise.all([stopChild(viteProc), stopChild(emulatorsProc)]);
   try { rmSync(configPath, { force: true }); } catch {}
   try { rmSync(previewFilePath, { force: true }); } catch {}
-  releasePortBlock(lease);
+  releasePortBlock({ ...lease, leaseFile });
+  process.exit(code);
 }
 
-process.on('SIGINT', () => { log('SIGINT received'); cleanup(); process.exit(0); });
-process.on('SIGTERM', () => { log('SIGTERM received'); cleanup(); process.exit(0); });
+process.on('SIGINT', () => { log('SIGINT received'); void shutdown(0); });
+process.on('SIGTERM', () => { log('SIGTERM received'); void shutdown(0); });
 
 try {
   log(`Spawning emulators:start for ${projectId} on port ${firestorePort}...`);
@@ -108,14 +110,12 @@ try {
 
   emulatorsProc.on('exit', (code) => {
     log(`emulatorsProc exited with code ${code}`);
-    cleanup();
-    process.exit(code ?? 0);
+    void shutdown(code ?? 0);
   });
 
   viteProc.on('exit', (code) => {
     log(`viteProc exited with code ${code}`);
-    cleanup();
-    process.exit(code ?? 0);
+    void shutdown(code ?? 0);
   });
 
   // The child handles already keep the event loop alive; the heartbeat makes a hung supervisor
@@ -125,6 +125,5 @@ try {
   }, 10000);
 } catch (err) {
   log(`Spawn error: ${err}`);
-  cleanup();
-  process.exit(1);
+  void shutdown(1);
 }

@@ -38,6 +38,31 @@ export function harnessConfigPath(worktree, blockBase) {
   return resolve(worktree, 'app', `.harness-${blockBase}.firebase.json`);
 }
 
+export const GRACEFUL_STOP_MS = 10_000;
+
+// Stops a launcher child on SIGINT/SIGTERM. Off Windows the child's process group first gets
+// SIGINT, so firebase-tools can stop the emulator JVM it starts in a separate session and delete
+// its hub locator; a straight SIGKILL to the group would orphan that JVM. Whatever is left after
+// the grace period is killed. On Windows `taskkill /T` reaches the whole tree directly.
+export async function stopChild(child, { graceMs = GRACEFUL_STOP_MS } = {}) {
+  if (!child?.pid || child.exitCode !== null || child.signalCode !== null) return;
+  if (SPAWN_OWN_PROCESS_GROUP) {
+    const closed = new Promise((res) => child.once('close', res));
+    try {
+      process.kill(-child.pid, 'SIGINT');
+    } catch {
+      // Group already gone.
+    }
+    await Promise.race([closed, new Promise((res) => setTimeout(res, graceMs))]);
+  }
+  killProcessTree(child.pid);
+}
+
+// 128 + signal number, as a shell reports a process killed by that signal.
+export function signalExitCode(signal) {
+  return signal === 'SIGTERM' ? 143 : 130;
+}
+
 export function buildHarnessFirebaseConfig({
   lease,
   only = 'firestore',
@@ -187,9 +212,13 @@ export async function runWithEmulators({
     releasePortBlock(lease);
   };
 
-  const handleSignal = () => {
+  let stopping = false;
+  const handleSignal = async (signal) => {
+    if (stopping) return;
+    stopping = true;
+    await stopChild(childProc);
     cleanup();
-    process.exit(130);
+    process.exit(signalExitCode(signal));
   };
   process.on('SIGINT', handleSignal);
   process.on('SIGTERM', handleSignal);

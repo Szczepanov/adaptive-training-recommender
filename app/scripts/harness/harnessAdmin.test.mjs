@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -93,18 +93,27 @@ describe('harnessAdmin', () => {
       }),
     );
 
+    const killed = [];
+    const processStubs = {
+      getListeningPidsFn: (ports) => (ports.includes(22000) ? [424242] : []),
+      killProcessTreeFn: (pid) => killed.push(pid),
+    };
+
     // Dry-run first
     const dryRunResult = await reapStaleResources({
       dryRun: true,
       leaseDir: tmpLeaseDir,
       tmpDir: tmpTempDir,
       isPidAliveFn: (pid) => pid === process.pid,
+      ...processStubs,
     });
 
     expect(dryRunResult.removedLeaseFiles).toContain(staleLeaseFile);
     expect(dryRunResult.removedLocators).toContain(staleLocatorFile);
     expect(dryRunResult.removedConfigs).toEqual([staleConfig]);
     expect(existsSync(staleConfig)).toBe(true);
+    expect(dryRunResult.killedPids).toEqual([{ pid: 424242, blockBase: 22000 }]);
+    expect(killed).toEqual([]);
     expect(existsSync(staleLeaseFile)).toBe(true);
     expect(existsSync(activeLeaseFile)).toBe(true);
     expect(existsSync(staleLocatorFile)).toBe(true);
@@ -115,6 +124,7 @@ describe('harnessAdmin', () => {
       leaseDir: tmpLeaseDir,
       tmpDir: tmpTempDir,
       isPidAliveFn: (pid) => pid === process.pid,
+      ...processStubs,
     });
 
     expect(reapResult.removedLeaseFiles).toContain(staleLeaseFile);
@@ -125,5 +135,49 @@ describe('harnessAdmin', () => {
     expect(reapResult.removedConfigs).toEqual([staleConfig]);
     expect(existsSync(staleConfig)).toBe(false);
     expect(existsSync(activeConfig)).toBe(true);
+    expect(killed).toEqual([424242]);
+  });
+
+  it('leaves a lease alone when a live run reclaimed it after the listing', async () => {
+    const leaseFile = resolve(tmpLeaseDir, '24000.json');
+    writeFileSync(
+      leaseFile,
+      JSON.stringify({
+        pid: 9999999,
+        worktree: '/dead',
+        suite: 'dead',
+        blockBase: 24000,
+        ports: [24000, 24001],
+        startedAt: '2026-01-01T00:00:00.000Z',
+      }),
+    );
+    const reclaimed = JSON.stringify({
+      pid: process.pid,
+      worktree: '/live',
+      suite: 'live',
+      blockBase: 24000,
+      ports: [24000, 24001],
+      startedAt: '2026-01-01T00:00:01.000Z',
+    });
+    const killed = [];
+
+    // The listing saw the dead lease; a new run replaces it before reap re-reads under the lock.
+    let listings = 0;
+    const result = await reapStaleResources({
+      dryRun: false,
+      leaseDir: tmpLeaseDir,
+      tmpDir: tmpTempDir,
+      isPidAliveFn: (pid) => {
+        if (pid === 9999999 && listings++ === 0) writeFileSync(leaseFile, reclaimed);
+        return pid === process.pid;
+      },
+      getListeningPidsFn: () => [424242],
+      killProcessTreeFn: (pid) => killed.push(pid),
+    });
+
+    expect(result.skippedLeaseFiles).toEqual([leaseFile]);
+    expect(result.removedLeaseFiles).toEqual([]);
+    expect(killed).toEqual([]);
+    expect(readFileSync(leaseFile, 'utf8')).toBe(reclaimed);
   });
 });

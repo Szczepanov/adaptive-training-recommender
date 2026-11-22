@@ -261,6 +261,53 @@ describe('portLease lifecycle', () => {
     expect(readdirSync(tmpDir).filter((f) => !f.endsWith('.json'))).toEqual([]);
   });
 
+  it('release leaves the block alone once another owner holds it', async () => {
+    const lease = await acquirePortBlock({
+      leaseDir: tmpDir,
+      minPort: 27300,
+      maxPort: 27300,
+      size: 2,
+      probePorts: false,
+    });
+    // e.g. harness:reap removed this lease and another run took the block.
+    const otherOwner = serializeLease({ ...lease, pid: process.ppid, startedAt: '2026-01-01T00:00:00.000Z' });
+    writeFileSync(lease.leaseFile, otherOwner);
+
+    releasePortBlock(lease, { leaseDir: tmpDir });
+
+    expect(readFileSync(lease.leaseFile, 'utf8')).toBe(otherOwner);
+  });
+
+  it('keeps a stale lease whose ports are still held, so reap can find the orphan', async () => {
+    const staleFile = resolve(tmpDir, '27400.json');
+    const stale = serializeLease({
+      pid: DEAD_PID,
+      worktree: '/dead',
+      suite: 'dead',
+      blockBase: 27400,
+      ports: [27400, 27401],
+    });
+    writeFileSync(staleFile, stale);
+    const orphan = net.createServer();
+    await new Promise((res) => orphan.listen({ port: 27401, host: '127.0.0.1' }, res));
+
+    try {
+      const lease = await acquirePortBlock({
+        leaseDir: tmpDir,
+        minPort: 27400,
+        maxPort: 27420,
+        step: 10,
+        size: 2,
+        probePorts: true,
+      });
+
+      expect(lease.blockBase).toBe(27410);
+      expect(readFileSync(staleFile, 'utf8')).toBe(stale);
+    } finally {
+      await new Promise((res) => orphan.close(res));
+    }
+  });
+
   describe('concurrent acquirers in separate processes', () => {
     const ACQUIRERS = 6;
 
