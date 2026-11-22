@@ -100,7 +100,8 @@ export function useActivitiesTabState({ active, userId, briefDate }: UseActiviti
   }, [activitiesReadModelPolicy, active, userId, briefDate, canonicalWorkoutWindow?.userId, canonicalWorkoutWindow?.asOfDate]);
 
   const handleDownloadActivities = () => {
-    if (!activityWindow || activityWindow.state.status !== 'AVAILABLE' || activityWindow.state.data.length === 0) return;
+    if (!activityWindow || activityWindow.userId !== userId || activityWindow.asOfDate !== briefDate
+      || activityWindow.state.status !== 'AVAILABLE' || activityWindow.state.data.length === 0) return;
     const startInclusive = addDaysToLocalDateString(briefDate ?? getLocalDateString(), -6);
     const throughDateExclusive = addDaysToLocalDateString(briefDate ?? getLocalDateString(), 1);
     const bundle = exportActivitiesBundleToJson(activityWindow.state.data, {
