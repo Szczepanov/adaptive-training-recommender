@@ -12,7 +12,7 @@ const choiceRows = (overrides: ReturnType<typeof overridesWith>) => overrides.it
 
 describe('choice overrides in the ledger export (Phase 3B)', () => {
     it('keeps an unresolved choice as a row with explicit missingness', () => {
-        const [row] = choiceRows(overridesWith([{ id: 'e:c:x', date: '2026-11-19', executionState: 'completed', kind: null, kindState: 'unavailable' }]));
+        const [row] = choiceRows(overridesWith([{ id: 'e:c:x', date: '2026-11-19', executionState: 'completed', correctedLater: false, kind: null, kindState: 'unavailable' }]));
         expect(row.fields.kind).toMatchObject({ value: null, state: 'unavailable' });
         expect(row.fields.step.state).toBe('unavailable');
         expect(row.fields.replacement.state).toBe('unavailable');
@@ -22,8 +22,8 @@ describe('choice overrides in the ledger export (Phase 3B)', () => {
 
     it('marks an omission as having no replacement, and a swap without one as missing it', () => {
         const rows = choiceRows(overridesWith([
-            { id: 'e:c1:0', date: '2026-11-19', executionState: 'completed', kind: 'omitted', step: 'Curl' },
-            { id: 'e:c2:0', date: '2026-11-19', executionState: 'completed', kind: 'swapped', step: 'Back Squat', replacementState: 'invalid' },
+            { id: 'e:c1:0', date: '2026-11-19', executionState: 'completed', correctedLater: false, kind: 'omitted', step: 'Curl' },
+            { id: 'e:c2:0', date: '2026-11-19', executionState: 'completed', correctedLater: false, kind: 'swapped', step: 'Back Squat', replacementState: 'invalid' },
         ]));
         expect(rows.map(row => [row.fields.kind.value, row.fields.replacement.state])).toEqual([['omitted', 'not_applicable'], ['swapped', 'invalid']]);
     });
@@ -35,15 +35,15 @@ describe('choice overrides in the ledger export (Phase 3B)', () => {
     });
 
     it('names both reads as the collection source and carries the run state', () => {
-        const overrides = overridesWith([{ id: 'e:c1:0', date: '2026-11-19', executionState: 'abandoned', kind: 'omitted', step: 'Curl' }]);
+        const overrides = overridesWith([{ id: 'e:c1:0', date: '2026-11-19', executionState: 'abandoned', correctedLater: false, kind: 'omitted', step: 'Curl' }]);
         expect(overrides.source).toBe('external_plan_placements + performed_training_occurrences');
         expect(choiceRows(overrides)[0].fields.executionState.value).toBe('abandoned');
     });
 
     it('keeps choices to the export window', () => {
         const rows = choiceRows(overridesWith([
-            { id: 'e:old:0', date: '2026-10-01', executionState: 'completed', kind: 'omitted', step: 'Curl' },
-            { id: 'e:now:0', date: '2026-11-19', executionState: 'completed', kind: 'omitted', step: 'Curl' },
+            { id: 'e:old:0', date: '2026-10-01', executionState: 'completed', correctedLater: false, kind: 'omitted', step: 'Curl' },
+            { id: 'e:now:0', date: '2026-11-19', executionState: 'completed', correctedLater: false, kind: 'omitted', step: 'Curl' },
         ]));
         expect(rows.map(row => row.id)).toEqual(['choice:e:now:0']);
     });

@@ -354,9 +354,14 @@ and any attempt on it are unknown; or the same plan session has a link or execut
 revision of the plan was imported on or before its date. Nothing is written back.
 
 **In-session swaps and omissions (Phase 3B).** `coachingHistory.overrides` also carries one
-`choice:<executionId>:<choiceEntryId>:<actionIndex>` row per swap or omission the athlete chose
+`choice:<executionId>:<rootEntryId>:<actionIndex>` row per swap or omission the athlete chose
 (`services/ledgerChoiceOverrides.ts` `choiceOverridesForExecution`). Only the effective event of each
-choice's correction chain counts, so a correction is never a second override. Each choice is
+choice's correction chain counts, so a correction is never a second override; the id uses the chain's
+root entry, so a correction that only changes the reason keeps the same row. A superseded choice that
+still governed live performed entries (`governingChoiceEntryId`) is also exported, as
+`choice:<executionId>:<rootEntryId>@<entryId>:<actionIndex>` with `correctedLater: true`, because the
+sets done under it were real; every other choice row has `correctedLater: false`, and plan drop/move
+rows `not_applicable`. Each choice is
 resolved against the definition pinned for that run (one read per execution, shared with set
 counts): `select_alternative` → `swapped` with `step` and `replacement`; `omit_step` → `omitted` with
 `step`; `end_block` → `omitted` with `step: rest of block: <title>`; `end_session` → `omitted` with

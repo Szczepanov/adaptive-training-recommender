@@ -230,5 +230,6 @@ reason: Knee felt tight
 step: Back Squat
 replacement: Goblet Squat
 executionState: completed
+correctedLater: false
 
 plannedToPerformed: 1 shown above

@@ -270,7 +270,7 @@ missing: statusHistory (not_yet_supported); stepNotes, fallback (not_recorded)
 planId: plan-1
 sessionId: s2
 kind: dropped
-missing: reason (not_yet_supported); step, replacement, executionState (not_applicable)
+missing: reason (not_yet_supported); step, replacement, executionState, correctedLater (not_applicable)
 #### choice:exec-1:choice-1:0 (2026-11-19)
 planId: plan-1
 sessionId: s1
@@ -279,5 +279,6 @@ reason: Knee felt tight
 step: Back Squat
 replacement: Goblet Squat
 executionState: completed
+correctedLater: false
 
 plannedToPerformed: 1 shown above

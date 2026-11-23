@@ -3,7 +3,10 @@
  * omissions the athlete chose during a session, as `coachingHistory.overrides` rows.
  *
  * Pure. Only the effective event of each choice's correction chain counts, so a corrected choice
- * is never a second override. Each choice is resolved against the definition pinned for that run
+ * is never a second override, and its row id comes from the chain's root entry, so a correction that
+ * only changes the reason keeps the same row. A superseded choice that still governed live performed
+ * entries (`governingChoiceEntryId`) is also reported, with `correctedLater: true`, because the work it
+ * shaped was really done. Each choice is resolved against the definition pinned for that run
  * (`resolvePinned`): `select_alternative` is a swap, and `omit_step`, `end_block` and `end_session`
  * are omissions, because the runner applies all three by making the affected steps optional. Load,
  * set or rep reductions are not overrides. A choice that cannot be resolved keeps explicit
@@ -12,13 +15,12 @@
 import type { ChoiceOverrideInput } from '../ledger/export/inputs';
 import type { LedgerState } from '../ledger/export/schema';
 import type { NormalizedExecutionRecord } from '../sessions/legacyStrengthAdapter';
-import type { SessionChoiceAction, SessionDefinition, SessionStep } from '../sessions/models';
-import { resolveEffectiveChoiceEntries } from '../sessions/choiceResolution';
+import type { SessionChoiceAction, SessionDefinition, SessionEntry, SessionStep } from '../sessions/models';
+import { resolveEffectiveChoiceEntries, type ChoiceSessionEntry } from '../sessions/choiceResolution';
 import { exerciseRefName, stepName } from '../sessions/stepDisplay';
 
 export type PinnedDefinition = { definition: SessionDefinition } | { state: LedgerState };
 
-type ChoiceEntry = ReturnType<typeof resolveEffectiveChoiceEntries>[number];
 
 function findStep(definition: SessionDefinition, stepId: string): SessionStep | undefined {
     return definition.blocks.flatMap(block => block.steps).find(step => step.id === stepId);
@@ -45,7 +47,22 @@ function actionRow(
     return { ...base, id, kind: 'swapped', ...stepField, ...replacement };
 }
 
-function choiceRows(row: NormalizedExecutionRecord, entry: ChoiceEntry, pinned: PinnedDefinition): ChoiceOverrideInput[] {
+/** The first entry of `entry`'s `supersedesChoiceEntryId` chain among the same choice's live entries. */
+function chainRoot(entry: ChoiceSessionEntry, live: readonly SessionEntry[]): string {
+    const byId = new Map(live.flatMap(item => (item.payload.kind === 'choice' && item.payload.choiceId === entry.payload.choiceId ? [[item.id, item]] : [])));
+    const seen = new Set<string>([entry.id]);
+    let current: SessionEntry = entry;
+    for (;;) {
+        const parent = current.supersedesChoiceEntryId ? byId.get(current.supersedesChoiceEntryId) : undefined;
+        if (!parent || seen.has(parent.id)) return current.id;
+        seen.add(parent.id);
+        current = parent;
+    }
+}
+
+function choiceRows(
+    row: NormalizedExecutionRecord, entry: ChoiceSessionEntry, pinned: PinnedDefinition, idPrefix: string, correctedLater: boolean,
+): ChoiceOverrideInput[] {
     const { execution } = row;
     const source = execution.sessionSource;
     const reason = entry.payload.reason?.trim();
@@ -54,8 +71,9 @@ function choiceRows(row: NormalizedExecutionRecord, entry: ChoiceEntry, pinned: 
         executionState: execution.state,
         ...(source.kind === 'external_plan' ? { planId: source.planId, sessionId: source.sessionId } : {}),
         ...(reason ? { reason } : {}),
+        correctedLater,
     };
-    const id = `${execution.executionId}:${entry.id}`;
+    const id = `${execution.executionId}:${idPrefix}`;
     if (!('definition' in pinned)) return [{ ...base, id, kind: null, kindState: pinned.state }];
     const option = pinned.definition.blocks.flatMap(block => block.optionSets ?? [])
         .find(set => set.id === entry.payload.choiceId)?.options.find(item => item.id === entry.payload.optionId);
@@ -75,5 +93,17 @@ export function hasLiveChoice(row: NormalizedExecutionRecord): boolean {
 /** Override rows for one execution's effective choices, resolved against its pinned definition. */
 export function choiceOverridesForExecution(row: NormalizedExecutionRecord, pinned: PinnedDefinition): ChoiceOverrideInput[] {
     const live = row.entries.filter(entry => !entry.deletedAt);
-    return resolveEffectiveChoiceEntries(live).flatMap(entry => choiceRows(row, entry, pinned));
+    const effective = resolveEffectiveChoiceEntries(live);
+    const effectiveIds = new Set(effective.map(entry => entry.id));
+    const governing = new Set(live.flatMap(entry => (entry.payload.kind !== 'choice' && entry.governingChoiceEntryId ? [entry.governingChoiceEntryId] : [])));
+    const supersededGoverning = live.filter((entry): entry is ChoiceSessionEntry =>
+        entry.payload.kind === 'choice' && governing.has(entry.id) && !effectiveIds.has(entry.id));
+    return [...supersededGoverning, ...effective]
+        .sort((a, b) => a.completedAt.localeCompare(b.completedAt) || a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))
+        .flatMap(entry => {
+            const root = chainRoot(entry, live);
+            return effectiveIds.has(entry.id)
+                ? choiceRows(row, entry, pinned, root, false)
+                : choiceRows(row, entry, pinned, `${root}@${entry.id}`, true);
+        });
 }
