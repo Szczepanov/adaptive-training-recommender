@@ -133,4 +133,24 @@ describe('HealthAnomalyOutcomeRepository', () => {
         const outcomes = await new HealthAnomalyOutcomeRepository().listForUser('u1');
         expect(outcomes).toEqual([valid]);
     });
+
+    it('reports unreadable outcome counts via listForUserWithDiagnostics', async () => {
+        firestore.collection.mockReturnValue({ path: 'outcomes' });
+        const valid = {
+            userId: 'u1', episodeId: 'health-anomaly:2026-08-20',
+            sourceAssessment: { date: '2026-08-20', revisionId: 'ha-1234567890abcdef' },
+            explanation: 'illness_symptoms', symptomOnset: null, respiratoryTest: null, note: null,
+            createdAt: '2026-08-21T06:00:00.000Z', updatedAt: '2026-08-21T06:00:00.000Z', schemaVersion: 1,
+        };
+        firestore.getDocs.mockResolvedValue({
+            docs: [
+                { id: valid.episodeId, data: () => valid },
+                { id: 'bad-doc-1', data: () => ({ invalid: true }) },
+                { id: 'bad-doc-2', data: () => ({ userId: 'other', episodeId: 'bad-doc-2' }) },
+            ],
+        });
+
+        const result = await new HealthAnomalyOutcomeRepository().listForUserWithDiagnostics('u1');
+        expect(result).toEqual({ outcomes: [valid], unreadableCount: 2 });
+    });
 });

@@ -80,18 +80,26 @@ export class HealthAnomalyOutcomeRepository {
         return parseHealthAnomalyEpisodeOutcome(snapshot.data(), userId, episodeId);
     }
 
-    /** Load all readable prospective outcome labels for a user, skipping unreadable documents. */
-    async listForUser(userId: string): Promise<HealthAnomalyEpisodeOutcome[]> {
+    /** Load all readable prospective outcome labels for a user, counting unreadable documents. */
+    async listForUserWithDiagnostics(
+        userId: string,
+    ): Promise<{ outcomes: HealthAnomalyEpisodeOutcome[]; unreadableCount: number }> {
         const snapshot = await getDocs(collection(getDb(), 'users', userId, 'health_anomaly_outcomes'));
         const outcomes: HealthAnomalyEpisodeOutcome[] = [];
+        let unreadableCount = 0;
         for (const docSnap of snapshot.docs) {
             try {
                 outcomes.push(parseHealthAnomalyEpisodeOutcome(docSnap.data(), userId, docSnap.id));
             } catch {
-                // Skip unreadable or malformed outcome records rather than failing assessment composition.
+                unreadableCount += 1;
             }
         }
-        return outcomes;
+        return { outcomes, unreadableCount };
+    }
+
+    /** Load all readable prospective outcome labels for a user, skipping unreadable documents. */
+    async listForUser(userId: string): Promise<HealthAnomalyEpisodeOutcome[]> {
+        return (await this.listForUserWithDiagnostics(userId)).outcomes;
     }
 
     /**

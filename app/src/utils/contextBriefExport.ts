@@ -125,3 +125,12 @@ export function downloadLedgerExportFile(ledger: LedgerExport): void {
     'application/json;charset=utf-8',
   );
 }
+
+/** Downloads an evaluated ADR-0052 D-EVAL §7 Markdown readout report. */
+export function downloadDEvalResultFile(asOfDate: string, markdown: string): void {
+  triggerTextDownload(
+    `${asOfDate}-adr-0052-d-eval-result.md`,
+    markdown,
+    'text/markdown;charset=utf-8',
+  );
+}

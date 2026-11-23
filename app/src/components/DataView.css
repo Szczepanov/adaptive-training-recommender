@@ -329,3 +329,90 @@
   cursor: not-allowed;
   opacity: 0.6;
 }
+
+.deval-readout-disclosure {
+  margin-top: 1.5rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  background-color: var(--background-color);
+}
+
+.deval-readout-summary {
+  display: flex;
+  align-items: center;
+  min-height: var(--touch-target-min, 44px);
+  font-weight: 600;
+  color: var(--text-color);
+  cursor: pointer;
+}
+
+.deval-readout-body {
+  margin-top: 0.75rem;
+}
+
+.deval-readout-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.75rem 1rem;
+  margin-bottom: 1rem;
+}
+
+.deval-readout-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.deval-readout-field label {
+  font-size: 0.85rem;
+  color: var(--text-secondary, #666);
+}
+
+.deval-readout-field input,
+.deval-readout-field select {
+  min-height: var(--touch-target-min, 44px);
+  padding: 0.4rem 0.6rem;
+  border-radius: 6px;
+}
+
+.deval-readout-result {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.deval-verdict-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.deval-verdict-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.3rem 0.75rem;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 0.875rem;
+  border: 1px solid var(--border-color);
+}
+
+.deval-criteria-list {
+  margin: 0;
+  padding-left: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.deval-known-limits {
+  font-size: 0.875rem;
+  color: var(--text-secondary, #666);
+}
+
+.deval-known-limits ul {
+  margin: 0.25rem 0 0;
+  padding-left: 1.25rem;
+}
