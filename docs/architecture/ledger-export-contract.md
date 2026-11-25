@@ -371,7 +371,7 @@ counts): `select_alternative` → `swapped` with `step` and `replacement`; `omit
 set or rep reductions are not overrides. A choice the
 pinned definition cannot resolve keeps `kind: null` with the reason as its state (`invalid`, or the
 definition read's state). `reason` is the athlete's choice reason, `not_recorded` when blank. Plan
-drop/move rows carry `step`/`replacement`/`executionState` as `not_applicable`; their `reason` is
+drop/move rows carry `step`/`replacement`/`executionState`/`correctedLater` as `not_applicable`; their `reason` is
 `{ code, note? }` as recorded on the assignment as of the export date (from the immutable placement
 event, never a later overlay value), `not_recorded` when the athlete was asked and left it blank,
 and `not_yet_supported` for a change written before reasons were asked (Phase 3C). Each choice row carries the

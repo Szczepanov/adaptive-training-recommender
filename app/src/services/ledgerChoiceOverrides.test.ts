@@ -44,6 +44,13 @@ const run = (entries: SessionEntry[], source: object = { kind: 'external_plan', 
     entries,
 }) as unknown as NormalizedExecutionRecord;
 
+const performedUnder = (id: string, governingChoiceEntryId: string, optionId: string, extra: Partial<SessionEntry> = {}): SessionEntry => ({
+    id, executionId: 'exec-1', completedAt: AT, createdAt: AT, updatedAt: AT,
+    payload: { kind: 'repetition', setIndex: 1, reps: 8 },
+    governingChoiceEntryId, selectedOptionId: optionId,
+    ...extra,
+}) as SessionEntry;
+
 describe('choiceOverridesForExecution', () => {
     it('reports a chosen alternative as a swap with the step, replacement and reason', () => {
         expect(choiceOverridesForExecution(run([choice('c1', 'swap', {}, ' Knee tight ')]), { definition })).toEqual([{
@@ -98,12 +105,6 @@ describe('choiceOverridesForExecution', () => {
     });
 
     it('also reports a superseded choice that governed performed sets, marked as corrected later', () => {
-        const performedUnder = (id: string, governingChoiceEntryId: string, optionId: string, extra: Partial<SessionEntry> = {}): SessionEntry => ({
-            id, executionId: 'exec-1', completedAt: AT, createdAt: AT, updatedAt: AT,
-            payload: { kind: 'repetition', setIndex: 1, reps: 8 },
-            governingChoiceEntryId, selectedOptionId: optionId,
-            ...extra,
-        }) as SessionEntry;
         const rows = choiceOverridesForExecution(run([
             choice('c1', 'swap', {}, 'Knee'),
             performedUnder('set-1', 'c1', 'swap'),
@@ -149,6 +150,52 @@ describe('choiceOverridesForExecution', () => {
             ['exec-1:c1@c1:0', 'swapped', true],
             ['exec-1:c1:0', 'omitted', false],
             ['exec-1:c1:1', 'omitted', false],
+        ]);
+    });
+
+    it('uses one canonical root for historical cycles so repeated options are not reported twice', () => {
+        // 2-node cycle with the same option: effective c1 and superseded governing c2 share anchor c1.
+        const sameOptionCycle = choiceOverridesForExecution(run([
+            choice('c1', 'swap', { supersedesChoiceEntryId: 'c2' }, 'Initial'),
+            choice('c2', 'swap', { supersedesChoiceEntryId: 'c1', completedAt: '2026-11-19T07:05:00.000Z' }, 'Edited'),
+            performedUnder('set-1', 'c2', 'swap'),
+        ]), { definition });
+        expect(sameOptionCycle.map(row => [row.id, row.reason, row.correctedLater])).toEqual([
+            ['exec-1:c1:0', 'Initial', false],
+        ]);
+
+        // 2-node cycle with different options: superseded governing c2 anchors on canonical cycle root c1.
+        const differentOptionCycle = choiceOverridesForExecution(run([
+            choice('c1', 'lighter', { supersedesChoiceEntryId: 'c2' }),
+            choice('c2', 'swap', { supersedesChoiceEntryId: 'c1', completedAt: '2026-11-19T07:05:00.000Z' }, 'Knee'),
+            performedUnder('set-1', 'c2', 'swap'),
+        ]), { definition });
+        expect(differentOptionCycle.map(row => [row.id, row.reason, row.correctedLater])).toEqual([
+            ['exec-1:c1@c2:0', 'Knee', true],
+        ]);
+
+        // 3-node cycle with repeated superseded option: c2 and c3 collapse to latest governing entry (c3).
+        const threeNodeCycle = choiceOverridesForExecution(run([
+            choice('c1', 'lighter', { supersedesChoiceEntryId: 'c3' }),
+            choice('c2', 'swap', { supersedesChoiceEntryId: 'c1', completedAt: '2026-11-19T07:05:00.000Z' }, 'First'),
+            choice('c3', 'swap', { supersedesChoiceEntryId: 'c2', completedAt: '2026-11-19T07:10:00.000Z' }, 'Second'),
+            performedUnder('set-1', 'c2', 'swap'),
+            performedUnder('set-2', 'c3', 'swap'),
+        ]), { definition });
+        expect(threeNodeCycle.map(row => [row.id, row.reason, row.correctedLater])).toEqual([
+            ['exec-1:c1@c3:0', 'Second', true],
+        ]);
+
+        // Tail leading into a cycle: effective c3 and cycle nodes c1/c2 all anchor on c1.
+        const tailIntoCycle = choiceOverridesForExecution(run([
+            choice('c1', 'swap', { supersedesChoiceEntryId: 'c2' }),
+            choice('c2', 'swap', { supersedesChoiceEntryId: 'c1', completedAt: '2026-11-19T07:05:00.000Z' }),
+            choice('c3', 'swap', { supersedesChoiceEntryId: 'c2', completedAt: '2026-11-19T07:10:00.000Z' }, 'Final'),
+            performedUnder('set-1', 'c1', 'swap'),
+            performedUnder('set-2', 'c2', 'swap'),
+        ]), { definition });
+        expect(tailIntoCycle.map(row => [row.id, row.reason, row.correctedLater])).toEqual([
+            ['exec-1:c1:0', 'Final', false],
         ]);
     });
 

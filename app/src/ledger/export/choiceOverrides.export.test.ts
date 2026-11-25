@@ -47,4 +47,20 @@ describe('choice overrides in the ledger export (Phase 3B)', () => {
         ]));
         expect(rows.map(row => row.id)).toEqual(['choice:e:now:0']);
     });
+
+    it('records correctedLater on choice overrides and marks placement overrides not_applicable', () => {
+        const overrides = overridesWith([
+            { id: 'e:c1@c1:0', date: '2026-11-19', executionState: 'completed', correctedLater: true, kind: 'swapped', step: 'Back Squat', replacement: 'Goblet Squat' },
+            { id: 'e:c1:0', date: '2026-11-19', executionState: 'completed', correctedLater: false, kind: 'omitted', step: 'Curl' },
+        ]);
+        expect(choiceRows(overrides).map(row => [row.id, row.fields.correctedLater])).toEqual([
+            ['choice:e:c1:0', expect.objectContaining({ value: false, state: 'measured' })],
+            ['choice:e:c1@c1:0', expect.objectContaining({ value: true, state: 'measured' })],
+        ]);
+        const placements = overrides.items.filter(item => !item.id.startsWith('choice:'));
+        expect(placements.length).toBeGreaterThan(0);
+        for (const row of placements) {
+            expect(row.fields.correctedLater).toMatchObject({ value: null, state: 'not_applicable' });
+        }
+    });
 });

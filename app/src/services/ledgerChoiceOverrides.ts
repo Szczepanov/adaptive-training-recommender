@@ -7,7 +7,8 @@
  * only changes the reason keeps the same row. A superseded choice that still governed live performed
  * entries (`governingChoiceEntryId`) is also reported, with `correctedLater: true`, because the work it
  * shaped was really done. That applies once per chain and option: a superseded entry of the effective
- * option (a reason-only correction) is the same override, not a second one. Each choice is resolved against the definition pinned for that run
+ * option (a reason-only correction) is the same override, not a second one. Each choice is resolved
+ * against the definition pinned for that run
  * (`resolvePinned`): `select_alternative` is a swap, and `omit_step`, `end_block` and `end_session`
  * are omissions, because the runner applies all three by making the affected steps optional. Load,
  * set or rep reductions are not overrides. A choice that cannot be resolved keeps explicit
@@ -47,15 +48,31 @@ function actionRow(
     return { ...base, id, kind: 'swapped', ...stepField, ...replacement };
 }
 
-/** The first entry of `entry`'s `supersedesChoiceEntryId` chain among the same choice's live entries. */
+function compareEntries(a: ChoiceSessionEntry, b: ChoiceSessionEntry): number {
+    return a.completedAt.localeCompare(b.completedAt) || a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id);
+}
+
+/**
+ * The first entry of `entry`'s `supersedesChoiceEntryId` chain among the same choice's live entries.
+ * A historical cycle has no root, so every entry reaching it anchors on the earliest entry in the cycle
+ * (matching `resolveEffectiveChoiceEntries`'s deterministic cycle anchor).
+ */
 function chainRoot(entry: ChoiceSessionEntry, live: readonly SessionEntry[]): string {
-    const byId = new Map(live.flatMap(item => (item.payload.kind === 'choice' && item.payload.choiceId === entry.payload.choiceId ? [[item.id, item]] : [])));
-    const seen = new Set<string>([entry.id]);
-    let current: SessionEntry = entry;
+    const byId = new Map<string, ChoiceSessionEntry>(
+        live.flatMap(item => (item.payload.kind === 'choice' && item.payload.choiceId === entry.payload.choiceId ? [[item.id, item as ChoiceSessionEntry]] : [])),
+    );
+    const path: ChoiceSessionEntry[] = [entry];
+    const indexById = new Map<string, number>([[entry.id, 0]]);
+    let current: ChoiceSessionEntry = entry;
     for (;;) {
         const parent = current.supersedesChoiceEntryId ? byId.get(current.supersedesChoiceEntryId) : undefined;
-        if (!parent || seen.has(parent.id)) return current.id;
-        seen.add(parent.id);
+        if (!parent) return current.id;
+        const cycleStart = indexById.get(parent.id);
+        if (cycleStart !== undefined) {
+            return path.slice(cycleStart).sort(compareEntries)[0].id;
+        }
+        indexById.set(parent.id, path.length);
+        path.push(parent);
         current = parent;
     }
 }
@@ -90,11 +107,7 @@ export function hasLiveChoice(row: NormalizedExecutionRecord): boolean {
     return row.entries.some(entry => !entry.deletedAt && entry.payload.kind === 'choice');
 }
 
-function compareEntries(a: ChoiceSessionEntry, b: ChoiceSessionEntry): number {
-    return a.completedAt.localeCompare(b.completedAt) || a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id);
-}
-
-/** Override rows for one execution's effective choices, resolved against its pinned definition. */
+/** Override rows for one execution's effective choices and any superseded choices that governed live performed entries, resolved against its pinned definition. */
 export function choiceOverridesForExecution(row: NormalizedExecutionRecord, pinned: PinnedDefinition): ChoiceOverrideInput[] {
     const live = row.entries.filter(entry => !entry.deletedAt);
     const effective = resolveEffectiveChoiceEntries(live);
