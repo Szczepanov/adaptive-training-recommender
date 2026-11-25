@@ -116,7 +116,7 @@ export interface DEvalBlockInput {
     rollbackSettingState?: string | null;
     /** Criterion inputs share the block's single date scope; they cannot override it. */
     c1: Omit<DEvalC1Input, 'blockStartDate'>;
-    c2: Omit<DEvalC2Input, 'blockStartDate' | 'blockEndDate' | 'asOfDate'>;
+    c2: Omit<DEvalC2Input, 'blockStartDate' | 'blockEndDate' | 'asOfDate' | 'asOfTimestamp'>;
     c3: Omit<DEvalC3Input, 'blockStartDate' | 'blockEndDate' | 'asOfDate' | 'asOfTimestamp'>;
     c4: DEvalC4Input | DEvalRollbackUsage;
     extraKnownLimits?: readonly string[];
@@ -149,6 +149,7 @@ export function evaluateDEvalBlock(input: DEvalBlockInput): DEvalBlockResult {
         blockStartDate: input.blockStartDate,
         blockEndDate: input.blockEndDate,
         asOfDate: input.asOfDate,
+        asOfTimestamp: input.asOfTimestamp ?? null,
     });
     const c3 = evaluateC3FlaggedOutcomes({
         ...input.c3,

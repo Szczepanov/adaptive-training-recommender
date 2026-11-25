@@ -28,12 +28,21 @@ import {
  *   comparable to an eligible after attempt under the same protocol revision, comparison series,
  *   canonicalization version and unit. Until a comparable after attempt exists, the most recent
  *   pre-block record is reported as the provisional reference.
- * - `asOfDate` is the information cutoff: records observed after it are ignored, and so are
- *   observations whose attempt has a `completedAt` on a later Warsaw date (an attempt completed on
- *   the cutoff date counts). A `completedAt` that is present but not a valid offset timestamp
- *   cannot be placed before the cutoff, so its attempt is excluded. Legacy attempts without
- *   `completedAt` stay eligible and are dated by their observation's `observedAt`, which the
- *   before/after windows already bound by the cutoff (same policy as `assessmentHistoryService`).
+ * - `asOfDate` (and optional `asOfTimestamp`) is the information cutoff: an observation revision
+ *   is usable at the cutoff only if `revision.createdAt` is a valid offset timestamp on or before
+ *   the cutoff (`ms <= asOfMs` when `asOfTimestamp` parses, else Warsaw calendar date
+ *   `<= asOfDate`). A revision 1 created after the cutoff did not exist at the cutoff and is
+ *   excluded; a revision `> 1` created after the cutoff (or any revision with unparseable
+ *   `createdAt`) means the pre-cutoff revision was not reconstructed, so the affected metric fails
+ *   closed as `inconclusive` (`observation_revision_unresolved_at_cutoff`). Callers with
+ *   revision-history access (e.g. `DEvalReadoutService`) reconstruct the latest revision created
+ *   on or before the cutoff before invoking C2.
+ * - Observations whose attempt has a `completedAt` on a later Warsaw date (or after `asOfTimestamp`)
+ *   are ignored; an attempt completed on the cutoff counts. A `completedAt` that is present but
+ *   not a valid offset timestamp cannot be placed before the cutoff, so its attempt is excluded.
+ *   Legacy attempts without `completedAt` stay eligible and are dated by their observation's
+ *   `observedAt`, which the before/after windows already bound by the cutoff (same policy as
+ *   `assessmentHistoryService`).
  */
 export interface DEvalC2Input {
     observations: readonly CurrentObservation[];
@@ -43,6 +52,7 @@ export interface DEvalC2Input {
     blockStartDate: string;
     blockEndDate: string;
     asOfDate: string;
+    asOfTimestamp?: string | null;
     rollbackBeforeAfterAttempt?: boolean;
     rollbackAtDate?: string | null;
     reliabilityEstimates?: readonly SeriesReliabilityEstimate[];
@@ -89,20 +99,29 @@ export interface DEvalC2Result {
     knownLimits: readonly string[];
 }
 
-function isCompletedByAsOf(attempt: AssessmentAttempt | undefined, asOfDate: string): boolean {
-    if (attempt?.state !== 'completed') return false;
-    if (attempt.completedAt === undefined) return true;
-    const completedMs = parseUtcTimestampMs(attempt.completedAt);
-    return completedMs !== null && getLocalDateString(new Date(completedMs)) <= asOfDate;
+export function classifyObservationTimestampAtCutoff(
+    timestamp: string | undefined,
+    asOfDate: string,
+    asOfMs: number | null,
+): 'known' | 'after' | 'invalid' {
+    const ms = parseUtcTimestampMs(timestamp);
+    if (ms === null) return 'invalid';
+    if (asOfMs !== null) return ms <= asOfMs ? 'known' : 'after';
+    return getLocalDateString(new Date(ms)) <= asOfDate ? 'known' : 'after';
 }
 
-function isCurrentValidObservation(observation: CurrentObservation): boolean {
+function isCompletedByAsOf(attempt: AssessmentAttempt | undefined, asOfDate: string, asOfMs: number | null): boolean {
+    if (attempt?.state !== 'completed') return false;
+    if (attempt.completedAt === undefined) return true;
+    return classifyObservationTimestampAtCutoff(attempt.completedAt, asOfDate, asOfMs) === 'known';
+}
+
+function isCurrentObservation(observation: CurrentObservation): boolean {
     const { head, revision } = observation;
     return head.observationKey === revision.observationKey
         && head.metricId === revision.metricId
         && head.assessmentAttemptId === revision.assessmentAttemptId
-        && head.headRevision === revision.revision
-        && revision.validity === 'valid';
+        && head.headRevision === revision.revision;
 }
 
 interface DatedObservation {
@@ -194,6 +213,7 @@ function evaluateProtocolMetric(params: {
     blockStartDate: string;
     blockEndDate: string;
     asOfDate: string;
+    asOfMs: number | null;
     hasRollback: boolean;
     rollbackAtDate: string | null | undefined;
     callerReliability: readonly SeriesReliabilityEstimate[];
@@ -207,6 +227,7 @@ function evaluateProtocolMetric(params: {
         blockStartDate,
         blockEndDate,
         asOfDate,
+        asOfMs,
         hasRollback,
         rollbackAtDate,
         callerReliability,
@@ -216,13 +237,33 @@ function evaluateProtocolMetric(params: {
     const afterWindowStart = addDaysToLocalDateString(blockEndDate, 1);
     const dueDate = addDaysToLocalDateString(blockEndDate, protocol.retestIntervalDays);
 
-    const eligible = observations
-        .filter(isCurrentValidObservation)
-        .filter(obs => obs.revision.protocolRef.id === protocol.protocolId && obs.revision.metricId === metricId)
-        .filter(obs => isCompletedByAsOf(attemptById.get(obs.revision.assessmentAttemptId), asOfDate))
+    const protocolMetricObs = observations
+        .filter(isCurrentObservation)
+        .filter(obs => obs.revision.protocolRef.id === protocol.protocolId && obs.revision.metricId === metricId);
+
+    const knownAtCutoff: CurrentObservation[] = [];
+    let unresolvedRevisionAtCutoff = false;
+    for (const obs of protocolMetricObs) {
+        const createdRel = classifyObservationTimestampAtCutoff(obs.revision.createdAt, asOfDate, asOfMs);
+        if (createdRel === 'known') {
+            knownAtCutoff.push(obs);
+        } else if (createdRel === 'invalid' || obs.revision.revision > 1) {
+            unresolvedRevisionAtCutoff = true;
+        }
+    }
+
+    const eligible = knownAtCutoff
+        .filter(obs => obs.revision.validity === 'valid')
+        .filter(obs => isCompletedByAsOf(attemptById.get(obs.revision.assessmentAttemptId), asOfDate, asOfMs))
         .map(toDatedObservation)
-        .filter((entry): entry is DatedObservation => entry !== null)
+        .filter((entry): entry is DatedObservation => entry !== null && (asOfMs === null || entry.ms <= asOfMs))
         .sort(compareObservations);
+
+    const metricIncomplete = observationsIncomplete || unresolvedRevisionAtCutoff;
+    const incompleteReasons: string[] = [
+        ...(observationsIncomplete ? ['observation_records_incomplete'] : []),
+        ...(unresolvedRevisionAtCutoff ? ['observation_revision_unresolved_at_cutoff'] : []),
+    ];
 
     // Before window: inclusive lower bound, exclusive upper bound (the block start date is in the block).
     const beforeCandidates = eligible.filter(entry => entry.date >= beforeWindowStart && entry.date < blockStartDate);
@@ -256,9 +297,7 @@ function evaluateProtocolMetric(params: {
         return makeResult(
             'inconclusive',
             'missing_before',
-            observationsIncomplete
-                ? ['observation_records_incomplete', 'missing_before_attempt']
-                : ['missing_before_attempt'],
+            [...incompleteReasons, 'missing_before_attempt'],
         );
     }
 
@@ -277,7 +316,7 @@ function evaluateProtocolMetric(params: {
                 : [];
 
         const missingExtras = { before: beforeSummary, nonComparableAttemptsObserved };
-        if (observationsIncomplete) {
+        if (metricIncomplete) {
             const comparability = nonComparableAttemptsObserved
                 ? 'non_comparable'
                 : asOfDate <= dueDate
@@ -286,7 +325,7 @@ function evaluateProtocolMetric(params: {
             return makeResult(
                 'inconclusive',
                 comparability,
-                ['observation_records_incomplete', ...nonComparableReasons],
+                [...incompleteReasons, ...nonComparableReasons],
                 missingExtras,
             );
         }
@@ -352,12 +391,12 @@ function evaluateProtocolMetric(params: {
         progress,
     };
 
-    if (observationsIncomplete) {
+    if (metricIncomplete) {
         const noNoise = !progress.reliability || progress.reasons.includes('no_reliability_estimate');
         const comparability = progress.status === 'non_comparable' || progress.status === 'insufficient_evidence'
             ? (noNoise ? 'no_stated_noise' : 'non_comparable')
             : 'comparable';
-        return makeResult('inconclusive', comparability, ['observation_records_incomplete', ...progress.reasons], sharedExtras);
+        return makeResult('inconclusive', comparability, [...incompleteReasons, ...progress.reasons], sharedExtras);
     }
     if (progress.status === 'possible_decline' || progress.status === 'meaningful_decline') {
         return makeResult('fail', 'comparable', ['benchmark_declined_beyond_noise', ...progress.reasons], sharedExtras);
@@ -423,6 +462,7 @@ export function evaluateC2Benchmarks(input: DEvalC2Input): DEvalC2Result {
     const callerReliability = input.reliabilityEstimates ?? [];
     const incompleteMetrics = new Set(input.incompleteObservationMetricIds ?? []);
     const allObservationsIncomplete = input.observationsComplete === false;
+    const asOfMs = parseUtcTimestampMs(input.asOfTimestamp ?? null);
 
     const protocolResults: DEvalC2ProtocolEvaluation[] = protocols.map(protocol => {
         const dueDate = addDaysToLocalDateString(input.blockEndDate, protocol.retestIntervalDays);
@@ -445,6 +485,7 @@ export function evaluateC2Benchmarks(input: DEvalC2Input): DEvalC2Result {
             blockStartDate: input.blockStartDate,
             blockEndDate: input.blockEndDate,
             asOfDate: input.asOfDate,
+            asOfMs,
             hasRollback,
             rollbackAtDate: input.rollbackAtDate,
             callerReliability,
@@ -472,6 +513,9 @@ export function evaluateC2Benchmarks(input: DEvalC2Input): DEvalC2Result {
     const knownLimits: string[] = [];
     if (protocolResults.some(protocol => protocol.reasons.includes('observation_records_incomplete'))) {
         knownLimits.push('One or more goal-bound metric observation reads were unavailable or contained unreadable records; affected C2 comparisons are inconclusive.');
+    }
+    if (protocolResults.some(protocol => protocol.reasons.includes('observation_revision_unresolved_at_cutoff'))) {
+        knownLimits.push('One or more metric observations were modified after the as-of cutoff and their pre-cutoff revision could not be reconstructed; affected C2 comparisons are inconclusive.');
     }
     if (protocolResults.some(protocol => protocol.metrics.some(metric => metric.reliability?.source === 'literature_reference'))) {
         knownLimits.push('C2 uses OD10 literature_reference CV bounds unless personal repeatability or manual estimates exist for the series.');

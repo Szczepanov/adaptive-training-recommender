@@ -1252,6 +1252,85 @@ describe('review regressions (PR #1284)', () => {
             observationsComplete: false,
         }));
         expect(allIncomplete.status).toBe('inconclusive');
-        expect(allIncomplete.protocols.every(p => p.status === 'inconclusive')).toBe(true);
+        expect(allIncomplete.protocols.map(p => ({ protocolId: p.protocolId, status: p.status }))).toEqual([
+            { protocolId: 'field-standing-broad-jump', status: 'inconclusive' },
+            { protocolId: 'field-wall-touch-cmj', status: 'inconclusive' },
+        ]);
+    });
+
+    it('C2 excludes revision 1 created after the cutoff and fails closed on unresolved post-cutoff corrections', () => {
+        const jumpOnly = DEVAL_GOAL_BOUND_PROTOCOLS.filter(p => p.protocolId === 'field-standing-broad-jump');
+        const jump = (key: string, observedAt: string, value: number) => makeObservation({
+            observationKey: key,
+            protocolId: 'field-standing-broad-jump',
+            metricId: 'standing_broad_jump_distance_cm',
+            value,
+            unit: 'cm',
+            observedAt,
+            attemptId: `attempt-${key}`,
+        });
+
+        const before = jump('b', '2026-10-22T09:00:00Z', 240);
+        const rev1AfterCutoff = jump('a', '2027-01-15T09:00:00Z', 200);
+        rev1AfterCutoff.revision.createdAt = '2027-01-20T23:30:00Z'; // Jan 21 Warsaw
+
+        expect(evaluateC2Benchmarks(c2Input([before, rev1AfterCutoff], {
+            protocols: jumpOnly,
+            asOfDate: '2027-01-20',
+        })).status).toBe('pending');
+        expect(evaluateC2Benchmarks(c2Input([before, rev1AfterCutoff], {
+            protocols: jumpOnly,
+            asOfDate: '2027-01-21',
+        })).status).toBe('fail');
+
+        const correctedValid: CurrentObservation = {
+            head: { ...rev1AfterCutoff.head, headRevision: 2, updatedAt: '2027-01-25T09:00:00Z' },
+            revision: {
+                ...rev1AfterCutoff.revision,
+                revision: 2,
+                supersedesRevision: 1,
+                value: 245,
+                correctionReason: 'Corrected reading',
+                createdAt: '2027-01-25T09:00:00Z',
+            },
+        };
+        const unresolvedValid = evaluateC2Benchmarks(c2Input([before, correctedValid], {
+            protocols: jumpOnly,
+            asOfDate: '2027-01-20',
+        }));
+        expect(unresolvedValid.status).toBe('inconclusive');
+        expect(unresolvedValid.reasons).toContain('observation_revision_unresolved_at_cutoff');
+
+        const correctedSameDayBeforeTs = evaluateC2Benchmarks(c2Input([before, correctedValid], {
+            protocols: jumpOnly,
+            asOfDate: '2027-01-25',
+            asOfTimestamp: '2027-01-25T08:00:00Z',
+        }));
+        expect(correctedSameDayBeforeTs.status).toBe('inconclusive');
+        expect(correctedSameDayBeforeTs.reasons).toContain('observation_revision_unresolved_at_cutoff');
+
+        const correctedInvalid: CurrentObservation = {
+            head: { ...correctedValid.head },
+            revision: {
+                ...correctedValid.revision,
+                validity: 'invalid',
+                invalidReason: 'Post-cutoff invalidation',
+            },
+        };
+        const unresolvedInvalid = evaluateC2Benchmarks(c2Input([before, correctedInvalid], {
+            protocols: jumpOnly,
+            asOfDate: '2027-01-20',
+        }));
+        expect(unresolvedInvalid.status).toBe('inconclusive');
+        expect(unresolvedInvalid.reasons).toContain('observation_revision_unresolved_at_cutoff');
+
+        const unparseableCreatedAt = jump('u', '2027-01-15T09:00:00Z', 245);
+        unparseableCreatedAt.revision.createdAt = 'not-a-timestamp';
+        const invalidTimestampResult = evaluateC2Benchmarks(c2Input([before, unparseableCreatedAt], {
+            protocols: jumpOnly,
+            asOfDate: '2027-01-20',
+        }));
+        expect(invalidTimestampResult.status).toBe('inconclusive');
+        expect(invalidTimestampResult.reasons).toContain('observation_revision_unresolved_at_cutoff');
     });
 });

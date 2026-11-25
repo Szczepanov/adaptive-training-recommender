@@ -18,6 +18,7 @@ import {
     type DEvalRawPlacementOverlay,
     type DEvalSourceReadState,
 } from '../derived/eval/dEvalAssembly';
+import { classifyObservationTimestampAtCutoff } from '../derived/eval/dEvalC2';
 import {
     DEVAL_GOAL_BOUND_PROTOCOLS,
     DEVAL_MIN_BLOCK_DAYS,
@@ -33,7 +34,7 @@ import {
 } from '../derived/eval/dEvalReadout';
 import type { DEvalC3InjuryInput } from '../derived/eval/dEvalC3';
 import { PLACEMENT_HISTORY_TRUNCATED_OPERATION, type PlacementEvent } from '../ledger/placementHistory';
-import type { AssessmentAttempt } from '../observations/models';
+import type { AssessmentAttempt, MetricObservationRevision } from '../observations/models';
 import type { AnyExternalTrainingPlan } from '../sessions/externalPlanV2';
 import { PHYSICAL_CAPITAL_PROTOCOL_REVISIONS } from '../observations/physicalCapitalProtocols';
 import type { CurrentObservation } from '../observations/progress';
@@ -93,7 +94,10 @@ export interface DEvalReadoutDependencies {
         'listPlanIds' | 'getHeaderState' | 'getActivationState' | 'getPlacementState' | 'getPlacementHistoryState' | 'getRevisionState'
     >;
     attempts: Pick<AssessmentAttemptService, 'listAttemptsForProtocolWithDiagnostics'>;
-    observations: Pick<MetricObservationService, 'listCurrentObservationsForMetricWithDiagnostics'>;
+    observations: Pick<
+        MetricObservationService,
+        'listCurrentObservationsForMetricWithDiagnostics' | 'listRevisionsForObservationWithDiagnostics'
+    >;
 }
 
 const DEFAULT_DEPS: DEvalReadoutDependencies = {
@@ -215,7 +219,7 @@ export class DEvalReadoutService {
             this.deps.healthAnomalyOutcomes.listForUserWithDiagnostics(userId)
                 .then(res => ({ ok: true as const, ...res }))
                 .catch(() => ({ ok: false as const, outcomes: [], unreadableCount: 0 })),
-            this.readAssessments(userId),
+            this.readAssessments(userId, request.asOfDate, request.asOfTimestamp ?? null),
         ]);
 
         const rawExecutions: DEvalRawExecution[] = executionsRead.executions.map(exec => ({
@@ -308,7 +312,90 @@ export class DEvalReadoutService {
         return { input, result, markdown };
     }
 
-    private async readAssessments(userId: string): Promise<{
+    private async resolveObservationAtCutoff(
+        userId: string,
+        obs: CurrentObservation,
+        asOfDate: string,
+        asOfMs: number | null,
+    ): Promise<
+        | { status: 'resolved'; observation: CurrentObservation }
+        | { status: 'absent_at_cutoff' }
+        | { status: 'incomplete'; failedRead: boolean; unreadableCount: number }
+    > {
+        const currentRel = classifyObservationTimestampAtCutoff(obs.revision.createdAt, asOfDate, asOfMs);
+        if (currentRel === 'known') {
+            return { status: 'resolved', observation: obs };
+        }
+        if (currentRel === 'invalid') {
+            return { status: 'incomplete', failedRead: false, unreadableCount: 1 };
+        }
+        if (obs.head.headRevision === 1) {
+            return { status: 'absent_at_cutoff' };
+        }
+
+        let historyRead: { revisions: MetricObservationRevision[]; unreadableCount: number };
+        try {
+            historyRead = await this.deps.observations.listRevisionsForObservationWithDiagnostics(
+                userId,
+                obs.head.observationKey,
+            );
+        } catch {
+            return { status: 'incomplete', failedRead: true, unreadableCount: 0 };
+        }
+
+        if (historyRead.unreadableCount > 0) {
+            return { status: 'incomplete', failedRead: false, unreadableCount: historyRead.unreadableCount };
+        }
+
+        const sorted = [...historyRead.revisions].sort((a, b) => a.revision - b.revision);
+        if (sorted.length < obs.head.headRevision) {
+            return { status: 'incomplete', failedRead: false, unreadableCount: 1 };
+        }
+
+        let prevMs = -Infinity;
+        let selected: MetricObservationRevision | null = null;
+        for (let i = 0; i < sorted.length; i += 1) {
+            const rev = sorted[i]!;
+            if (
+                rev.revision !== i + 1
+                || rev.observationKey !== obs.head.observationKey
+                || rev.metricId !== obs.head.metricId
+                || rev.assessmentAttemptId !== obs.head.assessmentAttemptId
+            ) {
+                return { status: 'incomplete', failedRead: false, unreadableCount: 1 };
+            }
+            const createdMs = parseUtcTimestampMs(rev.createdAt);
+            if (createdMs === null || createdMs < prevMs) {
+                return { status: 'incomplete', failedRead: false, unreadableCount: 1 };
+            }
+            prevMs = createdMs;
+            if (classifyObservationTimestampAtCutoff(rev.createdAt, asOfDate, asOfMs) === 'known') {
+                selected = rev;
+            }
+        }
+
+        if (!selected) {
+            return { status: 'absent_at_cutoff' };
+        }
+
+        return {
+            status: 'resolved',
+            observation: {
+                head: {
+                    ...obs.head,
+                    headRevision: selected.revision,
+                    updatedAt: selected.createdAt,
+                },
+                revision: selected,
+            },
+        };
+    }
+
+    private async readAssessments(
+        userId: string,
+        asOfDate: string,
+        asOfTimestamp: string | null,
+    ): Promise<{
         attemptsState: DEvalSourceReadState;
         attempts: AssessmentAttempt[];
         unreadableAttemptsCount: number;
@@ -319,7 +406,9 @@ export class DEvalReadoutService {
         incompleteObservationMetricIds: string[];
     }> {
         const protocolIds = DEVAL_GOAL_BOUND_PROTOCOLS.map(protocol => protocol.protocolId);
+        const selectedProtocolIds = new Set(protocolIds);
         const metricIds = goalBoundMetricIds();
+        const asOfMs = parseUtcTimestampMs(asOfTimestamp);
 
         const [attemptResults, observationResults] = await Promise.all([
             Promise.all(
@@ -368,8 +457,18 @@ export class DEvalReadoutService {
             if (res.unreadableCount > 0) {
                 incompleteObservationMetricIds.add(res.metricId);
             }
-            for (const obs of res.observations) {
-                obsMap.set(obs.revision.observationKey, obs);
+            const relevantObs = res.observations.filter(obs => selectedProtocolIds.has(obs.revision.protocolRef.id));
+            const resolvedObs = await Promise.all(
+                relevantObs.map(obs => this.resolveObservationAtCutoff(userId, obs, asOfDate, asOfMs)),
+            );
+            for (const outcome of resolvedObs) {
+                if (outcome.status === 'resolved') {
+                    obsMap.set(outcome.observation.revision.observationKey, outcome.observation);
+                } else if (outcome.status === 'incomplete') {
+                    if (outcome.failedRead) observationsFailed = true;
+                    unreadableObservationsCount += outcome.unreadableCount;
+                    incompleteObservationMetricIds.add(res.metricId);
+                }
             }
         }
 

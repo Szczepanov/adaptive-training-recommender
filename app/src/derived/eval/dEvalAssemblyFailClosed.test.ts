@@ -313,11 +313,17 @@ describe('PR #1287 review findings regression checks', () => {
                 createdAt: '2027-02-01T10:00:00.000Z',
             },
         };
+        const surviving = {
+            observations: [...base.observations, afterObs],
+            attempts: [...(base.attempts ?? []), afterAtt],
+        };
+        const complete = evaluate({ observationsState: 'measured', ...surviving }, { asOfDate: '2027-07-01' });
+        expect(complete.c2.protocols.find(p => p.protocolId === 'strength-bench-press-1rm')?.status).toBe('pass');
+
         const result = evaluate({
             observationsState: 'invalid',
             unreadableObservationsCount: 1,
-            observations: [...base.observations, afterObs],
-            attempts: [...(base.attempts ?? []), afterAtt],
+            ...surviving,
         }, { asOfDate: '2027-07-01' });
 
         expect(result.c2.status).toBe('inconclusive');
@@ -401,12 +407,12 @@ describe('PR #1287 review findings regression checks', () => {
         const earlyMove: PlacementAssignment = { sessionId: 's', date: '2026-12-08', status: 'moved', movedFrom: '2026-12-03' };
         const lateMove: PlacementAssignment = { sessionId: 's', date: '2026-12-18', status: 'moved', movedFrom: '2026-12-03' };
         const firstReset: PlacementEvent = {
-            ...event('2026-12-01', [earlyMove], []),
+            ...event('2026-12-01', [], []),
             previousState: 'invalid',
             previousStateReason: 'current-schema-invalid',
         };
         const secondReset: PlacementEvent = {
-            ...event('2026-12-06', [lateMove], []),
+            ...event('2026-12-06', [], []),
             previousState: 'invalid',
             previousStateReason: 'current-schema-invalid',
         };
@@ -496,7 +502,7 @@ describe('PR #1287 review findings regression checks', () => {
         const flagDay = '2026-11-28';
         const lateFlags = makeAllFlags(BLOCK_START, BLOCK_END, date => (
             date === flagDay
-                ? { illness_anomaly: { active: true, evaluatedAt: '2026-11-29T06:00:00.000Z' } }
+                ? { illness_anomaly: { active: true, evaluatedAt: '2026-11-28T23:30:00.000Z' } }
                 : {}
         ));
         const occ = makeOccurrence('occ', flagDay, undefined, {

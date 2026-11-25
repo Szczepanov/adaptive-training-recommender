@@ -252,6 +252,7 @@ async function createDeps(overrides: Partial<DEvalReadoutDependencies> = {}): Pr
                     })),
                 unreadableCount: 0,
             })),
+            listRevisionsForObservationWithDiagnostics: vi.fn(async () => ({ revisions: [], unreadableCount: 0 })),
         },
         ...overrides,
     };
@@ -461,6 +462,7 @@ describe('DEvalReadoutService', () => {
         const base = (await createDeps()).deps;
         const { deps } = await createDeps({
             observations: {
+                ...base.observations,
                 listCurrentObservationsForMetricWithDiagnostics: vi.fn(async (uid, metricId) => {
                     const res = await base.observations.listCurrentObservationsForMetricWithDiagnostics(uid, metricId);
                     if (metricId === 'standing_broad_jump_distance_cm') {
@@ -522,5 +524,305 @@ describe('DEvalReadoutService', () => {
 
         expect(out.result.c1.block.unknown).toBe(10);
         expect(out.result.c1.status).toBe('inconclusive');
+    });
+
+    it('reconstructs the pre-cutoff observation revision when head was corrected after asOfDate', async () => {
+        const base = (await createDeps()).deps;
+        const afterAtt = {
+            id: 'att-after-jump',
+            protocolRef: { id: 'field-standing-broad-jump', revision: 1 },
+            state: 'completed' as const,
+            purpose: 'post_block' as const,
+            completedAt: '2027-01-15T10:00:00.000Z',
+        };
+        const rev1 = {
+            observationKey: 'att-after-jump:standing_broad_jump_distance_cm',
+            revision: 1,
+            metricId: 'standing_broad_jump_distance_cm',
+            value: 220,
+            unit: 'cm',
+            protocolRef: { id: 'field-standing-broad-jump', revision: 1 },
+            assessmentAttemptId: 'att-after-jump',
+            source: 'manual' as const,
+            validity: 'valid' as const,
+            observedAt: '2027-01-15T10:00:00.000Z',
+            comparisonSeriesKey: 'field-standing-broad-jump:series-1',
+            comparisonCanonicalizationVersion: '1',
+            context: {},
+            createdAt: '2027-01-15T10:00:00.000Z',
+        };
+        const rev2 = {
+            ...rev1,
+            revision: 2,
+            supersedesRevision: 1,
+            value: 252,
+            correctionReason: 'Re-measured after cutoff',
+            createdAt: '2027-01-25T10:00:00.000Z',
+        };
+        const head = {
+            observationKey: rev1.observationKey,
+            assessmentAttemptId: 'att-after-jump',
+            metricId: 'standing_broad_jump_distance_cm',
+            headRevision: 2,
+            createdAt: rev1.createdAt,
+            updatedAt: rev2.createdAt,
+        };
+
+        const listRevisions = vi.fn(async () => ({ revisions: [rev1, rev2], unreadableCount: 0 }));
+        const { deps } = await createDeps({
+            attempts: {
+                listAttemptsForProtocolWithDiagnostics: vi.fn(async (uid, protocolId) => {
+                    const res = await base.attempts.listAttemptsForProtocolWithDiagnostics(uid, protocolId);
+                    if (protocolId === 'field-standing-broad-jump') {
+                        return { ...res, attempts: [...res.attempts, afterAtt] };
+                    }
+                    return res;
+                }),
+            },
+            observations: {
+                listCurrentObservationsForMetricWithDiagnostics: vi.fn(async (uid, metricId) => {
+                    const res = await base.observations.listCurrentObservationsForMetricWithDiagnostics(uid, metricId);
+                    if (metricId === 'standing_broad_jump_distance_cm') {
+                        return { ...res, observations: [...res.observations, { head, revision: rev2 }] };
+                    }
+                    return res;
+                }),
+                listRevisionsForObservationWithDiagnostics: listRevisions,
+            },
+        });
+
+        const atJan20 = await new DEvalReadoutService(deps, () => '2027-01-30').run('u1', {
+            blockStartDate: BLOCK_START,
+            blockEndDate: BLOCK_END,
+            asOfDate: '2027-01-20',
+            rollbackState: 'unused',
+        });
+        expect(listRevisions).toHaveBeenCalledWith('u1', rev1.observationKey);
+        expect(atJan20.result.c2.protocols.find(p => p.protocolId === 'field-standing-broad-jump')).toMatchObject({
+            status: 'fail',
+        });
+        expect(atJan20.result.c2.status).toBe('fail');
+        expect(atJan20.result.overall).toBe('NO_GO');
+
+        listRevisions.mockClear();
+        const atJan25 = await new DEvalReadoutService(deps, () => '2027-01-30').run('u1', {
+            blockStartDate: BLOCK_START,
+            blockEndDate: BLOCK_END,
+            asOfDate: '2027-01-25',
+            rollbackState: 'unused',
+        });
+        expect(listRevisions).not.toHaveBeenCalled();
+        expect(atJan25.result.c2.protocols.find(p => p.protocolId === 'field-standing-broad-jump')).toMatchObject({
+            status: 'pass',
+        });
+    });
+
+    it('keeps pre-cutoff invalid rev 1 excluded and omits observations whose entire revision history is post-cutoff', async () => {
+        const base = (await createDeps()).deps;
+        const invalidEarlyAtt = {
+            id: 'att-after-invalid',
+            protocolRef: { id: 'field-standing-broad-jump', revision: 1 },
+            state: 'completed' as const,
+            purpose: 'post_block' as const,
+            completedAt: '2027-01-15T10:00:00.000Z',
+        };
+        const invalidRev1 = {
+            observationKey: 'att-after-invalid:standing_broad_jump_distance_cm',
+            revision: 1,
+            metricId: 'standing_broad_jump_distance_cm',
+            value: 255,
+            unit: 'cm',
+            protocolRef: { id: 'field-standing-broad-jump', revision: 1 },
+            assessmentAttemptId: 'att-after-invalid',
+            source: 'manual' as const,
+            validity: 'invalid' as const,
+            invalidReason: 'Foot fault',
+            observedAt: '2027-01-15T10:00:00.000Z',
+            comparisonSeriesKey: 'field-standing-broad-jump:series-1',
+            comparisonCanonicalizationVersion: '1',
+            context: {},
+            createdAt: '2027-01-15T10:00:00.000Z',
+        };
+        const validRev2 = {
+            ...invalidRev1,
+            revision: 2,
+            supersedesRevision: 1,
+            validity: 'valid' as const,
+            invalidReason: undefined,
+            correctionReason: 'Cleared on review',
+            createdAt: '2027-01-25T10:00:00.000Z',
+        };
+        const invalidHead = {
+            observationKey: invalidRev1.observationKey,
+            assessmentAttemptId: 'att-after-invalid',
+            metricId: 'standing_broad_jump_distance_cm',
+            headRevision: 2,
+            createdAt: invalidRev1.createdAt,
+            updatedAt: validRev2.createdAt,
+        };
+
+        const postOnlyRev1 = {
+            ...invalidRev1,
+            observationKey: 'att-after-post:standing_broad_jump_distance_cm',
+            assessmentAttemptId: 'att-after-post',
+            validity: 'valid' as const,
+            invalidReason: undefined,
+            createdAt: '2027-01-22T10:00:00.000Z',
+        };
+        const postOnlyRev2 = {
+            ...postOnlyRev1,
+            revision: 2,
+            supersedesRevision: 1,
+            value: 260,
+            correctionReason: 'Updated post-cutoff',
+            createdAt: '2027-01-25T10:00:00.000Z',
+        };
+        const postOnlyHead = {
+            observationKey: postOnlyRev1.observationKey,
+            assessmentAttemptId: 'att-after-post',
+            metricId: 'standing_broad_jump_distance_cm',
+            headRevision: 2,
+            createdAt: postOnlyRev1.createdAt,
+            updatedAt: postOnlyRev2.createdAt,
+        };
+        const postOnlyAtt = {
+            ...invalidEarlyAtt,
+            id: 'att-after-post',
+        };
+
+        const { deps } = await createDeps({
+            attempts: {
+                listAttemptsForProtocolWithDiagnostics: vi.fn(async (uid, protocolId) => {
+                    const res = await base.attempts.listAttemptsForProtocolWithDiagnostics(uid, protocolId);
+                    if (protocolId === 'field-standing-broad-jump') {
+                        return { ...res, attempts: [...res.attempts, invalidEarlyAtt, postOnlyAtt] };
+                    }
+                    return res;
+                }),
+            },
+            observations: {
+                listCurrentObservationsForMetricWithDiagnostics: vi.fn(async (uid, metricId) => {
+                    const res = await base.observations.listCurrentObservationsForMetricWithDiagnostics(uid, metricId);
+                    if (metricId === 'standing_broad_jump_distance_cm') {
+                        return {
+                            ...res,
+                            observations: [
+                                ...res.observations,
+                                { head: invalidHead, revision: validRev2 },
+                                { head: postOnlyHead, revision: postOnlyRev2 },
+                            ],
+                        };
+                    }
+                    return res;
+                }),
+                listRevisionsForObservationWithDiagnostics: vi.fn(async (_uid, key) => {
+                    if (key === invalidHead.observationKey) {
+                        return { revisions: [invalidRev1, validRev2], unreadableCount: 0 };
+                    }
+                    if (key === postOnlyHead.observationKey) {
+                        return { revisions: [postOnlyRev1, postOnlyRev2], unreadableCount: 0 };
+                    }
+                    return { revisions: [], unreadableCount: 0 };
+                }),
+            },
+        });
+
+        const out = await new DEvalReadoutService(deps, () => '2027-01-30').run('u1', {
+            blockStartDate: BLOCK_START,
+            blockEndDate: BLOCK_END,
+            asOfDate: '2027-01-20',
+            rollbackState: 'unused',
+        });
+        expect(out.result.c2.protocols.find(p => p.protocolId === 'field-standing-broad-jump')?.status).toBe('pending');
+        expect(out.result.c2.status).toBe('pending');
+    });
+
+    it('fails closed on affected C2 metrics when pre-cutoff observation revision history cannot be reconstructed', async () => {
+        const base = (await createDeps()).deps;
+        const afterAtt = {
+            id: 'att-after-jump',
+            protocolRef: { id: 'field-standing-broad-jump', revision: 1 },
+            state: 'completed' as const,
+            purpose: 'post_block' as const,
+            completedAt: '2027-01-15T10:00:00.000Z',
+        };
+        const rev1 = {
+            observationKey: 'att-after-jump:standing_broad_jump_distance_cm',
+            revision: 1,
+            metricId: 'standing_broad_jump_distance_cm',
+            value: 252,
+            unit: 'cm',
+            protocolRef: { id: 'field-standing-broad-jump', revision: 1 },
+            assessmentAttemptId: 'att-after-jump',
+            source: 'manual' as const,
+            validity: 'valid' as const,
+            observedAt: '2027-01-15T10:00:00.000Z',
+            comparisonSeriesKey: 'field-standing-broad-jump:series-1',
+            comparisonCanonicalizationVersion: '1',
+            context: {},
+            createdAt: '2027-01-15T10:00:00.000Z',
+        };
+        const rev2 = {
+            ...rev1,
+            revision: 2,
+            supersedesRevision: 1,
+            value: 254,
+            correctionReason: 'Updated after cutoff',
+            createdAt: '2027-01-25T10:00:00.000Z',
+        };
+        const head = {
+            observationKey: rev1.observationKey,
+            assessmentAttemptId: 'att-after-jump',
+            metricId: 'standing_broad_jump_distance_cm',
+            headRevision: 2,
+            createdAt: rev1.createdAt,
+            updatedAt: rev2.createdAt,
+        };
+
+        const runWithHistoryReader = async (
+            listRevisionsForObservationWithDiagnostics: DEvalReadoutDependencies['observations']['listRevisionsForObservationWithDiagnostics'],
+        ) => {
+            const { deps } = await createDeps({
+                attempts: {
+                    listAttemptsForProtocolWithDiagnostics: vi.fn(async (uid, protocolId) => {
+                        const res = await base.attempts.listAttemptsForProtocolWithDiagnostics(uid, protocolId);
+                        return protocolId === 'field-standing-broad-jump'
+                            ? { ...res, attempts: [...res.attempts, afterAtt] }
+                            : res;
+                    }),
+                },
+                observations: {
+                    listCurrentObservationsForMetricWithDiagnostics: vi.fn(async (uid, metricId) => {
+                        const res = await base.observations.listCurrentObservationsForMetricWithDiagnostics(uid, metricId);
+                        return metricId === 'standing_broad_jump_distance_cm'
+                            ? { ...res, observations: [...res.observations, { head, revision: rev2 }] }
+                            : res;
+                    }),
+                    listRevisionsForObservationWithDiagnostics,
+                },
+            });
+            return new DEvalReadoutService(deps, () => '2027-01-30').run('u1', {
+                blockStartDate: BLOCK_START,
+                blockEndDate: BLOCK_END,
+                asOfDate: '2027-01-20',
+                rollbackState: 'unused',
+            });
+        };
+
+        for (const reader of [
+            vi.fn(async () => { throw new Error('network error'); }),
+            vi.fn(async () => ({ revisions: [rev1, rev2], unreadableCount: 1 })),
+            vi.fn(async () => ({ revisions: [rev2], unreadableCount: 0 })),
+            vi.fn(async () => ({ revisions: [{ ...rev1, createdAt: '2027-01-26T10:00:00.000Z' }, rev2], unreadableCount: 0 })),
+        ]) {
+            const out = await runWithHistoryReader(reader);
+            const broadJump = out.result.c2.protocols.find(p => p.protocolId === 'field-standing-broad-jump');
+            const squat = out.result.c2.protocols.find(p => p.protocolId === 'strength-back-squat-1rm');
+            expect(broadJump?.status).toBe('inconclusive');
+            expect(broadJump?.reasons).toContain('observation_records_incomplete');
+            expect(squat?.status).toBe('pending');
+            expect(out.result.c2.status).toBe('inconclusive');
+            expect(out.result.overall).toBe('EXTEND');
+        }
     });
 });
