@@ -184,7 +184,20 @@ async function createDeps(overrides: Partial<DEvalReadoutDependencies> = {}): Pr
                 },
                 revision: '2026-12-20T10:00:00.000Z',
             })),
-            getPlacementHistoryState: vi.fn(async () => ({ status: 'AVAILABLE' as const, data: [], revision: '0' })),
+            getPlacementHistoryState: vi.fn(async () => ({
+                status: 'AVAILABLE' as const,
+                data: [{
+                    userId: 'u1',
+                    planId: 'p1',
+                    revision: 1,
+                    changedOn: BASELINE_START,
+                    recordedAt: `${BASELINE_START}T08:00:00.000Z`,
+                    previous: [],
+                    assignments: dates.map((d, i) => ({ sessionId: `s${i}`, date: d, status: 'completed' as const })),
+                    successors: {},
+                }],
+                revision: '1',
+            })),
             getRevisionState: vi.fn(async () => ({ status: 'AVAILABLE' as const, data: plan, revision: '1' })),
         },
         attempts: {
@@ -313,6 +326,7 @@ describe('DEvalReadoutService', () => {
             externalPlans: {
                 ...deps.externalPlans,
                 getPlacementState: vi.fn(async () => ({ status: 'MISSING' as const })),
+                getPlacementHistoryState: vi.fn(async () => ({ status: 'MISSING' as const })),
             },
         }, () => AS_OF_POST);
         const out = await service.run('u1', {
@@ -441,5 +455,72 @@ describe('DEvalReadoutService', () => {
         expect(out.result.c2.status).toBe('inconclusive');
         expect(out.result.c3.status).toBe('inconclusive');
         expect(out.result.overall).toBe('EXTEND');
+    });
+
+    it('marks affected C2 metrics inconclusive when a metric observation read is incomplete while preserving complete metrics', async () => {
+        const base = (await createDeps()).deps;
+        const { deps } = await createDeps({
+            observations: {
+                listCurrentObservationsForMetricWithDiagnostics: vi.fn(async (uid, metricId) => {
+                    const res = await base.observations.listCurrentObservationsForMetricWithDiagnostics(uid, metricId);
+                    if (metricId === 'standing_broad_jump_distance_cm') {
+                        return { observations: res.observations, unreadableCount: 1 };
+                    }
+                    return res;
+                }),
+            },
+        });
+
+        const out = await new DEvalReadoutService(deps, () => AS_OF_POST).run('u1', {
+            blockStartDate: BLOCK_START,
+            blockEndDate: BLOCK_END,
+            asOfDate: AS_OF_POST,
+            rollbackState: 'unused',
+        });
+
+        expect(out.input.c2.incompleteObservationMetricIds).toEqual(['standing_broad_jump_distance_cm']);
+        const broadJump = out.result.c2.protocols.find(p => p.protocolId === 'field-standing-broad-jump');
+        const squat = out.result.c2.protocols.find(p => p.protocolId === 'strength-back-squat-1rm');
+        expect(broadJump?.status).toBe('inconclusive');
+        expect(broadJump?.reasons).toContain('observation_records_incomplete');
+        expect(squat?.status).toBe('pending');
+        expect(out.result.c2.status).toBe('inconclusive');
+        expect(out.result.overall).toBe('EXTEND');
+    });
+
+    it('treats a plan header with an unparseable importedAt as an unverified revision', async () => {
+        const { deps, planHash } = await createDeps();
+        const service = new DEvalReadoutService({
+            ...deps,
+            externalPlans: {
+                ...deps.externalPlans,
+                getHeaderState: vi.fn(async () => ({
+                    status: 'AVAILABLE' as const,
+                    data: {
+                        userId: 'u1',
+                        planId: 'p1',
+                        revision: 1,
+                        title: 'Winter Block',
+                        startDate: BASELINE_START,
+                        weekCount: 8,
+                        contentHash: planHash,
+                        importedAt: 'not-an-iso-timestamp',
+                        supersededFrom: BASELINE_START,
+                        updatedAt: '2026-10-26T08:00:00.000Z',
+                    },
+                    revision: planHash,
+                })),
+            },
+        }, () => AS_OF_POST);
+
+        const out = await service.run('u1', {
+            blockStartDate: BLOCK_START,
+            blockEndDate: BLOCK_END,
+            asOfDate: AS_OF_POST,
+            rollbackState: 'unused',
+        });
+
+        expect(out.result.c1.block.unknown).toBe(10);
+        expect(out.result.c1.status).toBe('inconclusive');
     });
 });

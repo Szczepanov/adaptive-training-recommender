@@ -11,29 +11,30 @@ export type PlanGovernance = (date: string) => DEvalRawPlanRevision | null;
  * the criteria use the assignments as they stood on that date. Results are memoized per date.
  */
 export function createPlanGovernance(revisions: Iterable<DEvalRawPlanRevision>): PlanGovernance {
-    const dated = [...revisions].map(revision => {
+    const dated = [...revisions].flatMap(revision => {
         const importedMs = parseUtcTimestampMs(revision.importedAt);
-        return { revision, importedOn: importedMs === null ? null : getLocalDateString(new Date(importedMs)) };
+        if (importedMs === null) return [];
+        return [{ revision, importedMs, importedOn: getLocalDateString(new Date(importedMs)) }];
     });
     const cache = new Map<string, DEvalRawPlanRevision | null>();
 
     const resolve: PlanGovernance = date => {
-        const byPlan = new Map<string, DEvalRawPlanRevision>();
-        for (const { revision, importedOn } of dated) {
+        const byPlan = new Map<string, { revision: DEvalRawPlanRevision; importedMs: number }>();
+        for (const { revision, importedMs, importedOn } of dated) {
             const { effectiveFrom, startDate, endDate } = revision.horizon;
             if (effectiveFrom > date || startDate > date || endDate < date) continue;
-            if (importedOn !== null && importedOn > date) continue;
-            const current = byPlan.get(revision.planId);
+            if (importedOn > date) continue;
+            const current = byPlan.get(revision.planId)?.revision;
             if (
                 !current
                 || effectiveFrom > current.horizon.effectiveFrom
                 || (effectiveFrom === current.horizon.effectiveFrom && revision.revision > current.revision)
             ) {
-                byPlan.set(revision.planId, revision);
+                byPlan.set(revision.planId, { revision, importedMs });
             }
         }
         return [...byPlan.values()].sort((a, b) =>
-            b.importedAt.localeCompare(a.importedAt) || b.planId.localeCompare(a.planId))[0] ?? null;
+            b.importedMs - a.importedMs || b.revision.planId.localeCompare(a.revision.planId))[0]?.revision ?? null;
     };
 
     return date => {

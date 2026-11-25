@@ -37,6 +37,8 @@ import {
  */
 export interface DEvalC2Input {
     observations: readonly CurrentObservation[];
+    observationsComplete?: boolean;
+    incompleteObservationMetricIds?: readonly string[];
     attemptRecords?: readonly AssessmentAttempt[];
     blockStartDate: string;
     blockEndDate: string;
@@ -187,6 +189,7 @@ function evaluateProtocolMetric(params: {
     protocol: DEvalGoalBoundProtocol;
     metricId: string;
     observations: readonly CurrentObservation[];
+    observationsIncomplete: boolean;
     attemptById: ReadonlyMap<string, AssessmentAttempt>;
     blockStartDate: string;
     blockEndDate: string;
@@ -199,6 +202,7 @@ function evaluateProtocolMetric(params: {
         protocol,
         metricId,
         observations,
+        observationsIncomplete,
         attemptById,
         blockStartDate,
         blockEndDate,
@@ -249,7 +253,13 @@ function evaluateProtocolMetric(params: {
     });
 
     if (!beforeEntry) {
-        return makeResult('inconclusive', 'missing_before', ['missing_before_attempt']);
+        return makeResult(
+            'inconclusive',
+            'missing_before',
+            observationsIncomplete
+                ? ['observation_records_incomplete', 'missing_before_attempt']
+                : ['missing_before_attempt'],
+        );
     }
 
     const beforeSummary = toObservationSummary(beforeEntry.obs, beforeEntry.date);
@@ -267,6 +277,19 @@ function evaluateProtocolMetric(params: {
                 : [];
 
         const missingExtras = { before: beforeSummary, nonComparableAttemptsObserved };
+        if (observationsIncomplete) {
+            const comparability = nonComparableAttemptsObserved
+                ? 'non_comparable'
+                : asOfDate <= dueDate
+                    ? 'pending_after'
+                    : 'missing_after';
+            return makeResult(
+                'inconclusive',
+                comparability,
+                ['observation_records_incomplete', ...nonComparableReasons],
+                missingExtras,
+            );
+        }
         // No after attempt by the as-of date: a rollback on or before it precedes the eventual after attempt.
         if (isRollbackAffectingWindow(hasRollback, rollbackAtDate, blockStartDate, asOfDate)) {
             return makeResult(
@@ -329,6 +352,13 @@ function evaluateProtocolMetric(params: {
         progress,
     };
 
+    if (observationsIncomplete) {
+        const noNoise = !progress.reliability || progress.reasons.includes('no_reliability_estimate');
+        const comparability = progress.status === 'non_comparable' || progress.status === 'insufficient_evidence'
+            ? (noNoise ? 'no_stated_noise' : 'non_comparable')
+            : 'comparable';
+        return makeResult('inconclusive', comparability, ['observation_records_incomplete', ...progress.reasons], sharedExtras);
+    }
     if (progress.status === 'possible_decline' || progress.status === 'meaningful_decline') {
         return makeResult('fail', 'comparable', ['benchmark_declined_beyond_noise', ...progress.reasons], sharedExtras);
     }
@@ -391,6 +421,8 @@ export function evaluateC2Benchmarks(input: DEvalC2Input): DEvalC2Result {
     const hasRollback = input.rollbackBeforeAfterAttempt === true
         || (input.rollbackBeforeAfterAttempt === undefined && Boolean(input.rollbackAtDate));
     const callerReliability = input.reliabilityEstimates ?? [];
+    const incompleteMetrics = new Set(input.incompleteObservationMetricIds ?? []);
+    const allObservationsIncomplete = input.observationsComplete === false;
 
     const protocolResults: DEvalC2ProtocolEvaluation[] = protocols.map(protocol => {
         const dueDate = addDaysToLocalDateString(input.blockEndDate, protocol.retestIntervalDays);
@@ -408,6 +440,7 @@ export function evaluateC2Benchmarks(input: DEvalC2Input): DEvalC2Result {
             protocol,
             metricId,
             observations: input.observations,
+            observationsIncomplete: allObservationsIncomplete || incompleteMetrics.has(metricId),
             attemptById,
             blockStartDate: input.blockStartDate,
             blockEndDate: input.blockEndDate,
@@ -437,6 +470,9 @@ export function evaluateC2Benchmarks(input: DEvalC2Input): DEvalC2Result {
     const reasons = [...new Set(protocolResults.flatMap(protocol => protocol.reasons))];
 
     const knownLimits: string[] = [];
+    if (protocolResults.some(protocol => protocol.reasons.includes('observation_records_incomplete'))) {
+        knownLimits.push('One or more goal-bound metric observation reads were unavailable or contained unreadable records; affected C2 comparisons are inconclusive.');
+    }
     if (protocolResults.some(protocol => protocol.metrics.some(metric => metric.reliability?.source === 'literature_reference'))) {
         knownLimits.push('C2 uses OD10 literature_reference CV bounds unless personal repeatability or manual estimates exist for the series.');
     }

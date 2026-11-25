@@ -2,6 +2,7 @@
 
 import type { LedgerState } from '../../ledger/export/schema.ts';
 import { isProviderActivityRef, isStructuredExecutionRef } from '../../training-occurrence/models.ts';
+import { getLocalDateString } from '../../utils/localDate.ts';
 import { occurrenceLocalDate, revisionKey, type RevisionPlacementIndex } from './dEvalAssemblyC1.ts';
 import type { DEvalC3PerformedSessionInput, DEvalSessionIntensity } from './dEvalC3.ts';
 import { parseUtcTimestampMs } from './dEvalCriteria.ts';
@@ -15,15 +16,26 @@ function normalizeIntensity(raw: string | undefined | null): DEvalSessionIntensi
     return VALID_SESSION_INTENSITIES.has(lower) ? (lower as DEvalSessionIntensity) : null;
 }
 
+function overrideTimestampRelation(
+    iso: string | undefined,
+    asOfDate: string,
+    asOfMs: number | null,
+): 'known' | 'after' | 'unknown' {
+    const ms = parseUtcTimestampMs(iso);
+    if (ms === null) return 'unknown';
+    return (asOfMs !== null ? ms <= asOfMs : getLocalDateString(new Date(ms)) <= asOfDate) ? 'known' : 'after';
+}
+
 export function buildC3PerformedSessions(params: {
     raw: DEvalRawLedgerData;
     planIndex: RevisionPlacementIndex;
     execById: ReadonlyMap<string, DEvalRawExecution>;
     blockStartDate: string;
     effectiveEnd: string;
+    asOfDate: string;
     asOfMs: number | null;
 }): DEvalC3PerformedSessionInput[] {
-    const { raw, planIndex, execById, blockStartDate, effectiveEnd, asOfMs } = params;
+    const { raw, planIndex, execById, blockStartDate, effectiveEnd, asOfDate, asOfMs } = params;
     const activitiesById = new Map((raw.activities ?? []).map(act => [act.activityId, act]));
     const overridesByActivityId = raw.activityOverrides ?? {};
     const overridesReadable = raw.activityOverridesState !== 'unavailable' && raw.activityOverridesState !== 'invalid';
@@ -58,10 +70,20 @@ export function buildC3PerformedSessions(params: {
             const providerRefs = occ.sourceRefs.filter(isProviderActivityRef);
             for (const pRef of providerRefs) {
                 const override = overridesByActivityId[pRef.activityId];
-                const overrideIntensity = normalizeIntensity(override?.overriddenIntensity);
-                if (overrideIntensity) {
-                    performedIntensity = overrideIntensity;
-                    break;
+                if (override) {
+                    const createdRel = overrideTimestampRelation(override.createdAt, asOfDate, asOfMs);
+                    const updatedRel = overrideTimestampRelation(override.updatedAt, asOfDate, asOfMs);
+                    if (createdRel === 'known' && updatedRel === 'known') {
+                        const overrideIntensity = normalizeIntensity(override.overriddenIntensity);
+                        if (overrideIntensity) {
+                            performedIntensity = overrideIntensity;
+                            break;
+                        }
+                    } else if (createdRel !== 'after') {
+                        // A pre-cutoff override edited after the cutoff (or with unparseable timestamps)
+                        // cannot be reconstructed as of the cutoff, and Garmin tags cannot replace it.
+                        break;
+                    }
                 }
                 // An unreadable override may say `hard`, so the Garmin tag cannot stand in for it.
                 if (!overridesReadable) continue;

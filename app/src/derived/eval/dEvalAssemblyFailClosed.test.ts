@@ -8,11 +8,13 @@ import {
     BLOCK_START,
     emptyRaw,
     makeAllFlags,
+    makeCheckin,
     makeFlagsForDate,
     makeOccurrence,
     makePlanExec,
     makeRevision,
 } from './dEvalAssemblyFixtures.testSupport.ts';
+import { createPlanGovernance } from './dEvalPlanGovernance.ts';
 import { evaluateDEvalBlock } from './dEvalReadout.ts';
 
 function evaluate(raw: Partial<DEvalRawLedgerData>, options: Partial<DEvalAssemblyOptions> = {}) {
@@ -42,13 +44,15 @@ describe('C1 denominator when the overlay records only departures from the plan'
     it('counts authored sessions without a recorded placement as unknown instead of dropping them', () => {
         // Ten moved and done, eleven authored and never touched: the misses must not vanish into a pass.
         const movedDates = Array.from({ length: 10 }, (_, i) => addDaysToLocalDateString(BLOCK_START, i + 1));
+        const movedAssignments = movedDates.map((d, i) => ({ sessionId: `m${i}`, date: d, status: 'moved' as const }));
         const untouched = Array.from({ length: 11 }, (_, i) => session(`u${i}`, addDaysToLocalDateString(BLOCK_START, i)));
         const result = evaluate({
             planRevisions: [makeRevision([...movedDates.map((d, i) => session(`m${i}`, d)), ...untouched])],
             placements: [{
                 planId: 'p1', revision: 1,
-                assignments: movedDates.map((d, i) => ({ sessionId: `m${i}`, date: d, status: 'moved' as const })),
+                assignments: movedAssignments,
             }],
+            placementHistory: [event(BLOCK_START, [], movedAssignments)],
             executions: movedDates.map((d, i) => makePlanExec(`e${i}`, d, 'p1', 1, `m${i}`)),
             performedOccurrences: movedDates.map((d, i) => makeOccurrence(`o${i}`, d, `e${i}`)),
         });
@@ -96,7 +100,14 @@ describe('C1 denominator when the overlay records only departures from the plan'
         const superseded: PlacementAssignment = { sessionId: 'old', date: '2026-12-03', status: 'superseded' };
         const successors = { old: { revision: 2, sessionId: 'new' } };
         const result = evaluate({
-            planRevisions: [makeRevision([session('mv', '2026-11-30', true), session('old', '2026-11-30', true)])],
+            planRevisions: [
+                makeRevision([session('mv', '2026-11-30', true), session('old', '2026-11-30', true)]),
+                makeRevision([session('new', '2026-12-25')], {
+                    revision: 2,
+                    contentHash: 'h2',
+                    horizon: { effectiveFrom: '2026-12-25', startDate: '2026-12-25', endDate: '2026-12-31' },
+                }),
+            ],
             placements: [{ planId: 'p1', revision: 1, assignments: [moved, superseded], successors }],
             placementHistory: [
                 { ...event('2026-12-02', [], [superseded]), successors },
@@ -185,6 +196,7 @@ describe('C1 denominator when the overlay records only departures from the plan'
     });
 
     it('does not call a leftover assignment of a no-longer-governing revision missed', () => {
+        const assignments: PlacementAssignment[] = [{ sessionId: 's', date: '2026-12-03', status: 'moved' }];
         const result = evaluate({
             planRevisions: [
                 makeRevision([session('s', '2026-12-01')]),
@@ -193,15 +205,18 @@ describe('C1 denominator when the overlay records only departures from the plan'
                     horizon: { effectiveFrom: '2026-12-01', startDate: BLOCK_START, endDate: BLOCK_END },
                 }),
             ],
-            placements: [{ planId: 'p1', revision: 1, assignments: [{ sessionId: 's', date: '2026-12-03', status: 'moved' }] }],
+            placements: [{ planId: 'p1', revision: 1, assignments }],
+            placementHistory: [event('2026-11-25', [], assignments)],
         });
         expect(result.c1.block).toMatchObject({ planned: 1, missed: 0, unknown: 1 });
     });
 
     it('does not call a session missed while its +1-day completion window is still open', () => {
+        const assignments: PlacementAssignment[] = [{ sessionId: 's', date: '2026-12-02', status: 'planned' }];
         const raw = {
             planRevisions: [makeRevision([session('s', '2026-12-02')])],
-            placements: [{ planId: 'p1', revision: 1, assignments: [{ sessionId: 's', date: '2026-12-02', status: 'planned' as const }] }],
+            placements: [{ planId: 'p1', revision: 1, assignments }],
+            placementHistory: [event('2026-12-01', [], assignments)],
         };
         expect(evaluate(raw, { asOfDate: '2026-12-02' }).c1.block).toMatchObject({ missed: 0, unknown: 1 });
         expect(evaluate(raw, { asOfDate: '2026-12-03' }).c1.block).toMatchObject({ missed: 0, unknown: 1 });
@@ -259,5 +274,281 @@ describe('C3 and C4 fail-closed inputs', () => {
         expect(result.c4.reason).toContain('engineRecommendationsEnabled');
         expect(result.c2.status).toBe('inconclusive');
         expect(result.overall).toBe('EXTEND');
+    });
+});
+
+describe('PR #1287 review findings regression checks', () => {
+    it('does not allow incomplete observation reads to produce a C2 pass even when surviving observations pass', () => {
+        const base = emptyRaw();
+        const afterAtt = {
+            id: 'att-after-bench',
+            protocolRef: { id: 'strength-bench-press-1rm', revision: 1 },
+            state: 'completed' as const,
+            purpose: 'post_block' as const,
+            completedAt: '2027-02-01T10:00:00.000Z',
+        };
+        const afterObs = {
+            head: {
+                observationKey: 'att-after-bench:strength_1rm_kg',
+                assessmentAttemptId: 'att-after-bench',
+                metricId: 'strength_1rm_kg',
+                headRevision: 1,
+                createdAt: '2027-02-01T10:00:00.000Z',
+                updatedAt: '2027-02-01T10:00:00.000Z',
+            },
+            revision: {
+                observationKey: 'att-after-bench:strength_1rm_kg',
+                revision: 1,
+                metricId: 'strength_1rm_kg',
+                value: 102,
+                unit: 'kg',
+                protocolRef: { id: 'strength-bench-press-1rm', revision: 1 },
+                assessmentAttemptId: 'att-after-bench',
+                source: 'manual' as const,
+                validity: 'valid' as const,
+                observedAt: '2027-02-01T10:00:00.000Z',
+                comparisonSeriesKey: 'strength-bench-press-1rm:series-1',
+                comparisonCanonicalizationVersion: '1',
+                context: {},
+                createdAt: '2027-02-01T10:00:00.000Z',
+            },
+        };
+        const result = evaluate({
+            observationsState: 'invalid',
+            unreadableObservationsCount: 1,
+            observations: [...base.observations, afterObs],
+            attempts: [...(base.attempts ?? []), afterAtt],
+        }, { asOfDate: '2027-07-01' });
+
+        expect(result.c2.status).toBe('inconclusive');
+        expect(result.c2.reasons).toContain('observation_records_incomplete');
+        expect(result.overall).toBe('EXTEND');
+    });
+
+    it('excludes response completion fractions edited after a date-only as-of cutoff', () => {
+        const assignment: PlacementAssignment = { sessionId: 's1', date: '2026-11-28', status: 'planned' };
+        const raw: Partial<DEvalRawLedgerData> = {
+            planRevisions: [makeRevision([session('s1', '2026-11-28')])],
+            placements: [{ planId: 'p1', revision: 1, assignments: [assignment] }],
+            placementHistory: [event('2026-11-27', [], [assignment])],
+            executions: [makePlanExec('exec-1', '2026-11-28', 'p1', 1, 's1', 'h1', {
+                completionEvidence: undefined,
+            })],
+            performedOccurrences: [makeOccurrence('occ-1', '2026-11-28', 'exec-1')],
+            responses: [{
+                responseId: 'r1',
+                window: 'immediate',
+                date: '2026-11-28',
+                sourceSession: { kind: 'execution', id: 'exec-1', date: '2026-11-28' },
+                completedFraction: 1,
+                createdAt: '2026-11-28T11:00:00.000Z',
+                updatedAt: '2026-12-01T10:00:00.000Z',
+            }],
+        };
+
+        expect(outcomesOf(evaluate(raw, { asOfDate: '2026-11-30' }))).toEqual([['p1@1:s1@2026-11-28', 'unknown']]);
+        expect(outcomesOf(evaluate(raw, { asOfDate: '2026-12-01' }))).toEqual([['p1@1:s1@2026-11-28', 'completed']]);
+    });
+
+    it('does not treat a legacy overlay without placement history as a historical assignment snapshot', () => {
+        const moved: PlacementAssignment = { sessionId: 's1', date: '2026-12-11', status: 'moved', movedFrom: '2026-12-02' };
+        const result = evaluate({
+            planRevisions: [makeRevision([session('s1', '2026-12-02')])],
+            placements: [{
+                planId: 'p1',
+                revision: 1,
+                updatedAt: '2026-12-10T10:00:00.000Z',
+                assignments: [moved],
+            }],
+            placementHistory: [],
+            executions: [makePlanExec('exec-1', '2026-12-11', 'p1', 1, 's1', 'h1')],
+            performedOccurrences: [makeOccurrence('occ-1', '2026-12-11', 'exec-1')],
+        });
+
+        expect(outcomesOf(result)).toEqual([['p1@1:s1@2026-12-02', 'unknown']]);
+        expect(result.c1.block.moved).toBe(0);
+    });
+
+    it('withholds execution completion state and fraction before completedAt while keeping the link', () => {
+        const assignment: PlacementAssignment = { sessionId: 's1', date: '2026-11-28', status: 'planned' };
+        const raw: Partial<DEvalRawLedgerData> = {
+            planRevisions: [makeRevision([session('s1', '2026-11-28')])],
+            placements: [{ planId: 'p1', revision: 1, assignments: [assignment] }],
+            placementHistory: [event('2026-11-27', [], [assignment])],
+            executions: [makePlanExec('exec-1', '2026-11-28', 'p1', 1, 's1', 'h1', {
+                startedAt: '2026-11-28T22:30:00.000Z', // 23:30 Warsaw on Nov 28
+                completedAt: '2026-11-28T23:30:00.000Z', // 00:30 Warsaw on Nov 29
+            })],
+            performedOccurrences: [makeOccurrence('occ-1', '2026-11-28', 'exec-1', {
+                startedAt: '2026-11-28T22:30:00.000Z',
+                endedAt: '2026-11-28T23:30:00.000Z',
+            })],
+        };
+
+        const beforeMidnight = evaluate(raw, { asOfDate: '2026-11-28' });
+        expect(outcomesOf(beforeMidnight)).toEqual([['p1@1:s1@2026-11-28', 'unknown']]);
+        expect(beforeMidnight.c1.block.unplanned).toBe(0);
+
+        const beforeCompleteTs = evaluate(raw, { asOfDate: '2026-11-29', asOfTimestamp: '2026-11-28T23:00:00.000Z' });
+        expect(outcomesOf(beforeCompleteTs)).toEqual([['p1@1:s1@2026-11-28', 'unknown']]);
+        expect(beforeCompleteTs.c1.block.unplanned).toBe(0);
+
+        const afterComplete = evaluate(raw, { asOfDate: '2026-11-29' });
+        expect(outcomesOf(afterComplete)).toEqual([['p1@1:s1@2026-11-28', 'completed']]);
+    });
+
+    it('keeps the authored due date when a later reset removes a post-due-date move', () => {
+        const earlyMove: PlacementAssignment = { sessionId: 's', date: '2026-12-08', status: 'moved', movedFrom: '2026-12-03' };
+        const lateMove: PlacementAssignment = { sessionId: 's', date: '2026-12-18', status: 'moved', movedFrom: '2026-12-03' };
+        const firstReset: PlacementEvent = {
+            ...event('2026-12-01', [earlyMove], []),
+            previousState: 'invalid',
+            previousStateReason: 'current-schema-invalid',
+        };
+        const secondReset: PlacementEvent = {
+            ...event('2026-12-06', [lateMove], []),
+            previousState: 'invalid',
+            previousStateReason: 'current-schema-invalid',
+        };
+        const result = evaluate({
+            planRevisions: [makeRevision([session('s', '2026-12-03')])],
+            placements: [{ planId: 'p1', revision: 1, assignments: [] }],
+            placementHistory: [
+                event('2026-11-29', [], [earlyMove]),
+                firstReset,
+                event('2026-12-05', [], [lateMove]),
+                secondReset,
+            ],
+        });
+
+        expect(outcomesOf(result)).toEqual([['p1@1:s@2026-12-03', 'unknown']]);
+    });
+
+    it('retains a superseded predecessor as unknown when its successor revision is unverified', () => {
+        const superseded: PlacementAssignment = { sessionId: 'old', date: '2026-12-03', status: 'superseded' };
+        const successors = { old: { revision: 2, sessionId: 'new' } };
+        const result = evaluate({
+            planRevisions: [makeRevision([session('old', '2026-12-03')])],
+            planIssues: [{ planId: 'p1', revision: 2, reason: 'unverified_revision' }],
+            placements: [{ planId: 'p1', revision: 1, assignments: [superseded], successors }],
+            placementHistory: [{ ...event('2026-12-02', [], [superseded]), successors }],
+        });
+
+        expect(outcomesOf(result)).toEqual([['p1@1:old@2026-12-03', 'unknown']]);
+        expect(result.knownLimits.join(' ')).toContain('p1@2:new');
+    });
+
+    it('excludes post-cutoff activity overrides and withholds pre-cutoff overrides edited after cutoff in C3', () => {
+        const flagDay = '2026-11-28';
+        const flags = makeAllFlags(BLOCK_START, BLOCK_END, date => (date === flagDay ? { illness_anomaly: { active: true } } : {}));
+        const occ = makeOccurrence('occ', flagDay, undefined, {
+            sourceRefs: [{ kind: 'provider_activity', provider: 'garmin', activityId: 'g-1' }],
+        });
+        const activities = [{ activityId: 'g-1', date: flagDay, intensityTag: 'hard' }] as never;
+
+        // Created after Dec 3 cutoff -> ignored; Garmin 'hard' tag applies and C3 window stays open on Dec 1 (still flagged hard).
+        const createdAfter = evaluate({
+            flagEvaluations: flags,
+            performedOccurrences: [occ],
+            activities,
+            activityOverridesState: 'measured',
+            activityOverrides: {
+                'g-1': {
+                    userId: 'u1',
+                    activityId: 'g-1',
+                    date: flagDay,
+                    originalType: 'cycling',
+                    originalIntensityTag: 'hard',
+                    overriddenModality: 'Cycling',
+                    overriddenIntensity: 'easy',
+                    createdAt: '2026-12-05T10:00:00.000Z',
+                    updatedAt: '2026-12-05T10:00:00.000Z',
+                },
+            },
+        }, { asOfDate: '2026-12-03' });
+        expect(createdAfter.c3.flaggedHardSessions.map(s => s.sessionId)).toEqual(['occ']);
+
+        // Created before cutoff (Nov 28), edited after cutoff (Dec 5) -> historical intensity unknown, not easy and not Garmin.
+        const editedAfter = evaluate({
+            flagEvaluations: flags,
+            performedOccurrences: [occ],
+            activities,
+            activityOverridesState: 'measured',
+            activityOverrides: {
+                'g-1': {
+                    userId: 'u1',
+                    activityId: 'g-1',
+                    date: flagDay,
+                    originalType: 'cycling',
+                    originalIntensityTag: 'hard',
+                    overriddenModality: 'Cycling',
+                    overriddenIntensity: 'easy',
+                    createdAt: '2026-11-28T12:00:00.000Z',
+                    updatedAt: '2026-12-05T10:00:00.000Z',
+                },
+            },
+        }, { asOfDate: '2026-12-03' });
+        expect(editedAfter.c3.status).toBe('inconclusive');
+        expect(editedAfter.c3.incompleteFollowUps).toContain('unknown_intensity:occ');
+    });
+
+    it('applies the Warsaw date cutoff to flag captures when asOfTimestamp is absent', () => {
+        const flagDay = '2026-11-28';
+        const lateFlags = makeAllFlags(BLOCK_START, BLOCK_END, date => (
+            date === flagDay
+                ? { illness_anomaly: { active: true, evaluatedAt: '2026-11-29T06:00:00.000Z' } }
+                : {}
+        ));
+        const occ = makeOccurrence('occ', flagDay, undefined, {
+            sourceRefs: [{ kind: 'provider_activity', provider: 'garmin', activityId: 'g-1' }],
+        });
+        const activities = [{ activityId: 'g-1', date: flagDay, intensityTag: 'hard' }] as never;
+
+        const onFlagDay = evaluate({
+            flagEvaluations: lateFlags,
+            performedOccurrences: [occ],
+            activities,
+        }, { asOfDate: flagDay });
+        expect(onFlagDay.c3.flaggedHardSessions).toEqual([]);
+        expect(onFlagDay.c3.blindFlagDates).toContain(flagDay);
+
+        const nextDay = evaluate({
+            flagEvaluations: lateFlags,
+            performedOccurrences: [occ],
+            activities,
+        }, { asOfDate: '2026-11-29' });
+        expect(nextDay.c3.flaggedHardSessions.map(s => s.sessionId)).toEqual(['occ']);
+    });
+
+    it('treats a check-in edited after the cutoff as unknown instead of excusing a historical miss', () => {
+        const assignment: PlacementAssignment = { sessionId: 's1', date: '2026-11-28', status: 'planned' };
+        const editedCheckin = makeCheckin('2026-11-28', {
+            redFlags: { present: true, categories: ['neurological'] },
+            submittedAt: '2026-11-28T07:00:00.000Z',
+            createdAt: '2026-11-28T07:00:00.000Z',
+            updatedAt: '2026-12-01T09:00:00.000Z',
+        });
+        const raw: Partial<DEvalRawLedgerData> = {
+            planRevisions: [makeRevision([session('s1', '2026-11-28')])],
+            placements: [{ planId: 'p1', revision: 1, assignments: [assignment] }],
+            placementHistory: [event('2026-11-27', [], [assignment])],
+            checkins: [editedCheckin],
+        };
+
+        expect(outcomesOf(evaluate(raw, { asOfDate: '2026-11-30' }))).toEqual([['p1@1:s1@2026-11-28', 'unknown']]);
+        expect(outcomesOf(evaluate(raw, { asOfDate: '2026-11-30', asOfTimestamp: '2026-11-30T22:00:00.000Z' })))
+            .toEqual([['p1@1:s1@2026-11-28', 'unknown']]);
+        expect(outcomesOf(evaluate(raw, { asOfDate: '2026-12-01' }))).toEqual([['p1@1:s1@2026-11-28', 'flag_skip']]);
+    });
+
+    it('excludes plan revisions with unparseable importedAt from historical governance', () => {
+        const validRev = makeRevision([session('s1', '2026-11-28')], { revision: 1 });
+        const unparseableRev = makeRevision([session('s2', '2026-11-28')], {
+            revision: 2,
+            importedAt: 'not-a-timestamp',
+            horizon: { effectiveFrom: '2026-11-25', startDate: BLOCK_START, endDate: BLOCK_END },
+        });
+        const governingOn = createPlanGovernance([validRev, unparseableRev]);
+        expect(governingOn('2026-11-28')?.revision).toBe(1);
     });
 });

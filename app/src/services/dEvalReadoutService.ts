@@ -22,6 +22,7 @@ import {
     DEVAL_GOAL_BOUND_PROTOCOLS,
     DEVAL_MIN_BLOCK_DAYS,
     isLocalCalendarDate,
+    parseUtcTimestampMs,
 } from '../derived/eval/dEvalCriteria';
 import {
     evaluateDEvalBlock,
@@ -289,6 +290,7 @@ export class DEvalReadoutService {
             observationsState: assessmentsRead.observationsState,
             observations: assessmentsRead.observations,
             unreadableObservationsCount: assessmentsRead.unreadableObservationsCount,
+            incompleteObservationMetricIds: assessmentsRead.incompleteObservationMetricIds,
             attemptsState: assessmentsRead.attemptsState,
             attempts: assessmentsRead.attempts,
             unreadableAttemptsCount: assessmentsRead.unreadableAttemptsCount,
@@ -314,6 +316,7 @@ export class DEvalReadoutService {
         observationsState: DEvalSourceReadState;
         observations: CurrentObservation[];
         unreadableObservationsCount: number;
+        incompleteObservationMetricIds: string[];
     }> {
         const protocolIds = DEVAL_GOAL_BOUND_PROTOCOLS.map(protocol => protocol.protocolId);
         const metricIds = goalBoundMetricIds();
@@ -329,8 +332,8 @@ export class DEvalReadoutService {
             Promise.all(
                 metricIds.map(metricId =>
                     this.deps.observations.listCurrentObservationsForMetricWithDiagnostics(userId, metricId)
-                        .then(res => ({ ok: true as const, ...res }))
-                        .catch(() => ({ ok: false as const, observations: [], unreadableCount: 0 })),
+                        .then(res => ({ ok: true as const, metricId, ...res }))
+                        .catch(() => ({ ok: false as const, metricId, observations: [], unreadableCount: 0 })),
                 ),
             ),
         ]);
@@ -352,14 +355,19 @@ export class DEvalReadoutService {
         }
 
         const obsMap = new Map<string, CurrentObservation>();
+        const incompleteObservationMetricIds = new Set<string>();
         let unreadableObservationsCount = 0;
         let observationsFailed = false;
         for (const res of observationResults) {
             if (!res.ok) {
                 observationsFailed = true;
+                incompleteObservationMetricIds.add(res.metricId);
                 continue;
             }
             unreadableObservationsCount += res.unreadableCount;
+            if (res.unreadableCount > 0) {
+                incompleteObservationMetricIds.add(res.metricId);
+            }
             for (const obs of res.observations) {
                 obsMap.set(obs.revision.observationKey, obs);
             }
@@ -385,6 +393,7 @@ export class DEvalReadoutService {
             observationsState,
             observations: [...obsMap.values()],
             unreadableObservationsCount,
+            incompleteObservationMetricIds: [...incompleteObservationMetricIds].sort(),
         };
     }
 
@@ -516,7 +525,7 @@ export class DEvalReadoutService {
                     const expectedHash = revision === header.data.revision ? header.data.contentHash : activation?.contentHash;
                     const importedAt = revision === header.data.revision ? header.data.importedAt : activation?.activatedAt;
 
-                    if (!expectedHash || !importedAt || (await computeContentHash(plan.data)) !== expectedHash) {
+                    if (!expectedHash || !importedAt || parseUtcTimestampMs(importedAt) === null || (await computeContentHash(plan.data)) !== expectedHash) {
                         planIssues.push({ planId, revision, reason: 'unverified_revision' });
                         // With a recorded hash it may have governed dates in the window, so which sessions
                         // were planned is unknown. A legacy-overlay revision never governed on its own.

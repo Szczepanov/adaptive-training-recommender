@@ -139,9 +139,15 @@ export function assembleDEvalBlockInput(
     if (!attemptsReliable) {
         extraKnownLimits.push('Assessment attempt records were unavailable, truncated, or contained unreadable rows; C2 cannot verify attempt completion.');
     }
-    if (raw.observationsState !== 'measured' || (raw.unreadableObservationsCount ?? 0) > 0) {
+    const incompleteObservationMetricIds = raw.incompleteObservationMetricIds ?? [];
+    const hasObservationReadIssue = raw.observationsState === 'unavailable'
+        || raw.observationsState === 'invalid'
+        || (raw.unreadableObservationsCount ?? 0) > 0
+        || incompleteObservationMetricIds.length > 0;
+    if (hasObservationReadIssue) {
         extraKnownLimits.push('Metric observations were unavailable or contained unreadable records.');
     }
+    const observationsComplete = !hasObservationReadIssue || incompleteObservationMetricIds.length > 0;
 
     const performedSessions = buildC3PerformedSessions({
         raw,
@@ -149,6 +155,7 @@ export function assembleDEvalBlockInput(
         execById,
         blockStartDate,
         effectiveEnd: effectiveBlockEnd,
+        asOfDate,
         asOfMs,
     });
 
@@ -194,6 +201,8 @@ export function assembleDEvalBlockInput(
         },
         c2: {
             observations: raw.observations,
+            observationsComplete,
+            ...(incompleteObservationMetricIds.length > 0 ? { incompleteObservationMetricIds } : {}),
             attemptRecords: attemptsReliable ? raw.attempts : undefined,
             rollbackBeforeAfterAttempt: rollbackState !== 'unused',
             rollbackAtDate,

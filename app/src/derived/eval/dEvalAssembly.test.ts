@@ -112,6 +112,19 @@ describe('assembleDEvalBlockInput', () => {
             },
         ];
 
+        const placementHistoryRev2: PlacementEvent[] = [
+            {
+                userId: 'u1',
+                planId: 'p1',
+                revision: 2,
+                changedOn: '2026-11-23',
+                recordedAt: '2026-11-23T08:00:00.000Z',
+                previous: [{ sessionId: 's-succ', date: '2026-12-18', status: 'planned' }],
+                assignments: [{ sessionId: 's-succ', date: '2026-12-18', status: 'completed' }],
+                successors: {},
+            },
+        ];
+
         const placements: DEvalRawPlacementOverlay[] = [
             {
                 planId: 'p1',
@@ -144,7 +157,7 @@ describe('assembleDEvalBlockInput', () => {
         const raw = emptyRaw({
             planRevisions,
             placements,
-            placementHistory: placementHistoryRev1,
+            placementHistory: [...placementHistoryRev1, ...placementHistoryRev2],
             executions,
             performedOccurrences,
         });

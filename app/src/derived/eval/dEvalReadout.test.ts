@@ -1211,4 +1211,47 @@ describe('review regressions (PR #1284)', () => {
         expect(withAfterCompletedAt(undefined)).toBe('fail');
         expect(withAfterCompletedAt('not-a-timestamp')).toBe('pending');
     });
+
+    it('C2 marks affected metrics inconclusive when observation reads are incomplete, while preserving complete metrics', () => {
+        const jumpBefore = jump('before-jump', '2026-10-22T09:00:00Z', 240);
+        const jumpAfter = jump('after-jump', '2027-01-18T09:00:00Z', 242);
+        const cmjBefore = makeObservation({
+            observationKey: 'obs-cmj-before',
+            protocolId: 'field-wall-touch-cmj',
+            metricId: 'wall_touch_cmj_height_cm',
+            value: 55,
+            unit: 'cm',
+            observedAt: '2026-10-22T09:00:00Z',
+            attemptId: 'att-cmj-b',
+        });
+        const cmjAfter = makeObservation({
+            observationKey: 'obs-cmj-after',
+            protocolId: 'field-wall-touch-cmj',
+            metricId: 'wall_touch_cmj_height_cm',
+            value: 56,
+            unit: 'cm',
+            observedAt: '2027-01-18T09:00:00Z',
+            attemptId: 'att-cmj-a',
+        });
+        const bothProtocols = DEVAL_GOAL_BOUND_PROTOCOLS.filter(
+            p => p.protocolId === 'field-standing-broad-jump' || p.protocolId === 'field-wall-touch-cmj',
+        );
+        const obs = [jumpBefore, jumpAfter, cmjBefore, cmjAfter];
+
+        const metricScoped = evaluateC2Benchmarks(c2Input(obs, {
+            protocols: bothProtocols,
+            incompleteObservationMetricIds: ['standing_broad_jump_distance_cm'],
+        }));
+        expect(metricScoped.status).toBe('inconclusive');
+        expect(metricScoped.protocols.find(p => p.protocolId === 'field-standing-broad-jump')?.status).toBe('inconclusive');
+        expect(metricScoped.protocols.find(p => p.protocolId === 'field-standing-broad-jump')?.reasons).toContain('observation_records_incomplete');
+        expect(metricScoped.protocols.find(p => p.protocolId === 'field-wall-touch-cmj')?.status).toBe('pass');
+
+        const allIncomplete = evaluateC2Benchmarks(c2Input(obs, {
+            protocols: bothProtocols,
+            observationsComplete: false,
+        }));
+        expect(allIncomplete.status).toBe('inconclusive');
+        expect(allIncomplete.protocols.every(p => p.status === 'inconclusive')).toBe(true);
+    });
 });

@@ -117,6 +117,7 @@ export interface DEvalRawLedgerData {
     observationsState: DEvalSourceReadState;
     observations: readonly CurrentObservation[];
     unreadableObservationsCount?: number;
+    incompleteObservationMetricIds?: readonly string[];
     attemptsState: DEvalSourceReadState;
     attempts?: readonly AssessmentAttempt[];
     unreadableAttemptsCount?: number;

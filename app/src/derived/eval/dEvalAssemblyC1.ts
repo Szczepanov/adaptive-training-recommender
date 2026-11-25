@@ -37,6 +37,16 @@ export function occurrenceLocalDate(occ: PerformedTrainingOccurrence): string | 
     return null;
 }
 
+function isTimestampAfterCutoff(
+    iso: string | null | undefined,
+    asOfDate: string,
+    asOfMs: number | null,
+): boolean {
+    const ms = parseUtcTimestampMs(iso);
+    if (ms === null) return true;
+    return asOfMs !== null ? ms > asOfMs : getLocalDateString(new Date(ms)) > asOfDate;
+}
+
 function resolveResponseCompletedFraction(
     responses: readonly DEvalRawResponse[],
     asOfDate: string,
@@ -45,9 +55,11 @@ function resolveResponseCompletedFraction(
     const valid = responses
         .filter(resp => {
             if (resp.date > asOfDate) return false;
-            if (asOfMs !== null) {
-                const updatedMs = parseUtcTimestampMs(resp.updatedAt) ?? parseUtcTimestampMs(resp.createdAt);
-                if (updatedMs !== null && updatedMs > asOfMs) return false;
+            if (resp.updatedAt !== undefined && isTimestampAfterCutoff(resp.updatedAt, asOfDate, asOfMs)) {
+                return false;
+            }
+            if (resp.createdAt !== undefined && isTimestampAfterCutoff(resp.createdAt, asOfDate, asOfMs)) {
+                return false;
             }
             return resp.completedFraction !== undefined;
         })
@@ -130,7 +142,7 @@ export function indexPlans(raw: DEvalRawLedgerData): RevisionPlacementIndex {
     }
 
     const governingOn = createPlanGovernance(verifiedRevMap.values());
-    const unrecordedSessions = indexUnrecordedSessions(verifiedRevMap, eventsByRev, overlaysByRev, governingOn);
+    const unrecordedSessions = indexUnrecordedSessions(verifiedRevMap, eventsByRev, governingOn);
     return {
         verifiedRevMap, overlaysByRev, eventsByRev, issueReasonsByRev, issueReasonsByPlan, governingOn, unrecordedSessions,
     };
@@ -147,7 +159,6 @@ function snapshotOverlayOnDate(
 
 function findRecordedSuccessor(
     events: readonly PlacementEvent[],
-    overlay: DEvalRawPlacementOverlay | undefined,
     sessionId: string,
     asOfDate: string,
 ): { revision: number; sessionId: string } | null {
@@ -156,7 +167,7 @@ function findRecordedSuccessor(
         const successor = priorEvents[i]!.successors[sessionId];
         if (successor) return successor;
     }
-    return overlay?.successors?.[sessionId] ?? null;
+    return null;
 }
 
 export function buildExecutionAndLinkIndexes(
@@ -171,11 +182,26 @@ export function buildExecutionAndLinkIndexes(
 
     for (const exec of raw.executions) {
         if (exec.date > asOfDate) continue;
-        if (asOfMs !== null) {
-            const startedMs = parseUtcTimestampMs(exec.startedAt);
-            if (startedMs !== null && startedMs > asOfMs) continue;
+        const startedMs = parseUtcTimestampMs(exec.startedAt);
+        if (startedMs !== null) {
+            const startedAfter = asOfMs !== null
+                ? startedMs > asOfMs
+                : getLocalDateString(new Date(startedMs)) > asOfDate;
+            if (startedAfter) continue;
         }
-        execById.set(exec.executionId, exec);
+        const completedAfterCutoff = (exec.state === 'completed' || exec.state === 'abandoned')
+            && exec.completedAt !== undefined
+            && exec.completedAt !== null
+            && isTimestampAfterCutoff(exec.completedAt, asOfDate, asOfMs);
+        const effectiveExec: DEvalRawExecution = completedAfterCutoff
+            ? {
+                ...exec,
+                state: 'in_progress',
+                completedAt: null,
+                completionEvidence: undefined,
+            }
+            : exec;
+        execById.set(exec.executionId, effectiveExec);
         const src = exec.sessionSource;
         if (src.kind === 'external_plan' && src.planId && src.revision !== undefined && src.sessionId) {
             const key = sessionKey(src.planId, src.revision, src.sessionId);
@@ -185,7 +211,7 @@ export function buildExecutionAndLinkIndexes(
                 continue;
             }
             const list = execsBySession.get(key) ?? [];
-            list.push(exec);
+            list.push(effectiveExec);
             execsBySession.set(key, list);
         }
     }
@@ -250,27 +276,6 @@ function shownDateBeforePlacement(assignment: PlacementAssignment, session: DEva
 }
 
 /**
- * The last event that removed a session's recorded assignment before it came due. Only an overlay
- * reset does this; the session then returns to its plan date, so earlier placements say nothing more.
- */
-function findRemovalBeforeDue(
-    events: readonly PlacementEvent[],
-    sessionId: string,
-): { index: number; changedOn: string; recordedDate: string } | null {
-    const dateIn = (items: readonly PlacementAssignment[]) => items.find(item => item.sessionId === sessionId)?.date ?? null;
-    let held = events.length > 0 ? dateIn(events[0]!.previous) : null;
-    let removal: { index: number; changedOn: string; recordedDate: string } | null = null;
-    events.forEach((event, index) => {
-        const next = dateIn(event.assignments);
-        if (held !== null && next === null) {
-            removal = held >= event.changedOn ? { index, changedOn: event.changedOn, recordedDate: held } : null;
-        }
-        held = next;
-    });
-    return removal;
-}
-
-/**
  * Dates on which a session came due without any recorded assignment, or null when its assignment is
  * recorded from the start or was placed on or before the date it was shown on.
  *
@@ -282,39 +287,63 @@ function findRemovalBeforeDue(
 function unrecordedDueDates(
     session: DEvalRawPlanSession,
     events: readonly PlacementEvent[],
-    overlay: DEvalRawPlacementOverlay | undefined,
 ): { dates: readonly string[] } | null {
-    const isSession = (item: PlacementAssignment) => item.sessionId === session.id;
-    const removal = findRemovalBeforeDue(events, session.id);
-    if (
-        removal === null
-        && (events.length > 0 ? events[0]!.previous.some(isSession) : overlay?.assignments.some(isSession))
-    ) return null;
+    const findAssignment = (items: readonly PlacementAssignment[]) =>
+        items.find(item => item.sessionId === session.id) ?? null;
 
-    const firstEvent = events.slice(removal === null ? 0 : removal.index + 1).find(item => item.assignments.some(isSession));
-    if (firstEvent) {
-        const shown = shownDateBeforePlacement(firstEvent.assignments.find(isSession)!, session);
-        return firstEvent.changedOn <= shown ? null : { dates: [shown] };
+    let held = events.length > 0 ? (findAssignment(events[0]!.previous)?.date ?? null) : null;
+    let lastRemoval: { changedOn: string; recordedDate: string } | null = null;
+
+    for (const event of events) {
+        const nextAssignment = findAssignment(event.assignments);
+        const next = nextAssignment?.date ?? null;
+
+        if (held === null && nextAssignment !== null) {
+            const rawShown = shownDateBeforePlacement(nextAssignment, session);
+            const shown = lastRemoval !== null && rawShown < lastRemoval.changedOn
+                ? lastRemoval.recordedDate
+                : rawShown;
+            if (event.changedOn > shown) {
+                // Already came due unrecorded on `shown`; no later move or reset can erase it.
+                return { dates: [shown] };
+            }
+            held = next;
+        } else if (held !== null && next === null) {
+            if (held < event.changedOn) {
+                // Already came due on its recorded date before the reset; overlay history owns it.
+                return null;
+            }
+            lastRemoval = { changedOn: event.changedOn, recordedDate: held };
+            held = null;
+        } else if (held !== null && next !== null) {
+            if (held < event.changedOn && next !== held) {
+                // Already came due on `held` before being moved later; overlay history owns it.
+                return null;
+            }
+            held = next;
+        }
     }
+
+    if (held !== null) return null;
+
     const planDates = session.floating
         ? Array.from({ length: 7 }, (_, offset) => addDaysToLocalDateString(session.authoredDate, offset))
         : [session.authoredDate];
-    if (removal === null) return { dates: planDates };
-    const remaining = planDates.filter(date => date >= removal.changedOn);
-    return { dates: remaining.length > 0 ? remaining : [removal.recordedDate] };
+    if (lastRemoval === null) return { dates: planDates };
+    const remaining = planDates.filter(date => date >= lastRemoval.changedOn);
+    return { dates: remaining.length > 0 ? remaining : [lastRemoval.recordedDate] };
 }
 
 /** Sessions that came due without a recorded assignment, with the governed dates they may have been due on. */
 function indexUnrecordedSessions(
     verifiedRevMap: ReadonlyMap<string, DEvalRawPlanRevision>,
     eventsByRev: ReadonlyMap<string, readonly PlacementEvent[]>,
-    overlaysByRev: ReadonlyMap<string, DEvalRawPlacementOverlay>,
     governingOn: PlanGovernance,
 ): Map<string, readonly string[]> {
     const unrecorded = new Map<string, readonly string[]>();
     for (const [revKey, rev] of verifiedRevMap) {
         for (const session of rev.sessions) {
-            const due = unrecordedDueDates(session, eventsByRev.get(revKey) ?? [], overlaysByRev.get(revKey));
+            const due = unrecordedDueDates(session, eventsByRev.get(revKey) ?? []);
             const governed = due?.dates.filter(date => governingOn(date) === rev) ?? [];
             if (governed.length > 0) unrecorded.set(sessionKey(rev.planId, rev.revision, session.id), governed);
         }
@@ -399,8 +428,12 @@ export function assembleC1Window(params: {
             .filter(event => event.changedOn <= effectiveEnd && !hasRecordedPrevious(event))
             .at(-1);
 
+        const hasUndatedOverlay = events.length === 0 && (overlay?.assignments.length ?? 0) > 0;
         if (hasHistoryOrOverlayFailure) {
             knownLimits.push(`Placement or placement history for ${revKey} was truncated or unreadable.`);
+        }
+        if (hasUndatedOverlay) {
+            knownLimits.push(`Placement overlay for ${revKey} has no dated placement history; historical assignments are unknown.`);
         }
 
         for (let date = windowStart; date <= effectiveEnd; date = addDaysToLocalDateString(date, 1)) {
@@ -425,12 +458,24 @@ export function assembleC1Window(params: {
                     if (wasDueBefore) continue;
                 }
 
-                // A future session replaced on or before its due date is counted once through its successor.
+                // A future session replaced on or before its due date is counted once through its verified successor.
                 if (assignment.status === 'superseded') {
-                    const successor = findRecordedSuccessor(events, overlay, assignment.sessionId, date);
+                    const successor = findRecordedSuccessor(events, assignment.sessionId, date);
                     if (successor) {
-                        seenSessionKeys.add(key);
-                        continue;
+                        const successorRevKey = revisionKey(planId, successor.revision);
+                        const successorRev = planIndex.verifiedRevMap.get(successorRevKey);
+                        const successorVerified = Boolean(
+                            successorRev
+                            && !planIndex.issueReasonsByRev.get(successorRevKey)?.has('unverified_revision')
+                            && successorRev.sessions.some(item => item.id === successor.sessionId),
+                        );
+                        if (successorVerified) {
+                            seenSessionKeys.add(key);
+                            continue;
+                        }
+                        knownLimits.push(
+                            `Superseded assignment ${key} points to unverified or missing successor ${successorRevKey}:${successor.sessionId}; kept as unknown.`,
+                        );
                     }
                 }
 
@@ -454,6 +499,7 @@ export function assembleC1Window(params: {
                 const evidenceComplete = baseReadsComplete
                     && !missUnconfirmed
                     && !hasHistoryOrOverlayFailure
+                    && !hasUndatedOverlay
                     && !priorUnknownBeforeRepair
                     && !missingSuccessor;
 
