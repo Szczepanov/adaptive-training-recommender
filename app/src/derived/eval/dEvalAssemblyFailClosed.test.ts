@@ -35,7 +35,8 @@ function event(changedOn: string, previous: PlacementAssignment[], assignments: 
     };
 }
 
-const session = (id: string, authoredDate: string) => ({ id, authoredDate, gating: { intensity: 'easy' as const } });
+const session = (id: string, authoredDate: string, floating = false) =>
+    ({ id, authoredDate, floating, gating: { intensity: 'easy' as const } });
 
 describe('C1 denominator when the overlay records only departures from the plan', () => {
     it('counts authored sessions without a recorded placement as unknown instead of dropping them', () => {
@@ -68,6 +69,65 @@ describe('C1 denominator when the overlay records only departures from the plan'
             ['p1@1:late-move@2026-11-25', 'unknown'],
             ['p1@1:late-drop@2026-11-26', 'unknown'],
         ]);
+    });
+
+    it('keeps confirmed misses of floating sessions moved on the day they were shown', () => {
+        // Week of Mon 2026-11-23 (before the Tuesday block start), shown and moved on Thu 2026-11-26, never done.
+        const ids = ['f0', 'f1', 'f2'];
+        const missed = ids.map(id => ({ sessionId: id, date: '2026-11-27', status: 'moved' as const, movedFrom: '2026-11-26' }));
+        const doneDates = Array.from({ length: 8 }, (_, i) => addDaysToLocalDateString('2026-12-01', i));
+        const done = doneDates.map((d, i) => ({ sessionId: `m${i}`, date: d, status: 'moved' as const, movedFrom: d }));
+        const result = evaluate({
+            planRevisions: [makeRevision([
+                ...ids.map(id => session(id, '2026-11-23', true)),
+                ...doneDates.map((d, i) => session(`m${i}`, d)),
+            ])],
+            placements: [{ planId: 'p1', revision: 1, assignments: [...missed, ...done] }],
+            placementHistory: [event('2026-11-26', [], [...missed, ...done])],
+            executions: doneDates.map((d, i) => makePlanExec(`e${i}`, d, 'p1', 1, `m${i}`)),
+            performedOccurrences: doneDates.map((d, i) => makeOccurrence(`o${i}`, d, `e${i}`)),
+        });
+        expect(result.c1.block).toMatchObject({ planned: 11, moved: 8, missed: 3, unknown: 0 });
+        expect(result.c1.status).toBe('fail');
+    });
+
+    it('counts a floating session moved or replaced in time exactly once, through its recorded placement', () => {
+        const moved: PlacementAssignment = { sessionId: 'mv', date: '2026-12-04', status: 'moved', movedFrom: '2026-12-03' };
+        const superseded: PlacementAssignment = { sessionId: 'old', date: '2026-12-03', status: 'superseded' };
+        const successors = { old: { revision: 2, sessionId: 'new' } };
+        const result = evaluate({
+            planRevisions: [makeRevision([session('mv', '2026-11-30', true), session('old', '2026-11-30', true)])],
+            placements: [{ planId: 'p1', revision: 1, assignments: [moved, superseded], successors }],
+            placementHistory: [
+                { ...event('2026-12-02', [], [superseded]), successors },
+                { ...event('2026-12-03', [superseded], [moved, superseded]), successors },
+            ],
+            executions: [makePlanExec('e', '2026-12-04', 'p1', 1, 'mv')],
+            performedOccurrences: [makeOccurrence('o', '2026-12-04', 'e')],
+        });
+        expect(outcomesOf(result)).toEqual([['p1@1:mv@2026-12-04', 'moved']]);
+    });
+
+    it('emits a late-moved floating session on the date it was shown, not its week start', () => {
+        const moved: PlacementAssignment = { sessionId: 'f', date: '2026-12-06', status: 'moved', movedFrom: '2026-12-03' };
+        const result = evaluate({
+            planRevisions: [makeRevision([session('f', '2026-11-30', true)])],
+            placements: [{ planId: 'p1', revision: 1, assignments: [moved] }],
+            placementHistory: [event('2026-12-05', [], [moved])],
+        });
+        expect(outcomesOf(result)).toEqual([['p1@1:f@2026-12-03', 'unknown']]);
+    });
+
+    it('keeps untouched floating sessions unknown around a mid-week block start or import', () => {
+        const straddling = evaluate({ planRevisions: [makeRevision([session('f', '2026-11-23', true)])] });
+        expect(outcomesOf(straddling)).toEqual([['p1@1:f@2026-11-24', 'unknown']]);
+        const importedMidWeek = evaluate({
+            planRevisions: [makeRevision([session('f', '2026-11-30', true), session('monday', '2026-11-30')], {
+                importedAt: '2026-12-02T08:00:00.000Z',
+                horizon: { effectiveFrom: '2026-11-30', startDate: '2026-11-30', endDate: BLOCK_END },
+            })],
+        });
+        expect(outcomesOf(importedMidWeek)).toEqual([['p1@1:f@2026-12-02', 'unknown']]);
     });
 
     it('does not count a session moved out of the block on or before its authored date', () => {

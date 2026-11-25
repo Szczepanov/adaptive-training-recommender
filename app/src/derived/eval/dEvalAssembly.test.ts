@@ -32,12 +32,12 @@ describe('assembleDEvalBlockInput', () => {
 
         const planRevisions: DEvalRawPlanRevision[] = [
             makeRevision([
-                ...baselineDates.map((d, i) => ({ id: `b${i}`, authoredDate: d, gating: { intensity: 'easy' as const } })),
-                ...blockDates.map((d, i) => ({ id: `s${i}`, authoredDate: d, gating: { intensity: 'easy' as const } })),
-                { id: 's-sup', authoredDate: '2026-12-18', gating: { intensity: 'moderate' as const } },
+                ...baselineDates.map((d, i) => ({ id: `b${i}`, authoredDate: d, floating: false, gating: { intensity: 'easy' as const } })),
+                ...blockDates.map((d, i) => ({ id: `s${i}`, authoredDate: d, floating: false, gating: { intensity: 'easy' as const } })),
+                { id: 's-sup', authoredDate: '2026-12-18', floating: false, gating: { intensity: 'moderate' as const } },
             ]),
             makeRevision(
-                [{ id: 's-succ', authoredDate: '2026-12-18', gating: { intensity: 'moderate' as const } }],
+                [{ id: 's-succ', authoredDate: '2026-12-18', floating: false, gating: { intensity: 'moderate' as const } }],
                 {
                     revision: 2,
                     contentHash: 'h2',
@@ -227,7 +227,7 @@ describe('assembleDEvalBlockInput', () => {
     it('fails closed on unreadable assessment attempts, truncated placement history, and conflicting responses', () => {
         const raw = emptyRaw({
             unreadableAttemptsCount: 1,
-            planRevisions: [makeRevision([{ id: 's1', authoredDate: '2026-11-25', gating: { intensity: 'easy' } }])],
+            planRevisions: [makeRevision([{ id: 's1', authoredDate: '2026-11-25', floating: false, gating: { intensity: 'easy' } }])],
             placements: [{
                 planId: 'p1',
                 revision: 1,

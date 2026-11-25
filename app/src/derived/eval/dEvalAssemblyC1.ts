@@ -11,13 +11,14 @@ import { isStructuredExecutionRef, type PerformedTrainingOccurrence } from '../.
 import { addDaysToLocalDateString, getLocalDateString } from '../../utils/localDate.ts';
 import type { DEvalC1BlockInput, DEvalC1PlannedSessionInput } from './dEvalC1.ts';
 import { isLocalCalendarDate, parseUtcTimestampMs } from './dEvalCriteria.ts';
-import { governingPlanRevision } from './dEvalPlanGovernance.ts';
+import { createPlanGovernance, type PlanGovernance } from './dEvalPlanGovernance.ts';
 import type {
     DEvalRawExecution,
     DEvalRawLedgerData,
     DEvalRawPlacementOverlay,
     DEvalRawPlanIssue,
     DEvalRawPlanRevision,
+    DEvalRawPlanSession,
     DEvalRawResponse,
 } from './dEvalRawLedger.ts';
 
@@ -82,6 +83,9 @@ export interface RevisionPlacementIndex {
     eventsByRev: Map<string, PlacementEvent[]>;
     issueReasonsByRev: Map<string, Set<DEvalRawPlanIssue['reason']>>;
     issueReasonsByPlan: Map<string, Set<DEvalRawPlanIssue['reason']>>;
+    governingOn: PlanGovernance;
+    /** Session key -> governed dates on which it came due with no recorded assignment. */
+    unrecordedSessions: ReadonlyMap<string, readonly string[]>;
 }
 
 export function indexPlans(raw: DEvalRawLedgerData): RevisionPlacementIndex {
@@ -125,7 +129,11 @@ export function indexPlans(raw: DEvalRawLedgerData): RevisionPlacementIndex {
         list.sort((a, b) => a.changedOn.localeCompare(b.changedOn) || a.recordedAt.localeCompare(b.recordedAt));
     }
 
-    return { verifiedRevMap, overlaysByRev, eventsByRev, issueReasonsByRev, issueReasonsByPlan };
+    const governingOn = createPlanGovernance(verifiedRevMap.values());
+    const unrecordedSessions = indexUnrecordedSessions(verifiedRevMap, eventsByRev, overlaysByRev, governingOn);
+    return {
+        verifiedRevMap, overlaysByRev, eventsByRev, issueReasonsByRev, issueReasonsByPlan, governingOn, unrecordedSessions,
+    };
 }
 
 function snapshotOverlayOnDate(
@@ -235,39 +243,57 @@ export function buildExecutionAndLinkIndexes(
     return { execById, execsBySession, unverifiedSessions, linksBySession };
 }
 
-interface AuthoredDueSession {
-    key: string;
-    date: string;
+/** The date a session was shown on just before the first placement that recorded it. */
+function shownDateBeforePlacement(assignment: PlacementAssignment, session: DEvalRawPlanSession): string {
+    if (assignment.status === 'moved') return assignment.movedFrom ?? session.authoredDate;
+    return assignment.date;
 }
 
 /**
- * Sessions still unplaced on their authored date, under the revision governing that date, keyed by
- * session. The overlay records only departures from the plan (a move, drop or replacement), so a
- * session done or missed as authored has no assignment, and one moved or dropped late has none on
- * its due date. Where the athlete saw it depended on that week's fixed activities, which are not
- * kept, so its assignment history cannot be determined.
+ * Dates on which a session came due without any recorded assignment, or null when its assignment is
+ * recorded from the start or was placed on or before the date it was shown on.
+ *
+ * The overlay records only departures from the plan (a move, drop or replacement). A session done or
+ * missed as authored therefore has no assignment, and one first moved or dropped after its date has
+ * none on that date. Where a floating session was shown depended on that week's other sessions and
+ * fixed activities, which are not kept, so any day of its week is possible.
  */
-function collectAuthoredDueSessions(
-    planIndex: RevisionPlacementIndex,
-    effectiveEnd: string,
-): Map<string, AuthoredDueSession> {
-    const due = new Map<string, AuthoredDueSession>();
-    const revisions = [...planIndex.verifiedRevMap.values()];
-    for (const [revKey, rev] of planIndex.verifiedRevMap) {
+function unrecordedDueDates(
+    session: DEvalRawPlanSession,
+    events: readonly PlacementEvent[],
+    overlay: DEvalRawPlacementOverlay | undefined,
+): { dates: readonly string[] } | null {
+    const isSession = (item: PlacementAssignment) => item.sessionId === session.id;
+    if (events.length > 0 ? events[0]!.previous.some(isSession) : overlay?.assignments.some(isSession)) return null;
+
+    const firstEvent = events.find(item => item.assignments.some(isSession));
+    if (firstEvent) {
+        const shown = shownDateBeforePlacement(firstEvent.assignments.find(isSession)!, session);
+        return firstEvent.changedOn <= shown ? null : { dates: [shown] };
+    }
+    return {
+        dates: session.floating
+            ? Array.from({ length: 7 }, (_, offset) => addDaysToLocalDateString(session.authoredDate, offset))
+            : [session.authoredDate],
+    };
+}
+
+/** Sessions that came due without a recorded assignment, with the governed dates they may have been due on. */
+function indexUnrecordedSessions(
+    verifiedRevMap: ReadonlyMap<string, DEvalRawPlanRevision>,
+    eventsByRev: ReadonlyMap<string, readonly PlacementEvent[]>,
+    overlaysByRev: ReadonlyMap<string, DEvalRawPlacementOverlay>,
+    governingOn: PlanGovernance,
+): Map<string, readonly string[]> {
+    const unrecorded = new Map<string, readonly string[]>();
+    for (const [revKey, rev] of verifiedRevMap) {
         for (const session of rev.sessions) {
-            const date = session.authoredDate;
-            if (date > effectiveEnd || governingPlanRevision(revisions, date) !== rev) continue;
-            const snapshot = snapshotOverlayOnDate(
-                planIndex.eventsByRev.get(revKey) ?? [],
-                planIndex.overlaysByRev.get(revKey),
-                date,
-            );
-            if (snapshot?.some(item => item.sessionId === session.id)) continue;
-            const key = sessionKey(rev.planId, rev.revision, session.id);
-            due.set(key, { key, date });
+            const due = unrecordedDueDates(session, eventsByRev.get(revKey) ?? [], overlaysByRev.get(revKey));
+            const governed = due?.dates.filter(date => governingOn(date) === rev) ?? [];
+            if (governed.length > 0) unrecorded.set(sessionKey(rev.planId, rev.revision, session.id), governed);
         }
     }
-    return due;
+    return unrecorded;
 }
 
 export function assembleC1Window(params: {
@@ -321,9 +347,6 @@ export function assembleC1Window(params: {
         knownLimits.push(`Incomplete source reads for ${windowStart}..${effectiveEnd}; planned sessions default to unknown.`);
     }
 
-    const verifiedRevisions = [...planIndex.verifiedRevMap.values()];
-    const authoredDue = collectAuthoredDueSessions(planIndex, effectiveEnd);
-
     const revKeys = [...new Set([...planIndex.overlaysByRev.keys(), ...planIndex.eventsByRev.keys()])].sort();
 
     for (const revKey of revKeys) {
@@ -355,7 +378,7 @@ export function assembleC1Window(params: {
         }
 
         for (let date = windowStart; date <= effectiveEnd; date = addDaysToLocalDateString(date, 1)) {
-            const governing = governingPlanRevision(verifiedRevisions, date);
+            const governing = planIndex.governingOn(date);
             const isStaleRevision = governing !== null && revisionKey(governing.planId, governing.revision) !== revKey;
             const snapshot = snapshotOverlayOnDate(events, overlay, date);
             if (snapshot === null) continue;
@@ -363,8 +386,9 @@ export function assembleC1Window(params: {
             for (const assignment of snapshot) {
                 if (assignment.date !== date) continue;
                 const key = `${revKey}:${assignment.sessionId}`;
-                // Moved or dropped only after its authored due date: it is counted there, below.
-                if (seenSessionKeys.has(key) || authoredDue.has(key)) continue;
+                // First moved, dropped or replaced after the date it was shown on: it is due there, in
+                // whichever window holds that date, so this later assignment is not a second one.
+                if (seenSessionKeys.has(key) || planIndex.unrecordedSessions.has(key)) continue;
 
                 // If moved from before this window AFTER its original pre-window due date, it belonged there.
                 if (assignment.status === 'moved' && assignment.movedFrom && assignment.movedFrom < windowStart) {
@@ -438,8 +462,12 @@ export function assembleC1Window(params: {
         }
     }
 
-    const authoredInWindow = [...authoredDue.values()].filter(item => item.date >= windowStart);
-    for (const { key, date } of authoredInWindow) {
+    // A floating session whose week straddles two windows is unknown in both: either may have held it.
+    const unrecordedInWindow = [...planIndex.unrecordedSessions].flatMap(([key, dates]) => {
+        const date = dates.find(candidate => candidate >= windowStart && candidate <= effectiveEnd);
+        return date === undefined ? [] : [{ key, date }];
+    });
+    for (const { key, date } of unrecordedInWindow) {
         const matches = linksBySession.get(key) ?? [];
         plannedSessions.push({
             sessionKey: `${key}@${date}`,
@@ -455,10 +483,10 @@ export function assembleC1Window(params: {
             blockEndDate: windowEnd,
         });
     }
-    if (authoredInWindow.length > 0) {
+    if (unrecordedInWindow.length > 0) {
         knownLimits.push(
-            `${authoredInWindow.length} authored plan session(s) in ${windowStart}..${effectiveEnd} had no placement recorded `
-            + 'by their authored date (the overlay records only moves, drops and replacements); counted as unknown.',
+            `${unrecordedInWindow.length} authored plan session(s) in ${windowStart}..${effectiveEnd} had no placement recorded `
+            + 'by the date they were due (the overlay records only moves, drops and replacements); counted as unknown.',
         );
     }
 

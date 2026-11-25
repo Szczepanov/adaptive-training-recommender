@@ -539,6 +539,7 @@ export class DEvalReadoutService {
                         sessions: revisionPlan.sessions.map(session => ({
                             id: session.id,
                             authoredDate: impliedDate(revisionPlan, session),
+                            floating: session.placement.flexibility !== 'fixed' && !session.placement.preferredDay,
                             gating: session.gating ? { intensity: session.gating.intensity } : undefined,
                         })),
                     });

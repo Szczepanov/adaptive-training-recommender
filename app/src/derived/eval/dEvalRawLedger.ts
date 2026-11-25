@@ -20,6 +20,11 @@ export interface DEvalRawPlanSession {
     id: string;
     /** The date the stored revision itself implies, before any overlay. */
     authoredDate: string;
+    /**
+     * No authored day: `authoredDate` is only its plan week's first day, and the athlete may have been
+     * shown it on any day of that week. The shown date is not recorded unless the session was placed.
+     */
+    floating: boolean;
     gating?: { intensity?: DEvalSessionIntensity };
 }
 
