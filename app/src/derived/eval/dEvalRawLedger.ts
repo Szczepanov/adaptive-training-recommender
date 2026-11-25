@@ -18,6 +18,8 @@ export type DEvalSourceReadState = 'measured' | 'missing' | 'unavailable' | 'inv
 
 export interface DEvalRawPlanSession {
     id: string;
+    /** The date the stored revision itself implies, before any overlay. */
+    authoredDate: string;
     gating?: { intensity?: DEvalSessionIntensity };
 }
 
@@ -26,6 +28,8 @@ export interface DEvalRawPlanRevision {
     revision: number;
     contentHash: string;
     importedAt: string;
+    /** When the revision took effect and the inclusive dates its own plan covers. */
+    horizon: { effectiveFrom: string; startDate: string; endDate: string };
     sessions: readonly DEvalRawPlanSession[];
 }
 

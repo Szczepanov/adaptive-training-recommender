@@ -24,6 +24,9 @@ function compareFlagRevision(a: PersistedFlagEvaluation, b: PersistedFlagEvaluat
  * `(observedOn, id, sessionRef)`. A pre-sync `injury_constraint_touches_session` capture without
  * `sessionRef` that is strictly older than later per-session captures on the same date is dropped
  * so transient initial failures do not mask subsequent same-day captures.
+ *
+ * An earlier `active: true` capture is kept alongside a later one that cleared it: the criteria ask
+ * whether any flag was active on the date, and the flag was shown before it was cleared.
  */
 export function deduplicateCapturedFlags(
     flags: readonly PersistedFlagEvaluation[],
@@ -31,6 +34,7 @@ export function deduplicateCapturedFlags(
     asOfMs: number | null,
 ): PersistedFlagEvaluation[] {
     const latestByKey = new Map<string, PersistedFlagEvaluation>();
+    const latestActiveByKey = new Map<string, PersistedFlagEvaluation>();
     for (const flag of flags) {
         if (!isLocalCalendarDate(flag.observedOn) || flag.observedOn > asOfDate) continue;
         if (asOfMs !== null) {
@@ -41,6 +45,10 @@ export function deduplicateCapturedFlags(
         const prev = latestByKey.get(key);
         if (!prev || compareFlagRevision(flag, prev) > 0) {
             latestByKey.set(key, flag);
+        }
+        const prevActive = latestActiveByKey.get(key);
+        if (flag.active === true && (!prevActive || compareFlagRevision(flag, prevActive) > 0)) {
+            latestActiveByKey.set(key, flag);
         }
     }
 
@@ -53,7 +61,9 @@ export function deduplicateCapturedFlags(
         }
     }
 
-    const result: PersistedFlagEvaluation[] = [];
+    const result: PersistedFlagEvaluation[] = [...latestActiveByKey]
+        .filter(([key]) => latestByKey.get(key)?.active !== true)
+        .map(([, flag]) => flag);
     for (const flag of latestByKey.values()) {
         if (flag.id === 'injury_constraint_touches_session' && !flag.sessionRef) {
             const sessionRecords = perDateSessionRecords.get(flag.observedOn) ?? [];

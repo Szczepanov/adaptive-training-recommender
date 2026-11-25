@@ -41,10 +41,18 @@ export function assembleDEvalBlockInput(
         includeBaseline = true,
         criteriaCommit = null,
         phase2Commit = null,
-        rollbackState,
-        rollbackReason = null,
+        rollbackState: reportedRollbackState,
+        rollbackReason: reportedRollbackReason = null,
         rollbackAtDate = null,
     } = options;
+
+    // The setting is on now although usage was reported as unused: C4 cannot pass on that report, and
+    // C2 cannot show that the after-attempt stayed in the qualifying regime.
+    const rollbackContradicted = raw.engineRecommendationsEnabled === true && reportedRollbackState === 'unused';
+    const rollbackState = rollbackContradicted ? 'non_safety' : reportedRollbackState;
+    const rollbackReason = rollbackContradicted
+        ? 'reported unused, but engineRecommendationsEnabled is on at readout; usage unconfirmed'
+        : reportedRollbackReason;
 
     const asOfMs = parseUtcTimestampMs(asOfTimestamp);
     const extraKnownLimits: string[] = [];
@@ -162,7 +170,7 @@ export function assembleDEvalBlockInput(
     let rollbackSettingState: string;
     if (raw.preferencesState === 'measured' || raw.preferencesState === 'missing') {
         rollbackSettingState = raw.engineRecommendationsEnabled === true ? 'on (enabled)' : 'off';
-        if (raw.engineRecommendationsEnabled === true && rollbackState === 'unused') {
+        if (rollbackContradicted) {
             extraKnownLimits.push(
                 'Preference `engineRecommendationsEnabled` is currently enabled while rollback state was reported as `unused`.',
             );

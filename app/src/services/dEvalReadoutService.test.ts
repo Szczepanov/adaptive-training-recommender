@@ -249,7 +249,7 @@ async function createDeps(overrides: Partial<DEvalReadoutDependencies> = {}): Pr
 describe('DEvalReadoutService', () => {
     it('reads user-scoped records with bounded queries, verifies plan hashes, and renders the §7 report', async () => {
         const { deps } = await createDeps();
-        const service = new DEvalReadoutService(deps);
+        const service = new DEvalReadoutService(deps, () => AS_OF_POST);
 
         const out = await service.run('u1', {
             blockStartDate: BLOCK_START,
@@ -273,7 +273,7 @@ describe('DEvalReadoutService', () => {
 
     it('rejects invalid user ids and invalid date ranges', async () => {
         const { deps } = await createDeps();
-        const service = new DEvalReadoutService(deps);
+        const service = new DEvalReadoutService(deps, () => AS_OF_POST);
 
         await expect(service.run('', {
             blockStartDate: BLOCK_START,
@@ -295,6 +295,81 @@ describe('DEvalReadoutService', () => {
             asOfDate: AS_OF_POST,
             rollbackState: 'unused',
         })).rejects.toThrow();
+
+        // A future as-of date would call sessions missed and close windows that have not happened yet.
+        await expect(service.run('u1', {
+            blockStartDate: BLOCK_START,
+            blockEndDate: BLOCK_END,
+            asOfDate: '2026-12-27',
+            rollbackState: 'unused',
+        })).rejects.toThrow('future');
+        expect(deps.flags.getInRangeState).not.toHaveBeenCalled();
+    });
+
+    it('reports authored sessions the overlay never recorded as unknown', async () => {
+        const { deps } = await createDeps();
+        const service = new DEvalReadoutService({
+            ...deps,
+            externalPlans: {
+                ...deps.externalPlans,
+                getPlacementState: vi.fn(async () => ({ status: 'MISSING' as const })),
+            },
+        }, () => AS_OF_POST);
+        const out = await service.run('u1', {
+            blockStartDate: '2026-11-03',
+            blockEndDate: '2026-11-30',
+            asOfDate: AS_OF_POST,
+            rollbackState: 'unused',
+        });
+        // s3..s5, s6..s8 and s9 are authored on the first day of plan weeks 2, 3 and 4.
+        expect(out.result.c1.block).toMatchObject({ planned: 7, unknown: 7 });
+        expect(out.result.c1.status).toBe('inconclusive');
+    });
+
+    it('treats skipped invalid activity overrides as an unreadable source', async () => {
+        const flagDay = '2026-11-28';
+        const base = (await createDeps()).deps;
+        const { deps } = await createDeps({
+            flags: {
+                getInRangeState: vi.fn(async () => ({
+                    status: 'AVAILABLE' as const,
+                    data: makeAllFlags(BASELINE_START, BLOCK_END).map(flag => (
+                        flag.observedOn === flagDay && flag.id === 'illness_anomaly' ? { ...flag, active: true } : flag
+                    )),
+                    revision: '1',
+                })),
+            },
+            occurrences: {
+                queryActiveInDateWindow: vi.fn(async () => (await base.occurrences.queryActiveInDateWindow('u1', '', ''))
+                    .filter(item => item.localDate === flagDay)
+                    .map(item => ({
+                        ...item,
+                        sourceRefs: [{ kind: 'provider_activity' as const, provider: 'garmin' as const, activityId: 'g-1' }],
+                    }))),
+            },
+            activities: {
+                getActivitiesInRange: vi.fn(async () => ({
+                    status: 'AVAILABLE' as const,
+                    data: [{ activityId: 'g-1', date: flagDay, intensityTag: 'easy' }] as never,
+                    revision: null,
+                })),
+            },
+            activityOverrides: {
+                getOverridesSinceState: vi.fn(async () => ({
+                    status: 'AVAILABLE' as const,
+                    data: {},
+                    revision: null,
+                    issues: [{ code: 'invalid-activity-override', documentPath: 'users/u1/activity_overrides/g-1' }],
+                })),
+            },
+        });
+        const out = await new DEvalReadoutService(deps, () => AS_OF_POST).run('u1', {
+            blockStartDate: BLOCK_START,
+            blockEndDate: BLOCK_END,
+            asOfDate: AS_OF_POST,
+            rollbackState: 'unused',
+        });
+        expect(out.result.c3.incompleteFollowUps).toContain('unknown_intensity:occ-2');
     });
 
     it('fails closed when check-ins have parse issues, outcomes are unreadable, plan hashes mismatch, or attempts have unreadable rows', async () => {
@@ -351,7 +426,7 @@ describe('DEvalReadoutService', () => {
             },
         });
 
-        const service = new DEvalReadoutService(deps);
+        const service = new DEvalReadoutService(deps, () => AS_OF_POST);
         const out = await service.run('u1', {
             blockStartDate: BLOCK_START,
             blockEndDate: BLOCK_END,

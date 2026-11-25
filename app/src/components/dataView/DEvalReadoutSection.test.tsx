@@ -206,6 +206,18 @@ describe('DEvalReadoutSection', () => {
         expect(mocks.download).toHaveBeenCalledWith('2026-12-26', out.markdown);
     });
 
+    it('drops the earlier verdict when a later run fails', async () => {
+        mocks.run.mockResolvedValueOnce(sampleOutput());
+        await (render().buttons[0]?.props.onClick as () => Promise<void>)();
+        expect(render().textareas).toHaveLength(1);
+
+        mocks.run.mockRejectedValueOnce(new Error('The D-EVAL as-of date cannot be in the future'));
+        await (render().buttons[0]?.props.onClick as () => Promise<void>)();
+        const failed = render();
+        expect(failed.textareas).toHaveLength(0);
+        expect(failed.statusNotice?.props.children).toBe('The D-EVAL as-of date cannot be in the future');
+    });
+
     it('surfaces readout errors in a status notice and suppresses updates after unmount', async () => {
         mocks.run.mockRejectedValueOnce(new Error('Invalid D-EVAL calendar dates or blockStartDate > blockEndDate'));
         const { buttons } = render();

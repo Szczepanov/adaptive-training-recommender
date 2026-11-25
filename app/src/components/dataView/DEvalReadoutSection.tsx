@@ -87,6 +87,8 @@ export function DEvalReadoutSection({ userId, defaultAsOfDate }: DEvalReadoutSec
       }
     } catch (err: unknown) {
       if (mounted.current) {
+        // A verdict from earlier inputs must not stand next to the failed run's error.
+        setOutput(null);
         setError(err instanceof Error && err.message ? err.message : 'D-EVAL readout failed. Check dates and retry.');
       }
     } finally {

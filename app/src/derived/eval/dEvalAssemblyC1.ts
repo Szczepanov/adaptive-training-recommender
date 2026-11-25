@@ -11,6 +11,7 @@ import { isStructuredExecutionRef, type PerformedTrainingOccurrence } from '../.
 import { addDaysToLocalDateString, getLocalDateString } from '../../utils/localDate.ts';
 import type { DEvalC1BlockInput, DEvalC1PlannedSessionInput } from './dEvalC1.ts';
 import { isLocalCalendarDate, parseUtcTimestampMs } from './dEvalCriteria.ts';
+import { governingPlanRevision } from './dEvalPlanGovernance.ts';
 import type {
     DEvalRawExecution,
     DEvalRawLedgerData,
@@ -234,6 +235,41 @@ export function buildExecutionAndLinkIndexes(
     return { execById, execsBySession, unverifiedSessions, linksBySession };
 }
 
+interface AuthoredDueSession {
+    key: string;
+    date: string;
+}
+
+/**
+ * Sessions still unplaced on their authored date, under the revision governing that date, keyed by
+ * session. The overlay records only departures from the plan (a move, drop or replacement), so a
+ * session done or missed as authored has no assignment, and one moved or dropped late has none on
+ * its due date. Where the athlete saw it depended on that week's fixed activities, which are not
+ * kept, so its assignment history cannot be determined.
+ */
+function collectAuthoredDueSessions(
+    planIndex: RevisionPlacementIndex,
+    effectiveEnd: string,
+): Map<string, AuthoredDueSession> {
+    const due = new Map<string, AuthoredDueSession>();
+    const revisions = [...planIndex.verifiedRevMap.values()];
+    for (const [revKey, rev] of planIndex.verifiedRevMap) {
+        for (const session of rev.sessions) {
+            const date = session.authoredDate;
+            if (date > effectiveEnd || governingPlanRevision(revisions, date) !== rev) continue;
+            const snapshot = snapshotOverlayOnDate(
+                planIndex.eventsByRev.get(revKey) ?? [],
+                planIndex.overlaysByRev.get(revKey),
+                date,
+            );
+            if (snapshot?.some(item => item.sessionId === session.id)) continue;
+            const key = sessionKey(rev.planId, rev.revision, session.id);
+            due.set(key, { key, date });
+        }
+    }
+    return due;
+}
+
 export function assembleC1Window(params: {
     windowStart: string;
     windowEnd: string;
@@ -285,6 +321,9 @@ export function assembleC1Window(params: {
         knownLimits.push(`Incomplete source reads for ${windowStart}..${effectiveEnd}; planned sessions default to unknown.`);
     }
 
+    const verifiedRevisions = [...planIndex.verifiedRevMap.values()];
+    const authoredDue = collectAuthoredDueSessions(planIndex, effectiveEnd);
+
     const revKeys = [...new Set([...planIndex.overlaysByRev.keys(), ...planIndex.eventsByRev.keys()])].sort();
 
     for (const revKey of revKeys) {
@@ -316,13 +355,16 @@ export function assembleC1Window(params: {
         }
 
         for (let date = windowStart; date <= effectiveEnd; date = addDaysToLocalDateString(date, 1)) {
+            const governing = governingPlanRevision(verifiedRevisions, date);
+            const isStaleRevision = governing !== null && revisionKey(governing.planId, governing.revision) !== revKey;
             const snapshot = snapshotOverlayOnDate(events, overlay, date);
             if (snapshot === null) continue;
 
             for (const assignment of snapshot) {
                 if (assignment.date !== date) continue;
                 const key = `${revKey}:${assignment.sessionId}`;
-                if (seenSessionKeys.has(key)) continue;
+                // Moved or dropped only after its authored due date: it is counted there, below.
+                if (seenSessionKeys.has(key) || authoredDue.has(key)) continue;
 
                 // If moved from before this window AFTER its original pre-window due date, it belonged there.
                 if (assignment.status === 'moved' && assignment.movedFrom && assignment.movedFrom < windowStart) {
@@ -355,11 +397,15 @@ export function assembleC1Window(params: {
                 const unverifiedEvidence = isRevUnverified
                     || unverifiedSessions.has(key)
                     || matches.length > 1;
+                // A leftover assignment of a replaced revision was no longer shown, and a session whose
+                // +1-day window is still open can still be completed: neither is a confirmed miss.
+                const missUnconfirmed = primaryMatch === null
+                    && (isStaleRevision || asOfDate <= addDaysToLocalDateString(date, 1));
                 const evidenceComplete = baseReadsComplete
+                    && !missUnconfirmed
                     && !hasHistoryOrOverlayFailure
                     && !priorUnknownBeforeRepair
-                    && !missingSuccessor
-                    && !(events.length === 0 && overlay === undefined);
+                    && !missingSuccessor;
 
                 const sessionExecutions = (execsBySession.get(key) ?? []).map(exec => ({ state: exec.state }));
                 const performedDate = primaryMatch?.performedDate ?? null;
@@ -390,6 +436,30 @@ export function assembleC1Window(params: {
                 });
             }
         }
+    }
+
+    const authoredInWindow = [...authoredDue.values()].filter(item => item.date >= windowStart);
+    for (const { key, date } of authoredInWindow) {
+        const matches = linksBySession.get(key) ?? [];
+        plannedSessions.push({
+            sessionKey: `${key}@${date}`,
+            assignedDate: date,
+            asOfDate,
+            status: null,
+            evidenceComplete: false,
+            linked: matches.length > 0,
+            unverifiedEvidence: unverifiedSessions.has(key),
+            executions: (execsBySession.get(key) ?? []).map(exec => ({ state: exec.state })),
+            performedOccurrenceId: matches[0]?.occurrence.performedOccurrenceId ?? null,
+            blockStartDate: windowStart,
+            blockEndDate: windowEnd,
+        });
+    }
+    if (authoredInWindow.length > 0) {
+        knownLimits.push(
+            `${authoredInWindow.length} authored plan session(s) in ${windowStart}..${effectiveEnd} had no placement recorded `
+            + 'by their authored date (the overlay records only moves, drops and replacements); counted as unknown.',
+        );
     }
 
     plannedSessions.sort((a, b) =>

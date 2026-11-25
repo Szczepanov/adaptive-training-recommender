@@ -26,6 +26,7 @@ export function buildC3PerformedSessions(params: {
     const { raw, planIndex, execById, blockStartDate, effectiveEnd, asOfMs } = params;
     const activitiesById = new Map((raw.activities ?? []).map(act => [act.activityId, act]));
     const overridesByActivityId = raw.activityOverrides ?? {};
+    const overridesReadable = raw.activityOverridesState !== 'unavailable' && raw.activityOverridesState !== 'invalid';
 
     const result: DEvalC3PerformedSessionInput[] = [];
     for (const occ of raw.performedOccurrences) {
@@ -51,8 +52,9 @@ export function buildC3PerformedSessions(params: {
                 const planSession = rev.sessions.find(item => item.id === src.sessionId);
                 authoredIntensity = normalizeIntensity(planSession?.gating?.intensity);
             }
-        } else {
-            // Unplanned occurrence: check athlete override intensity, then Garmin activity tag.
+        } else if (exec || !structRef) {
+            // Unplanned occurrence: check athlete override intensity, then Garmin activity tag. With a
+            // structured ref whose execution is absent, the authored intensity is unknown instead.
             const providerRefs = occ.sourceRefs.filter(isProviderActivityRef);
             for (const pRef of providerRefs) {
                 const override = overridesByActivityId[pRef.activityId];
@@ -61,6 +63,8 @@ export function buildC3PerformedSessions(params: {
                     performedIntensity = overrideIntensity;
                     break;
                 }
+                // An unreadable override may say `hard`, so the Garmin tag cannot stand in for it.
+                if (!overridesReadable) continue;
                 const activity = activitiesById.get(pRef.activityId);
                 const activityIntensity = normalizeIntensity(activity?.intensityTag);
                 if (activityIntensity) {

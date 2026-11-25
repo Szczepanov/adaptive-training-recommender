@@ -8,6 +8,7 @@
 
 import { computeContentHash } from '../engine/externalPlanHash';
 import type { DataState } from '../engine/dataState';
+import { impliedDate } from '../engine/externalPlacement';
 import {
     assembleDEvalBlockInput,
     type DEvalRawExecution,
@@ -32,9 +33,11 @@ import {
 import type { DEvalC3InjuryInput } from '../derived/eval/dEvalC3';
 import { PLACEMENT_HISTORY_TRUNCATED_OPERATION, type PlacementEvent } from '../ledger/placementHistory';
 import type { AssessmentAttempt } from '../observations/models';
+import type { AnyExternalTrainingPlan } from '../sessions/externalPlanV2';
 import { PHYSICAL_CAPITAL_PROTOCOL_REVISIONS } from '../observations/physicalCapitalProtocols';
 import type { CurrentObservation } from '../observations/progress';
-import { addDaysToLocalDateString } from '../utils/localDate';
+import { addDaysToLocalDateString, getLocalDateString } from '../utils/localDate';
+import { planEndDate } from './activeExternalPlanService';
 import { activityOverrideService, type ActivityOverrideService } from './activityOverrideService';
 import { activityService, type ActivityService } from './activityService';
 import { assessmentAttemptService, type AssessmentAttemptService } from './assessmentAttemptService';
@@ -132,9 +135,11 @@ function goalBoundMetricIds(): string[] {
 
 export class DEvalReadoutService {
     private readonly deps: DEvalReadoutDependencies;
+    private readonly today: () => string;
 
-    constructor(deps: DEvalReadoutDependencies = DEFAULT_DEPS) {
+    constructor(deps: DEvalReadoutDependencies = DEFAULT_DEPS, today: () => string = () => getLocalDateString()) {
         this.deps = deps;
+        this.today = today;
     }
 
     async run(userId: string, request: DEvalReadoutRequest): Promise<DEvalReadoutOutput> {
@@ -148,6 +153,9 @@ export class DEvalReadoutService {
             || request.blockStartDate > request.blockEndDate
         ) {
             throw new Error('Invalid D-EVAL calendar dates or blockStartDate > blockEndDate');
+        }
+        if (request.asOfDate > this.today()) {
+            throw new Error('The D-EVAL as-of date cannot be in the future');
         }
 
         const baselineStart = addDaysToLocalDateString(request.blockStartDate, -DEVAL_MIN_BLOCK_DAYS);
@@ -229,6 +237,8 @@ export class DEvalReadoutService {
             ? 'invalid'
             : stateFromDataState(checkinsRead);
 
+        const overridesHaveIssues = overridesRead.status === 'AVAILABLE' && Boolean(overridesRead.issues?.length);
+
         const executionsState: DEvalSourceReadState = !executionsRead.ok
             ? 'unavailable'
             : executionsRead.invalidRecords > 0
@@ -263,7 +273,7 @@ export class DEvalReadoutService {
 
             activitiesState: stateFromDataState(activitiesRead),
             activities: activitiesRead.status === 'AVAILABLE' ? activitiesRead.data : [],
-            activityOverridesState: stateFromDataState(overridesRead),
+            activityOverridesState: overridesHaveIssues ? 'invalid' : stateFromDataState(overridesRead),
             activityOverrides: overridesRead.status === 'AVAILABLE' ? overridesRead.data : {},
 
             flagEvaluationsState: stateFromDataState(flagsRead),
@@ -508,18 +518,28 @@ export class DEvalReadoutService {
 
                     if (!expectedHash || !importedAt || (await computeContentHash(plan.data)) !== expectedHash) {
                         planIssues.push({ planId, revision, reason: 'unverified_revision' });
+                        // With a recorded hash it may have governed dates in the window, so which sessions
+                        // were planned is unknown. A legacy-overlay revision never governed on its own.
+                        if (expectedHash) mergeFailure('INVALID');
                         continue;
                     }
+
+                    const revisionPlan = plan.data as AnyExternalTrainingPlan;
 
                     planRevisions.push({
                         planId,
                         revision,
                         contentHash: expectedHash,
                         importedAt,
-                        sessions: plan.data.sessions.map(session => ({
+                        horizon: {
+                            effectiveFrom: activation?.effectiveFrom ?? header.data.supersededFrom ?? revisionPlan.startDate,
+                            startDate: revisionPlan.startDate,
+                            endDate: planEndDate(revisionPlan),
+                        },
+                        sessions: revisionPlan.sessions.map(session => ({
                             id: session.id,
+                            authoredDate: impliedDate(revisionPlan, session),
                             gating: session.gating ? { intensity: session.gating.intensity } : undefined,
-                            scaling: session.scaling ? { reducible: session.scaling.reducible } : undefined,
                         })),
                     });
                 }
