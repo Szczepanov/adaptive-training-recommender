@@ -4,8 +4,12 @@ import type { HealthAnomalyAssessmentRevision } from '../derived/flags/illnessAn
 const firestore = vi.hoisted(() => ({
     collection: vi.fn(),
     doc: vi.fn(),
+    documentId: vi.fn(() => '__name__'),
     getDoc: vi.fn(),
     getDocs: vi.fn(),
+    limit: vi.fn((n: number) => ({ limit: n })),
+    orderBy: vi.fn((field: unknown, dir: string) => ({ orderBy: [field, dir] })),
+    query: vi.fn((ref: unknown, ...constraints: unknown[]) => ({ ref, constraints })),
     runTransaction: vi.fn(),
 }));
 const assessmentRepo = vi.hoisted(() => ({ getLatestForDate: vi.fn() }));
@@ -132,5 +136,58 @@ describe('HealthAnomalyOutcomeRepository', () => {
 
         const outcomes = await new HealthAnomalyOutcomeRepository().listForUser('u1');
         expect(outcomes).toEqual([valid]);
+    });
+
+    it('reports unreadable outcome counts via listForUserWithDiagnostics', async () => {
+        firestore.collection.mockReturnValue({ path: 'outcomes' });
+        const valid = {
+            userId: 'u1', episodeId: 'health-anomaly:2026-08-20',
+            sourceAssessment: { date: '2026-08-20', revisionId: 'ha-1234567890abcdef' },
+            explanation: 'illness_symptoms', symptomOnset: null, respiratoryTest: null, note: null,
+            createdAt: '2026-08-21T06:00:00.000Z', updatedAt: '2026-08-21T06:00:00.000Z', schemaVersion: 1,
+        };
+        firestore.getDocs.mockResolvedValue({
+            docs: [
+                { id: valid.episodeId, data: () => valid },
+                { id: 'bad-doc-1', data: () => ({ invalid: true }) },
+                { id: 'bad-doc-2', data: () => ({ userId: 'other', episodeId: 'bad-doc-2' }) },
+            ],
+        });
+
+        const result = await new HealthAnomalyOutcomeRepository().listForUserWithDiagnostics('u1');
+        expect(result).toEqual({ outcomes: [valid], unreadableCount: 2 });
+    });
+
+    it('caps listForUserWithDiagnostics when maxOutcomes is set and reports truncation', async () => {
+        firestore.collection.mockReturnValue({ path: 'outcomes' });
+        const makeValid = (day: string) => ({
+            userId: 'u1', episodeId: `health-anomaly:${day}`,
+            sourceAssessment: { date: day, revisionId: 'ha-1234567890abcdef' },
+            explanation: 'illness_symptoms', symptomOnset: null, respiratoryTest: null, note: null,
+            createdAt: `${day}T06:00:00.000Z`, updatedAt: `${day}T06:00:00.000Z`, schemaVersion: 1,
+        });
+        const docA = makeValid('2026-08-20');
+        const docB = makeValid('2026-08-21');
+        const docC = makeValid('2026-08-22');
+
+        firestore.getDocs.mockResolvedValueOnce({
+            docs: [
+                { id: docA.episodeId, data: () => docA },
+                { id: docB.episodeId, data: () => docB },
+                { id: docC.episodeId, data: () => docC },
+            ],
+        });
+        const truncatedRes = await new HealthAnomalyOutcomeRepository().listForUserWithDiagnostics('u1', 2);
+        expect(firestore.orderBy).toHaveBeenCalledWith('__name__', 'asc');
+        expect(firestore.limit).toHaveBeenCalledWith(3);
+        expect(truncatedRes).toEqual({ outcomes: [docA, docB], unreadableCount: 0, truncated: true });
+
+        firestore.getDocs.mockResolvedValueOnce({
+            docs: [{ id: docA.episodeId, data: () => docA }],
+        });
+        const completeRes = await new HealthAnomalyOutcomeRepository().listForUserWithDiagnostics('u1', 2);
+        expect(completeRes).toEqual({ outcomes: [docA], unreadableCount: 0, truncated: false });
+
+        await expect(new HealthAnomalyOutcomeRepository().listForUserWithDiagnostics('u1', 0)).rejects.toThrow(/maxOutcomes/);
     });
 });

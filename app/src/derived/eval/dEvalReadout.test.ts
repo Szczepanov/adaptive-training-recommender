@@ -1211,4 +1211,164 @@ describe('review regressions (PR #1284)', () => {
         expect(withAfterCompletedAt(undefined)).toBe('fail');
         expect(withAfterCompletedAt('not-a-timestamp')).toBe('pending');
     });
+
+    it('C2 marks affected metrics inconclusive when observation reads are incomplete, while preserving complete metrics', () => {
+        const jumpBefore = jump('before-jump', '2026-10-22T09:00:00Z', 240);
+        const jumpAfter = jump('after-jump', '2027-01-18T09:00:00Z', 242);
+        const cmjBefore = makeObservation({
+            observationKey: 'obs-cmj-before',
+            protocolId: 'field-wall-touch-cmj',
+            metricId: 'wall_touch_cmj_height_cm',
+            value: 55,
+            unit: 'cm',
+            observedAt: '2026-10-22T09:00:00Z',
+            attemptId: 'att-cmj-b',
+        });
+        const cmjAfter = makeObservation({
+            observationKey: 'obs-cmj-after',
+            protocolId: 'field-wall-touch-cmj',
+            metricId: 'wall_touch_cmj_height_cm',
+            value: 56,
+            unit: 'cm',
+            observedAt: '2027-01-18T09:00:00Z',
+            attemptId: 'att-cmj-a',
+        });
+        const bothProtocols = DEVAL_GOAL_BOUND_PROTOCOLS.filter(
+            p => p.protocolId === 'field-standing-broad-jump' || p.protocolId === 'field-wall-touch-cmj',
+        );
+        const obs = [jumpBefore, jumpAfter, cmjBefore, cmjAfter];
+
+        const metricScoped = evaluateC2Benchmarks(c2Input(obs, {
+            protocols: bothProtocols,
+            incompleteObservationMetricIds: ['standing_broad_jump_distance_cm'],
+        }));
+        expect(metricScoped.status).toBe('inconclusive');
+        expect(metricScoped.protocols.find(p => p.protocolId === 'field-standing-broad-jump')?.status).toBe('inconclusive');
+        expect(metricScoped.protocols.find(p => p.protocolId === 'field-standing-broad-jump')?.reasons).toContain('observation_records_incomplete');
+        expect(metricScoped.protocols.find(p => p.protocolId === 'field-wall-touch-cmj')?.status).toBe('pass');
+
+        const allIncomplete = evaluateC2Benchmarks(c2Input(obs, {
+            protocols: bothProtocols,
+            observationsComplete: false,
+        }));
+        expect(allIncomplete.status).toBe('inconclusive');
+        expect(allIncomplete.protocols.map(p => ({ protocolId: p.protocolId, status: p.status }))).toEqual([
+            { protocolId: 'field-standing-broad-jump', status: 'inconclusive' },
+            { protocolId: 'field-wall-touch-cmj', status: 'inconclusive' },
+        ]);
+    });
+
+    it('C2 excludes revision 1 created after the cutoff and fails closed on unresolved post-cutoff corrections', () => {
+        const jumpOnly = DEVAL_GOAL_BOUND_PROTOCOLS.filter(p => p.protocolId === 'field-standing-broad-jump');
+        const jump = (key: string, observedAt: string, value: number) => makeObservation({
+            observationKey: key,
+            protocolId: 'field-standing-broad-jump',
+            metricId: 'standing_broad_jump_distance_cm',
+            value,
+            unit: 'cm',
+            observedAt,
+            attemptId: `attempt-${key}`,
+        });
+
+        const before = jump('b', '2026-10-22T09:00:00Z', 240);
+        const rev1AfterCutoff = jump('a', '2027-01-15T09:00:00Z', 200);
+        rev1AfterCutoff.revision.createdAt = '2027-01-20T23:30:00Z'; // Jan 21 Warsaw
+
+        expect(evaluateC2Benchmarks(c2Input([before, rev1AfterCutoff], {
+            protocols: jumpOnly,
+            asOfDate: '2027-01-20',
+        })).status).toBe('pending');
+        expect(evaluateC2Benchmarks(c2Input([before, rev1AfterCutoff], {
+            protocols: jumpOnly,
+            asOfDate: '2027-01-21',
+        })).status).toBe('fail');
+
+        const correctedValid: CurrentObservation = {
+            head: { ...rev1AfterCutoff.head, headRevision: 2, updatedAt: '2027-01-25T09:00:00Z' },
+            revision: {
+                ...rev1AfterCutoff.revision,
+                revision: 2,
+                supersedesRevision: 1,
+                value: 245,
+                correctionReason: 'Corrected reading',
+                createdAt: '2027-01-25T09:00:00Z',
+            },
+        };
+        const unresolvedValid = evaluateC2Benchmarks(c2Input([before, correctedValid], {
+            protocols: jumpOnly,
+            asOfDate: '2027-01-20',
+        }));
+        expect(unresolvedValid.status).toBe('inconclusive');
+        expect(unresolvedValid.reasons).toContain('observation_revision_unresolved_at_cutoff');
+
+        const correctedSameDayBeforeTs = evaluateC2Benchmarks(c2Input([before, correctedValid], {
+            protocols: jumpOnly,
+            asOfDate: '2027-01-25',
+            asOfTimestamp: '2027-01-25T08:00:00Z',
+        }));
+        expect(correctedSameDayBeforeTs.status).toBe('inconclusive');
+        expect(correctedSameDayBeforeTs.reasons).toContain('observation_revision_unresolved_at_cutoff');
+
+        const correctedInvalid: CurrentObservation = {
+            head: { ...correctedValid.head },
+            revision: {
+                ...correctedValid.revision,
+                validity: 'invalid',
+                invalidReason: 'Post-cutoff invalidation',
+            },
+        };
+        const unresolvedInvalid = evaluateC2Benchmarks(c2Input([before, correctedInvalid], {
+            protocols: jumpOnly,
+            asOfDate: '2027-01-20',
+        }));
+        expect(unresolvedInvalid.status).toBe('inconclusive');
+        expect(unresolvedInvalid.reasons).toContain('observation_revision_unresolved_at_cutoff');
+
+        const unparseableCreatedAt = jump('u', '2027-01-15T09:00:00Z', 245);
+        unparseableCreatedAt.revision.createdAt = 'not-a-timestamp';
+        const invalidTimestampResult = evaluateC2Benchmarks(c2Input([before, unparseableCreatedAt], {
+            protocols: jumpOnly,
+            asOfDate: '2027-01-20',
+        }));
+        expect(invalidTimestampResult.status).toBe('inconclusive');
+        expect(invalidTimestampResult.reasons).toContain('observation_revision_unresolved_at_cutoff');
+        expect(invalidTimestampResult.knownLimits.join(' ')).toContain('could not be established');
+        expect(invalidTimestampResult.knownLimits.join(' ')).not.toContain('modified after');
+    });
+
+    it('C2 applies the date-only cutoff to baseline observations when asOfMs is absent', () => {
+        const jumpOnly = DEVAL_GOAL_BOUND_PROTOCOLS.filter(p => p.protocolId === 'field-standing-broad-jump');
+        const jump = (key: string, observedAt: string, createdAt: string, value: number) => {
+            const obs = makeObservation({
+                observationKey: key,
+                protocolId: 'field-standing-broad-jump',
+                metricId: 'standing_broad_jump_distance_cm',
+                value,
+                unit: 'cm',
+                observedAt,
+                attemptId: `attempt-${key}`,
+            });
+            obs.revision.createdAt = createdAt;
+            obs.head.createdAt = createdAt;
+            obs.head.updatedAt = createdAt;
+            return obs;
+        };
+
+        const futureObsEnteredEarly = jump('future-obs', '2026-11-12T09:00:00Z', '2026-11-09T09:00:00Z', 240);
+        const onCutoffObs = jump('cutoff-obs', '2026-11-10T09:00:00Z', '2026-11-09T09:00:00Z', 245);
+
+        const excluded = evaluateC2Benchmarks(c2Input([futureObsEnteredEarly], {
+            protocols: jumpOnly,
+            asOfDate: '2026-11-10',
+        }));
+        expect(excluded.status).toBe('inconclusive');
+        expect(excluded.reasons).toContain('missing_before_attempt');
+
+        const included = evaluateC2Benchmarks(c2Input([futureObsEnteredEarly, onCutoffObs], {
+            protocols: jumpOnly,
+            asOfDate: '2026-11-10',
+        }));
+        expect(included.status).toBe('pending');
+        expect(included.protocols[0]?.metrics[0]?.before?.date).toBe('2026-11-10');
+    });
 });

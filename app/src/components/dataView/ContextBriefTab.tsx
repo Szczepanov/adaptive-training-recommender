@@ -8,6 +8,7 @@ import { BriefPresetToggle } from '../BriefPresetToggle';
 import { ContextBriefExportActions } from '../ContextBriefExportActions';
 import { LedgerExportButton } from '../LedgerExportButton';
 import type { useBriefCheckpoint } from '../useBriefCheckpoint';
+import { DEvalReadoutSection } from './DEvalReadoutSection';
 
 interface ContextBriefTabProps {
   userId: string;
@@ -120,6 +121,7 @@ export function ContextBriefTab({
           <textarea className="brief-text" readOnly value={brief.text} rows={24} spellCheck={false} />
         </>
       )}
+      <DEvalReadoutSection userId={userId} defaultAsOfDate={briefDate} />
     </div>
   );
 }
