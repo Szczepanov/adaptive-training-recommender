@@ -354,9 +354,16 @@ and any attempt on it are unknown; or the same plan session has a link or execut
 revision of the plan was imported on or before its date. Nothing is written back.
 
 **In-session swaps and omissions (Phase 3B).** `coachingHistory.overrides` also carries one
-`choice:<executionId>:<choiceEntryId>:<actionIndex>` row per swap or omission the athlete chose
+`choice:<executionId>:<rootEntryId>:<actionIndex>` row per swap or omission the athlete chose
 (`services/ledgerChoiceOverrides.ts` `choiceOverridesForExecution`). Only the effective event of each
-choice's correction chain counts, so a correction is never a second override. Each choice is
+choice's correction chain counts, so a correction is never a second override; the id uses the chain's
+root entry, so a correction that only changes the reason keeps the same row. A superseded choice that
+still governed live performed entries (`governingChoiceEntryId`) is also exported, as
+`choice:<executionId>:<rootEntryId>@<entryId>:<actionIndex>` with `correctedLater: true`, because the
+sets done under it were real. It is exported once per chain and option, with that option's latest
+governing reason, and not at all when the effective choice is the same option (a reason-only
+correction is one override). Every other choice row has `correctedLater: false`, and plan drop/move
+rows `not_applicable`. Each choice is
 resolved against the definition pinned for that run (one read per execution, shared with set
 counts): `select_alternative` → `swapped` with `step` and `replacement`; `omit_step` → `omitted` with
 `step`; `end_block` → `omitted` with `step: rest of block: <title>`; `end_session` → `omitted` with
@@ -364,7 +371,7 @@ counts): `select_alternative` → `swapped` with `step` and `replacement`; `omit
 set or rep reductions are not overrides. A choice the
 pinned definition cannot resolve keeps `kind: null` with the reason as its state (`invalid`, or the
 definition read's state). `reason` is the athlete's choice reason, `not_recorded` when blank. Plan
-drop/move rows carry `step`/`replacement`/`executionState` as `not_applicable`; their `reason` is
+drop/move rows carry `step`/`replacement`/`executionState`/`correctedLater` as `not_applicable`; their `reason` is
 `{ code, note? }` as recorded on the assignment as of the export date (from the immutable placement
 event, never a later overlay value), `not_recorded` when the athlete was asked and left it blank,
 and `not_yet_supported` for a change written before reasons were asked (Phase 3C). Each choice row carries the

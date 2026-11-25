@@ -1468,6 +1468,7 @@ observedOn: 2026-11-18
 | step | Not recorded | Not specified | adaptive | not_applicable | 2026-11-18 |
 | replacement | Not recorded | Not specified | adaptive | not_applicable | 2026-11-18 |
 | executionState | Not recorded | Not specified | adaptive | not_applicable | 2026-11-18 |
+| correctedLater | Not recorded | Not specified | adaptive | not_applicable | 2026-11-18 |
 
 #### choice:exec-1:choice-1:0
 
@@ -1483,6 +1484,7 @@ observedOn: 2026-11-19
 | step | Back Squat | Not specified | adaptive | measured | 2026-11-19 |
 | replacement | Goblet Squat | Not specified | adaptive | measured | 2026-11-19 |
 | executionState | completed | Not specified | adaptive | measured | 2026-11-19 |
+| correctedLater | false | Not specified | adaptive | measured | 2026-11-19 |
 
 ### plannedToPerformed
 

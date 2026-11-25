@@ -44,11 +44,18 @@ const run = (entries: SessionEntry[], source: object = { kind: 'external_plan', 
     entries,
 }) as unknown as NormalizedExecutionRecord;
 
+const performedUnder = (id: string, governingChoiceEntryId: string, optionId: string, extra: Partial<SessionEntry> = {}): SessionEntry => ({
+    id, executionId: 'exec-1', completedAt: AT, createdAt: AT, updatedAt: AT,
+    payload: { kind: 'repetition', setIndex: 1, reps: 8 },
+    governingChoiceEntryId, selectedOptionId: optionId,
+    ...extra,
+}) as SessionEntry;
+
 describe('choiceOverridesForExecution', () => {
     it('reports a chosen alternative as a swap with the step, replacement and reason', () => {
         expect(choiceOverridesForExecution(run([choice('c1', 'swap', {}, ' Knee tight ')]), { definition })).toEqual([{
             id: 'exec-1:c1:0', date: '2026-11-19', executionState: 'completed', planId: 'plan-1', sessionId: 's1',
-            kind: 'swapped', step: 'Back Squat', replacement: 'Goblet Squat', reason: 'Knee tight',
+            kind: 'swapped', step: 'Back Squat', replacement: 'Goblet Squat', reason: 'Knee tight', correctedLater: false,
         }]);
     });
 
@@ -84,6 +91,112 @@ describe('choiceOverridesForExecution', () => {
             choice('c2', 'lighter', { supersedesChoiceEntryId: 'c1', completedAt: '2026-11-19T07:05:00.000Z' }),
         ]), { definition });
         expect(rows).toEqual([]);
+    });
+
+    it('keeps the row id of a choice stable when a correction only changes its reason', () => {
+        const [original] = choiceOverridesForExecution(run([choice('c1', 'swap')]), { definition });
+        const [corrected] = choiceOverridesForExecution(run([
+            choice('c1', 'swap'),
+            choice('c2', 'swap', { supersedesChoiceEntryId: 'c1', completedAt: '2026-11-19T07:05:00.000Z' }, 'Knee tight'),
+            choice('c3', 'swap', { supersedesChoiceEntryId: 'c2', completedAt: '2026-11-19T07:06:00.000Z' }, 'Knee very tight'),
+        ]), { definition });
+        expect(original.id).toBe('exec-1:c1:0');
+        expect(corrected).toMatchObject({ id: 'exec-1:c1:0', reason: 'Knee very tight', correctedLater: false });
+    });
+
+    it('also reports a superseded choice that governed performed sets, marked as corrected later', () => {
+        const rows = choiceOverridesForExecution(run([
+            choice('c1', 'swap', {}, 'Knee'),
+            performedUnder('set-1', 'c1', 'swap'),
+            choice('c2', 'lighter', { supersedesChoiceEntryId: 'c1', completedAt: '2026-11-19T07:05:00.000Z' }),
+        ]), { definition });
+        expect(rows).toEqual([{
+            id: 'exec-1:c1@c1:0', date: '2026-11-19', executionState: 'completed', planId: 'plan-1', sessionId: 's1',
+            kind: 'swapped', step: 'Back Squat', replacement: 'Goblet Squat', reason: 'Knee', correctedLater: true,
+        }]);
+
+        // Correcting only the reason of a choice that already governed sets is still one override.
+        const reasonOnly = choiceOverridesForExecution(run([
+            choice('c1', 'swap'),
+            performedUnder('set-1', 'c1', 'swap'),
+            choice('c2', 'swap', { supersedesChoiceEntryId: 'c1', completedAt: '2026-11-19T07:05:00.000Z' }, 'Knee tight'),
+        ]), { definition });
+        expect(reasonOnly.map(row => [row.id, row.reason, row.correctedLater])).toEqual([['exec-1:c1:0', 'Knee tight', false]]);
+
+        // Two superseded entries of one option are one override, reported with its latest reason.
+        const repeatedOption = choiceOverridesForExecution(run([
+            choice('c1', 'swap'),
+            performedUnder('set-1', 'c1', 'swap'),
+            choice('c2', 'swap', { supersedesChoiceEntryId: 'c1', completedAt: '2026-11-19T07:05:00.000Z' }, 'Knee tight'),
+            performedUnder('set-2', 'c2', 'swap'),
+            choice('c3', 'lighter', { supersedesChoiceEntryId: 'c2', completedAt: '2026-11-19T07:10:00.000Z' }),
+        ]), { definition });
+        expect(repeatedOption.map(row => [row.id, row.reason, row.correctedLater])).toEqual([['exec-1:c1@c2:0', 'Knee tight', true]]);
+
+        // A deleted performed entry no longer makes the superseded choice reportable.
+        expect(choiceOverridesForExecution(run([
+            choice('c1', 'swap'),
+            performedUnder('set-1', 'c1', 'swap', { deletedAt: AT }),
+            choice('c2', 'lighter', { supersedesChoiceEntryId: 'c1', completedAt: '2026-11-19T07:05:00.000Z' }),
+        ]), { definition })).toEqual([]);
+
+        // The effective choice keeps its root id alongside the superseded governing one.
+        const both = choiceOverridesForExecution(run([
+            choice('c1', 'swap'),
+            performedUnder('set-1', 'c1', 'swap'),
+            choice('c2', 'skip-both', { supersedesChoiceEntryId: 'c1', completedAt: '2026-11-19T07:05:00.000Z' }),
+        ]), { definition });
+        expect(both.map(row => [row.id, row.kind, row.correctedLater])).toEqual([
+            ['exec-1:c1@c1:0', 'swapped', true],
+            ['exec-1:c1:0', 'omitted', false],
+            ['exec-1:c1:1', 'omitted', false],
+        ]);
+    });
+
+    it('uses one canonical root for historical cycles so repeated options are not reported twice', () => {
+        // 2-node cycle with the same option: effective c1 and superseded governing c2 share anchor c1.
+        const sameOptionCycle = choiceOverridesForExecution(run([
+            choice('c1', 'swap', { supersedesChoiceEntryId: 'c2' }, 'Initial'),
+            choice('c2', 'swap', { supersedesChoiceEntryId: 'c1', completedAt: '2026-11-19T07:05:00.000Z' }, 'Edited'),
+            performedUnder('set-1', 'c2', 'swap'),
+        ]), { definition });
+        expect(sameOptionCycle.map(row => [row.id, row.reason, row.correctedLater])).toEqual([
+            ['exec-1:c1:0', 'Initial', false],
+        ]);
+
+        // 2-node cycle with different options: superseded governing c2 anchors on canonical cycle root c1.
+        const differentOptionCycle = choiceOverridesForExecution(run([
+            choice('c1', 'lighter', { supersedesChoiceEntryId: 'c2' }),
+            choice('c2', 'swap', { supersedesChoiceEntryId: 'c1', completedAt: '2026-11-19T07:05:00.000Z' }, 'Knee'),
+            performedUnder('set-1', 'c2', 'swap'),
+        ]), { definition });
+        expect(differentOptionCycle.map(row => [row.id, row.reason, row.correctedLater])).toEqual([
+            ['exec-1:c1@c2:0', 'Knee', true],
+        ]);
+
+        // 3-node cycle with repeated superseded option: c2 and c3 collapse to latest governing entry (c3).
+        const threeNodeCycle = choiceOverridesForExecution(run([
+            choice('c1', 'lighter', { supersedesChoiceEntryId: 'c3' }),
+            choice('c2', 'swap', { supersedesChoiceEntryId: 'c1', completedAt: '2026-11-19T07:05:00.000Z' }, 'First'),
+            choice('c3', 'swap', { supersedesChoiceEntryId: 'c2', completedAt: '2026-11-19T07:10:00.000Z' }, 'Second'),
+            performedUnder('set-1', 'c2', 'swap'),
+            performedUnder('set-2', 'c3', 'swap'),
+        ]), { definition });
+        expect(threeNodeCycle.map(row => [row.id, row.reason, row.correctedLater])).toEqual([
+            ['exec-1:c1@c3:0', 'Second', true],
+        ]);
+
+        // Tail leading into a cycle: effective c3 and cycle nodes c1/c2 all anchor on c1.
+        const tailIntoCycle = choiceOverridesForExecution(run([
+            choice('c1', 'swap', { supersedesChoiceEntryId: 'c2' }),
+            choice('c2', 'swap', { supersedesChoiceEntryId: 'c1', completedAt: '2026-11-19T07:05:00.000Z' }),
+            choice('c3', 'swap', { supersedesChoiceEntryId: 'c2', completedAt: '2026-11-19T07:10:00.000Z' }, 'Final'),
+            performedUnder('set-1', 'c1', 'swap'),
+            performedUnder('set-2', 'c2', 'swap'),
+        ]), { definition });
+        expect(tailIntoCycle.map(row => [row.id, row.reason, row.correctedLater])).toEqual([
+            ['exec-1:c1:0', 'Final', false],
+        ]);
     });
 
     it('ignores deleted choices, omits a blank reason, and has no plan ids for a non-plan session', () => {
