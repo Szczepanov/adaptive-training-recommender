@@ -2361,7 +2361,8 @@
         "reason",
         "step",
         "replacement",
-        "executionState"
+        "executionState",
+        "correctedLater"
       ],
       "properties": {
         "planId": {
@@ -2386,6 +2387,9 @@
           "$ref": "#/$defs/ledgerValue"
         },
         "executionState": {
+          "$ref": "#/$defs/ledgerValue"
+        },
+        "correctedLater": {
           "$ref": "#/$defs/ledgerValue"
         }
       }

@@ -333,7 +333,7 @@ export function fullRecords(): LedgerExportRecords {
         plannedToPerformed: [{ planId: 'plan-1', revision: 2, sessionId: 's1', date: '2026-11-19', performedOccurrenceId: 'occ-1' }],
         planExecutions: [{ planId: 'plan-1', revision: 2, sessionId: 's1', state: 'completed' }],
         choiceOverrides: [{
-            id: 'exec-1:choice-1:0', date: '2026-11-19', executionState: 'completed', planId: 'plan-1', sessionId: 's1',
+            id: 'exec-1:choice-1:0', date: '2026-11-19', executionState: 'completed', correctedLater: false, planId: 'plan-1', sessionId: 's1',
             kind: 'swapped', step: 'Back Squat', replacement: 'Goblet Squat', reason: 'Knee felt tight',
         }],
     };

@@ -213,6 +213,7 @@ function buildChoiceOverrides(records: LedgerExportRecords, context: BuildContex
                     absent: row.kind === 'swapped' ? row.replacementState ?? 'missing' : row.kind === null ? row.kindState ?? 'missing' : 'not_applicable',
                 }),
                 executionState: fact(row.executionState, base),
+                correctedLater: fact(row.correctedLater, base),
             };
             return record(`choice:${row.id}`, row.date, values);
         },
@@ -255,6 +256,7 @@ function buildPlacementOverrides(flat: FlatAssignment[] | undefined, context: Bu
                 step: fact(null, { ...base, absent: 'not_applicable' }),
                 replacement: fact(null, { ...base, absent: 'not_applicable' }),
                 executionState: fact(null, { ...base, absent: 'not_applicable' }),
+                correctedLater: fact(null, { ...base, absent: 'not_applicable' }),
             };
             return record(assignmentId(row), row.date, values);
         },

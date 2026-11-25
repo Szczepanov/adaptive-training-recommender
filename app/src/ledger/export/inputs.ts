@@ -191,7 +191,8 @@ export interface UnverifiedPlanEvidenceInput {
  * resolved; `stepState`/`replacementState` say why a resolved row lacks its step or replacement.
  */
 export interface ChoiceOverrideInput {
-    /** Stable: execution id, choice entry id and action index. */
+    /** Stable: execution id, the choice's correction-chain root entry id (plus `@<entry id>` for a
+     * superseded governing choice) and action index. */
     id: string;
     date: string;
     planId?: string;
@@ -205,6 +206,8 @@ export interface ChoiceOverrideInput {
     reason?: string;
     /** The run the choice was made in, so an abandoned run or a rerun is not mistaken for the completed one. */
     executionState: 'in_progress' | 'completed' | 'abandoned';
+    /** True for a superseded choice that still governed live performed entries; false for the effective one. */
+    correctedLater: boolean;
 }
 
 /** One record per source read. Absent = not read, reported `unavailable`. */
