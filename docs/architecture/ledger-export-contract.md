@@ -360,7 +360,9 @@ choice's correction chain counts, so a correction is never a second override; th
 root entry, so a correction that only changes the reason keeps the same row. A superseded choice that
 still governed live performed entries (`governingChoiceEntryId`) is also exported, as
 `choice:<executionId>:<rootEntryId>@<entryId>:<actionIndex>` with `correctedLater: true`, because the
-sets done under it were real; every other choice row has `correctedLater: false`, and plan drop/move
+sets done under it were real. It is exported once per chain and option, with that option's latest
+governing reason, and not at all when the effective choice is the same option (a reason-only
+correction is one override). Every other choice row has `correctedLater: false`, and plan drop/move
 rows `not_applicable`. Each choice is
 resolved against the definition pinned for that run (one read per execution, shared with set
 counts): `select_alternative` → `swapped` with `step` and `replacement`; `omit_step` → `omitted` with

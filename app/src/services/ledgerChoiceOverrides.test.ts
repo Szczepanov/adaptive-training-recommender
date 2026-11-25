@@ -114,6 +114,24 @@ describe('choiceOverridesForExecution', () => {
             kind: 'swapped', step: 'Back Squat', replacement: 'Goblet Squat', reason: 'Knee', correctedLater: true,
         }]);
 
+        // Correcting only the reason of a choice that already governed sets is still one override.
+        const reasonOnly = choiceOverridesForExecution(run([
+            choice('c1', 'swap'),
+            performedUnder('set-1', 'c1', 'swap'),
+            choice('c2', 'swap', { supersedesChoiceEntryId: 'c1', completedAt: '2026-11-19T07:05:00.000Z' }, 'Knee tight'),
+        ]), { definition });
+        expect(reasonOnly.map(row => [row.id, row.reason, row.correctedLater])).toEqual([['exec-1:c1:0', 'Knee tight', false]]);
+
+        // Two superseded entries of one option are one override, reported with its latest reason.
+        const repeatedOption = choiceOverridesForExecution(run([
+            choice('c1', 'swap'),
+            performedUnder('set-1', 'c1', 'swap'),
+            choice('c2', 'swap', { supersedesChoiceEntryId: 'c1', completedAt: '2026-11-19T07:05:00.000Z' }, 'Knee tight'),
+            performedUnder('set-2', 'c2', 'swap'),
+            choice('c3', 'lighter', { supersedesChoiceEntryId: 'c2', completedAt: '2026-11-19T07:10:00.000Z' }),
+        ]), { definition });
+        expect(repeatedOption.map(row => [row.id, row.reason, row.correctedLater])).toEqual([['exec-1:c1@c2:0', 'Knee tight', true]]);
+
         // A deleted performed entry no longer makes the superseded choice reportable.
         expect(choiceOverridesForExecution(run([
             choice('c1', 'swap'),

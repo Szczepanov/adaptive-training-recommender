@@ -6,7 +6,8 @@
  * is never a second override, and its row id comes from the chain's root entry, so a correction that
  * only changes the reason keeps the same row. A superseded choice that still governed live performed
  * entries (`governingChoiceEntryId`) is also reported, with `correctedLater: true`, because the work it
- * shaped was really done. Each choice is resolved against the definition pinned for that run
+ * shaped was really done. That applies once per chain and option: a superseded entry of the effective
+ * option (a reason-only correction) is the same override, not a second one. Each choice is resolved against the definition pinned for that run
  * (`resolvePinned`): `select_alternative` is a swap, and `omit_step`, `end_block` and `end_session`
  * are omissions, because the runner applies all three by making the affected steps optional. Load,
  * set or rep reductions are not overrides. A choice that cannot be resolved keeps explicit
@@ -20,7 +21,6 @@ import { resolveEffectiveChoiceEntries, type ChoiceSessionEntry } from '../sessi
 import { exerciseRefName, stepName } from '../sessions/stepDisplay';
 
 export type PinnedDefinition = { definition: SessionDefinition } | { state: LedgerState };
-
 
 function findStep(definition: SessionDefinition, stepId: string): SessionStep | undefined {
     return definition.blocks.flatMap(block => block.steps).find(step => step.id === stepId);
@@ -90,16 +90,27 @@ export function hasLiveChoice(row: NormalizedExecutionRecord): boolean {
     return row.entries.some(entry => !entry.deletedAt && entry.payload.kind === 'choice');
 }
 
+function compareEntries(a: ChoiceSessionEntry, b: ChoiceSessionEntry): number {
+    return a.completedAt.localeCompare(b.completedAt) || a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id);
+}
+
 /** Override rows for one execution's effective choices, resolved against its pinned definition. */
 export function choiceOverridesForExecution(row: NormalizedExecutionRecord, pinned: PinnedDefinition): ChoiceOverrideInput[] {
     const live = row.entries.filter(entry => !entry.deletedAt);
     const effective = resolveEffectiveChoiceEntries(live);
     const effectiveIds = new Set(effective.map(entry => entry.id));
     const governing = new Set(live.flatMap(entry => (entry.payload.kind !== 'choice' && entry.governingChoiceEntryId ? [entry.governingChoiceEntryId] : [])));
-    const supersededGoverning = live.filter((entry): entry is ChoiceSessionEntry =>
-        entry.payload.kind === 'choice' && governing.has(entry.id) && !effectiveIds.has(entry.id));
-    return [...supersededGoverning, ...effective]
-        .sort((a, b) => a.completedAt.localeCompare(b.completedAt) || a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))
+    const optionKey = (entry: ChoiceSessionEntry) => JSON.stringify([chainRoot(entry, live), entry.payload.optionId]);
+    const effectiveOptions = new Set(effective.map(optionKey));
+    // Later entries overwrite earlier ones, so a repeated option keeps its latest reason.
+    const supersededGoverning = new Map(live
+        .filter((entry): entry is ChoiceSessionEntry =>
+            entry.payload.kind === 'choice' && governing.has(entry.id) && !effectiveIds.has(entry.id))
+        .filter(entry => !effectiveOptions.has(optionKey(entry)))
+        .sort(compareEntries)
+        .map(entry => [optionKey(entry), entry] as const));
+    return [...supersededGoverning.values(), ...effective]
+        .sort(compareEntries)
         .flatMap(entry => {
             const root = chainRoot(entry, live);
             return effectiveIds.has(entry.id)
