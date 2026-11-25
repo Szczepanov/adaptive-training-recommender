@@ -89,7 +89,7 @@ export function assembleDEvalBlockInput(
     );
     const redFlagOnDate = buildRedFlagLookup(raw.checkins, raw.checkinsState, asOfDate, asOfMs);
 
-    const planIndex = indexPlans(raw);
+    const planIndex = indexPlans(raw, asOfMs);
     const { execById, execsBySession, unverifiedSessions, linksBySession } = buildExecutionAndLinkIndexes(
         raw,
         planIndex.verifiedRevMap,
@@ -174,8 +174,9 @@ export function assembleDEvalBlockInput(
         && injuriesSourceState === 'measured'
         && outcomesSourceState === 'measured';
 
+    const preferenceVerified = raw.preferencesState === 'measured' || raw.preferencesState === 'missing';
     let rollbackSettingState: string;
-    if (raw.preferencesState === 'measured' || raw.preferencesState === 'missing') {
+    if (preferenceVerified) {
         rollbackSettingState = raw.engineRecommendationsEnabled === true ? 'on (enabled)' : 'off';
         if (rollbackContradicted) {
             extraKnownLimits.push(
@@ -226,6 +227,7 @@ export function assembleDEvalBlockInput(
             rollbackState,
             reason: rollbackReason,
             rollbackAtDate,
+            settingVerified: preferenceVerified,
         },
         extraKnownLimits: [...new Set(extraKnownLimits)],
     };

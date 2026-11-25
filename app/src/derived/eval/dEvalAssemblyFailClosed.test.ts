@@ -557,4 +557,79 @@ describe('PR #1287 review findings regression checks', () => {
         const governingOn = createPlanGovernance([validRev, unparseableRev]);
         expect(governingOn('2026-11-28')?.revision).toBe(1);
     });
+
+    it('makes C4 inconclusive when the engine preference state cannot be verified while preserving missing as off', () => {
+        for (const preferencesState of ['unavailable', 'invalid'] as const) {
+            const unverified = evaluate({
+                preferencesState,
+                engineRecommendationsEnabled: null,
+            });
+            expect(unverified.c4.status).toBe('inconclusive');
+            expect(unverified.c4.rollbackState).toBe('unused');
+            expect(unverified.c4.reason).toContain('engineRecommendationsEnabled');
+            expect(unverified.overall).toBe('EXTEND');
+
+            const safetyOverride = evaluate({
+                preferencesState,
+                engineRecommendationsEnabled: null,
+            }, { rollbackState: 'safety', rollbackReason: 'Safety rollback' });
+            expect(safetyOverride.c4.status).toBe('fail');
+            expect(safetyOverride.overall).toBe('NO_GO');
+        }
+
+        const missingProfile = evaluate({
+            preferencesState: 'missing',
+            engineRecommendationsEnabled: null,
+        });
+        expect(missingProfile.c4).toMatchObject({ status: 'pass', rollbackState: 'unused' });
+    });
+
+    it('excludes plan revisions imported after asOfTimestamp from C1 governance on the cutoff date', () => {
+        const rev1 = makeRevision([session('s1', '2026-11-28')], {
+            revision: 1,
+            importedAt: '2026-10-25T08:00:00.000Z',
+        });
+        const rev2 = makeRevision([session('s2', '2026-11-28')], {
+            revision: 2,
+            contentHash: 'h2',
+            importedAt: '2026-11-28T18:00:00.000Z',
+            horizon: { effectiveFrom: '2026-11-28', startDate: BLOCK_START, endDate: BLOCK_END },
+        });
+
+        expect(createPlanGovernance([rev1, rev2], Date.parse('2026-11-28T10:00:00.000Z'))('2026-11-28')?.revision).toBe(1);
+        expect(createPlanGovernance([rev1, rev2], Date.parse('2026-11-28T18:00:00.000Z'))('2026-11-28')?.revision).toBe(2);
+
+        const baseLedger: Partial<DEvalRawLedgerData> = {
+            planRevisions: [rev1, rev2],
+            placements: [
+                { planId: 'p1', revision: 1, assignments: [{ sessionId: 's1', date: '2026-11-28', status: 'completed' }] },
+                { planId: 'p1', revision: 2, assignments: [{ sessionId: 's2', date: '2026-11-28', status: 'planned' }] },
+            ],
+            placementHistory: [
+                event('2026-11-27', [], [{ sessionId: 's1', date: '2026-11-28', status: 'completed' }]),
+                {
+                    ...event('2026-11-28', [], [{ sessionId: 's2', date: '2026-11-28', status: 'planned' }]),
+                    revision: 2,
+                    recordedAt: '2026-11-28T18:00:00.000Z',
+                },
+            ],
+            executions: [makePlanExec('exec-1', '2026-11-28', 'p1', 1, 's1', 'h1')],
+            performedOccurrences: [makeOccurrence('occ-1', '2026-11-28', 'exec-1')],
+        };
+
+        const beforeRev2Import = evaluate(baseLedger, {
+            asOfDate: '2026-11-28',
+            asOfTimestamp: '2026-11-28T10:00:00.000Z',
+        });
+        expect(outcomesOf(beforeRev2Import)).toEqual([['p1@1:s1@2026-11-28', 'completed']]);
+
+        const atRev2Import = evaluate(baseLedger, {
+            asOfDate: '2026-11-28',
+            asOfTimestamp: '2026-11-28T18:00:00.000Z',
+        });
+        expect(outcomesOf(atRev2Import)).toEqual([
+            ['p1@1:s1@2026-11-28', 'completed'],
+            ['p1@2:s2@2026-11-28', 'unknown'],
+        ]);
+    });
 });

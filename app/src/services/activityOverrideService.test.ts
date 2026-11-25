@@ -187,6 +187,17 @@ describe('ActivityOverrideService', () => {
             firestoreMock.getDocs.mockResolvedValueOnce({ forEach: (cb: (d: (typeof docs)[number]) => void) => docs.forEach(cb) });
             const state = await service.getOverridesSinceState('user-456', '2026-03-01');
             expect(state).toEqual({ status: 'AVAILABLE', data: { 'act-123': mockOverride }, revision: null });
+            expect(firestoreMock.where).toHaveBeenCalledTimes(1);
+            expect(firestoreMock.where).toHaveBeenCalledWith('date', '>=', '2026-03-01');
+        });
+
+        it('getOverridesSinceState applies an inclusive upper date bound when toDateInclusive is provided', async () => {
+            const docs = [{ id: 'act-123', data: () => mockOverride }];
+            firestoreMock.getDocs.mockResolvedValueOnce({ forEach: (cb: (d: (typeof docs)[number]) => void) => docs.forEach(cb) });
+            const state = await service.getOverridesSinceState('user-456', '2026-03-01', '2026-03-28');
+            expect(state).toEqual({ status: 'AVAILABLE', data: { 'act-123': mockOverride }, revision: null });
+            expect(firestoreMock.where).toHaveBeenCalledWith('date', '>=', '2026-03-01');
+            expect(firestoreMock.where).toHaveBeenCalledWith('date', '<=', '2026-03-28');
         });
     });
 

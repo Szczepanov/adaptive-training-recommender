@@ -256,7 +256,9 @@ function evaluateProtocolMetric(params: {
         .filter(obs => obs.revision.validity === 'valid')
         .filter(obs => isCompletedByAsOf(attemptById.get(obs.revision.assessmentAttemptId), asOfDate, asOfMs))
         .map(toDatedObservation)
-        .filter((entry): entry is DatedObservation => entry !== null && (asOfMs === null || entry.ms <= asOfMs))
+        .filter((entry): entry is DatedObservation => (
+            entry !== null && (asOfMs !== null ? entry.ms <= asOfMs : entry.date <= asOfDate)
+        ))
         .sort(compareObservations);
 
     const metricIncomplete = observationsIncomplete || unresolvedRevisionAtCutoff;
@@ -515,7 +517,7 @@ export function evaluateC2Benchmarks(input: DEvalC2Input): DEvalC2Result {
         knownLimits.push('One or more goal-bound metric observation reads were unavailable or contained unreadable records; affected C2 comparisons are inconclusive.');
     }
     if (protocolResults.some(protocol => protocol.reasons.includes('observation_revision_unresolved_at_cutoff'))) {
-        knownLimits.push('One or more metric observations were modified after the as-of cutoff and their pre-cutoff revision could not be reconstructed; affected C2 comparisons are inconclusive.');
+        knownLimits.push('The revision known at the as-of cutoff could not be established for one or more metric observations; affected C2 comparisons are inconclusive.');
     }
     if (protocolResults.some(protocol => protocol.metrics.some(metric => metric.reliability?.source === 'literature_reference'))) {
         knownLimits.push('C2 uses OD10 literature_reference CV bounds unless personal repeatability or manual estimates exist for the series.');

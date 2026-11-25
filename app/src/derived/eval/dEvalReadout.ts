@@ -80,6 +80,7 @@ export interface DEvalC4Input {
     rollbackState: DEvalRollbackUsage;
     reason?: string | null;
     rollbackAtDate?: string | null;
+    settingVerified?: boolean;
 }
 
 export interface DEvalC4Result {
@@ -92,16 +93,17 @@ export interface DEvalC4Result {
 /** Evaluates ADR-0052 D-EVAL Criterion C4 (rollback usage). */
 export function evaluateC4Rollback(input: DEvalC4Input | DEvalRollbackUsage): DEvalC4Result {
     const normalized: DEvalC4Input = typeof input === 'string' ? { rollbackState: input } : input;
-    const status: DEvalCriterionStatus = normalized.rollbackState === 'unused'
-        ? 'pass'
-        : normalized.rollbackState === 'safety'
-            ? 'fail'
-            : 'inconclusive';
+    const settingVerified = normalized.settingVerified !== false;
+    const status: DEvalCriterionStatus = normalized.rollbackState === 'safety'
+        ? 'fail'
+        : normalized.rollbackState === 'non_safety' || !settingVerified
+            ? 'inconclusive'
+            : 'pass';
 
     return {
         status,
         rollbackState: normalized.rollbackState,
-        reason: normalized.reason ?? null,
+        reason: normalized.reason ?? (settingVerified ? null : 'engineRecommendationsEnabled could not be verified'),
         rollbackAtDate: normalized.rollbackAtDate ?? null,
     };
 }

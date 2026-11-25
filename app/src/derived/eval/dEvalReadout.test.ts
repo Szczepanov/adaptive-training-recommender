@@ -1332,5 +1332,43 @@ describe('review regressions (PR #1284)', () => {
         }));
         expect(invalidTimestampResult.status).toBe('inconclusive');
         expect(invalidTimestampResult.reasons).toContain('observation_revision_unresolved_at_cutoff');
+        expect(invalidTimestampResult.knownLimits.join(' ')).toContain('could not be established');
+        expect(invalidTimestampResult.knownLimits.join(' ')).not.toContain('modified after');
+    });
+
+    it('C2 applies the date-only cutoff to baseline observations when asOfMs is absent', () => {
+        const jumpOnly = DEVAL_GOAL_BOUND_PROTOCOLS.filter(p => p.protocolId === 'field-standing-broad-jump');
+        const jump = (key: string, observedAt: string, createdAt: string, value: number) => {
+            const obs = makeObservation({
+                observationKey: key,
+                protocolId: 'field-standing-broad-jump',
+                metricId: 'standing_broad_jump_distance_cm',
+                value,
+                unit: 'cm',
+                observedAt,
+                attemptId: `attempt-${key}`,
+            });
+            obs.revision.createdAt = createdAt;
+            obs.head.createdAt = createdAt;
+            obs.head.updatedAt = createdAt;
+            return obs;
+        };
+
+        const futureObsEnteredEarly = jump('future-obs', '2026-11-12T09:00:00Z', '2026-11-09T09:00:00Z', 240);
+        const onCutoffObs = jump('cutoff-obs', '2026-11-10T09:00:00Z', '2026-11-09T09:00:00Z', 245);
+
+        const excluded = evaluateC2Benchmarks(c2Input([futureObsEnteredEarly], {
+            protocols: jumpOnly,
+            asOfDate: '2026-11-10',
+        }));
+        expect(excluded.status).toBe('inconclusive');
+        expect(excluded.reasons).toContain('missing_before_attempt');
+
+        const included = evaluateC2Benchmarks(c2Input([futureObsEnteredEarly, onCutoffObs], {
+            protocols: jumpOnly,
+            asOfDate: '2026-11-10',
+        }));
+        expect(included.status).toBe('pending');
+        expect(included.protocols[0]?.metrics[0]?.before?.date).toBe('2026-11-10');
     });
 });

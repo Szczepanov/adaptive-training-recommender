@@ -87,7 +87,9 @@ function formatC3Evidence(c3: DEvalC3Result): string {
 }
 
 function formatC4Evidence(c4: DEvalC4MarkdownSummary): string {
-    const used = c4.rollbackState === 'unused' ? 'no' : `yes (${c4.rollbackState})`;
+    const used = c4.rollbackState === 'unused'
+        ? (c4.status === 'inconclusive' ? 'unverified' : 'no')
+        : `yes (${c4.rollbackState})`;
     const at = c4.rollbackAtDate ? ` at ${c4.rollbackAtDate}` : '';
     return escapeCell(`rollback used=${used}${at}; reason=${c4.reason ?? 'none'}`);
 }

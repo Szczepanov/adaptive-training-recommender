@@ -100,8 +100,9 @@ export interface RevisionPlacementIndex {
     unrecordedSessions: ReadonlyMap<string, readonly string[]>;
 }
 
-export function indexPlans(raw: DEvalRawLedgerData): RevisionPlacementIndex {
+export function indexPlans(raw: DEvalRawLedgerData, asOfMs: number | null = null): RevisionPlacementIndex {
     const verifiedRevMap = new Map<string, DEvalRawPlanRevision>();
+    const postCutoffRevKeys = new Set<string>();
     const issueReasonsByRev = new Map<string, Set<DEvalRawPlanIssue['reason']>>();
     const issueReasonsByPlan = new Map<string, Set<DEvalRawPlanIssue['reason']>>();
 
@@ -120,6 +121,13 @@ export function indexPlans(raw: DEvalRawLedgerData): RevisionPlacementIndex {
 
     for (const rev of raw.planRevisions) {
         const key = revisionKey(rev.planId, rev.revision);
+        if (asOfMs !== null) {
+            const importedMs = parseUtcTimestampMs(rev.importedAt);
+            if (importedMs !== null && importedMs > asOfMs) {
+                postCutoffRevKeys.add(key);
+                continue;
+            }
+        }
         if (!issueReasonsByRev.get(key)?.has('unverified_revision')) {
             verifiedRevMap.set(key, rev);
         }
@@ -127,12 +135,15 @@ export function indexPlans(raw: DEvalRawLedgerData): RevisionPlacementIndex {
 
     const overlaysByRev = new Map<string, DEvalRawPlacementOverlay>();
     for (const overlay of raw.placements) {
-        overlaysByRev.set(revisionKey(overlay.planId, overlay.revision), overlay);
+        const key = revisionKey(overlay.planId, overlay.revision);
+        if (postCutoffRevKeys.has(key)) continue;
+        overlaysByRev.set(key, overlay);
     }
 
     const eventsByRev = new Map<string, PlacementEvent[]>();
     for (const event of raw.placementHistory) {
         const key = revisionKey(event.planId, event.revision);
+        if (postCutoffRevKeys.has(key)) continue;
         const list = eventsByRev.get(key) ?? [];
         list.push(event);
         eventsByRev.set(key, list);
@@ -141,7 +152,7 @@ export function indexPlans(raw: DEvalRawLedgerData): RevisionPlacementIndex {
         list.sort((a, b) => a.changedOn.localeCompare(b.changedOn) || a.recordedAt.localeCompare(b.recordedAt));
     }
 
-    const governingOn = createPlanGovernance(verifiedRevMap.values());
+    const governingOn = createPlanGovernance(verifiedRevMap.values(), asOfMs);
     const unrecordedSessions = indexUnrecordedSessions(verifiedRevMap, eventsByRev, governingOn);
     return {
         verifiedRevMap, overlaysByRev, eventsByRev, issueReasonsByRev, issueReasonsByPlan, governingOn, unrecordedSessions,

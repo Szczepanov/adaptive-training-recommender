@@ -54,12 +54,21 @@ export class ActivityOverrideService {
         }
     }
 
-    /** Overrides for activities dated on/after `fromDate` (Warsaw calendar date). Unlike
-     * `getAllOverrides`, a failed read is reported as UNAVAILABLE instead of being collapsed
-     * into "no overrides", so read-only exports can say the source is unknown. */
-    async getOverridesSinceState(userId: string, fromDate: string): Promise<DataState<Record<string, ActivityOverride>>> {
+    /** Overrides for activities dated on/after `fromDate` (Warsaw calendar date), optionally
+     * bounded above by `toDateInclusive`. Unlike `getAllOverrides`, a failed read is reported as
+     * UNAVAILABLE instead of being collapsed into "no overrides", so read-only exports can say the
+     * source is unknown. */
+    async getOverridesSinceState(
+        userId: string,
+        fromDate: string,
+        toDateInclusive?: string,
+    ): Promise<DataState<Record<string, ActivityOverride>>> {
         try {
-            const snap = await getDocsRetained(query(this.getCollectionRef(userId), where('date', '>=', fromDate)));
+            const constraints = [
+                where('date', '>=', fromDate),
+                ...(toDateInclusive !== undefined ? [where('date', '<=', toDateInclusive)] : []),
+            ];
+            const snap = await getDocsRetained(query(this.getCollectionRef(userId), ...constraints));
             const overrides: Record<string, ActivityOverride> = {};
             const skipped: DataIssue[] = [];
             snap.forEach((docSnap) => {

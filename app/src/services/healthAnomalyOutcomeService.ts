@@ -1,4 +1,4 @@
-import { collection, doc, getDoc, getDocs, runTransaction } from 'firebase/firestore';
+import { collection, doc, documentId, getDoc, getDocs, limit, orderBy, query, runTransaction } from 'firebase/firestore';
 import { getDb } from '../firebase';
 import {
     buildHealthAnomalyEpisodeOutcome,
@@ -80,21 +80,34 @@ export class HealthAnomalyOutcomeRepository {
         return parseHealthAnomalyEpisodeOutcome(snapshot.data(), userId, episodeId);
     }
 
-    /** Load all readable prospective outcome labels for a user, counting unreadable documents. */
+    /** Load readable prospective outcome labels for a user (optionally capped at `maxOutcomes`), counting unreadable documents. */
     async listForUserWithDiagnostics(
         userId: string,
-    ): Promise<{ outcomes: HealthAnomalyEpisodeOutcome[]; unreadableCount: number }> {
-        const snapshot = await getDocs(collection(getDb(), 'users', userId, 'health_anomaly_outcomes'));
+        maxOutcomes?: number,
+    ): Promise<{ outcomes: HealthAnomalyEpisodeOutcome[]; unreadableCount: number; truncated?: boolean }> {
+        if (maxOutcomes !== undefined && (!Number.isSafeInteger(maxOutcomes) || maxOutcomes < 1)) {
+            throw new Error('maxOutcomes must be a positive safe integer');
+        }
+        const collectionRef = collection(getDb(), 'users', userId, 'health_anomaly_outcomes');
+        const snapshot = await getDocs(
+            maxOutcomes === undefined
+                ? collectionRef
+                : query(collectionRef, orderBy(documentId(), 'asc'), limit(maxOutcomes + 1)),
+        );
         const outcomes: HealthAnomalyEpisodeOutcome[] = [];
         let unreadableCount = 0;
-        for (const docSnap of snapshot.docs) {
+        for (const docSnap of snapshot.docs.slice(0, maxOutcomes)) {
             try {
                 outcomes.push(parseHealthAnomalyEpisodeOutcome(docSnap.data(), userId, docSnap.id));
             } catch {
                 unreadableCount += 1;
             }
         }
-        return { outcomes, unreadableCount };
+        return {
+            outcomes,
+            unreadableCount,
+            ...(maxOutcomes === undefined ? {} : { truncated: snapshot.docs.length > maxOutcomes }),
+        };
     }
 
     /** Load all readable prospective outcome labels for a user, skipping unreadable documents. */

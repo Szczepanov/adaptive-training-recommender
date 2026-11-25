@@ -7,13 +7,18 @@ export type PlanGovernance = (date: string) => DEvalRawPlanRevision | null;
 /**
  * Resolves the stored revision that governed a Warsaw date. Mirrors `ActiveExternalPlanService`:
  * within a plan, the latest activation effective by the date whose own horizon covers it; across
- * plans, the most recently imported. A revision imported after the date never governed it, because
- * the criteria use the assignments as they stood on that date. Results are memoized per date.
+ * plans, the most recently imported. A revision imported after the date (or after `asOfMs`, when
+ * an instant cutoff is supplied) never governed it, because the criteria use the assignments as
+ * they stood at that cutoff. Results are memoized per date.
  */
-export function createPlanGovernance(revisions: Iterable<DEvalRawPlanRevision>): PlanGovernance {
+export function createPlanGovernance(
+    revisions: Iterable<DEvalRawPlanRevision>,
+    asOfMs: number | null = null,
+): PlanGovernance {
     const dated = [...revisions].flatMap(revision => {
         const importedMs = parseUtcTimestampMs(revision.importedAt);
         if (importedMs === null) return [];
+        if (asOfMs !== null && importedMs > asOfMs) return [];
         return [{ revision, importedMs, importedOn: getLocalDateString(new Date(importedMs)) }];
     });
     const cache = new Map<string, DEvalRawPlanRevision | null>();

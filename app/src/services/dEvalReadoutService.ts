@@ -57,7 +57,28 @@ import { sessionExecutionService, type SessionExecutionService } from './session
 import { sessionResponseService, type SessionResponseService } from './sessionResponseService';
 import { trainingSettingsService, type TrainingSettingsService } from './trainingSettingsService';
 
-const EXECUTION_HEADER_MAX_RECORDS = 1000;
+export const EXECUTION_HEADER_MAX_RECORDS = 1000;
+export const ASSESSMENT_ATTEMPT_MAX_RECORDS = 500;
+export const HEALTH_ANOMALY_OUTCOME_MAX_RECORDS = 500;
+export const OBSERVATION_HISTORY_READ_CONCURRENCY = 4;
+
+async function mapWithConcurrency<T, R>(
+    items: readonly T[],
+    concurrency: number,
+    fn: (item: T) => Promise<R>,
+): Promise<R[]> {
+    const results = new Array<R>(items.length);
+    let nextIndex = 0;
+    const workerCount = Math.min(Math.max(1, concurrency), items.length);
+    await Promise.all(Array.from({ length: workerCount }, async () => {
+        while (nextIndex < items.length) {
+            const index = nextIndex;
+            nextIndex += 1;
+            results[index] = await fn(items[index]!);
+        }
+    }));
+    return results;
+}
 
 export interface DEvalReadoutRequest {
     blockStartDate: string;
@@ -162,6 +183,15 @@ export class DEvalReadoutService {
         if (request.asOfDate > this.today()) {
             throw new Error('The D-EVAL as-of date cannot be in the future');
         }
+        if (request.asOfTimestamp != null) {
+            const asOfMs = parseUtcTimestampMs(request.asOfTimestamp);
+            if (asOfMs === null) {
+                throw new Error('Invalid D-EVAL asOfTimestamp; expected an ISO-8601 timestamp with UTC offset');
+            }
+            if (getLocalDateString(new Date(asOfMs)) !== request.asOfDate) {
+                throw new Error('D-EVAL asOfTimestamp must fall on the same Europe/Warsaw calendar date as asOfDate');
+            }
+        }
 
         const baselineStart = addDaysToLocalDateString(request.blockStartDate, -DEVAL_MIN_BLOCK_DAYS);
         const effectiveBlockEnd = minDate(request.blockEndDate, request.asOfDate);
@@ -209,16 +239,16 @@ export class DEvalReadoutService {
                     .catch((): DataState<never> => ({ status: 'UNAVAILABLE', operation: 'read activities', retryable: true }))
                 : Promise.resolve<DataState<[]>>({ status: 'AVAILABLE', data: [], revision: null }),
             effectiveBlockEnd >= request.blockStartDate
-                ? this.deps.activityOverrides.getOverridesSinceState(userId, request.blockStartDate)
+                ? this.deps.activityOverrides.getOverridesSinceState(userId, request.blockStartDate, effectiveBlockEnd)
                     .catch((): DataState<never> => ({ status: 'UNAVAILABLE', operation: 'read overrides', retryable: true }))
                 : Promise.resolve<DataState<Record<string, never>>>({ status: 'AVAILABLE', data: {}, revision: null }),
             this.deps.trainingSettings.peekTrainingSettingsState(userId)
                 .catch((): DataState<never> => ({ status: 'UNAVAILABLE', operation: 'read training settings', retryable: true })),
             this.deps.preferences.getPreferencesState(userId)
                 .catch((): DataState<never> => ({ status: 'UNAVAILABLE', operation: 'read preferences', retryable: true })),
-            this.deps.healthAnomalyOutcomes.listForUserWithDiagnostics(userId)
+            this.deps.healthAnomalyOutcomes.listForUserWithDiagnostics(userId, HEALTH_ANOMALY_OUTCOME_MAX_RECORDS)
                 .then(res => ({ ok: true as const, ...res }))
-                .catch(() => ({ ok: false as const, outcomes: [], unreadableCount: 0 })),
+                .catch(() => ({ ok: false as const, outcomes: [], unreadableCount: 0, truncated: false })),
             this.readAssessments(userId, request.asOfDate, request.asOfTimestamp ?? null),
         ]);
 
@@ -252,7 +282,7 @@ export class DEvalReadoutService {
                     ? 'unavailable'
                     : 'measured';
 
-        const healthAnomalyOutcomesState: DEvalSourceReadState = !outcomesRead.ok
+        const healthAnomalyOutcomesState: DEvalSourceReadState = !outcomesRead.ok || outcomesRead.truncated
             ? 'unavailable'
             : outcomesRead.unreadableCount > 0
                 ? 'invalid'
@@ -413,7 +443,11 @@ export class DEvalReadoutService {
         const [attemptResults, observationResults] = await Promise.all([
             Promise.all(
                 protocolIds.map(protocolId =>
-                    this.deps.attempts.listAttemptsForProtocolWithDiagnostics(userId, protocolId)
+                    this.deps.attempts.listAttemptsForProtocolWithDiagnostics(
+                        userId,
+                        protocolId,
+                        ASSESSMENT_ATTEMPT_MAX_RECORDS,
+                    )
                         .then(res => ({ ok: true as const, ...res }))
                         .catch(() => ({ ok: false as const, attempts: [], unreadableCount: 0, truncated: false })),
                 ),
@@ -458,8 +492,10 @@ export class DEvalReadoutService {
                 incompleteObservationMetricIds.add(res.metricId);
             }
             const relevantObs = res.observations.filter(obs => selectedProtocolIds.has(obs.revision.protocolRef.id));
-            const resolvedObs = await Promise.all(
-                relevantObs.map(obs => this.resolveObservationAtCutoff(userId, obs, asOfDate, asOfMs)),
+            const resolvedObs = await mapWithConcurrency(
+                relevantObs,
+                OBSERVATION_HISTORY_READ_CONCURRENCY,
+                obs => this.resolveObservationAtCutoff(userId, obs, asOfDate, asOfMs),
             );
             for (const outcome of resolvedObs) {
                 if (outcome.status === 'resolved') {

@@ -4,7 +4,14 @@ import type { ExternalTrainingPlanV6 } from '../sessions/externalPlanV6';
 import type { PersistedFlagEvaluation } from '../ledger/flagEvaluation';
 import { LEDGER_FLAG_IDS } from '../ledger/export/schema';
 import { addDaysToLocalDateString } from '../utils/localDate';
-import { DEvalReadoutService, type DEvalReadoutDependencies } from './dEvalReadoutService';
+import {
+    ASSESSMENT_ATTEMPT_MAX_RECORDS,
+    DEvalReadoutService,
+    EXECUTION_HEADER_MAX_RECORDS,
+    HEALTH_ANOMALY_OUTCOME_MAX_RECORDS,
+    OBSERVATION_HISTORY_READ_CONCURRENCY,
+    type DEvalReadoutDependencies,
+} from './dEvalReadoutService';
 
 const BLOCK_START = '2026-11-24';
 const BLOCK_END = '2026-12-21';
@@ -282,7 +289,10 @@ describe('DEvalReadoutService', () => {
         expect(out.result.overall).toBe('PENDING');
         expect(out.markdown).toContain(`# ADR-0052 D-EVAL result: ${BLOCK_START} – ${BLOCK_END}`);
         expect(deps.flags.getInRangeState).toHaveBeenCalledWith('u1', BASELINE_START, BLOCK_END);
-        expect(deps.executions.getExecutionHeadersInRange).toHaveBeenCalledWith('u1', '2026-10-26', '2026-12-26', 1000);
+        expect(deps.executions.getExecutionHeadersInRange).toHaveBeenCalledWith('u1', '2026-10-26', '2026-12-26', EXECUTION_HEADER_MAX_RECORDS);
+        expect(deps.activityOverrides.getOverridesSinceState).toHaveBeenCalledWith('u1', BLOCK_START, BLOCK_END);
+        expect(deps.healthAnomalyOutcomes.listForUserWithDiagnostics).toHaveBeenCalledWith('u1', HEALTH_ANOMALY_OUTCOME_MAX_RECORDS);
+        expect(deps.attempts.listAttemptsForProtocolWithDiagnostics).toHaveBeenCalledWith('u1', 'field-standing-broad-jump', ASSESSMENT_ATTEMPT_MAX_RECORDS);
     });
 
     it('rejects invalid user ids and invalid date ranges', async () => {
@@ -449,11 +459,13 @@ describe('DEvalReadoutService', () => {
             rollbackState: 'unused',
         });
 
+        expect(out.input.c2.attemptRecords).toBeUndefined();
         expect(out.input.c3.followUpSourceStates?.checkins).toBe('invalid');
         expect(out.input.c3.followUpSourceStates?.healthAnomalyOutcomes).toBe('invalid');
         expect(out.input.c3.followUpSourcesComplete).toBe(false);
         expect(out.result.c1.block.unknown).toBe(1);
         expect(out.result.c2.status).toBe('inconclusive');
+        expect(out.result.c2.reasons).toContain('attempt_records_unavailable');
         expect(out.result.c3.status).toBe('inconclusive');
         expect(out.result.overall).toBe('EXTEND');
     });
@@ -824,5 +836,133 @@ describe('DEvalReadoutService', () => {
             expect(out.result.c2.status).toBe('inconclusive');
             expect(out.result.overall).toBe('EXTEND');
         }
+    });
+
+    it('rejects malformed or date-mismatched asOfTimestamp before starting Firestore reads', async () => {
+        const { deps } = await createDeps();
+        const service = new DEvalReadoutService(deps, () => AS_OF_POST);
+
+        await expect(service.run('u1', {
+            blockStartDate: BLOCK_START,
+            blockEndDate: BLOCK_END,
+            asOfDate: AS_OF_POST,
+            asOfTimestamp: 'not-a-timestamp',
+            rollbackState: 'unused',
+        })).rejects.toThrow(/asOfTimestamp/);
+        expect(deps.flags.getInRangeState).not.toHaveBeenCalled();
+
+        await expect(service.run('u1', {
+            blockStartDate: BLOCK_START,
+            blockEndDate: BLOCK_END,
+            asOfDate: AS_OF_POST,
+            asOfTimestamp: '2026-12-26T23:30:00.000Z', // 2026-12-27 in Europe/Warsaw
+            rollbackState: 'unused',
+        })).rejects.toThrow(/Europe\/Warsaw/);
+        expect(deps.flags.getInRangeState).not.toHaveBeenCalled();
+
+        const valid = await service.run('u1', {
+            blockStartDate: BLOCK_START,
+            blockEndDate: BLOCK_END,
+            asOfDate: AS_OF_POST,
+            asOfTimestamp: '2026-12-26T12:00:00.000Z',
+            rollbackState: 'unused',
+        });
+        expect(valid.result.c1.status).toBe('pass');
+    });
+
+    it('fails C4 as inconclusive when engine preference read is unavailable or invalid, and marks truncated outcomes unavailable', async () => {
+        const { deps } = await createDeps({
+            preferences: {
+                getPreferencesState: vi.fn(async () => ({ status: 'UNAVAILABLE' as const, operation: 'read preferences', retryable: true })),
+            },
+            healthAnomalyOutcomes: {
+                listForUserWithDiagnostics: vi.fn(async () => ({ outcomes: [], unreadableCount: 0, truncated: true })),
+            },
+        });
+        const out = await new DEvalReadoutService(deps, () => AS_OF_POST).run('u1', {
+            blockStartDate: BLOCK_START,
+            blockEndDate: BLOCK_END,
+            asOfDate: AS_OF_POST,
+            rollbackState: 'unused',
+        });
+
+        expect(out.result.c4.status).toBe('inconclusive');
+        expect(out.result.c4.reason).toContain('engineRecommendationsEnabled');
+        expect(out.markdown).toContain('rollback used=unverified');
+        expect(out.input.c3.followUpSourceStates?.healthAnomalyOutcomes).toBe('unavailable');
+        expect(out.input.c3.followUpSourcesComplete).toBe(false);
+        expect(out.result.overall).toBe('EXTEND');
+    });
+
+    it('caps concurrent observation revision-history reads when reconstructing post-cutoff corrections', async () => {
+        const base = (await createDeps()).deps;
+        const postCutoffObs = Array.from({ length: 6 }, (_, i) => {
+            const key = `att-cap-${i}:standing_broad_jump_distance_cm`;
+            return {
+                head: {
+                    observationKey: key,
+                    assessmentAttemptId: `att-cap-${i}`,
+                    metricId: 'standing_broad_jump_distance_cm',
+                    headRevision: 2,
+                    createdAt: '2027-01-15T10:00:00.000Z',
+                    updatedAt: '2027-01-25T10:00:00.000Z',
+                },
+                revision: {
+                    observationKey: key,
+                    revision: 2,
+                    supersedesRevision: 1,
+                    metricId: 'standing_broad_jump_distance_cm',
+                    value: 252,
+                    unit: 'cm',
+                    protocolRef: { id: 'field-standing-broad-jump', revision: 1 },
+                    assessmentAttemptId: `att-cap-${i}`,
+                    source: 'manual' as const,
+                    validity: 'valid' as const,
+                    observedAt: '2027-01-15T10:00:00.000Z',
+                    comparisonSeriesKey: 'field-standing-broad-jump:series-1',
+                    comparisonCanonicalizationVersion: '1',
+                    context: {},
+                    correctionReason: 'Updated after cutoff',
+                    createdAt: '2027-01-25T10:00:00.000Z',
+                },
+            };
+        });
+
+        let active = 0;
+        let peak = 0;
+        const { deps } = await createDeps({
+            observations: {
+                listCurrentObservationsForMetricWithDiagnostics: vi.fn(async (uid, metricId) => {
+                    const res = await base.observations.listCurrentObservationsForMetricWithDiagnostics(uid, metricId);
+                    if (metricId === 'standing_broad_jump_distance_cm') {
+                        return { ...res, observations: [...res.observations, ...postCutoffObs] };
+                    }
+                    return res;
+                }),
+                listRevisionsForObservationWithDiagnostics: vi.fn(async (_uid, key) => {
+                    active += 1;
+                    peak = Math.max(peak, active);
+                    await new Promise(resolve => setTimeout(resolve, 10));
+                    active -= 1;
+                    const entry = postCutoffObs.find(item => item.head.observationKey === key)!;
+                    return {
+                        revisions: [
+                            { ...entry.revision, revision: 1, supersedesRevision: undefined, correctionReason: undefined, createdAt: '2027-01-15T10:00:00.000Z' },
+                            entry.revision,
+                        ],
+                        unreadableCount: 0,
+                    };
+                }),
+            },
+        });
+
+        await new DEvalReadoutService(deps, () => '2027-01-30').run('u1', {
+            blockStartDate: BLOCK_START,
+            blockEndDate: BLOCK_END,
+            asOfDate: '2027-01-20',
+            rollbackState: 'unused',
+        });
+        expect(peak).toBeGreaterThan(1);
+        expect(peak).toBeLessThanOrEqual(OBSERVATION_HISTORY_READ_CONCURRENCY);
     });
 });
