@@ -250,6 +250,27 @@ function shownDateBeforePlacement(assignment: PlacementAssignment, session: DEva
 }
 
 /**
+ * The last event that removed a session's recorded assignment before it came due. Only an overlay
+ * reset does this; the session then returns to its plan date, so earlier placements say nothing more.
+ */
+function findRemovalBeforeDue(
+    events: readonly PlacementEvent[],
+    sessionId: string,
+): { index: number; changedOn: string; recordedDate: string } | null {
+    const dateIn = (items: readonly PlacementAssignment[]) => items.find(item => item.sessionId === sessionId)?.date ?? null;
+    let held = events.length > 0 ? dateIn(events[0]!.previous) : null;
+    let removal: { index: number; changedOn: string; recordedDate: string } | null = null;
+    events.forEach((event, index) => {
+        const next = dateIn(event.assignments);
+        if (held !== null && next === null) {
+            removal = held >= event.changedOn ? { index, changedOn: event.changedOn, recordedDate: held } : null;
+        }
+        held = next;
+    });
+    return removal;
+}
+
+/**
  * Dates on which a session came due without any recorded assignment, or null when its assignment is
  * recorded from the start or was placed on or before the date it was shown on.
  *
@@ -264,18 +285,23 @@ function unrecordedDueDates(
     overlay: DEvalRawPlacementOverlay | undefined,
 ): { dates: readonly string[] } | null {
     const isSession = (item: PlacementAssignment) => item.sessionId === session.id;
-    if (events.length > 0 ? events[0]!.previous.some(isSession) : overlay?.assignments.some(isSession)) return null;
+    const removal = findRemovalBeforeDue(events, session.id);
+    if (
+        removal === null
+        && (events.length > 0 ? events[0]!.previous.some(isSession) : overlay?.assignments.some(isSession))
+    ) return null;
 
-    const firstEvent = events.find(item => item.assignments.some(isSession));
+    const firstEvent = events.slice(removal === null ? 0 : removal.index + 1).find(item => item.assignments.some(isSession));
     if (firstEvent) {
         const shown = shownDateBeforePlacement(firstEvent.assignments.find(isSession)!, session);
         return firstEvent.changedOn <= shown ? null : { dates: [shown] };
     }
-    return {
-        dates: session.floating
-            ? Array.from({ length: 7 }, (_, offset) => addDaysToLocalDateString(session.authoredDate, offset))
-            : [session.authoredDate],
-    };
+    const planDates = session.floating
+        ? Array.from({ length: 7 }, (_, offset) => addDaysToLocalDateString(session.authoredDate, offset))
+        : [session.authoredDate];
+    if (removal === null) return { dates: planDates };
+    const remaining = planDates.filter(date => date >= removal.changedOn);
+    return { dates: remaining.length > 0 ? remaining : [removal.recordedDate] };
 }
 
 /** Sessions that came due without a recorded assignment, with the governed dates they may have been due on. */

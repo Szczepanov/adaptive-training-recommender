@@ -130,6 +130,34 @@ describe('C1 denominator when the overlay records only departures from the plan'
         expect(outcomesOf(importedMidWeek)).toEqual([['p1@1:f@2026-12-02', 'unknown']]);
     });
 
+    it('keeps a session whose recorded move an overlay reset removed before it came due', () => {
+        const move = (id: string, date: string, movedFrom: string): PlacementAssignment => ({ sessionId: id, date, status: 'moved', movedFrom });
+        const first = [move('x1', '2026-12-15', '2026-12-14'), move('x2', '2026-12-10', '2026-11-26'), move('x3', '2026-11-25', '2026-11-30')];
+        const reset: PlacementEvent = {
+            ...event('2026-11-28', [], []), previousState: 'invalid', previousStateReason: 'current-schema-invalid',
+        };
+        const planRevisions = [makeRevision([session('x1', '2026-12-14'), session('x2', '2026-11-26'), session('x3', '2026-11-30')])];
+        const placements = [{ planId: 'p1', revision: 1, assignments: [] }];
+        // x1 returns to its plan date; x2's plan date had passed, so it stays on its recorded date;
+        // x3 came due on its recorded date before the reset.
+        const expected = [
+            ['p1@1:x3@2026-11-25', 'unknown'],
+            ['p1@1:x2@2026-12-10', 'unknown'],
+            ['p1@1:x1@2026-12-14', 'unknown'],
+        ];
+        expect(outcomesOf(evaluate({ planRevisions, placements, placementHistory: [event('2026-11-20', [], first), reset] }))).toEqual(expected);
+        expect(outcomesOf(evaluate({ planRevisions, placements, placementHistory: [event('2026-11-20', first, first), reset] }))).toEqual(expected);
+
+        // A move made only after the reset and after the plan date is late, not an on-time move.
+        const lateAgain = [move('x1', '2026-12-18', '2026-12-14')];
+        const late = evaluate({
+            planRevisions,
+            placements: [{ planId: 'p1', revision: 1, assignments: lateAgain }],
+            placementHistory: [event('2026-11-20', [], first), reset, event('2026-12-16', [], lateAgain)],
+        });
+        expect(outcomesOf(late)).toEqual(expected);
+    });
+
     it('does not count a session moved out of the block on or before its authored date', () => {
         const moved: PlacementAssignment = { sessionId: 's', date: '2026-12-30', status: 'moved', movedFrom: '2026-12-10' };
         const result = evaluate({
