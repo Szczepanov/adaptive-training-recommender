@@ -632,4 +632,90 @@ describe('PR #1287 review findings regression checks', () => {
             ['p1@2:s2@2026-11-28', 'unknown'],
         ]);
     });
+
+    it('excludes placement events recorded after asOfTimestamp and uses pre-cutoff history instead of current overlay', () => {
+        const moved: PlacementAssignment = { sessionId: 's1', date: '2026-11-29', status: 'moved', movedFrom: '2026-11-28' };
+        const postMoveLedger: Partial<DEvalRawLedgerData> = {
+            planRevisions: [makeRevision([session('s1', '2026-11-28')])],
+            placements: [{ planId: 'p1', revision: 1, assignments: [moved] }],
+            placementHistory: [{
+                ...event('2026-11-28', [], [moved]),
+                recordedAt: '2026-11-28T18:00:00.000Z',
+            }],
+        };
+
+        const beforeMove = evaluate(postMoveLedger, {
+            asOfDate: '2026-11-28',
+            asOfTimestamp: '2026-11-28T10:00:00.000Z',
+        });
+        expect(outcomesOf(beforeMove)).toEqual([['p1@1:s1@2026-11-28', 'unknown']]);
+        expect(beforeMove.knownLimits.join(' ')).not.toContain('no dated placement history');
+
+        const atMove = evaluate(postMoveLedger, {
+            asOfDate: '2026-11-28',
+            asOfTimestamp: '2026-11-28T18:00:00.000Z',
+        });
+        expect(outcomesOf(atMove)).toEqual([]);
+
+        // When all events post-date the cutoff, recorded `previous` reconstructs the pre-cutoff state instead of reading `placements`.
+        const planned: PlacementAssignment = { sessionId: 's1', date: '2026-11-28', status: 'planned' };
+        const dropped: PlacementAssignment = { sessionId: 's1', date: '2026-11-28', status: 'dropped' };
+        const droppedLaterLedger: Partial<DEvalRawLedgerData> = {
+            planRevisions: [makeRevision([session('s1', '2026-11-28')])],
+            placements: [{ planId: 'p1', revision: 1, assignments: [dropped] }],
+            placementHistory: [{
+                ...event('2026-11-28', [planned], [dropped]),
+                recordedAt: '2026-11-28T18:00:00.000Z',
+            }],
+            executions: [makePlanExec('exec-1', '2026-11-28', 'p1', 1, 's1', 'h1', {
+                startedAt: '2026-11-28T09:00:00.000Z',
+                completedAt: '2026-11-28T09:30:00.000Z',
+            })],
+            performedOccurrences: [makeOccurrence('occ-1', '2026-11-28', 'exec-1', {
+                startedAt: '2026-11-28T09:00:00.000Z',
+                endedAt: '2026-11-28T09:30:00.000Z',
+            })],
+        };
+        const beforeDrop = evaluate(droppedLaterLedger, {
+            asOfDate: '2026-11-28',
+            asOfTimestamp: '2026-11-28T10:00:00.000Z',
+        });
+        expect(outcomesOf(beforeDrop)).toEqual([['p1@1:s1@2026-11-28', 'completed']]);
+
+        // When the earliest post-cutoff event replaced a corrupt overlay, do not fall back to the post-cutoff overlay.
+        const corruptPriorLedger: Partial<DEvalRawLedgerData> = {
+            planRevisions: [makeRevision([session('s1', '2026-11-28')])],
+            placements: [{ planId: 'p1', revision: 1, assignments: [dropped] }],
+            placementHistory: [{
+                ...event('2026-11-28', [], [dropped]),
+                recordedAt: '2026-11-28T18:00:00.000Z',
+                previousState: 'invalid',
+                previousStateReason: 'current-schema-invalid',
+            }],
+            executions: droppedLaterLedger.executions,
+            performedOccurrences: droppedLaterLedger.performedOccurrences,
+        };
+        const beforeCorruptReset = evaluate(corruptPriorLedger, {
+            asOfDate: '2026-11-28',
+            asOfTimestamp: '2026-11-28T10:00:00.000Z',
+        });
+        expect(outcomesOf(beforeCorruptReset)).toEqual([['p1@1:s1@2026-11-28', 'unknown']]);
+        expect(beforeCorruptReset.knownLimits.join(' ')).toContain('earliest post-cutoff event replaced a corrupt overlay');
+
+        // Date-only readout uses Europe/Warsaw calendar date on `recordedAt`.
+        const warsawBoundaryLedger: Partial<DEvalRawLedgerData> = {
+            planRevisions: [makeRevision([session('s1', '2026-11-28')])],
+            placements: [{ planId: 'p1', revision: 1, assignments: [moved] }],
+            placementHistory: [{
+                ...event('2026-11-28', [], [moved]),
+                recordedAt: '2026-11-28T23:30:00.000Z', // 2026-11-29 00:30 CET in Europe/Warsaw
+            }],
+        };
+        expect(outcomesOf(evaluate(warsawBoundaryLedger, { asOfDate: '2026-11-28' }))).toEqual([
+            ['p1@1:s1@2026-11-28', 'unknown'],
+        ]);
+        expect(outcomesOf(evaluate(warsawBoundaryLedger, { asOfDate: '2026-11-29' }))).toEqual([
+            ['p1@1:s1@2026-11-29', 'unknown'],
+        ]);
+    });
 });

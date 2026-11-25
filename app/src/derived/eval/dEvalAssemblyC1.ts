@@ -47,6 +47,15 @@ function isTimestampAfterCutoff(
     return asOfMs !== null ? ms > asOfMs : getLocalDateString(new Date(ms)) > asOfDate;
 }
 
+function isPlacementEventAtOrBeforeCutoff(
+    event: PlacementEvent,
+    asOfDate: string,
+    asOfMs: number | null,
+): boolean {
+    if (isTimestampAfterCutoff(event.recordedAt, asOfDate, asOfMs)) return false;
+    return !isLocalCalendarDate(asOfDate) || event.changedOn <= asOfDate;
+}
+
 function resolveResponseCompletedFraction(
     responses: readonly DEvalRawResponse[],
     asOfDate: string,
@@ -93,6 +102,12 @@ export interface RevisionPlacementIndex {
     verifiedRevMap: Map<string, DEvalRawPlanRevision>;
     overlaysByRev: Map<string, DEvalRawPlacementOverlay>;
     eventsByRev: Map<string, PlacementEvent[]>;
+    /**
+     * Present for revisions that have placement history in the ledger, even if every event
+     * occurred after the cutoff. Value is the recorded assignment list before the earliest event
+     * (`placementBeforeHistory`), or `null` when that earliest event replaced a corrupt overlay.
+     */
+    historyBeforeCutoffByRev: Map<string, readonly PlacementAssignment[] | null>;
     issueReasonsByRev: Map<string, Set<DEvalRawPlanIssue['reason']>>;
     issueReasonsByPlan: Map<string, Set<DEvalRawPlanIssue['reason']>>;
     governingOn: PlanGovernance;
@@ -100,7 +115,11 @@ export interface RevisionPlacementIndex {
     unrecordedSessions: ReadonlyMap<string, readonly string[]>;
 }
 
-export function indexPlans(raw: DEvalRawLedgerData, asOfMs: number | null = null): RevisionPlacementIndex {
+export function indexPlans(
+    raw: DEvalRawLedgerData,
+    asOfDate: string,
+    asOfMs: number | null = null,
+): RevisionPlacementIndex {
     const verifiedRevMap = new Map<string, DEvalRawPlanRevision>();
     const postCutoffRevKeys = new Set<string>();
     const issueReasonsByRev = new Map<string, Set<DEvalRawPlanIssue['reason']>>();
@@ -140,32 +159,54 @@ export function indexPlans(raw: DEvalRawLedgerData, asOfMs: number | null = null
         overlaysByRev.set(key, overlay);
     }
 
-    const eventsByRev = new Map<string, PlacementEvent[]>();
+    const allEventsByRev = new Map<string, PlacementEvent[]>();
     for (const event of raw.placementHistory) {
         const key = revisionKey(event.planId, event.revision);
         if (postCutoffRevKeys.has(key)) continue;
-        const list = eventsByRev.get(key) ?? [];
+        const list = allEventsByRev.get(key) ?? [];
         list.push(event);
-        eventsByRev.set(key, list);
+        allEventsByRev.set(key, list);
     }
-    for (const list of eventsByRev.values()) {
+    const eventsByRev = new Map<string, PlacementEvent[]>();
+    const historyBeforeCutoffByRev = new Map<string, readonly PlacementAssignment[] | null>();
+    for (const [key, list] of allEventsByRev) {
         list.sort((a, b) => a.changedOn.localeCompare(b.changedOn) || a.recordedAt.localeCompare(b.recordedAt));
+        historyBeforeCutoffByRev.set(key, placementBeforeHistory(list));
+        const admitted = list.filter(event => isPlacementEventAtOrBeforeCutoff(event, asOfDate, asOfMs));
+        if (admitted.length > 0) {
+            eventsByRev.set(key, admitted);
+        }
     }
 
     const governingOn = createPlanGovernance(verifiedRevMap.values(), asOfMs);
-    const unrecordedSessions = indexUnrecordedSessions(verifiedRevMap, eventsByRev, governingOn);
+    const unrecordedSessions = indexUnrecordedSessions(
+        verifiedRevMap,
+        eventsByRev,
+        historyBeforeCutoffByRev,
+        governingOn,
+    );
     return {
-        verifiedRevMap, overlaysByRev, eventsByRev, issueReasonsByRev, issueReasonsByPlan, governingOn, unrecordedSessions,
+        verifiedRevMap,
+        overlaysByRev,
+        eventsByRev,
+        historyBeforeCutoffByRev,
+        issueReasonsByRev,
+        issueReasonsByPlan,
+        governingOn,
+        unrecordedSessions,
     };
 }
 
 function snapshotOverlayOnDate(
     events: readonly PlacementEvent[],
+    hasAnyHistory: boolean,
+    beforeCutoffFallback: readonly PlacementAssignment[] | null,
     overlay: DEvalRawPlacementOverlay | undefined,
     date: string,
 ): readonly PlacementAssignment[] | null {
-    if (events.length === 0) return overlay?.assignments ?? [];
-    return placementAsOf(events, date) ?? placementBeforeHistory(events);
+    if (events.length > 0) return placementAsOf(events, date) ?? placementBeforeHistory(events);
+    if (hasAnyHistory) return beforeCutoffFallback;
+    return overlay?.assignments ?? [];
 }
 
 function findRecordedSuccessor(
@@ -298,11 +339,14 @@ function shownDateBeforePlacement(assignment: PlacementAssignment, session: DEva
 function unrecordedDueDates(
     session: DEvalRawPlanSession,
     events: readonly PlacementEvent[],
+    initialAssignments: readonly PlacementAssignment[] | null,
 ): { dates: readonly string[] } | null {
     const findAssignment = (items: readonly PlacementAssignment[]) =>
         items.find(item => item.sessionId === session.id) ?? null;
 
-    let held = events.length > 0 ? (findAssignment(events[0]!.previous)?.date ?? null) : null;
+    let held = events.length > 0
+        ? (hasRecordedPrevious(events[0]!) ? (findAssignment(events[0]!.previous)?.date ?? null) : null)
+        : (initialAssignments ? (findAssignment(initialAssignments)?.date ?? null) : null);
     let lastRemoval: { changedOn: string; recordedDate: string } | null = null;
 
     for (const event of events) {
@@ -349,12 +393,15 @@ function unrecordedDueDates(
 function indexUnrecordedSessions(
     verifiedRevMap: ReadonlyMap<string, DEvalRawPlanRevision>,
     eventsByRev: ReadonlyMap<string, readonly PlacementEvent[]>,
+    historyBeforeCutoffByRev: ReadonlyMap<string, readonly PlacementAssignment[] | null>,
     governingOn: PlanGovernance,
 ): Map<string, readonly string[]> {
     const unrecorded = new Map<string, readonly string[]>();
     for (const [revKey, rev] of verifiedRevMap) {
+        const events = eventsByRev.get(revKey) ?? [];
+        const initialAssignments = historyBeforeCutoffByRev.get(revKey) ?? null;
         for (const session of rev.sessions) {
-            const due = unrecordedDueDates(session, eventsByRev.get(revKey) ?? []);
+            const due = unrecordedDueDates(session, events, initialAssignments);
             const governed = due?.dates.filter(date => governingOn(date) === rev) ?? [];
             if (governed.length > 0) unrecorded.set(sessionKey(rev.planId, rev.revision, session.id), governed);
         }
@@ -413,12 +460,22 @@ export function assembleC1Window(params: {
         knownLimits.push(`Incomplete source reads for ${windowStart}..${effectiveEnd}; planned sessions default to unknown.`);
     }
 
-    const revKeys = [...new Set([...planIndex.overlaysByRev.keys(), ...planIndex.eventsByRev.keys()])].sort();
+    const revKeys = [...new Set([
+        ...planIndex.overlaysByRev.keys(),
+        ...planIndex.eventsByRev.keys(),
+        ...planIndex.historyBeforeCutoffByRev.keys(),
+    ])].sort();
 
     for (const revKey of revKeys) {
         const overlay = planIndex.overlaysByRev.get(revKey);
         const events = planIndex.eventsByRev.get(revKey) ?? [];
-        const planId = overlay?.planId ?? events[0]?.planId ?? '';
+        const hasAnyHistory = planIndex.historyBeforeCutoffByRev.has(revKey);
+        const beforeCutoffFallback = planIndex.historyBeforeCutoffByRev.get(revKey) ?? null;
+        const planId = overlay?.planId
+            ?? events[0]?.planId
+            ?? planIndex.verifiedRevMap.get(revKey)?.planId
+            ?? revKey.split('@')[0]
+            ?? '';
         const revIssues = planIndex.issueReasonsByRev.get(revKey);
         const planWideIssues = planIndex.issueReasonsByPlan.get(planId);
         const isRevUnverified = !planIndex.verifiedRevMap.has(revKey)
@@ -439,18 +496,22 @@ export function assembleC1Window(params: {
             .filter(event => event.changedOn <= effectiveEnd && !hasRecordedPrevious(event))
             .at(-1);
 
-        const hasUndatedOverlay = events.length === 0 && (overlay?.assignments.length ?? 0) > 0;
+        const hasUndatedOverlay = !hasAnyHistory && (overlay?.assignments.length ?? 0) > 0;
+        const hasUnreconstructedBeforeCutoff = events.length === 0 && hasAnyHistory && beforeCutoffFallback === null;
         if (hasHistoryOrOverlayFailure) {
             knownLimits.push(`Placement or placement history for ${revKey} was truncated or unreadable.`);
         }
         if (hasUndatedOverlay) {
             knownLimits.push(`Placement overlay for ${revKey} has no dated placement history; historical assignments are unknown.`);
         }
+        if (hasUnreconstructedBeforeCutoff) {
+            knownLimits.push(`Placement history before the cutoff for ${revKey} could not be reconstructed because the earliest post-cutoff event replaced a corrupt overlay.`);
+        }
 
         for (let date = windowStart; date <= effectiveEnd; date = addDaysToLocalDateString(date, 1)) {
             const governing = planIndex.governingOn(date);
             const isStaleRevision = governing !== null && revisionKey(governing.planId, governing.revision) !== revKey;
-            const snapshot = snapshotOverlayOnDate(events, overlay, date);
+            const snapshot = snapshotOverlayOnDate(events, hasAnyHistory, beforeCutoffFallback, overlay, date);
             if (snapshot === null) continue;
 
             for (const assignment of snapshot) {
@@ -462,7 +523,13 @@ export function assembleC1Window(params: {
 
                 // If moved from before this window AFTER its original pre-window due date, it belonged there.
                 if (assignment.status === 'moved' && assignment.movedFrom && assignment.movedFrom < windowStart) {
-                    const origSnapshot = snapshotOverlayOnDate(events, overlay, assignment.movedFrom);
+                    const origSnapshot = snapshotOverlayOnDate(
+                        events,
+                        hasAnyHistory,
+                        beforeCutoffFallback,
+                        overlay,
+                        assignment.movedFrom,
+                    );
                     const wasDueBefore = origSnapshot?.some(
                         item => item.sessionId === assignment.sessionId && item.date === assignment.movedFrom,
                     );

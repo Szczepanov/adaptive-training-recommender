@@ -89,7 +89,7 @@ export function assembleDEvalBlockInput(
     );
     const redFlagOnDate = buildRedFlagLookup(raw.checkins, raw.checkinsState, asOfDate, asOfMs);
 
-    const planIndex = indexPlans(raw, asOfMs);
+    const planIndex = indexPlans(raw, asOfDate, asOfMs);
     const { execById, execsBySession, unverifiedSessions, linksBySession } = buildExecutionAndLinkIndexes(
         raw,
         planIndex.verifiedRevMap,
